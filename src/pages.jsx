@@ -242,7 +242,7 @@ function LoginScreen({ onLogin }) {
           </button>
         </div>
         <p style={{ marginTop:10, fontSize:10, color:'var(--text-secondary)', textAlign:'center', lineHeight:1.6 }}>
-          PIN padrão · Funcionários: <strong>0000</strong> · RT: <strong>1234</strong> · Admin: <strong>9999</strong>
+          Conformidade sanitária digital · RDC 216/2004
         </p>
       </div>
     </div>

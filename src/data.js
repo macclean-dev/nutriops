@@ -15,33 +15,27 @@ export const tenants = [
     localityType: "Loja",
     stores: ["Swiss - Brasília Shopping"],
     equipmentCatalog: [
-      { label: "Freezer", aliases: ["freezer", "câmara congelada", "congelador"] },
-      { label: "Refrigerador", aliases: ["refrigerador", "geladeira", "frigorífico"] },
-      { label: "Vitrine Refrigerada", aliases: ["vitrine", "vitrine refrigerada", "expositor"] }
+      { label: "Freezer",           aliases: ["freezer", "câmara congelada", "congelador"], location: "Cozinha" },
+      { label: "Refrigerador",      aliases: ["refrigerador", "geladeira"], location: "Cozinha" },
+      { label: "Vitrine Refrigerada", aliases: ["vitrine", "vitrine refrigerada", "expositor"], location: "Salão" },
+      { label: "Cervejeiro",        aliases: ["cervejeiro", "adega"], location: "Salão" },
+      { label: "Máquina de Gelo",   aliases: ["máquina de gelo"], location: "Cozinha" },
     ],
-    users: 18,
+    users: 9,
     usersList: [
-      { name: "Ana Souza",   role: "Funcionário",      status: "Ativo",   location: "Confeitaria",      pin: "0000" },
-      { name: "Bruno Lima",  role: "Supervisor",        status: "Ativo",   location: "Brasília Shopping", pin: "0000" },
-      { name: "Carla Nunes", role: "Nutricionista RT",  status: "Ativo",   location: "Acesso geral",      pin: "1234" }
+      { name: "Emmilyn Barbosa",  role: "Funcionário",     status: "Ativo", location: "Swiss",            pin: "0000" },
+      { name: "Adiel Pinheiro",   role: "Funcionário",     status: "Ativo", location: "Swiss",            pin: "0000" },
+      { name: "Antonio Sergio",   role: "Funcionário",     status: "Ativo", location: "Swiss",            pin: "0000" },
+      { name: "Laura Isabely",    role: "Funcionário",     status: "Ativo", location: "Swiss",            pin: "0000" },
+      { name: "Meyany Irany",     role: "Funcionário",     status: "Ativo", location: "Swiss",            pin: "0000" },
+      { name: "Mikael Silva",     role: "Funcionário",     status: "Ativo", location: "Swiss",            pin: "0000" },
+      { name: "Shayane Oliveira", role: "Funcionário",     status: "Ativo", location: "Swiss",            pin: "0000" },
+      { name: "Fran", role: "Supervisor", status: "Ativo", location: "Swiss / Bäckerei", pin: "6270" },
+      { name: "Ana Paula Saraiva",role: "Nutricionista RT",status: "Ativo", location: "Acesso geral",     pin: "8771" },
     ],
-    formsToday: 42, alerts: 3, compliance: 91,
-    modules: ["Temperatura", "Higienização", "Capacitação", "Auditoria"],
-    audit: [
-      { label: "Temperaturas no prazo", value: "38/42", status: "ok" },
-      { label: "Pendências abertas",    value: "3",     status: "warn" },
-      { label: "Última inspeção",       value: "Hoje, 09:20", status: "ok" }
-    ],
-    forms: [
-      { name: "Temperatura do freezer",      frequency: "Diário",  owner: "Funcionário", requirement: "Faixa: -18°C",             status: "ok" },
-      { name: "Higienização de equipamentos", frequency: "Semanal", owner: "Supervisor",  requirement: "Assinatura obrigatória",    status: "warn" },
-      { name: "Capacitação de planilhas",     frequency: "Eventual",owner: "RT",          requirement: "Lista de presença",         status: "ok" }
-    ],
-    alertsList: [
-      { title: "Temperatura da vitrine acima do limite", detail: "Brasília Shopping - Confeitaria", level: "danger" },
-      { title: "Faxina semanal pendente",                detail: "Asa Sul - produção",              level: "warn" },
-      { title: "Treinamento próximo do vencimento",      detail: "Equipe noturna",                  level: "warn" }
-    ]
+    formsToday: 0, alerts: 0, compliance: 100,
+    modules: ["Temperatura", "Higiene Pessoal", "Vetores e Pragas", "Faxina", "Dedetização"],
+    audit: [], forms: [], alertsList: []
   },
   {
     id: "backerei",
@@ -51,37 +45,25 @@ export const tenants = [
     brandColor: "#d4a017",
     brandSoft: "rgba(212,160,23,.12)",
     localityType: "Loja",
-    stores: ["Bäckerei - Brasília Shopping", "Bäckerei - Shopping 2"],
+    stores: ["Bäckerei - Brasília Shopping"],
     equipmentCatalog: [
-      { label: "Refrigerador",    aliases: ["refrigerador", "geladeira", "frigorífico"] },
-      { label: "Câmara Congelada",aliases: ["câmara congelada", "freezer", "congelador"] },
-      { label: "Forno",           aliases: ["forno", "forno turbo"] },
-      { label: "Masseira",        aliases: ["masseira", "misturador"] }
+      { label: "Balcão Refrigerado Horizontal", aliases: ["balcão refrigerado", "balcão", "refrigerador"], location: "Salão" },
+      { label: "Vitrine Expositora Confeitaria", aliases: ["vitrine", "vitrine confeitaria", "expositor"], location: "Salão" },
+      { label: "Refrigerador da Bancada",       aliases: ["refrigerador bancada", "geladeira bancada"], location: "Cozinha" },
+      { label: "Máquina de Gelo",              aliases: ["máquina de gelo"], location: "Cozinha" },
     ],
-    users: 34,
+    users: 7,
     usersList: [
-      { name: "Diego Rocha",    role: "Funcionário",      status: "Ativo",   location: "Padaria 1",    pin: "0000" },
-      { name: "Fernanda Alves", role: "Supervisor",        status: "Ativo",   location: "Padaria 2",    pin: "0000" },
-      { name: "Mariana Costa",  role: "Nutricionista RT",  status: "Ativo",   location: "Acesso geral", pin: "1234" },
-      { name: "Paulo Santos",   role: "Funcionário",       status: "Pendente",location: "Produção",     pin: "0000" }
+      { name: "Sila",              role: "Funcionário",     status: "Ativo", location: "Bäckerei",         pin: "0000" },
+      { name: "Iuana Silva",       role: "Funcionário",     status: "Ativo", location: "Bäckerei",         pin: "0000" },
+      { name: "Micaely Medeiros",  role: "Funcionário",     status: "Ativo", location: "Bäckerei",         pin: "0000" },
+      { name: "Zenilma Cardoso",   role: "Funcionário",     status: "Ativo", location: "Bäckerei",         pin: "0000" },
+      { name: "Fran", role: "Supervisor", status: "Ativo", location: "Swiss / Bäckerei", pin: "6270" },
+      { name: "Ana Paula Saraiva", role: "Nutricionista RT",status: "Ativo", location: "Acesso geral",     pin: "8771" },
     ],
-    formsToday: 61, alerts: 5, compliance: 94,
-    modules: ["Temperatura", "Higiene Pessoal", "Dedetização", "Manutenção"],
-    audit: [
-      { label: "Registros do mês",   value: "1.248", status: "ok" },
-      { label: "Não conformidades",  value: "5",     status: "warn" },
-      { label: "Histórico disponível",value: "3 meses",status: "ok" }
-    ],
-    forms: [
-      { name: "Higiene pessoal", frequency: "Diário",  owner: "Supervisor", requirement: "Checklist por turno",    status: "ok" },
-      { name: "Dedetização",     frequency: "Mensal",  owner: "RT",         requirement: "Comprovante anexo",      status: "ok" },
-      { name: "Calibração",      frequency: "Anual",   owner: "RT",         requirement: "Laudo obrigatório",      status: "danger" }
-    ],
-    alertsList: [
-      { title: "Laudo de calibração ausente",         detail: "Geladeira confeitaria", level: "danger" },
-      { title: "Checklist de higiene pessoal incompleto",detail: "Turno manhã",        level: "warn" },
-      { title: "Auditoria fiscal em 7 dias",          detail: "Preparar exportação PDF",level: "ok" }
-    ]
+    formsToday: 0, alerts: 0, compliance: 100,
+    modules: ["Temperatura", "Higiene Pessoal", "Vetores e Pragas", "Faxina", "Dedetização", "Potabilidade"],
+    audit: [], forms: [], alertsList: []
   },
   {
     id: "dbk-producao",
@@ -93,41 +75,32 @@ export const tenants = [
     localityType: "Produção",
     stores: ["DBK - Produção Central"],
     equipmentCatalog: [
-      { label: "Câmara Refrigerada", aliases: ["câmara refrigerada", "geladeira", "refrigerador"] },
-      { label: "Câmara Congelada",   aliases: ["câmara congelada", "freezer", "congelador"] },
-      { label: "Balança",            aliases: ["balança", "balanca"] }
+      { label: "Câmara Refrigerada",        aliases: ["câmara refrigerada", "câmara fria"],      location: "Estoque" },
+      { label: "Câmara Congelada",          aliases: ["câmara congelada", "câmara fria congelada"], location: "Estoque" },
+      { label: "Refrigerador Confeitaria",  aliases: ["refrigerador confeitaria", "geladeira confeitaria"], location: "Confeitaria" },
+      { label: "Congelador Confeitaria",    aliases: ["congelador confeitaria", "freezer confeitaria"], location: "Confeitaria" },
+      { label: "Refrigerador Padaria",      aliases: ["refrigerador padaria", "geladeira padaria"], location: "Padaria" },
+      { label: "Geladeira Dupla Padaria",   aliases: ["geladeira dupla padaria"], location: "Padaria" },
+      { label: "Geladeira Dupla Corredor",  aliases: ["geladeira dupla corredor", "geladeira corredor"], location: "Corredor" },
     ],
-    users: 22,
+    users: 5,
     usersList: [
-      { name: "Rafael Vieira", role: "Funcionário",      status: "Ativo", location: "Produção central", pin: "0000" },
-      { name: "Tatiana Melo",  role: "Supervisor",        status: "Ativo", location: "Expedição",        pin: "0000" },
-      { name: "Vera Martins",  role: "Nutricionista RT",  status: "Ativo", location: "Acesso geral",     pin: "1234" }
+      { name: "Mateus Portela",    role: "Funcionário",     status: "Ativo", location: "DBK Produção",  pin: "0000" },
+      { name: "Stephanie Barbosa", role: "Funcionário",     status: "Ativo", location: "DBK Produção",  pin: "0000" },
+      { name: "Dominique Ganster", role: "Supervisor",      status: "Ativo", location: "DBK Produção",  pin: "0000" },
+      { name: "Ana Paula Saraiva", role: "Nutricionista RT",status: "Ativo", location: "Acesso geral",  pin: "8771" },
     ],
-    formsToday: 48, alerts: 2, compliance: 96,
-    modules: ["Temperatura", "Produção", "Higienização", "Expedição", "Auditoria"],
-    audit: [
-      { label: "Lotes produzidos",       value: "126",        status: "ok" },
-      { label: "Pendências de produção", value: "2",          status: "warn" },
-      { label: "Aferição do dia",        value: "Hoje, 06:40",status: "ok" }
-    ],
-    forms: [
-      { name: "Temperatura da câmara",   frequency: "Diário",   owner: "Supervisor", requirement: "Faixa: 0°C a 4°C",          status: "ok" },
-      { name: "Checklist de produção",   frequency: "Por lote", owner: "Funcionário",requirement: "Sequência obrigatória",      status: "ok" },
-      { name: "Higienização da área",    frequency: "Diário",   owner: "Supervisor", requirement: "Assinatura por turno",       status: "warn" }
-    ],
-    alertsList: [
-      { title: "Lote aguardando conferência",      detail: "Produção central", level: "warn" },
-      { title: "Higienização da área úmida pendente",detail: "Turno da tarde", level: "warn" }
-    ]
+    formsToday: 0, alerts: 0, compliance: 100,
+    modules: ["Temperatura", "Faxina", "Manutenção de Equipamentos", "Vetores e Pragas"],
+    audit: [], forms: [], alertsList: []
   }
 ];
 
-// Global admin user (acesso a todas as empresas)
 export const globalAdmin = {
   id:       'admin-global',
   name:     'Administrador',
   role:     'Administrador',
   location: 'Acesso global',
   pin:      '9999',
-  tenantId: null, // sees all tenants
+  tenantId: null,
 };

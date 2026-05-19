@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+.DS_Store
+*.log
+.vite/
+
+# Dados sensíveis — PINs e usuários reais
+src/data.js

@@ -185,7 +185,10 @@ export function getTemperatureRepository() {
 
 // ─── SQL schema ────────────────────────────────────────────────────────────
 
-export const SUPABASE_SQL = `-- NutriOPS · Tabela de registros de temperatura
+export const SUPABASE_SQL = `-- NutriOPS · Schema completo
+-- Execute no Supabase → SQL Editor → New query → Run
+
+-- Registros de temperatura
 create table if not exists temperature_records (
   id                   uuid primary key default gen_random_uuid(),
   tenant_id            text not null,
@@ -208,3 +211,4 @@ create table if not exists temperature_records (
 create index if not exists idx_temp_tenant  on temperature_records(tenant_id);
 create index if not exists idx_temp_created on temperature_records(created_at desc);
 create index if not exists idx_temp_equip   on temperature_records(equipment_key);`;
+

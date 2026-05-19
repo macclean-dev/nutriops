@@ -5,6 +5,8 @@ import { FormsView } from './forms';
 import { TrainingView } from './training';
 import { ReportsView } from './reports';
 import { getPermissions, canAccess } from './permissions';
+import { POPsView, OilControlView, ThawControlView, CoolingControlView, ThermalControlView, printTodayReport, useBrowserNotifications } from './controls';
+import { KioskApp, KioskSetup } from './kiosk';
 
 // ─── Temperatura utils ─────────────────────────────────────────────────────
 
@@ -175,30 +177,32 @@ function TempLineChart({ records, equipment, height = 180 }) {
 
 function LoginScreen({ onLogin }) {
   const [tenantId,  setTenantId]  = useState(tenants[0].id);
-  const [userName,  setUserName]  = useState('');
+  const [nameInput, setNameInput] = useState('');
   const [pin,       setPin]       = useState('');
   const [error,     setError]     = useState('');
   const [useGlobal, setUseGlobal] = useState(false);
-  const pinRef = useRef(null);
+  const nameRef = useRef(null);
+  const pinRef  = useRef(null);
 
   const selectedTenant = tenants.find((t) => t.id === tenantId) ?? tenants[0];
-  const users = readUsers(selectedTenant).filter((u) => u.status !== 'Inativo');
 
-  useEffect(() => { setUserName(users[0]?.name ?? ''); setPin(''); setError(''); }, [tenantId, useGlobal]);
-  useEffect(() => { setPin(''); setError(''); }, [userName]);
+  useEffect(() => { setNameInput(''); setPin(''); setError(''); }, [tenantId, useGlobal]);
 
   const handleLogin = () => {
     setError('');
     if (useGlobal) {
       if (pin !== (globalAdmin.pin ?? '9999')) { setError('PIN incorreto.'); return; }
-      // Global admin starts on first tenant
       const session = { tenantId: tenants[0].id, user: { ...globalAdmin } };
       save(SESSION_KEY, session); onLogin(session); return;
     }
-    const user = users.find((u) => u.name === userName);
-    if (!user) { setError('Usuário não encontrado.'); return; }
-    const expectedPin = user.pin ?? '0000';
-    if (pin !== expectedPin) { setError('PIN incorreto.'); pinRef.current?.select(); return; }
+    const trimmed = nameInput.trim().toLowerCase();
+    if (!trimmed) { setError('Informe seu nome.'); nameRef.current?.focus(); return; }
+    const users = readUsers(selectedTenant).filter((u) => u.status !== 'Inativo');
+    const user  = users.find((u) => u.name.toLowerCase() === trimmed)
+               ?? users.find((u) => u.name.toLowerCase().startsWith(trimmed))
+               ?? users.find((u) => trimmed.split(' ').every(w => u.name.toLowerCase().includes(w)));
+    if (!user) { setError('Nome não encontrado. Verifique a grafia.'); nameRef.current?.select(); return; }
+    if (pin !== (user.pin ?? '0000')) { setError('PIN incorreto.'); pinRef.current?.select(); return; }
     const session = { tenantId, user: { id:`${tenantId}-${user.name}`, name:user.name, role:user.role, location:user.location??'' } };
     save(SESSION_KEY, session); onLogin(session);
   };
@@ -211,13 +215,22 @@ function LoginScreen({ onLogin }) {
           <span style={{ fontSize:22, fontWeight:800, letterSpacing:'-.05em', color:'var(--text)' }}>NutriOPS</span>
         </div>
         <h1 style={{ fontSize:24, fontWeight:800, letterSpacing:'-.04em', marginBottom:6 }}>Entrar</h1>
-        <p className="muted" style={{ marginBottom:24 }}>Selecione empresa, usuário e informe o PIN.</p>
-
+        <p className="muted" style={{ marginBottom:24 }}>Selecione sua empresa, informe seu nome e PIN.</p>
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
           {!useGlobal ? (
             <>
-              <label>Empresa<select value={tenantId} onChange={(e) => setTenantId(e.target.value)}>{tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
-              <label>Usuário<select value={userName} onChange={(e) => setUserName(e.target.value)}>{users.map((u) => <option key={u.name} value={u.name}>{u.name} — {u.role}</option>)}</select></label>
+              <label>Empresa
+                <select value={tenantId} onChange={(e) => setTenantId(e.target.value)}>
+                  {tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </label>
+              <label>Nome
+                <input ref={nameRef} value={nameInput}
+                  onChange={(e) => { setNameInput(e.target.value); setError(''); }}
+                  placeholder="Digite seu nome"
+                  onKeyDown={(e) => { if (e.key==='Enter') { e.preventDefault(); pinRef.current?.focus(); } }}
+                  autoComplete="off" autoCapitalize="words" />
+              </label>
             </>
           ) : (
             <div style={{ padding:'12px 14px', background:'var(--blue-light)', border:'1px solid var(--blue-border)', borderRadius:'var(--r)', fontSize:13 }}>
@@ -234,14 +247,13 @@ function LoginScreen({ onLogin }) {
           {error && <div style={{ padding:'8px 12px', background:'var(--red-light)', border:'1px solid var(--red-border)', borderRadius:'var(--r)', color:'var(--red)', fontSize:13, fontWeight:600 }}>{error}</div>}
           <button className="primary-action" style={{ marginTop:4 }} onClick={handleLogin}>Entrar</button>
         </div>
-
         <div style={{ marginTop:18, paddingTop:14, borderTop:'1px solid var(--border-subtle)', textAlign:'center' }}>
-          <button onClick={() => { setUseGlobal(!useGlobal); setPin(''); setError(''); }}
+          <button onClick={() => { setUseGlobal(!useGlobal); setPin(''); setError(''); setNameInput(''); }}
             style={{ background:'none', border:'none', fontSize:11, color:'var(--text-secondary)', cursor:'pointer', textDecoration:'underline' }}>
-            {useGlobal ? 'Entrar como funcionário da unidade' : 'Entrar como administrador global'}
+            {useGlobal ? 'Entrar como colaborador da unidade' : 'Entrar como administrador global'}
           </button>
         </div>
-        <p style={{ marginTop:10, fontSize:10, color:'var(--text-secondary)', textAlign:'center', lineHeight:1.6 }}>
+        <p style={{ marginTop:10, fontSize:10, color:'var(--text-secondary)', textAlign:'center' }}>
           Conformidade sanitária digital · RDC 216/2004
         </p>
       </div>
@@ -254,20 +266,25 @@ function LoginScreen({ onLogin }) {
 function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenantChange, session, records, alertCount, actionCount, onLogout }) {
   const perms = getPermissions(session?.user?.role);
   const navItems = [
-    ['overview',   'Visão geral',       null],
-    ['dashboard',  'Conformidade',       null],
-    ['charts',     'Gráficos',           null],
-    ['forms',      'Planilhas BPF',      null],
-    ['training',   'Capacitação',        null],
-    ['receiving',  'Recebimento',        null],
-    ['reports',    'Relatórios',         null],
-    ['audit',      'Auditoria',          null],
-    ['alerts',     'Alertas',            alertCount > 0 ? alertCount : null],
-    ['actions',    'Ações corretivas',   actionCount > 0 ? actionCount : null],
-    ['turns',      'Turnos',             null],
-    ['users',      'Usuários',           null],
-    ['equipment',  'Equipamentos',       null],
-    ['settings',   'Configurações',      null],
+    ['overview',   'Visão geral',           null],
+    ['dashboard',  'Conformidade',           null],
+    ['charts',     'Gráficos',               null],
+    ['forms',      'Planilhas BPF',          null],
+    ['pops',       'POPs',                   null],
+    ['training',   'Capacitação',            null],
+    ['receiving',  'Recebimento',            null],
+    ['oil',        'Óleo de fritura',        null],
+    ['thaw',       'Descongelamento',        null],
+    ['cooling',    'Resfriamento',           null],
+    ['thermal',    'Tratamento térmico',     null],
+    ['reports',    'Relatórios',             null],
+    ['audit',      'Auditoria',              null],
+    ['alerts',     'Alertas',                alertCount > 0 ? alertCount : null],
+    ['actions',    'Ações corretivas',       actionCount > 0 ? actionCount : null],
+    ['turns',      'Turnos',                 null],
+    ['users',      'Usuários',               null],
+    ['equipment',  'Equipamentos',           null],
+    ['settings',   'Configurações',          null],
   ].filter(([key]) => canAccess(session?.user?.role, key));
   return (
     <aside className="super-rail">
@@ -529,9 +546,16 @@ function RecentHistory({ activeTenant, records }) {
 
 // ─── Overview ──────────────────────────────────────────────────────────────
 
-function OverviewView({ activeTenant, allTenants, onTenantChange, session, equipmentCatalog, records, onRecordSaved, alerts }) {
+function OverviewView({ activeTenant, allTenants, onTenantChange, session, equipmentCatalog, records, onRecordSaved, alerts, notifPermission, onRequestNotif, onLaunchKiosk }) {
   return (
     <>
+      {/* Notification permission banner */}
+      {notifPermission === 'default' && (
+        <div className="alert-banner" style={{ background:'var(--blue-light)', borderColor:'var(--blue-border)', marginBottom:16 }}>
+          <span style={{ color:'var(--blue-emphasis)' }}>🔔 Ativar lembretes de turno no navegador</span>
+          <button className="primary-action" style={{ fontSize:12, padding:'6px 14px' }} onClick={onRequestNotif}>Ativar notificações</button>
+        </div>
+      )}
       {alerts.length > 0 && (
         <div className="alert-banner">
           <span>⚠ {alerts.length} pendência{alerts.length > 1 ? 's' : ''} no turno atual</span>
@@ -539,6 +563,14 @@ function OverviewView({ activeTenant, allTenants, onTenantChange, session, equip
         </div>
       )}
       <CompanyCards allTenants={allTenants} activeTenant={activeTenant} onTenantChange={onTenantChange} records={records} />
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+        <button className="secondary-action" style={{ fontSize:12, background:'#0d1117', color:'white', borderColor:'transparent' }} onClick={onLaunchKiosk}>
+          🖥️ Modo quiosque
+        </button>
+        <button className="secondary-action" style={{ fontSize:12 }} onClick={() => printTodayReport(activeTenant, records)}>
+          🖨️ Imprimir registros de hoje
+        </button>
+      </div>
       <div className="workspace-grid">
         <TemperatureCapture key={activeTenant.id} activeTenant={activeTenant} session={session} equipmentCatalog={equipmentCatalog} onRecordSaved={onRecordSaved} />
         <RecentHistory activeTenant={activeTenant} records={records} />
@@ -551,9 +583,13 @@ function OverviewView({ activeTenant, allTenants, onTenantChange, session, equip
 
 function DashboardView({ allTenants, records, activeTenant, onTenantChange }) {
   const now = Date.now();
+  const [period, setPeriod] = useState(30);
+
   const stats = useMemo(() => allTenants.map((tenant) => {
-    const tr = records.filter((r) => r.tenantId === tenant.id && now - new Date(r.createdAt).getTime() <= 30 * 86400000);
-    const ok = tr.filter((r) => resolveTemperatureTone(r) === 'ok').length, warn = tr.filter((r) => resolveTemperatureTone(r) === 'warn').length, danger = tr.filter((r) => resolveTemperatureTone(r) === 'danger').length;
+    const tr = records.filter((r) => r.tenantId === tenant.id && now - new Date(r.createdAt).getTime() <= period * 86400000);
+    const ok = tr.filter((r) => resolveTemperatureTone(r) === 'ok').length;
+    const warn = tr.filter((r) => resolveTemperatureTone(r) === 'warn').length;
+    const danger = tr.filter((r) => resolveTemperatureTone(r) === 'danger').length;
     const total = tr.length, compliance = total > 0 ? Math.round((ok / total) * 100) : 0;
     const today = tr.filter((r) => new Date(r.createdAt).toDateString() === new Date().toDateString()).length;
     const catalog = readEquipmentCatalog(tenant);
@@ -562,24 +598,106 @@ function DashboardView({ allTenants, records, activeTenant, onTenantChange }) {
       const eOk = er.filter((r) => resolveTemperatureTone(r) === 'ok').length;
       return { label: eq.label, total: er.length, ok: eOk, pct: er.length > 0 ? Math.round((eOk / er.length) * 100) : null };
     });
-    return { tenant, total, ok, warn, danger, compliance, today, equipStats };
-  }), [allTenants, records, now]);
+    // Trend: last 7 days compliance
+    const last7 = records.filter((r) => r.tenantId === tenant.id && now - new Date(r.createdAt).getTime() <= 7 * 86400000);
+    const trend = last7.length > 0 ? Math.round((last7.filter(r=>resolveTemperatureTone(r)==='ok').length / last7.length) * 100) : null;
+    return { tenant, total, ok, warn, danger, compliance, today, equipStats, trend };
+  }), [allTenants, records, now, period]);
+
+  // Consolidated totals
+  const consolidated = useMemo(() => stats.reduce((acc, s) => ({
+    total: acc.total + s.total, ok: acc.ok + s.ok,
+    warn: acc.warn + s.warn, danger: acc.danger + s.danger, today: acc.today + s.today,
+  }), { total:0, ok:0, warn:0, danger:0, today:0 }), [stats]);
+  const globalCompliance = consolidated.total > 0 ? Math.round((consolidated.ok / consolidated.total) * 100) : 0;
+
+  const printDashboard = () => {
+    const date = new Date().toLocaleString('pt-BR');
+    const rows = stats.map(s => `<tr>
+      <td><strong>${s.tenant.name}</strong></td>
+      <td style="font-family:monospace;font-weight:700;color:${s.compliance>=90?'#1a7f37':s.compliance>=70?'#9a6700':'#cf222e'}">${s.compliance}%</td>
+      <td>${s.total}</td><td style="color:#1a7f37">${s.ok}</td>
+      <td style="color:#9a6700">${s.warn}</td><td style="color:#cf222e">${s.danger}</td>
+      <td>${s.today}</td><td>${s.trend !== null ? `${s.trend}%` : '—'}</td>
+    </tr>`).join('');
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Dashboard Executivo — NutriOPS</title>
+    <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#1c2128;padding:24px}
+    h1{font-size:18px;font-weight:800;margin-bottom:4px}.meta{color:#656d76;font-size:9px;margin-bottom:16px}
+    .kpi-row{display:flex;gap:16px;margin-bottom:20px}.kpi{flex:1;padding:12px;background:#f6f8fa;border:1px solid #d0d7de;border-radius:6px}
+    .kpi span{font-size:9px;color:#656d76;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px}
+    .kpi strong{font-size:22px;font-weight:800;font-family:monospace}
+    table{width:100%;border-collapse:collapse}th{background:#f6f8fa;padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #d0d7de;color:#656d76}
+    td{padding:7px 8px;border-bottom:1px solid #eaeef2}
+    .footer{margin-top:16px;padding-top:10px;border-top:1px solid #d0d7de;font-size:8px;color:#9198a1;display:flex;justify-content:space-between}
+    @page{size:A4;margin:14mm}</style></head><body>
+    <h1>Dashboard Executivo — NutriOPS</h1>
+    <p class="meta">Período: últimos ${period} dias · Gerado em ${date} · RDC 216/2004</p>
+    <div class="kpi-row">
+      <div class="kpi"><span>Conformidade global</span><strong style="color:${globalCompliance>=90?'#1a7f37':globalCompliance>=70?'#9a6700':'#cf222e'}">${globalCompliance}%</strong></div>
+      <div class="kpi"><span>Total de registros</span><strong>${consolidated.total}</strong></div>
+      <div class="kpi"><span>Conformes</span><strong style="color:#1a7f37">${consolidated.ok}</strong></div>
+      <div class="kpi"><span>Desvios</span><strong style="color:#9a6700">${consolidated.warn}</strong></div>
+      <div class="kpi"><span>Críticos</span><strong style="color:#cf222e">${consolidated.danger}</strong></div>
+      <div class="kpi"><span>Registros hoje</span><strong>${consolidated.today}</strong></div>
+    </div>
+    <table><thead><tr><th>Empresa</th><th>Conformidade</th><th>Registros</th><th>Conformes</th><th>Desvios</th><th>Críticos</th><th>Hoje</th><th>Tendência 7d</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <div class="footer"><span>NutriOPS · Conformidade Sanitária Digital</span><span>${date}</span></div>
+    </body></html>`);
+    win.document.close(); setTimeout(() => win.print(), 400);
+  };
 
   return (
     <section className="management-page">
-      <div className="page-header"><div><span className="eyebrow">Últimos 30 dias</span><h1>Conformidade</h1><p className="muted">Visão consolidada por empresa e equipamento.</p></div></div>
+      <div className="page-header">
+        <div>
+          <span className="eyebrow">Visão executiva</span>
+          <h1>Conformidade</h1>
+          <p className="muted">Consolidado de todas as empresas e equipamentos.</p>
+        </div>
+        <div className="page-actions">
+          <select value={period} onChange={e=>setPeriod(Number(e.target.value))} style={{ width:'auto' }}>
+            <option value={7}>7 dias</option><option value={30}>30 dias</option><option value={90}>90 dias</option>
+          </select>
+          <button className="secondary-action" style={{ fontSize:12 }} onClick={printDashboard}>↓ PDF executivo</button>
+        </div>
+      </div>
+
+      {/* Global KPIs */}
+      {allTenants.length > 1 && (
+        <div className="audit-stats" style={{ marginBottom:20 }}>
+          <div className="audit-stat" style={{ borderTop:`3px solid ${globalCompliance>=90?'var(--green)':globalCompliance>=70?'var(--amber)':'var(--red)'}` }}>
+            <span>Conformidade global</span>
+            <strong style={{ color: globalCompliance>=90?'var(--green)':globalCompliance>=70?'var(--amber)':'var(--red)' }}>{globalCompliance}%</strong>
+          </div>
+          <div className="audit-stat"><span>Total registros</span><strong>{consolidated.total}</strong></div>
+          <div className="audit-stat ok"><span>Conformes</span><strong>{consolidated.ok}</strong></div>
+          <div className="audit-stat warn"><span>Desvios</span><strong>{consolidated.warn}</strong></div>
+          <div className="audit-stat danger"><span>Críticos</span><strong>{consolidated.danger}</strong></div>
+          <div className="audit-stat"><span>Hoje (todas)</span><strong>{consolidated.today}</strong></div>
+        </div>
+      )}
+
+      {/* Per-company cards */}
       <div className="dashboard-grid">
-        {stats.map(({ tenant, total, ok, warn, danger, compliance, today, equipStats }) => (
-          <article key={tenant.id} className={`dash-card ${activeTenant.id === tenant.id ? 'active' : ''}`} style={{ borderTopColor: tenant.brandColor }} onClick={() => onTenantChange(tenant.id)}>
+        {stats.map(({ tenant, total, ok, warn, danger, compliance, today, equipStats, trend }) => (
+          <article key={tenant.id} className={`dash-card ${activeTenant.id === tenant.id ? 'active' : ''}`}
+            style={{ borderTopColor: tenant.brandColor }} onClick={() => onTenantChange(tenant.id)}>
             <div className="dash-card-head">
-              <div><span className="eyebrow">{tenant.plan}</span><h2 style={{ color: tenant.brandColor }}>{tenant.name}</h2></div>
+              <div><span className="eyebrow">{tenant.segment}</span><h2 style={{ color: tenant.brandColor }}>{tenant.name}</h2></div>
               <div className="dash-compliance">
-                <strong style={{ color: compliance >= 90 ? 'var(--green)' : compliance >= 70 ? 'var(--amber)' : 'var(--red)' }}>{compliance}%</strong>
+                <strong style={{ color: compliance>=90?'var(--green)':compliance>=70?'var(--amber)':'var(--red)' }}>{compliance}%</strong>
                 <span>conformidade</span>
+                {trend !== null && (
+                  <span style={{ fontSize:10, color: trend >= compliance ? 'var(--green)' : 'var(--red)', display:'block' }}>
+                    {trend >= compliance ? '↑' : '↓'} {trend}% (7d)
+                  </span>
+                )}
               </div>
             </div>
             <div className="compliance-bar-wrap"><div className="compliance-bar">
-              {total > 0 && <><div className="cb-ok" style={{ width: `${(ok/total)*100}%` }} /><div className="cb-warn" style={{ width: `${(warn/total)*100}%` }} /><div className="cb-danger" style={{ width: `${(danger/total)*100}%` }} /></>}
+              {total > 0 && <><div className="cb-ok" style={{ width:`${(ok/total)*100}%` }} /><div className="cb-warn" style={{ width:`${(warn/total)*100}%` }} /><div className="cb-danger" style={{ width:`${(danger/total)*100}%` }} /></>}
             </div></div>
             <div className="dash-stats">
               <div className="dash-stat"><span>Registros</span><strong>{total}</strong></div>
@@ -593,7 +711,7 @@ function DashboardView({ allTenants, records, activeTenant, onTenantChange }) {
                 {equipStats.map((eq) => (
                   <div key={eq.label} className="equip-bar-row">
                     <span>{eq.label}</span>
-                    <div className="equip-bar-track"><div className="equip-bar-fill" style={{ width: `${eq.pct ?? 0}%`, background: eq.pct === null ? 'var(--border)' : eq.pct >= 90 ? 'var(--green)' : eq.pct >= 70 ? 'var(--amber)' : 'var(--red)' }} /></div>
+                    <div className="equip-bar-track"><div className="equip-bar-fill" style={{ width:`${eq.pct??0}%`, background: eq.pct===null?'var(--border)':eq.pct>=90?'var(--green)':eq.pct>=70?'var(--amber)':'var(--red)' }} /></div>
                     <strong>{eq.pct !== null ? `${eq.pct}%` : '—'}</strong>
                   </div>
                 ))}
@@ -606,7 +724,7 @@ function DashboardView({ allTenants, records, activeTenant, onTenantChange }) {
   );
 }
 
-// ─── Charts View ───────────────────────────────────────────────────────────
+
 
 function ChartsView({ activeTenant, allTenants, onTenantChange, records }) {
   const catalog = readEquipmentCatalog(activeTenant);
@@ -1118,18 +1236,18 @@ function TurnsView({ activeTenant, allTenants, onTenantChange, records }) {
 function UsersView({ activeTenant, allTenants, onTenantChange }) {
   const [users, setUsers]                 = useState(() => readUsers(activeTenant));
   const [nameInput, setNameInput]         = useState('');
-  const [roleInput, setRoleInput]         = useState('Funcionário');
+  const [roleInput, setRoleInput]         = useState('Colaborador');
   const [locationInput, setLocationInput] = useState('');
   const [statusInput, setStatusInput]     = useState('Ativo');
   const [editingIndex, setEditingIndex]   = useState(null);
   const [search, setSearch]               = useState('');
   const [roleFilter, setRoleFilter]       = useState('Todos');
   const [pinInput, setPinInput] = useState('0000');
-  const roles = ['Funcionário', 'Supervisor', 'Nutricionista RT', 'Administrador'];
-  useEffect(() => { setUsers(readUsers(activeTenant)); setEditingIndex(null); setNameInput(''); setRoleInput('Funcionário'); setLocationInput(''); setStatusInput('Ativo'); setPinInput('0000'); }, [activeTenant.id]);
+  const roles = ['Colaborador', 'Supervisor', 'Nutricionista RT', 'Administrador'];
+  useEffect(() => { setUsers(readUsers(activeTenant)); setEditingIndex(null); setNameInput(''); setRoleInput('Colaborador'); setLocationInput(''); setStatusInput('Ativo'); setPinInput('0000'); }, [activeTenant.id]);
   useEffect(() => { writeUsers(activeTenant.id, users); }, [activeTenant.id, users]);
   const startEdit = (i) => { const u = users[i]; setEditingIndex(i); setNameInput(u.name); setRoleInput(u.role); setLocationInput(u.location ?? ''); setStatusInput(u.status ?? 'Ativo'); setPinInput(u.pin ?? '0000'); };
-  const cancelEdit = () => { setEditingIndex(null); setNameInput(''); setRoleInput('Funcionário'); setLocationInput(''); setStatusInput('Ativo'); setPinInput('0000'); };
+  const cancelEdit = () => { setEditingIndex(null); setNameInput(''); setRoleInput('Colaborador'); setLocationInput(''); setStatusInput('Ativo'); setPinInput('0000'); };
   const saveUser = () => {
     if (!nameInput.trim()) return;
     const user = { name: nameInput.trim(), role: roleInput, location: locationInput.trim(), status: statusInput, pin: pinInput || '0000' };
@@ -1173,7 +1291,15 @@ function UsersView({ activeTenant, allTenants, onTenantChange }) {
                   <div><strong>{u.name}</strong><span>{u.role} · {u.location || 'Sem localização'}</span></div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span className={`badge ${u.status === 'Ativo' ? 'ok' : u.status === 'Pendente' ? 'warn' : 'neutral'}`}>{u.status}</span>
-                    <div className="equipment-row-actions"><button className="ghost-action" onClick={() => startEdit(ri)}>Editar</button><button className="ghost-action danger" onClick={() => removeUser(ri)}>Remover</button></div>
+                    <div className="equipment-row-actions">
+                      <button className="ghost-action" style={{ fontSize:11 }} onClick={() => {
+                        const newPin = window.prompt(`Novo PIN para ${u.name} (4-6 dígitos):`);
+                        if (!newPin || !/^\d{4,6}$/.test(newPin)) { if (newPin !== null) alert('PIN inválido. Use 4 a 6 dígitos numéricos.'); return; }
+                        setUsers(prev => prev.map((usr, idx) => idx === ri ? { ...usr, pin: newPin } : usr));
+                      }}>🔑 PIN</button>
+                      <button className="ghost-action" onClick={() => startEdit(ri)}>Editar</button>
+                      <button className="ghost-action danger" onClick={() => removeUser(ri)}>Remover</button>
+                    </div>
                   </div>
                 </div>
               ); })}
@@ -1698,25 +1824,47 @@ export function App() {
   const handleLogin  = useCallback((s) => setSession(s), []);
   const handleLogout = useCallback(() => { localStorage.removeItem(SESSION_KEY); setSession(null); }, []);
 
-  const [activeTenantId, setActiveTenantId] = useState(() => session?.tenantId ?? tenants[0].id);
+  const perms = getPermissions(session?.user?.role);
+
+  // For non-multiTenant users, always lock to their own tenant
+  const resolvedTenantId = perms.multiTenant
+    ? (session?.tenantId ?? tenants[0].id)
+    : (session?.tenantId ?? tenants[0].id);
+
+  const [activeTenantId, setActiveTenantId] = useState(() => resolvedTenantId);
   const [activeView, setActiveView]         = useState('overview');
   const [records, setRecords]               = useState([]);
-  const [equipmentCatalog, setEquipmentCatalog] = useState(() => readEquipmentCatalog(tenants.find((t) => t.id === (session?.tenantId ?? tenants[0].id)) ?? tenants[0]));
 
-  const perms        = getPermissions(session?.user?.role);
-  const activeTenant = useMemo(() => tenants.find((t) => t.id === activeTenantId) ?? tenants[0], [activeTenantId]);
+  // Always derive activeTenant from tenants list — never fall back to tenants[0] for locked users
+  const activeTenant = useMemo(() => {
+    const found = tenants.find((t) => t.id === activeTenantId);
+    if (found) return found;
+    // Fallback: use session's tenant or first tenant
+    return tenants.find((t) => t.id === session?.tenantId) ?? tenants[0];
+  }, [activeTenantId, session?.tenantId]);
 
-  // Non-multiTenant users only see their own company
-  const visibleTenants = useMemo(() =>
-    perms.multiTenant ? tenants : tenants.filter((t) => t.id === session?.tenantId),
-  [perms.multiTenant, session?.tenantId]);
+  // Always derive catalog from activeTenant — never stale
+  const equipmentCatalog = useMemo(() => readEquipmentCatalog(activeTenant), [activeTenant]);
+
+  // Non-multiTenant users only see their own company — with safety fallback
+  const visibleTenants = useMemo(() => {
+    if (perms.multiTenant) return tenants;
+    const own = tenants.filter((t) => t.id === session?.tenantId);
+    return own.length > 0 ? own : [activeTenant];
+  }, [perms.multiTenant, session?.tenantId, activeTenant]);
 
   // Non-multiTenant users are locked to their company
   const handleTenantChange = useCallback((id) => {
     if (!perms.multiTenant) return;
     setActiveTenantId(id);
-    setEquipmentCatalog(readEquipmentCatalog(tenants.find((x) => x.id === id) ?? tenants[0]));
   }, [perms.multiTenant]);
+
+  // Sync activeTenantId with session on login
+  useEffect(() => {
+    if (session?.tenantId && !perms.multiTenant) {
+      setActiveTenantId(session.tenantId);
+    }
+  }, [session?.tenantId, perms.multiTenant]);
 
   const refreshRecords = useCallback(async () => {
     // Load records for all companies (RT/Admin) or just own company
@@ -1727,24 +1875,60 @@ export function App() {
 
   useEffect(() => { refreshRecords(); }, [refreshRecords]);
 
-  const turns      = readTurns(activeTenant);
-  const alertCount = useMemo(() => computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id).length, [records, activeTenant.id, equipmentCatalog]);
+  const turns       = readTurns(activeTenant);
+  const alertCount  = useMemo(() => computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id).length, [records, activeTenant.id, equipmentCatalog]);
   const actionCount = useMemo(() => readActions(activeTenant.id).filter((a) => a.status !== 'resolvida').length, [records, activeTenant.id]);
+  const { permission: notifPermission, request: requestNotif, notify: browserNotify } = useBrowserNotifications(turns, activeTenant.id);
+
+  // Kiosk mode
+  const [kioskConfig, setKioskConfig] = useState(null);
+  const [showKioskSetup, setShowKioskSetup] = useState(false);
+
+  // Notify on out-of-range save
+  const handleRecordSaved = useCallback(async () => {
+    await refreshRecords();
+  }, [refreshRecords]);
+
+  // Watch for new out-of-range records and notify
+  useEffect(() => {
+    if (notifPermission !== 'granted' || !records.length) return;
+    const last = records.find(r => r.tenantId === activeTenant.id);
+    if (!last) return;
+    const age = Date.now() - new Date(last.createdAt).getTime();
+    if (age > 30000) return; // only notify if saved < 30s ago
+    const v = Number(last.value), mn = Number(last.min), mx = Number(last.max);
+    if (!isNaN(v) && !isNaN(mn) && !isNaN(mx) && (v < mn || v > mx)) {
+      browserNotify(`🚨 Temperatura fora da faixa — ${activeTenant.name}`, `${last.equipmentInput || last.equipment}: ${v}°C (faixa ${mn}–${mx}°C)`);
+    }
+  }, [records, activeTenant.id, notifPermission, browserNotify]);
 
   if (!session) return <LoginScreen onLogin={handleLogin} />;
+
+  // Kiosk mode — full screen override
+  if (kioskConfig) return <KioskApp config={kioskConfig} onExit={() => setKioskConfig(null)} />;
 
   const sharedProps = { activeTenant, allTenants: visibleTenants, onTenantChange: handleTenantChange };
 
   return (
     <div className="super-shell">
+      {showKioskSetup && (
+        <KioskSetup activeTenant={activeTenant} equipmentCatalog={equipmentCatalog} session={session}
+          onLaunch={(cfg) => { setKioskConfig(cfg); setShowKioskSetup(false); }}
+          onCancel={() => setShowKioskSetup(false)} />
+      )}
       <RailNav {...sharedProps} activeView={activeView} setActiveView={setActiveView}
         session={session} records={records} alertCount={alertCount} actionCount={actionCount} onLogout={handleLogout} />
       <main className="super-main">
-        {activeView === 'overview'   && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={refreshRecords} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} />}
+        {activeView === 'overview'   && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} />}
         {activeView === 'reports'    && <ReportsView allTenants={visibleTenants} records={records} />}
         {activeView === 'forms'      && <FormsView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
+        {activeView === 'pops'       && <POPsView {...sharedProps} session={session} />}
         {activeView === 'training'   && <TrainingView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
         {activeView === 'receiving'  && <RecebimentoView {...sharedProps} session={session} />}
+        {activeView === 'oil'        && <OilControlView {...sharedProps} session={session} />}
+        {activeView === 'thaw'       && <ThawControlView {...sharedProps} session={session} />}
+        {activeView === 'cooling'    && <CoolingControlView {...sharedProps} session={session} />}
+        {activeView === 'thermal'    && <ThermalControlView {...sharedProps} session={session} />}
         {activeView === 'dashboard'  && <DashboardView {...sharedProps} records={records} />}
         {activeView === 'charts'     && <ChartsView {...sharedProps} records={records} />}
         {activeView === 'audit'      && <AuditView allTenants={visibleTenants} records={records} session={session} />}

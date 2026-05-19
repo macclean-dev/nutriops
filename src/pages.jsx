@@ -191,6 +191,7 @@ function LoginScreen({ onLogin }) {
     setError('');
     if (useGlobal) {
       if (pin !== (globalAdmin.pin ?? '9999')) { setError('PIN incorreto.'); return; }
+      // Global admin starts on first tenant
       const session = { tenantId: tenants[0].id, user: { ...globalAdmin } };
       save(SESSION_KEY, session); onLogin(session); return;
     }
@@ -695,13 +696,28 @@ function ChartsView({ activeTenant, allTenants, onTenantChange, records }) {
 
 // ─── Audit View ────────────────────────────────────────────────────────────
 
-function AuditView({ allTenants, records }) {
+function AuditView({ allTenants, records, session }) {
   const repository = useMemo(() => getTemperatureRepository(), []);
   const [tenantFilter, setTenantFilter] = useState('all');
   const [periodFilter, setPeriodFilter] = useState('30');
   const [statusFilter, setStatusFilter] = useState('all');
   const [equipFilter,  setEquipFilter]  = useState('');
   const [searchFilter, setSearchFilter] = useState('');
+  const [rtValidations, setRtValidations] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('nutriops.rt.validations') ?? '[]'); } catch { return []; }
+  });
+  const [signingPeriod, setSigningPeriod] = useState(false);
+  const [rtNote, setRtNote] = useState('');
+
+  const isRT = ['Nutricionista RT','Administrador','Super-admin'].includes(session?.user?.role);
+
+  const saveValidation = (note) => {
+    const v = { id: crypto.randomUUID(), by: session.user.name, role: session.user.role, at: new Date().toISOString(), periodFilter, tenantFilter, recordCount: filtered.length, note: note.trim() };
+    const updated = [v, ...rtValidations];
+    setRtValidations(updated);
+    localStorage.setItem('nutriops.rt.validations', JSON.stringify(updated.slice(0, 50)));
+    setSigningPeriod(false); setRtNote('');
+  };
 
   const filtered = useMemo(() => {
     const now = Date.now(), days = Number(periodFilter);
@@ -736,8 +752,47 @@ function AuditView({ allTenants, records }) {
     <section className="management-page">
       <div className="page-header">
         <div><span className="eyebrow">Conformidade · RDC 216/2004</span><h1>Auditoria</h1><p className="muted">Histórico completo com filtros. Exportação pronta para fiscalização.</p></div>
-        <div className="page-actions"><button className="secondary-action" onClick={exportCSV}>↓ CSV</button><button className="secondary-action" onClick={exportPDF}>↓ PDF</button></div>
+        <div className="page-actions">
+          {isRT && (
+            <button className="secondary-action" style={{ fontSize:12 }} onClick={() => setSigningPeriod(!signingPeriod)}>
+              ✍️ {signingPeriod ? 'Cancelar' : 'Validar período'}
+            </button>
+          )}
+          <button className="secondary-action" onClick={exportCSV}>↓ CSV</button>
+          <button className="secondary-action" onClick={exportPDF}>↓ PDF</button>
+        </div>
       </div>
+
+      {/* RT Validation Panel */}
+      {signingPeriod && isRT && (
+        <article className="management-card" style={{ borderColor:'var(--blue-border)', background:'var(--blue-light)', marginBottom:16 }}>
+          <div className="card-head" style={{ background:'transparent', borderBottomColor:'var(--blue-border)' }}>
+            <div><span className="eyebrow" style={{ color:'var(--blue)' }}>Assinatura RT</span><h2>Validar {filtered.length} registros do período selecionado</h2></div>
+          </div>
+          <div className="capture-fields">
+            <p style={{ fontSize:13, color:'var(--text)' }}>Confirme que os registros do período selecionado foram revisados. Sua assinatura ficará registrada com timestamp.</p>
+            <label>Observação (opcional)<textarea value={rtNote} onChange={(e)=>setRtNote(e.target.value)} placeholder="Observações sobre o período revisado…" style={{ minHeight:54 }} /></label>
+            <div className="actions-row">
+              <button className="secondary-action" onClick={()=>setSigningPeriod(false)}>Cancelar</button>
+              <button className="primary-action attention" onClick={()=>saveValidation(rtNote)} disabled={filtered.length===0}>
+                ✓ Assinar e validar período
+              </button>
+            </div>
+          </div>
+        </article>
+      )}
+
+      {/* Recent RT validations */}
+      {rtValidations.length > 0 && (
+        <div style={{ marginBottom:16, display:'flex', gap:8, flexWrap:'wrap' }}>
+          {rtValidations.slice(0,3).map(v => (
+            <div key={v.id} style={{ padding:'6px 12px', background:'var(--green-light)', border:'1px solid var(--green-border)', borderRadius:8, fontSize:12 }}>
+              <span style={{ color:'var(--green)', fontWeight:700 }}>✓ Validado por {v.by}</span>
+              <span style={{ color:'var(--text-secondary)', marginLeft:8 }}>{new Date(v.at).toLocaleDateString('pt-BR')} · {v.recordCount} registros</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="audit-stats">
         <div className="audit-stat"><span>Registros</span><strong>{stats.total}</strong></div>
         <div className="audit-stat ok"><span>Conformes</span><strong>{stats.ok}</strong></div>
@@ -1472,14 +1527,21 @@ function OfflineIndicator() {
 
 // ─── Settings View ─────────────────────────────────────────────────────────
 
-function SettingsView() {
+function SettingsView({ session }) {
   const cfg = getSupabaseConfig();
   const [url,     setUrl]     = useState(cfg.url ?? '');
   const [anonKey, setAnonKey] = useState(cfg.anonKey ?? '');
   const [enabled, setEnabled] = useState(cfg.enabled ?? false);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState(null); // null | {ok, reason?}
-  const [copied, setCopied]   = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [copied,  setCopied]  = useState(false);
+  const [migrating, setMigrating]     = useState(false);
+  const [migrateResult, setMigrateResult] = useState(null);
+  // PIN change
+  const [currentPin, setCurrentPin] = useState('');
+  const [newPin,     setNewPin]     = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [pinMsg,     setPinMsg]     = useState(null);
 
   const handleSave = () => {
     saveSupabaseConfig({ url: url.trim(), anonKey: anonKey.trim(), enabled });
@@ -1490,17 +1552,16 @@ function SettingsView() {
     setTesting(true); setTestResult(null);
     saveSupabaseConfig({ url: url.trim(), anonKey: anonKey.trim(), enabled: true });
     const result = await supabaseRepository.testConnection();
-    setTestResult(result);
-    setTesting(false);
+    setTestResult(result); setTesting(false);
   };
 
   const testMessage = () => {
     if (!testResult) return null;
-    if (testResult.ok) return { tone: 'ok', text: '✓ Conexão estabelecida! Tabela encontrada.' };
-    if (testResult.reason === 'table_missing') return { tone: 'warn', text: '⚠ Supabase conectado, mas a tabela não existe. Copie o SQL abaixo e execute no Supabase (SQL Editor → New query).' };
-    if (testResult.reason === 'auth_error')    return { tone: 'danger', text: '✕ Chave inválida. Verifique o Anon Key.' };
-    if (testResult.reason === 'network_error') return { tone: 'danger', text: '✕ Não foi possível conectar. Verifique a URL do projeto.' };
-    return { tone: 'danger', text: `✕ Erro inesperado (${testResult.reason}).` };
+    if (testResult.ok) return { tone:'ok', text:'✓ Conexão estabelecida! Tabela encontrada.' };
+    if (testResult.reason==='table_missing') return { tone:'warn', text:'⚠ Supabase conectado, mas a tabela não existe. Copie e execute o SQL abaixo.' };
+    if (testResult.reason==='auth_error')    return { tone:'danger', text:'✕ Chave inválida. Verifique o Anon Key.' };
+    if (testResult.reason==='network_error') return { tone:'danger', text:'✕ Não foi possível conectar. Verifique a URL.' };
+    return { tone:'danger', text:`✕ Erro (${testResult.reason}).` };
   };
   const msg = testMessage();
   const tableMissing = testResult?.reason === 'table_missing';
@@ -1509,53 +1570,118 @@ function SettingsView() {
     navigator.clipboard.writeText(SUPABASE_SQL).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   };
 
+  // ── Migrate localStorage → Supabase ──
+  const handleMigrate = async () => {
+    if (!isSupabaseEnabled()) { setMigrateResult({ tone:'warn', text:'Habilite o Supabase primeiro.' }); return; }
+    const raw = localStorage.getItem('nutriops.temperature.records');
+    const records = raw ? JSON.parse(raw) : [];
+    if (records.length === 0) { setMigrateResult({ tone:'warn', text:'Nenhum registro encontrado no localStorage.' }); return; }
+    setMigrating(true); setMigrateResult(null);
+    let ok = 0, fail = 0;
+    for (const r of records) {
+      try { await supabaseRepository.create(r); ok++; } catch { fail++; }
+    }
+    setMigrating(false);
+    setMigrateResult({ tone: fail===0?'ok':'warn', text:`${ok} registro${ok!==1?'s':''} migrado${ok!==1?'s':''}${fail>0?` · ${fail} falha(s)`:''}. ✓` });
+  };
+
+  // ── Change own PIN ──
+  const handleChangePin = () => {
+    setPinMsg(null);
+    if (!session?.user) return;
+    if (newPin.length < 4) { setPinMsg({ tone:'danger', text:'PIN deve ter no mínimo 4 dígitos.' }); return; }
+    if (newPin !== confirmPin) { setPinMsg({ tone:'danger', text:'Os PINs não coincidem.' }); return; }
+    // Find user in their tenant's storage
+    const tenantId = session.tenantId;
+    const usersKey = `nutriops.users.${tenantId}`;
+    const users = JSON.parse(localStorage.getItem(usersKey) ?? 'null') ??
+      (tenants.find(t=>t.id===tenantId)?.usersList ?? []);
+    const expectedPin = (users.find(u=>u.name===session.user.name)?.pin ?? '0000');
+    if (currentPin !== expectedPin) { setPinMsg({ tone:'danger', text:'PIN atual incorreto.' }); return; }
+    const updated = users.map(u => u.name===session.user.name ? { ...u, pin: newPin } : u);
+    localStorage.setItem(usersKey, JSON.stringify(updated));
+    setCurrentPin(''); setNewPin(''); setConfirmPin('');
+    setPinMsg({ tone:'ok', text:'✓ PIN alterado com sucesso!' });
+  };
+
   return (
     <section className="management-page">
-      <div className="page-header"><div><span className="eyebrow">Infraestrutura</span><h1>Configurações</h1><p className="muted">Conecte ao Supabase para ter dados persistentes e multi-dispositivo.</p></div></div>
+      <div className="page-header"><div><span className="eyebrow">Infraestrutura</span><h1>Configurações</h1><p className="muted">Supabase, migração de dados e segurança de acesso.</p></div></div>
 
       <div className="management-grid">
-        {/* Supabase config */}
+        {/* Supabase */}
         <article className="management-card">
           <div className="card-head"><div><span className="eyebrow">Backend</span><h2>Supabase</h2></div>
-            <span className={`badge ${isSupabaseEnabled() ? 'ok' : 'neutral'}`}>{isSupabaseEnabled() ? 'Conectado' : 'Modo local'}</span>
+            <span className={`badge ${isSupabaseEnabled()?'ok':'neutral'}`}>{isSupabaseEnabled()?'Conectado':'Modo local'}</span>
           </div>
           <div className="capture-fields">
-            <label>Project URL<input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://xxxx.supabase.co" /></label>
-            <label>Anon Key<textarea value={anonKey} onChange={(e) => setAnonKey(e.target.value)} placeholder="eyJ…" style={{ minHeight: 72, fontFamily: 'var(--mono)', fontSize: 12 }} /></label>
-            <label style={{ flexDirection: 'row', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-              <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} style={{ width: 'auto', cursor: 'pointer' }} />
-              <span style={{ color: 'var(--text)', fontWeight: 600 }}>Usar Supabase como banco de dados</span>
+            <label>Project URL<input value={url} onChange={(e)=>setUrl(e.target.value)} placeholder="https://xxxx.supabase.co" /></label>
+            <label>Anon Key<textarea value={anonKey} onChange={(e)=>setAnonKey(e.target.value)} placeholder="eyJ…" style={{ minHeight:72, fontFamily:'var(--mono)', fontSize:12 }} /></label>
+            <label style={{ flexDirection:'row', alignItems:'center', gap:10, cursor:'pointer' }}>
+              <input type="checkbox" checked={enabled} onChange={(e)=>setEnabled(e.target.checked)} />
+              <span style={{ color:'var(--text)', fontWeight:600 }}>Usar Supabase como banco de dados</span>
             </label>
             <div className="actions-row">
-              <button className="secondary-action" onClick={handleTest} disabled={testing || !url || !anonKey}>{testing ? 'Testando…' : 'Testar conexão'}</button>
+              <button className="secondary-action" onClick={handleTest} disabled={testing||!url||!anonKey}>{testing?'Testando…':'Testar conexão'}</button>
               <button className="primary-action" onClick={handleSave}>Salvar configurações</button>
             </div>
             {msg && <div className={`submission ${msg.tone}`}>{msg.text}</div>}
           </div>
         </article>
 
-        {/* SQL schema */}
-        <article className="management-card" style={tableMissing ? { borderColor: 'var(--amber-border)', boxShadow: '0 0 0 3px rgba(154,103,0,.1)' } : {}}>
+        {/* SQL */}
+        <article className="management-card" style={tableMissing?{borderColor:'var(--amber-border)',boxShadow:'0 0 0 3px rgba(154,103,0,.1)'}:{}}>
           <div className="card-head">
-            <div>
-              <span className="eyebrow">SQL</span>
-              <h2>Schema do banco de dados</h2>
-              {tableMissing && <p style={{ fontSize: 12, color: 'var(--amber)', fontWeight: 600, marginTop: 4 }}>👆 Execute este SQL no Supabase para criar a tabela</p>}
+            <div><span className="eyebrow">SQL</span><h2>Schema do banco de dados</h2>
+              {tableMissing && <p style={{ fontSize:12, color:'var(--amber)', fontWeight:600, marginTop:4 }}>👆 Execute este SQL no Supabase</p>}
             </div>
-            <button className="secondary-action" style={{ fontSize: 12 }} onClick={copySql}>{copied ? '✓ Copiado!' : 'Copiar SQL'}</button>
+            <button className="secondary-action" style={{ fontSize:12 }} onClick={copySql}>{copied?'✓ Copiado!':'Copiar SQL'}</button>
           </div>
-          <div style={{ padding: '12px 16px' }}>
-            <p className="muted" style={{ marginBottom: 12 }}>Cole este SQL no editor do Supabase (SQL Editor → New query) para criar a tabela e os índices.</p>
-            <pre style={{ fontFamily: 'var(--mono)', fontSize: 11, background: 'var(--rail-bg)', color: '#e6edf3', padding: 16, borderRadius: 'var(--r)', overflow: 'auto', lineHeight: 1.6, maxHeight: 320 }}>{SUPABASE_SQL}</pre>
+          <div style={{ padding:'12px 16px' }}>
+            <p className="muted" style={{ marginBottom:12 }}>Cole no Supabase → SQL Editor → New query → Run.</p>
+            <pre style={{ fontFamily:'var(--mono)', fontSize:11, background:'var(--rail-bg)', color:'#e6edf3', padding:16, borderRadius:'var(--r)', overflow:'auto', lineHeight:1.6, maxHeight:280 }}>{SUPABASE_SQL}</pre>
           </div>
         </article>
       </div>
 
-      {/* Storage info */}
-      <article className="management-card">
-        <div className="card-head"><div><span className="eyebrow">Dados locais</span><h2>localStorage</h2></div></div>
-        <div style={{ padding: '16px 20px' }}>
-          <p className="muted">Todos os dados estão sendo armazenados no navegador deste dispositivo. Ao habilitar o Supabase, novos registros serão gravados no banco de dados em nuvem. Os dados existentes no localStorage não são migrados automaticamente.</p>
+      {/* Migration */}
+      <article className="management-card" style={{ marginTop:16 }}>
+        <div className="card-head">
+          <div><span className="eyebrow">Migração</span><h2>Transferir dados locais para o Supabase</h2></div>
+          <span className="badge neutral">{(() => { try { return JSON.parse(localStorage.getItem('nutriops.temperature.records')||'[]').length; } catch { return 0; } })()} registros locais</span>
+        </div>
+        <div style={{ padding:'14px 20px', display:'flex', flexDirection:'column', gap:12 }}>
+          <p className="muted">Envia todos os registros de temperatura do localStorage para o Supabase. Só funciona com o Supabase habilitado. Registros existentes no Supabase podem ser duplicados — execute apenas uma vez.</p>
+          <div className="actions-row">
+            <button className="primary-action" onClick={handleMigrate} disabled={migrating||!isSupabaseEnabled()}>
+              {migrating ? '⏳ Migrando…' : '↑ Migrar registros locais para Supabase'}
+            </button>
+          </div>
+          {migrateResult && <div className={`submission ${migrateResult.tone}`}>{migrateResult.text}</div>}
+        </div>
+      </article>
+
+      {/* Change PIN */}
+      <article className="management-card" style={{ marginTop:16 }}>
+        <div className="card-head"><div><span className="eyebrow">Segurança</span><h2>Alterar meu PIN</h2></div>
+          <span className="badge neutral">{session?.user?.name}</span>
+        </div>
+        <div className="capture-fields" style={{ maxWidth:360 }}>
+          <label>PIN atual
+            <input type="password" inputMode="numeric" maxLength={6} value={currentPin} onChange={(e)=>setCurrentPin(e.target.value.replace(/\D/g,''))}
+              placeholder="••••" style={{ letterSpacing:'0.3em', fontFamily:'var(--mono)', fontSize:18, textAlign:'center' }} />
+          </label>
+          <label>Novo PIN (4–6 dígitos)
+            <input type="password" inputMode="numeric" maxLength={6} value={newPin} onChange={(e)=>setNewPin(e.target.value.replace(/\D/g,''))}
+              placeholder="••••" style={{ letterSpacing:'0.3em', fontFamily:'var(--mono)', fontSize:18, textAlign:'center' }} />
+          </label>
+          <label>Confirmar novo PIN
+            <input type="password" inputMode="numeric" maxLength={6} value={confirmPin} onChange={(e)=>setConfirmPin(e.target.value.replace(/\D/g,''))}
+              placeholder="••••" style={{ letterSpacing:'0.3em', fontFamily:'var(--mono)', fontSize:18, textAlign:'center' }}
+              onKeyDown={(e)=>{ if(e.key==='Enter') handleChangePin(); }} />
+          </label>
+          <button className="primary-action" onClick={handleChangePin} disabled={!currentPin||!newPin||!confirmPin}>Alterar PIN</button>
+          {pinMsg && <div className={`submission ${pinMsg.tone}`}>{pinMsg.text}</div>}
         </div>
       </article>
     </section>
@@ -1580,6 +1706,11 @@ export function App() {
   const perms        = getPermissions(session?.user?.role);
   const activeTenant = useMemo(() => tenants.find((t) => t.id === activeTenantId) ?? tenants[0], [activeTenantId]);
 
+  // Non-multiTenant users only see their own company
+  const visibleTenants = useMemo(() =>
+    perms.multiTenant ? tenants : tenants.filter((t) => t.id === session?.tenantId),
+  [perms.multiTenant, session?.tenantId]);
+
   // Non-multiTenant users are locked to their company
   const handleTenantChange = useCallback((id) => {
     if (!perms.multiTenant) return;
@@ -1602,7 +1733,7 @@ export function App() {
 
   if (!session) return <LoginScreen onLogin={handleLogin} />;
 
-  const sharedProps = { activeTenant, allTenants: tenants, onTenantChange: handleTenantChange };
+  const sharedProps = { activeTenant, allTenants: visibleTenants, onTenantChange: handleTenantChange };
 
   return (
     <div className="super-shell">
@@ -1610,19 +1741,19 @@ export function App() {
         session={session} records={records} alertCount={alertCount} actionCount={actionCount} onLogout={handleLogout} />
       <main className="super-main">
         {activeView === 'overview'   && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={refreshRecords} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} />}
-        {activeView === 'reports'    && <ReportsView allTenants={tenants} records={records} />}
-        {activeView === 'forms'      && <FormsView activeTenant={activeTenant} allTenants={tenants} onTenantChange={handleTenantChange} session={session} />}
-        {activeView === 'training'   && <TrainingView activeTenant={activeTenant} allTenants={tenants} onTenantChange={handleTenantChange} session={session} />}
+        {activeView === 'reports'    && <ReportsView allTenants={visibleTenants} records={records} />}
+        {activeView === 'forms'      && <FormsView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
+        {activeView === 'training'   && <TrainingView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
         {activeView === 'receiving'  && <RecebimentoView {...sharedProps} session={session} />}
         {activeView === 'dashboard'  && <DashboardView {...sharedProps} records={records} />}
         {activeView === 'charts'     && <ChartsView {...sharedProps} records={records} />}
-        {activeView === 'audit'      && <AuditView allTenants={tenants} records={records} />}
+        {activeView === 'audit'      && <AuditView allTenants={visibleTenants} records={records} session={session} />}
         {activeView === 'alerts'     && <AlertsView {...sharedProps} records={records} />}
         {activeView === 'actions'    && <CorrectiveActionsView {...sharedProps} records={records} />}
         {activeView === 'turns'      && <TurnsView {...sharedProps} records={records} />}
         {activeView === 'users'      && <UsersView {...sharedProps} />}
         {activeView === 'equipment'  && <EquipmentView {...sharedProps} />}
-        {activeView === 'settings'   && <SettingsView />}
+        {activeView === 'settings'   && <SettingsView session={session} />}
       </main>
       <OfflineIndicator />
     </div>

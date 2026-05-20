@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { saveCompanyProfile } from './pages';
+import { sendWelcomeEmail, sendAdminNotification } from './email';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -63,7 +64,7 @@ function StepBar({ step, total }) {
 // ONBOARDING WIZARD
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function OnboardingWizard({ onComplete }) {
+export function OnboardingWizard({ onComplete, onHaveAccount }) {
   // Pre-fill company name from access token if available
   const tokenClientName = localStorage.getItem('nutriops.access.clientName') ?? '';
 
@@ -88,6 +89,7 @@ export function OnboardingWizard({ onComplete }) {
 
   // Admin user
   const [adminName, setAdminName]       = useState('');
+  const [adminEmail, setAdminEmail]     = useState('');
   const [adminPin, setAdminPin]         = useState('');
   const [adminPin2, setAdminPin2]       = useState('');
   const [pinError, setPinError]         = useState('');
@@ -160,6 +162,25 @@ export function OnboardingWizard({ onComplete }) {
 
     // Persist tenant list
     writeOnboardingTenants([newTenant]);
+
+    const email = adminEmail.trim();
+
+    // Send emails (non-blocking)
+    const accessUrl = `https://nutriops.uniwares.net?token=${newTenant.id}`;
+    sendWelcomeEmail({
+      companyName:  companyName.trim(),
+      contactEmail: email,
+      accessUrl,
+      plan: 'Trial — 14 dias',
+    }).catch(() => {});
+
+    sendAdminNotification({
+      companyName:  companyName.trim(),
+      contactEmail: email,
+      plan: 'Trial',
+      accessToken:  newTenant.id,
+    }).catch(() => {});
+
     onComplete([newTenant]);
   };
 
@@ -168,7 +189,7 @@ export function OnboardingWizard({ onComplete }) {
     true, // legal data optional
     equipments.length > 0,
     rtNome.trim().length >= 2,
-    adminName.trim().length >= 2 && adminPin.length >= 4,
+    adminName.trim().length >= 2 && adminPin.length >= 4 && adminEmail.includes('@'),
   ][step];
 
   return (
@@ -312,6 +333,10 @@ export function OnboardingWizard({ onComplete }) {
                 <input value={adminName} onChange={e=>setAdminName(e.target.value)} placeholder="Nome completo" autoFocus />
               </label>
               <label style={{ display:'flex', flexDirection:'column', gap:5, fontSize:12, fontWeight:600, color:'var(--text-secondary)' }}>
+                Seu e-mail
+                <input type="email" value={adminEmail} onChange={e=>setAdminEmail(e.target.value)} placeholder="seu@email.com.br" />
+              </label>
+              <label style={{ display:'flex', flexDirection:'column', gap:5, fontSize:12, fontWeight:600, color:'var(--text-secondary)' }}>
                 PIN de acesso (4-6 dígitos)
                 <input type="password" inputMode="numeric" maxLength={6} value={adminPin}
                   onChange={e=>setAdminPin(e.target.value.replace(/\D/g,''))}
@@ -326,7 +351,7 @@ export function OnboardingWizard({ onComplete }) {
               </label>
               {pinError && <div style={{ padding:'8px 12px', background:'var(--red-light)', border:'1px solid var(--red-border)', borderRadius:8, color:'var(--red)', fontSize:13, fontWeight:600 }}>{pinError}</div>}
               <div style={{ padding:'12px 14px', background:'var(--green-light)', border:'1px solid var(--green-border)', borderRadius:10, fontSize:13, color:'var(--green)' }}>
-                🎉 Quase lá! Após criar a conta você poderá adicionar colaboradores em <strong>Usuários</strong>.
+                🎉 Quase lá! Você receberá um e-mail de boas-vindas com seu link de acesso.
               </div>
             </div>
           </div>
@@ -352,6 +377,15 @@ export function OnboardingWizard({ onComplete }) {
             {step < TOTAL_STEPS-1 ? 'Continuar →' : '🚀 Criar minha conta'}
           </button>
         </div>
+
+        {onHaveAccount && (
+          <div style={{ marginTop:16, textAlign:'center' }}>
+            <button onClick={onHaveAccount}
+              style={{ background:'none', border:'none', fontSize:12, color:'var(--text-secondary)', cursor:'pointer', textDecoration:'underline', fontFamily:'var(--font)' }}>
+              Já tenho uma conta → Fazer login
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

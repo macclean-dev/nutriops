@@ -2230,16 +2230,21 @@ export function App() {
   const handleLogout = useCallback(() => { localStorage.removeItem(SESSION_KEY); setSession(null); }, []);
 
   // Show onboarding wizard for genuinely new users (no session, no onboarding data, not on demo)
-  // Show onboarding for brand new users (no session, no saved tenant data)
-  // Existing clients (Swiss/Bäckerei/DBK with data.js) skip onboarding via readSession()
-  const isNewUser = !session && !readOnboardingTenants();
+  // Show onboarding only when accessed via token (new client link)
+  // or when explicitly requested via ?onboarding=1
+  const hasToken        = Boolean(localStorage.getItem('nutriops.access.token'));
+  const wantsOnboarding = window.location.search.includes('onboarding=1');
+  const isNewUser       = !session && !readOnboardingTenants() && (hasToken || wantsOnboarding);
 
   const handleOnboardingComplete = (newTenants) => {
     setActiveTenants(newTenants);
     writeOnboardingTenants(newTenants);
   };
 
-  if (isNewUser) return <OnboardingWizard onComplete={handleOnboardingComplete} />;
+  if (isNewUser) return <OnboardingWizard onComplete={handleOnboardingComplete} onHaveAccount={() => {
+    localStorage.removeItem('nutriops.access.token');
+    window.location.href = '/';
+  }} />;
 
   const perms = getPermissions(session?.user?.role);
 

@@ -64,10 +64,11 @@ function StepBar({ step, total }) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function OnboardingWizard({ onComplete }) {
-  const [step, setStep] = useState(0);
+  // Pre-fill company name from access token if available
+  const tokenClientName = localStorage.getItem('nutriops.access.clientName') ?? '';
 
-  // Company info
-  const [companyName, setCompanyName]   = useState('');
+  const [step, setStep] = useState(0);
+  const [companyName, setCompanyName]   = useState(tokenClientName);
   const [segment, setSegment]           = useState('');
   const [brandColor, setBrandColor]     = useState(BRAND_COLORS[0]);
 

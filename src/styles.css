@@ -1085,3 +1085,143 @@ label {
 @media (max-width: 768px) {
   input, textarea, select { font-size: 16px !important; }
 }
+
+/* ============================================================
+   DARK MODE — NutriOPS v1.6.0
+   ============================================================ */
+
+[data-theme="dark"] {
+  --bg:            #0d1117;
+  --surface:       #161b22;
+  --surface-muted: #1c2128;
+  --border:        rgba(240,246,252,.1);
+  --border-subtle: rgba(240,246,252,.06);
+
+  --text:           #e6edf3;
+  --text-secondary: #8b949e;
+  --text-placeholder: #6e7681;
+
+  --blue:          #1f6feb;
+  --blue-light:    rgba(31,111,235,.15);
+  --blue-border:   rgba(31,111,235,.4);
+  --blue-emphasis: #58a6ff;
+
+  --green:         #2da44e;
+  --green-light:   rgba(45,164,78,.12);
+  --green-border:  rgba(45,164,78,.4);
+
+  --amber:         #d29922;
+  --amber-light:   rgba(210,153,34,.12);
+  --amber-border:  rgba(210,153,34,.4);
+
+  --red:           #f85149;
+  --red-light:     rgba(248,81,73,.12);
+  --red-border:    rgba(248,81,73,.4);
+
+  --shadow:    0 3px 6px rgba(0,0,0,.4);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,.5);
+}
+
+/* Dark mode overrides for specific components */
+[data-theme="dark"] body { background: var(--bg); }
+
+[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+[data-theme="dark"] textarea,
+[data-theme="dark"] select {
+  background: var(--surface-muted);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .login-card,
+[data-theme="dark"] .management-card,
+[data-theme="dark"] .capture-card,
+[data-theme="dark"] .chart-card,
+[data-theme="dark"] .form-card,
+[data-theme="dark"] .dash-card,
+[data-theme="dark"] .feature-card,
+[data-theme="dark"] .audit-table-wrap,
+[data-theme="dark"] .testimonial-card {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .primary-action {
+  background: linear-gradient(135deg,#1f6feb,#388bfd);
+}
+[data-theme="dark"] .secondary-action {
+  background: var(--surface-muted);
+  color: var(--text);
+  border-color: var(--border);
+}
+[data-theme="dark"] .secondary-action:hover {
+  background: var(--surface);
+}
+[data-theme="dark"] .ghost-action:hover {
+  background: var(--surface-muted);
+}
+
+[data-theme="dark"] .audit-stat,
+[data-theme="dark"] .info-box {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .audit-filters {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .table th {
+  background: var(--surface-muted);
+}
+
+[data-theme="dark"] .table tr:hover td {
+  background: var(--surface-muted);
+}
+
+[data-theme="dark"] .company-card,
+[data-theme="dark"] .plan-card {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .capture-topline {
+  background: var(--surface-muted);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .history-item:hover,
+[data-theme="dark"] .equipment-maintenance-row:hover,
+[data-theme="dark"] .record-item:hover {
+  background: var(--surface-muted);
+}
+
+[data-theme="dark"] .quick-chip {
+  background: var(--surface);
+  border-color: var(--border);
+}
+[data-theme="dark"] .quick-chip strong { color: var(--text); }
+
+[data-theme="dark"] .page-header { border-color: var(--border); }
+
+[data-theme="dark"] .toc,
+[data-theme="dark"] .section-header { background: var(--surface); border-color: var(--border); }
+
+[data-theme="dark"] .badge.neutral { background: var(--surface-muted); border-color: var(--border); color: var(--text-secondary); }
+
+/* Dark mode toggle button */
+.dark-mode-toggle {
+  width: 32px; height: 32px;
+  border: 1px solid var(--rail-border);
+  border-radius: 8px;
+  background: rgba(255,255,255,.06);
+  color: var(--rail-muted);
+  cursor: pointer;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--t);
+}
+.dark-mode-toggle:hover { background: rgba(255,255,255,.12); color: var(--rail-text); }

@@ -804,7 +804,7 @@ function DashboardView({ allTenants, records, activeTenant, onTenantChange }) {
 
       {/* Per-company cards */}
       <div className="dashboard-grid">
-        {stats.map(({ tenant, total, ok, warn, danger, compliance, today, equipStats, trend }) => (
+        {stats.map(({ tenant, total, ok, warn, danger, compliance, today, equipStats, trend, trainingAlertCount, storeStats }) => (
           <article key={tenant.id} className={`dash-card ${activeTenant.id === tenant.id ? 'active' : ''}`}
             style={{ borderTopColor: tenant.brandColor }} onClick={() => onTenantChange(tenant.id)}>
             <div className="dash-card-head">

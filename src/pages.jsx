@@ -2230,7 +2230,9 @@ export function App() {
   const handleLogout = useCallback(() => { localStorage.removeItem(SESSION_KEY); setSession(null); }, []);
 
   // Show onboarding wizard for genuinely new users (no session, no onboarding data, not on demo)
-  const isNewUser = !session && !readOnboardingTenants() && !IS_DEMO;
+  // Show onboarding for brand new users (no session, no saved tenant data)
+  // Existing clients (Swiss/Bäckerei/DBK with data.js) skip onboarding via readSession()
+  const isNewUser = !session && !readOnboardingTenants();
 
   const handleOnboardingComplete = (newTenants) => {
     setActiveTenants(newTenants);

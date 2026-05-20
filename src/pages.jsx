@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { tenants, globalAdmin } from './data';
+import { tenants as defaultTenants, globalAdmin } from './data';
+import { OnboardingWizard, readOnboardingTenants, writeOnboardingTenants } from './onboarding';
 import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus } from './repository';
 import { FormsView } from './forms';
 import { TrainingView } from './training';
@@ -10,7 +11,10 @@ import { KioskApp, KioskSetup, FormKioskApp } from './kiosk';
 import { RTPanelView, ProfileView, GlobalSearch, HandwashView, MonthlyExportView, SessionHistoryView, logSession } from './extras';
 import { ValidityStockView } from './validity';
 
-// ─── Versão ────────────────────────────────────────────────────────────────
+// ─── Tenant resolution ─────────────────────────────────────────────────────
+// Use onboarded tenants if available, otherwise fall back to built-in tenants
+const tenants = readOnboardingTenants() ?? defaultTenants;
+const IS_DEMO  = !readOnboardingTenants(); // true when using default data
 export const APP_VERSION = '1.6.0';
 export const APP_BUILD   = '2026.05.19';
 
@@ -1991,7 +1995,7 @@ function SettingsView({ session, activeTenant }) {
     if (!isSupabaseEnabled()) { setMigrateResult({ tone:'warn', text:'Habilite o Supabase primeiro.' }); return; }
     setMigrating(true); setMigrateResult(null);
     try {
-      const result = await migrateAllToSupabase(tenants);
+      const result = await migrateAllToSupabase(activeTenants);
       setMigrateResult({ tone: result.failed===0?'ok':'warn', text:`✓ ${result.pushed} registros migrados${result.failed>0?` · ${result.failed} falha(s)`:''}. Todos os módulos sincronizados.` });
     } catch (e) {
       setMigrateResult({ tone:'danger', text:`Erro na migração: ${e.message}` });
@@ -2158,12 +2162,24 @@ function SettingsView({ session, activeTenant }) {
 
 export function App() {
   const repository = useMemo(() => getTemperatureRepository(), []);
-  const [session, setSession]   = useState(() => readSession());
+  const [session, setSession]         = useState(() => readSession());
+  const [activeTenants, setActiveTenants] = useState(() => readOnboardingTenants() ?? defaultTenants);
+
   const handleLogin = useCallback((s) => {
     setSession(s);
     logSession(s.tenantId, s.user);
   }, []);
   const handleLogout = useCallback(() => { localStorage.removeItem(SESSION_KEY); setSession(null); }, []);
+
+  // Show onboarding wizard for genuinely new users (no session, no onboarding data, not on demo)
+  const isNewUser = !session && !readOnboardingTenants() && !IS_DEMO;
+
+  const handleOnboardingComplete = (newTenants) => {
+    setActiveTenants(newTenants);
+    writeOnboardingTenants(newTenants);
+  };
+
+  if (isNewUser) return <OnboardingWizard onComplete={handleOnboardingComplete} />;
 
   const perms = getPermissions(session?.user?.role);
 
@@ -2174,9 +2190,9 @@ export function App() {
 
   // Always derive activeTenant from tenants list
   const activeTenant = useMemo(() => {
-    const found = tenants.find((t) => t.id === activeTenantId);
+    const found = activeTenants.find((t) => t.id === activeTenantId);
     if (found) return found;
-    return tenants.find((t) => t.id === session?.tenantId) ?? tenants[0];
+    return activeTenants.find((t) => t.id === session?.tenantId) ?? activeTenants[0];
   }, [activeTenantId, session?.tenantId]);
 
   // Active store object
@@ -2195,14 +2211,14 @@ export function App() {
 
   const visibleTenants = useMemo(() => {
     if (perms.multiTenant) return tenants;
-    const own = tenants.filter((t) => t.id === session?.tenantId);
+    const own = activeTenants.filter((t) => t.id === session?.tenantId);
     return own.length > 0 ? own : [activeTenant];
   }, [perms.multiTenant, session?.tenantId, activeTenant]);
 
   const handleTenantChange = useCallback((id) => {
     if (!perms.multiTenant) return;
     setActiveTenantId(id);
-    const t = tenants.find(x => x.id === id);
+    const t = activeTenants.find(x => x.id === id);
     setActiveStoreId(t?.stores?.[0]?.id ?? null);
   }, [perms.multiTenant]);
 

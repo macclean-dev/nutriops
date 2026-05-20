@@ -3,6 +3,8 @@ import { tenants as defaultTenants, globalAdmin } from './data';
 import { OnboardingWizard, readOnboardingTenants, writeOnboardingTenants } from './onboarding';
 import { signIn, signOut, signUp, resetPassword, readAuthSession, isSessionValid, refreshSession } from './auth';
 import { AdminPanel, AdminLogin, readAdminAuth, writeAdminAuth, clearAdminAuth, readClients } from './admin';
+import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
+import { trackUsage } from './repository';
 import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus } from './repository';
 import { FormsView } from './forms';
 import { TrainingView } from './training';
@@ -785,7 +787,7 @@ function RecentHistory({ activeTenant, records }) {
 
 // ─── Overview ──────────────────────────────────────────────────────────────
 
-function OverviewView({ activeTenant, allTenants, onTenantChange, session, equipmentCatalog, records, onRecordSaved, alerts, notifPermission, onRequestNotif, onLaunchKiosk }) {
+function OverviewView({ activeTenant, allTenants, onTenantChange, session, equipmentCatalog, records, onRecordSaved, alerts, notifPermission, onRequestNotif, onLaunchKiosk, trialStatus }) {
   // Training expiry alerts
   const trainingAlerts = useMemo(() => {
     try {
@@ -811,6 +813,9 @@ function OverviewView({ activeTenant, allTenants, onTenantChange, session, equip
 
   return (
     <>
+      {/* Trial / billing banners */}
+      <TrialBanner status={trialStatus} />
+
       {/* Notification permission banner */}
       {notifPermission === 'default' && (
         <div className="alert-banner" style={{ background:'var(--blue-light)', borderColor:'var(--blue-border)', marginBottom:16 }}>
@@ -2355,7 +2360,25 @@ export function App() {
     }
   }
 
+  // Trial / access status check
+  const trialStatus = useMemo(() => checkTrialStatus(), [session]);
+
+  // Track usage on login
+  useEffect(() => {
+    if (session?.tenantId) trackUsage(session.tenantId, 'session');
+  }, [session?.tenantId]);
+
+  // Track view changes
+  useEffect(() => {
+    if (session?.tenantId && activeView) trackUsage(session.tenantId, activeView);
+  }, [activeView, session?.tenantId]);
+
   if (!session) return <LoginScreen onLogin={handleLogin} activeTenants={activeTenants} />;
+
+  // Trial expired — show paywall
+  if (!trialStatus.ok && trialStatus.reason === 'trial_expired') {
+    return <TrialExpiredScreen client={trialStatus.client} />;
+  }
 
   // Kiosk mode — full screen override
   if (kioskConfig) return <KioskApp config={kioskConfig} onExit={() => setKioskConfig(null)} />;
@@ -2401,7 +2424,7 @@ export function App() {
         onLogout={handleLogout} onSearch={() => setShowSearch(true)}
         onStoreChange={handleStoreChange} activeStore={activeStore} />
       <main className="super-main">
-        {activeView === 'overview'   && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} />}
+        {activeView === 'overview'   && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} trialStatus={trialStatus} />}
         {activeView === 'reports'    && <ReportsView allTenants={visibleTenants} records={records} />}
         {activeView === 'monthly'    && <MonthlyExportView allTenants={visibleTenants} records={records} session={session} />}
         {activeView === 'forms'      && <FormsView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}

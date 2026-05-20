@@ -533,3 +533,35 @@ create table if not exists special_controls (
 );
 create index if not exists idx_special_tenant on special_controls(tenant_id);
 create index if not exists idx_special_type   on special_controls(control_type);`;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// USAGE TRACKING
+// ═══════════════════════════════════════════════════════════════════════════
+
+const USAGE_KEY = 'nutriops.usage.stats';
+
+export function trackUsage(tenantId, action) {
+  try {
+    const stats = JSON.parse(localStorage.getItem(USAGE_KEY) ?? '{}');
+    const today = new Date().toISOString().slice(0, 10);
+    if (!stats[tenantId]) stats[tenantId] = { actions: {}, lastSeen: null, totalDays: 0, firstSeen: today };
+    if (!stats[tenantId].actions[today]) {
+      stats[tenantId].actions[today] = {};
+      stats[tenantId].totalDays = (stats[tenantId].totalDays || 0) + 1;
+    }
+    stats[tenantId].actions[today][action] = (stats[tenantId].actions[today][action] || 0) + 1;
+    stats[tenantId].lastSeen = new Date().toISOString();
+    localStorage.setItem(USAGE_KEY, JSON.stringify(stats));
+  } catch { /* silent */ }
+}
+
+export function getUsageStats(tenantId) {
+  try {
+    const stats = JSON.parse(localStorage.getItem(USAGE_KEY) ?? '{}');
+    return stats[tenantId] ?? null;
+  } catch { return null; }
+}
+
+export function getAllUsageStats() {
+  try { return JSON.parse(localStorage.getItem(USAGE_KEY) ?? '{}'); } catch { return {}; }
+}

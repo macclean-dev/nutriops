@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { getAllUsageStats } from './repository';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -248,11 +249,12 @@ function AccessTokenModal({ client, onClose }) {
 
 export function AdminPanel({ onExit }) {
   const [clients, setClients]         = useState(() => readClients());
-  const [modal, setModal]             = useState(null); // null | 'new' | { client }
+  const [modal, setModal]             = useState(null);
   const [tokenModal, setTokenModal]   = useState(null);
   const [search, setSearch]           = useState('');
   const [filter, setFilter]           = useState('all');
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const usageStats = useMemo(() => getAllUsageStats(), []);
 
   useEffect(() => { writeClients(clients); }, [clients]);
 
@@ -351,7 +353,7 @@ export function AdminPanel({ onExit }) {
             <table style={{ width:'100%', borderCollapse:'collapse', fontSize:14 }}>
               <thead>
                 <tr style={{ background:'#f6f8fa', borderBottom:'1px solid #d0d7de' }}>
-                  {['Cliente','Plano','Status','Faturamento','Criado em',''].map(h => (
+                  {['Cliente','Plano','Status','Faturamento','Uso',''].map(h => (
                     <th key={h} style={{ padding:'10px 16px', textAlign:'left', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'#656d76', whiteSpace:'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -388,7 +390,25 @@ export function AdminPanel({ onExit }) {
                             ? `Vence dia ${client.billingDay}`
                             : <span style={{ color:'#cf222e', fontWeight:600 }}>Pagamento {client.billingStatus==='overdue'?'atrasado':'pendente'}</span>}
                       </td>
-                      <td style={{ padding:'12px 16px', fontSize:12, color:'#656d76' }}>{fmtDate(client.createdAt)}</td>
+                      <td style={{ padding:'12px 16px', fontSize:12, color:'#656d76' }}>
+                        {(() => {
+                          const u = usageStats[client.id];
+                          if (!u) return <span style={{ color:'#9198a1' }}>Sem uso</span>;
+                          const lastSeen = u.lastSeen ? new Date(u.lastSeen) : null;
+                          const daysAgo = lastSeen ? Math.floor((Date.now()-lastSeen.getTime())/86400000) : null;
+                          const active7d = Object.keys(u.actions||{}).filter(d => {
+                            return (Date.now()-new Date(d).getTime())/86400000 <= 7;
+                          }).length;
+                          return (
+                            <div>
+                              <div style={{ fontWeight:600, color: daysAgo===0?'#1a7f37':daysAgo<=3?'#9a6700':'#656d76' }}>
+                                {daysAgo === 0 ? '🟢 Hoje' : daysAgo === 1 ? '🟡 Ontem' : daysAgo !== null ? `⚫ ${daysAgo}d atrás` : '—'}
+                              </div>
+                              <div style={{ fontSize:11, color:'#9198a1' }}>{active7d}d ativo nos últ. 7d</div>
+                            </div>
+                          );
+                        })()}
+                      </td>
                       <td style={{ padding:'12px 16px' }}>
                         <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
                           <button onClick={() => setTokenModal(client)}

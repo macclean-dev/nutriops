@@ -318,7 +318,7 @@ function NoPermission({ onBack }) {
 
 // ─── Login ─────────────────────────────────────────────────────────────────
 
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin, activeTenants }) {
   const useSupabase = isSupabaseEnabled();
   const [mode, setMode]         = useState(useSupabase ? 'email' : 'pin');
   const [email, setEmail]       = useState('');
@@ -2323,7 +2323,7 @@ export function App() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  if (!session) return <LoginScreen onLogin={handleLogin} />;
+  if (!session) return <LoginScreen onLogin={handleLogin} activeTenants={activeTenants} />;
 
   // Kiosk mode — full screen override
   if (kioskConfig) return <KioskApp config={kioskConfig} onExit={() => setKioskConfig(null)} />;

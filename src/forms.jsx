@@ -2,6 +2,11 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FormKioskApp } from './kiosk';
 import { pushFormRecord } from './repository';
 
+// Read company profile from localStorage
+function getProfile(tenantId) {
+  try { const r = localStorage.getItem(`nutriops.company.profile.${tenantId}`); return r ? JSON.parse(r) : {}; } catch { return {}; }
+}
+
 // ─── Storage ───────────────────────────────────────────────────────────────
 
 const tplKey = (id) => `nutriops.forms.templates.${id}`;
@@ -76,10 +81,25 @@ export function completionPct(template, record) {
 // ─── PDF generator for forms ───────────────────────────────────────────────
 
 export function generateFormPDF(template, record, tenant) {
-  const period    = formatPeriodLabel(template.frequency, record.periodKey);
-  const filledAt  = new Date(record.updatedAt).toLocaleString('pt-BR');
-  const meta      = catMeta(template.category);
+  const p       = getProfile(tenant?.id);
+  const period  = formatPeriodLabel(template.frequency, record.periodKey);
+  const filledAt = new Date(record.updatedAt).toLocaleString('pt-BR');
+  const meta     = catMeta(template.category);
   const validated = record.validation;
+
+  // Company header block
+  const companyHeader = `
+    <div class="company-header">
+      <div>
+        <div class="company-name">${p.razaoSocial || tenant?.name || ''}</div>
+        ${p.cnpj ? `<div class="company-detail">CNPJ: ${p.cnpj}</div>` : ''}
+        ${p.endereco ? `<div class="company-detail">${p.endereco}</div>` : ''}
+        ${p.telefone ? `<div class="company-detail">Tel.: ${p.telefone}</div>` : ''}
+        ${p.alvara ? `<div class="company-detail">Alvará: ${p.alvara}</div>` : ''}
+      </div>
+      ${p.atividade ? `<div class="activity-badge">${p.atividade}</div>` : ''}
+    </div>
+  `;
 
   const renderValue = (field, val) => {
     if (!val && val !== false) return '<span style="color:#9198a1">—</span>';
@@ -110,17 +130,20 @@ export function generateFormPDF(template, record, tenant) {
     </table>
   `).join('');
 
+  const rtName = p.rtNome || 'Nutricionista RT';
+  const rtCrn  = p.rtCrn  || '';
+
   const validationHtml = validated ? `
     <div class="validation-stamp">
       <div class="stamp-header">✓ VALIDADO PELO RESPONSÁVEL TÉCNICO</div>
-      <div><strong>${validated.by}</strong> · ${validated.role}</div>
+      <div><strong>${validated.by}</strong> · ${validated.role}${rtCrn ? ` · ${rtCrn}` : ''}</div>
       <div>${new Date(validated.at).toLocaleString('pt-BR')}</div>
       ${validated.note ? `<div class="stamp-note">${validated.note}</div>` : ''}
     </div>
   ` : `
     <div class="sign-block">
       <div class="sign-line"></div>
-      <div>Responsável Técnico · Data: ___/___/______</div>
+      <div>${rtName}${rtCrn ? ` · ${rtCrn}` : ''} · Data: ___/___/______</div>
     </div>
   `;
 
@@ -129,14 +152,18 @@ export function generateFormPDF(template, record, tenant) {
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:Arial,sans-serif;font-size:11px;color:#1c2128;padding:24px}
-    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:2px solid #d0d7de}
-    .header-left h1{font-size:16px;font-weight:800;margin-bottom:4px}
-    .header-left .period{font-size:12px;color:#656d76}
-    .meta-table{border-collapse:collapse;width:100%;margin-bottom:16px}
+    .company-header{display:flex;justify-content:space-between;align-items:flex-start;padding:10px 14px;background:#f6f8fa;border:1px solid #d0d7de;border-radius:6px;margin-bottom:14px}
+    .company-name{font-size:14px;font-weight:800;color:#1c2128;margin-bottom:3px}
+    .company-detail{font-size:10px;color:#656d76;margin-top:1px}
+    .activity-badge{padding:4px 10px;background:#ddf4ff;color:#0969da;border:1px solid #54aeff;border-radius:12px;font-size:10px;font-weight:700;white-space:nowrap;align-self:center}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid #d0d7de}
+    .header-left h1{font-size:15px;font-weight:800;margin-bottom:4px}
+    .header-left .period{font-size:11px;color:#656d76}
+    .meta-table{border-collapse:collapse;width:100%;margin-bottom:14px}
     .meta-table td{padding:4px 8px;border:1px solid #d0d7de;font-size:10px}
     .meta-table td:first-child{font-weight:700;background:#f6f8fa;width:140px}
     .cat-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:${meta.bg};color:${meta.color};border:1px solid ${meta.color}44}
-    .sec-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#656d76;margin:16px 0 6px;padding-bottom:4px;border-bottom:1px solid #eaeef2}
+    .sec-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#656d76;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid #eaeef2}
     .fields-table{width:100%;border-collapse:collapse;margin-bottom:8px}
     .fields-table td{padding:7px 10px;border:1px solid #eaeef2;vertical-align:top}
     .field-label{width:55%;font-weight:600;background:#fafafa}
@@ -150,21 +177,23 @@ export function generateFormPDF(template, record, tenant) {
     .footer{margin-top:20px;padding-top:10px;border-top:1px solid #eaeef2;font-size:9px;color:#9198a1;display:flex;justify-content:space-between}
     @page{size:A4;margin:16mm}
   </style></head><body>
+  ${companyHeader}
   <div class="header">
     <div class="header-left">
       <h1>${template.title}</h1>
-      <div class="period">${tenant?.name ?? ''} · ${period} · <span class="cat-badge">${meta.label} · ${freqLabel(template.frequency)}</span></div>
+      <div class="period">${period} · <span class="cat-badge">${meta.label} · ${freqLabel(template.frequency)}</span></div>
     </div>
   </div>
   <table class="meta-table">
     <tr><td>Preenchido por</td><td>${record.user} · ${record.role}</td><td>Data/hora</td><td>${filledAt}</td></tr>
-    <tr><td>Empresa</td><td>${tenant?.name??''}</td><td>Status</td><td>${record.status==='submitted'?'✓ Confirmado':'Rascunho'}</td></tr>
+    <tr><td>Estabelecimento</td><td>${p.razaoSocial || tenant?.name || ''}</td><td>Status</td><td>${record.status==='submitted'?'✓ Confirmado':'Rascunho'}</td></tr>
+    ${p.cnpj ? `<tr><td>CNPJ</td><td colspan="3">${p.cnpj}</td></tr>` : ''}
   </table>
   ${sectionsHtml}
   ${validationHtml}
   <div class="footer">
-    <span>NutriOPS · Conformidade sanitária digital</span>
-    <span>RDC 216/2004 · Elaborado por Nutricionista RT</span>
+    <span>NutriOPS · RDC 216/2004</span>
+    <span>${p.rtNome ? `RT: ${p.rtNome}${p.rtCrn ? ` · ${p.rtCrn}` : ''}` : 'Responsável Técnico'}</span>
     <span>Gerado em ${new Date().toLocaleString('pt-BR')}</span>
   </div>
   </body></html>`;

@@ -766,6 +766,7 @@ export function ThermalControlView({ activeTenant, allTenants, onTenantChange, s
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function printTodayReport(activeTenant, records) {
+  const p       = (() => { try { const r = localStorage.getItem(`nutriops.company.profile.${activeTenant.id}`); return r ? JSON.parse(r) : {}; } catch { return {}; } })();
   const todayStr = new Date().toDateString();
   const todayRecords = records.filter(r =>
     r.tenantId === activeTenant.id &&
@@ -792,14 +793,24 @@ export function printTodayReport(activeTenant, records) {
 
   const win = window.open('', '_blank');
   win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
-  <title>Registros de Hoje — ${activeTenant.name}</title>
+  <title>Registros do Dia — ${activeTenant.name}</title>
   <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#1c2128;padding:20px}
+  .company-header{display:flex;justify-content:space-between;padding:8px 12px;background:#f6f8fa;border:1px solid #d0d7de;border-radius:4px;margin-bottom:12px}
+  .company-name{font-size:13px;font-weight:800}.company-detail{font-size:9px;color:#656d76}
   h1{font-size:16px;font-weight:800;margin-bottom:4px}.meta{color:#656d76;font-size:9px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #d0d7de}
   table{width:100%;border-collapse:collapse}th{background:#f6f8fa;padding:5px 7px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #d0d7de;color:#656d76}
   td{padding:6px 7px;border-bottom:1px solid #eaeef2;vertical-align:top}tr:last-child td{border-bottom:none}small{font-size:8px;color:#656d76}
   .sig{display:flex;gap:40px;margin-top:32px}.sig-line{flex:1;border-top:1px solid #374151;padding-top:4px;font-size:9px;color:#656d76;text-align:center}
   .footer{margin-top:16px;padding-top:8px;border-top:1px solid #d0d7de;font-size:8px;color:#9198a1;display:flex;justify-content:space-between}
   @page{size:A4;margin:12mm}</style></head><body>
+  <div class="company-header">
+    <div>
+      <div class="company-name">${p.razaoSocial || activeTenant.name}</div>
+      ${p.cnpj ? `<div class="company-detail">CNPJ: ${p.cnpj}</div>` : ''}
+      ${p.endereco ? `<div class="company-detail">${p.endereco}</div>` : ''}
+    </div>
+    ${p.atividade ? `<div style="font-size:10px;font-weight:700;color:#0969da">${p.atividade}</div>` : ''}
+  </div>
   <h1>Registros do Dia — ${activeTenant.name}</h1>
   <p class="meta">${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})} · ${todayRecords.length} registros · Gerado às ${date}</p>
   ${todayRecords.length === 0
@@ -807,9 +818,9 @@ export function printTodayReport(activeTenant, records) {
     : `<table><thead><tr><th>Hora</th><th>Equipamento</th><th>Temp.</th><th>Faixa</th><th>Status</th><th>Responsável</th><th>Observação</th></tr></thead><tbody>${rows}</tbody></table>`}
   <div class="sig">
     <div class="sig-line">Responsável pela operação · Data: ___/___/______</div>
-    <div class="sig-line">Nutricionista RT · CRN: ____________</div>
+    <div class="sig-line">${p.rtNome || 'Nutricionista RT'}${p.rtCrn ? ` · ${p.rtCrn}` : ''}</div>
   </div>
-  <div class="footer"><span>NutriOPS · RDC 216/2004 · ${activeTenant.name}</span><span>${date}</span></div>
+  <div class="footer"><span>NutriOPS · RDC 216/2004 · ${p.razaoSocial || activeTenant.name}</span>${p.cnpj ? `<span>CNPJ: ${p.cnpj}</span>` : ''}<span>${date}</span></div>
   </body></html>`);
   win.document.close(); setTimeout(() => win.print(), 400);
 }

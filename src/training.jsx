@@ -2,6 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
+function getProfile(tenantId) {
+  try { const r = localStorage.getItem(`nutriops.company.profile.${tenantId}`); return r ? JSON.parse(r) : {}; } catch { return {}; }
+}
+
+// ─── Storage ───────────────────────────────────────────────────────────────
+
 const sessionsKey = (id) => `nutriops.training.sessions.${id}`;
 const configKey   = (id) => `nutriops.training.config.${id}`;
 const usersKey    = (id) => `nutriops.users.${id}`;
@@ -49,11 +55,16 @@ function employeeTrainingStatus(employeeName, sessions, validityMonths) {
 // ─── Certificate PDF ───────────────────────────────────────────────────────
 
 export function generateCertificatePDF(session, participant, tenant, config) {
+  const p         = getProfile(tenant?.id);
   const date      = new Date(session.date).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
   const issuedAt  = new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
   const topicList = session.topics.map((t) => `<li>${t}</li>`).join('');
   const validUntil = new Date(new Date(session.date).getTime() + (config?.validityMonths ?? 12) * 30 * 86400000)
     .toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+
+  const rtNome = p.rtNome || session.rtSignature?.by || session.instructor || 'Nutricionista RT';
+  const rtCrn  = p.rtCrn  || config?.crnNumber || '';
+  const companyName = p.razaoSocial || tenant?.name || '';
 
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
   <title>Certificado — ${participant.name}</title>
@@ -62,8 +73,9 @@ export function generateCertificatePDF(session, participant, tenant, config) {
     body{font-family:Georgia,serif;color:#1c2128;background:white}
     .page{width:210mm;min-height:148mm;padding:16mm 20mm;display:flex;flex-direction:column;border:8px double #c8a96e;margin:8mm auto}
     .header{text-align:center;margin-bottom:10mm;border-bottom:1px solid #c8a96e;padding-bottom:8mm}
-    .company{font-size:14pt;font-weight:bold;letter-spacing:.05em;margin-bottom:3mm}
-    .cert-title{font-size:22pt;font-weight:bold;letter-spacing:.12em;color:#1a1a1a;margin-bottom:3mm}
+    .company{font-size:14pt;font-weight:bold;letter-spacing:.05em;margin-bottom:2mm}
+    .company-detail{font-size:8pt;color:#656d76;margin-top:1mm}
+    .cert-title{font-size:22pt;font-weight:bold;letter-spacing:.12em;color:#1a1a1a;margin:4mm 0 3mm}
     .cert-sub{font-size:10pt;color:#656d76;letter-spacing:.08em}
     .body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6mm}
     .declares{font-size:11pt;color:#656d76}
@@ -88,7 +100,9 @@ export function generateCertificatePDF(session, participant, tenant, config) {
   </style></head>
   <body><div class="page">
     <div class="header">
-      <div class="company">${tenant?.name ?? 'NutriOPS'}</div>
+      <div class="company">${companyName}</div>
+      ${p.cnpj ? `<div class="company-detail">CNPJ: ${p.cnpj}</div>` : ''}
+      ${p.endereco ? `<div class="company-detail">${p.endereco}</div>` : ''}
       <div class="cert-title">CERTIFICADO</div>
       <div class="cert-sub">DE CAPACITAÇÃO EM BOAS PRÁTICAS</div>
     </div>
@@ -104,14 +118,14 @@ export function generateCertificatePDF(session, participant, tenant, config) {
       <div class="meta">
         <span>📅 ${date}</span>
         <span>⏱ ${session.duration}h de treinamento</span>
-        <span>📍 ${session.location || tenant?.name || ''}</span>
+        <span>📍 ${session.location || companyName}</span>
       </div>
     </div>
     <div class="footer">
       <div class="sig-block">
         <div class="sig-line"></div>
-        <div class="sig-name">${session.rtSignature?.by ?? session.instructor}</div>
-        <div class="sig-role">Nutricionista RT${config?.crnNumber ? ` · CRN ${config.crnNumber}` : ''}</div>
+        <div class="sig-name">${rtNome}</div>
+        <div class="sig-role">Nutricionista RT${rtCrn ? ` · ${rtCrn}` : ''}</div>
         ${session.rtSignature ? `<div class="sig-role">Assinado em ${new Date(session.rtSignature.at).toLocaleDateString('pt-BR')}</div>` : ''}
       </div>
       <div class="validity">
@@ -120,7 +134,7 @@ export function generateCertificatePDF(session, participant, tenant, config) {
         <div style="margin-top:2mm;font-size:7pt;color:#9ca3af">RDC 216/2004 · MBPF</div>
       </div>
     </div>
-    <div class="watermark">NUTRIOPS · CONFORMIDADE SANITÁRIA DIGITAL · ${uid().slice(0,8).toUpperCase()}</div>
+    <div class="watermark">NUTRIOPS · CONFORMIDADE SANITÁRIA DIGITAL · ${Math.random().toString(36).slice(2,10).toUpperCase()}</div>
   </div></body></html>`;
 }
 

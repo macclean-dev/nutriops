@@ -1798,7 +1798,19 @@ function OfflineIndicator() {
 
 // ─── Settings View ─────────────────────────────────────────────────────────
 
-function SettingsView({ session }) {
+// ─── Company profile storage ───────────────────────────────────────────────
+
+const COMPANY_PROFILE_KEY = (tenantId) => `nutriops.company.profile.${tenantId}`;
+export function readCompanyProfile(tenantId) {
+  try { const r = localStorage.getItem(COMPANY_PROFILE_KEY(tenantId)); return r ? JSON.parse(r) : {}; } catch { return {}; }
+}
+export function saveCompanyProfile(tenantId, profile) {
+  try { localStorage.setItem(COMPANY_PROFILE_KEY(tenantId), JSON.stringify(profile)); } catch {}
+}
+
+// ─── Settings ──────────────────────────────────────────────────────────────
+
+function SettingsView({ session, activeTenant }) {
   const cfg = getSupabaseConfig();
   const [url,     setUrl]     = useState(cfg.url ?? '');
   const [anonKey, setAnonKey] = useState(cfg.anonKey ?? '');
@@ -1813,6 +1825,22 @@ function SettingsView({ session }) {
   const [newPin,     setNewPin]     = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [pinMsg,     setPinMsg]     = useState(null);
+  // Company profile — per active tenant
+  const [profile, setProfile] = useState(() => readCompanyProfile(activeTenant?.id ?? 'global'));
+  const [profileSaved, setProfileSaved] = useState(false);
+
+  // Reload profile when tenant changes
+  useEffect(() => {
+    setProfile(readCompanyProfile(activeTenant?.id ?? 'global'));
+  }, [activeTenant?.id]);
+
+  const setProfileField = (field, value) => setProfile(prev => ({ ...prev, [field]: value }));
+
+  const handleSaveProfile = () => {
+    saveCompanyProfile(activeTenant?.id ?? 'global', profile);
+    setProfileSaved(true);
+    setTimeout(() => setProfileSaved(false), 2500);
+  };
 
   const handleSave = () => {
     saveSupabaseConfig({ url: url.trim(), anonKey: anonKey.trim(), enabled });
@@ -1875,7 +1903,57 @@ function SettingsView({ session }) {
 
   return (
     <section className="management-page">
-      <div className="page-header"><div><span className="eyebrow">Infraestrutura</span><h1>Configurações</h1><p className="muted">Supabase, migração de dados e segurança de acesso.</p></div></div>
+      <div className="page-header"><div><span className="eyebrow">Infraestrutura</span><h1>Configurações</h1><p className="muted">Dados do estabelecimento, Supabase, migração e segurança de acesso.</p></div></div>
+
+      {/* ── Company Profile ── */}
+      <article className="management-card" style={{ marginBottom:16 }}>
+        <div className="card-head">
+          <div><span className="eyebrow">Identificação</span><h2>Dados do estabelecimento</h2></div>
+          <span className="badge neutral">{activeTenant?.name}</span>
+        </div>
+        <div className="capture-fields">
+          <p className="muted" style={{ fontSize:12 }}>Estes dados aparecem em todos os PDFs gerados — planilhas, relatórios, certificados e controles. Exigidos pela RDC 216/2004 para fins de fiscalização.</p>
+          <div className="grid-2">
+            <label>Razão social / Nome do estabelecimento
+              <input value={profile.razaoSocial ?? activeTenant?.name ?? ''} onChange={e=>setProfileField('razaoSocial', e.target.value)} placeholder={activeTenant?.name} />
+            </label>
+            <label>CNPJ
+              <input value={profile.cnpj ?? ''} onChange={e=>setProfileField('cnpj', e.target.value)} placeholder="00.000.000/0000-00" />
+            </label>
+          </div>
+          <label>Endereço completo
+            <input value={profile.endereco ?? ''} onChange={e=>setProfileField('endereco', e.target.value)} placeholder="Rua, nº, Bairro, Cidade - UF, CEP" />
+          </label>
+          <div className="grid-2">
+            <label>Telefone
+              <input value={profile.telefone ?? ''} onChange={e=>setProfileField('telefone', e.target.value)} placeholder="(61) 9xxxx-xxxx" />
+            </label>
+            <label>E-mail de contato
+              <input value={profile.email ?? ''} onChange={e=>setProfileField('email', e.target.value)} placeholder="contato@empresa.com.br" />
+            </label>
+          </div>
+          <div className="grid-2">
+            <label>Responsável Técnico (RT)
+              <input value={profile.rtNome ?? ''} onChange={e=>setProfileField('rtNome', e.target.value)} placeholder="Nome completo da nutricionista" />
+            </label>
+            <label>CRN do Responsável Técnico
+              <input value={profile.rtCrn ?? ''} onChange={e=>setProfileField('rtCrn', e.target.value)} placeholder="Ex.: CRN-1 12345" />
+            </label>
+          </div>
+          <div className="grid-2">
+            <label>Tipo de atividade
+              <input value={profile.atividade ?? activeTenant?.segment ?? ''} onChange={e=>setProfileField('atividade', e.target.value)} placeholder="Ex.: Padaria, Confeitaria, Produção de alimentos" />
+            </label>
+            <label>Alvará sanitário / Licença
+              <input value={profile.alvara ?? ''} onChange={e=>setProfileField('alvara', e.target.value)} placeholder="Número do alvará" />
+            </label>
+          </div>
+          <div className="actions-row" style={{ justifyContent:'flex-end' }}>
+            <button className="primary-action attention" onClick={handleSaveProfile}>Salvar dados do estabelecimento</button>
+          </div>
+          {profileSaved && <div className="submission ok">✓ Dados salvos. Todos os PDFs usarão essas informações.</div>}
+        </div>
+      </article>
 
       <div className="management-grid">
         {/* Supabase */}
@@ -2112,7 +2190,7 @@ export function App() {
         {activeView === 'sessions'   && <SessionHistoryView {...sharedProps} />}
         {activeView === 'equipment'  && <EquipmentView {...sharedProps} />}
         {activeView === 'profile'    && <ProfileView session={session} onLogout={handleLogout} />}
-        {activeView === 'settings'   && <SettingsView session={session} />}
+        {activeView === 'settings'   && <SettingsView session={session} activeTenant={activeTenant} />}
         {/* Fallback for any route the user doesn't have access to */}
         {!['overview','reports','monthly','forms','pops','training','receiving','validity','handwash','oil','thaw','cooling','thermal','dashboard','charts','audit','alerts','actions','rtpanel','turns','users','sessions','equipment','profile','settings'].includes(activeView) && <NoPermission onBack={() => setActiveView('overview')} />}
       </main>

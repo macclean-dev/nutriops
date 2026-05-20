@@ -179,7 +179,124 @@ function TempLineChart({ records, equipment, height = 180 }) {
 // VIEWS
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ─── No Permission ─────────────────────────────────────────────────────────
+// ─── Mobile Bottom Nav ─────────────────────────────────────────────────────
+
+function BottomNav({ activeView, setActiveView, session, alertCount, actionCount }) {
+  const validityAlertCount = useMemo(() => {
+    try {
+      const tenantId = session?.tenantId;
+      if (!tenantId) return 0;
+      const products = JSON.parse(localStorage.getItem(`nutriops.products.${tenantId}`) ?? '[]');
+      const now = new Date().setHours(0,0,0,0);
+      return products.filter(p => {
+        if (!p.expiryDate) return false;
+        const days = Math.ceil((new Date(p.expiryDate + 'T12:00').getTime() - now) / 86400000);
+        return days <= 3 || days < 0 || (p.minStock > 0 && p.currentStock < p.minStock);
+      }).length;
+    } catch { return 0; }
+  }, [session?.tenantId]);
+
+  const items = [
+    { key: 'overview',  icon: '🏠', label: 'Início',    badge: 0 },
+    { key: 'forms',     icon: '📋', label: 'BPF',       badge: 0 },
+    { key: 'validity',  icon: '📦', label: 'Validades', badge: validityAlertCount },
+    { key: 'alerts',    icon: '⚠️', label: 'Alertas',   badge: alertCount },
+    { key: 'dashboard', icon: '📊', label: 'Relatório', badge: 0 },
+  ].filter(item => canAccess(session?.user?.role, item.key));
+
+  return (
+    <nav className="bottom-nav">
+      <div className="bottom-nav-inner">
+        {items.slice(0, 5).map(item => (
+          <button key={item.key} className={`bottom-nav-item ${activeView === item.key ? 'active' : ''}`}
+            onClick={() => setActiveView(item.key)}>
+            {item.badge > 0 && <span className="bottom-nav-badge">{item.badge}</span>}
+            <span className="bnav-icon">{item.icon}</span>
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+// ─── Mobile Drawer ─────────────────────────────────────────────────────────
+
+function MobileDrawer({ open, onClose, activeView, setActiveView, session, activeTenant, allTenants, onTenantChange, onLogout, alertCount, actionCount }) {
+  const perms = getPermissions(session?.user?.role);
+
+  const navItems = [
+    ['overview',   '🏠', 'Visão geral'],
+    ['dashboard',  '📊', 'Conformidade'],
+    ['charts',     '📈', 'Gráficos'],
+    ['forms',      '📋', 'Planilhas BPF'],
+    ['pops',       '📑', 'POPs'],
+    ['training',   '🎓', 'Capacitação'],
+    ['receiving',  '🚚', 'Recebimento'],
+    ['validity',   '📦', 'Validades'],
+    ['handwash',   '🙌', 'Higiene das mãos'],
+    ['oil',        '🍳', 'Óleo de fritura'],
+    ['thaw',       '❄️', 'Descongelamento'],
+    ['cooling',    '🌡️', 'Resfriamento'],
+    ['thermal',    '🔥', 'Tratamento térmico'],
+    ['reports',    '📄', 'Relatórios'],
+    ['monthly',    '📅', 'Exportação mensal'],
+    ['audit',      '🔍', 'Auditoria'],
+    ['alerts',     '⚠️', `Alertas${alertCount > 0 ? ` (${alertCount})` : ''}`],
+    ['actions',    '✅', 'Ações corretivas'],
+    ['rtpanel',    '👩‍⚕️', 'Painel RT'],
+    ['turns',      '⏰', 'Turnos'],
+    ['users',      '👥', 'Usuários'],
+    ['sessions',   '📋', 'Histórico de acessos'],
+    ['equipment',  '🔧', 'Equipamentos'],
+    ['profile',    '👤', 'Meu perfil'],
+    ['settings',   '⚙️', 'Configurações'],
+  ].filter(([key]) => canAccess(session?.user?.role, key));
+
+  const navigate = (key) => { setActiveView(key); onClose(); };
+
+  if (!open) return null;
+  return (
+    <div className="mobile-drawer open">
+      <div className="mobile-drawer-overlay" onClick={onClose} />
+      <div className="mobile-drawer-panel">
+        {/* Header */}
+        <div style={{ padding:'16px', borderBottom:'1px solid var(--rail-border)' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+            <div className="brand-mark" style={{ width:28, height:28, fontSize:13 }}>N</div>
+            <span style={{ fontSize:15, fontWeight:800, letterSpacing:'-.05em', color:'#e6edf3' }}>NutriOPS</span>
+            <span style={{ marginLeft:'auto', fontSize:11, color:'var(--rail-muted)' }}>v{APP_VERSION}</span>
+          </div>
+          {/* Company selector */}
+          {allTenants.length > 1 && (
+            <select value={activeTenant.id} onChange={e => { onTenantChange(e.target.value); onClose(); }}
+              style={{ width:'100%', background:'rgba(255,255,255,.08)', border:'1px solid var(--rail-border)', color:'#cdd9e5', borderRadius:8, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13 }}>
+              {allTenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          )}
+        </div>
+        {/* Nav items */}
+        <div style={{ flex:1, overflowY:'auto', padding:'8px' }}>
+          {navItems.map(([key, icon, label]) => (
+            <button key={key} onClick={() => navigate(key)}
+              style={{ width:'100%', textAlign:'left', padding:'10px 12px', border:'none', borderRadius:8, background:activeView===key?'rgba(56,139,253,.15)':'transparent', color:activeView===key?'#58a6ff':'var(--rail-muted)', fontFamily:'var(--font)', fontSize:14, fontWeight:activeView===key?700:500, cursor:'pointer', display:'flex', alignItems:'center', gap:10, marginBottom:2 }}>
+              <span style={{ fontSize:16, width:20, textAlign:'center' }}>{icon}</span>
+              {label}
+            </button>
+          ))}
+        </div>
+        {/* Footer */}
+        <div style={{ padding:'12px 16px', borderTop:'1px solid var(--rail-border)' }}>
+          <div style={{ fontSize:12, color:'var(--rail-muted)', marginBottom:8 }}>{session?.user?.name} · {session?.user?.role}</div>
+          <button onClick={() => { onLogout(); onClose(); }}
+            style={{ width:'100%', padding:'9px', border:'1px solid rgba(255,255,255,.12)', borderRadius:8, background:'transparent', color:'var(--rail-muted)', fontFamily:'var(--font)', fontSize:13, cursor:'pointer' }}>
+            Sair
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function NoPermission({ onBack }) {
   return (
@@ -2120,6 +2237,8 @@ export function App() {
   const [showKioskSetup, setShowKioskSetup] = useState(false);
   // Global search
   const [showSearch, setShowSearch]     = useState(false);
+  // Mobile drawer
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
 
   // Notify on out-of-range save
   const handleRecordSaved = useCallback(async () => {
@@ -2161,6 +2280,27 @@ export function App() {
           onLaunch={(cfg) => { setKioskConfig(cfg); setShowKioskSetup(false); }}
           onCancel={() => setShowKioskSetup(false)} />
       )}
+
+      {/* Mobile header (visible on small screens only) */}
+      <header className="mobile-header">
+        <div className="mobile-header-brand">
+          <div className="brand-mark" style={{ width:28, height:28, fontSize:13 }}>N</div>
+          <span>NutriOPS</span>
+        </div>
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          <button className="mobile-menu-btn" onClick={() => setShowSearch(true)}>🔍</button>
+          <button className="mobile-menu-btn" onClick={() => setMobileDrawerOpen(true)}>☰</button>
+        </div>
+      </header>
+
+      {/* Mobile drawer */}
+      <MobileDrawer open={mobileDrawerOpen} onClose={() => setMobileDrawerOpen(false)}
+        activeView={activeView} setActiveView={setActiveView}
+        session={session} activeTenant={activeTenant} allTenants={visibleTenants}
+        onTenantChange={handleTenantChange} onLogout={handleLogout}
+        alertCount={alertCount} actionCount={actionCount} />
+
+      {/* Desktop rail */}
       <RailNav {...sharedProps} activeView={activeView} setActiveView={setActiveView}
         session={session} records={records} alertCount={alertCount} actionCount={actionCount}
         onLogout={handleLogout} onSearch={() => setShowSearch(true)}
@@ -2195,6 +2335,8 @@ export function App() {
         {!['overview','reports','monthly','forms','pops','training','receiving','validity','handwash','oil','thaw','cooling','thermal','dashboard','charts','audit','alerts','actions','rtpanel','turns','users','sessions','equipment','profile','settings'].includes(activeView) && <NoPermission onBack={() => setActiveView('overview')} />}
       </main>
       <OfflineIndicator />
+      <BottomNav activeView={activeView} setActiveView={setActiveView}
+        session={session} alertCount={alertCount} actionCount={actionCount} />
     </div>
   );
 }

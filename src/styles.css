@@ -824,3 +824,264 @@ label {
   border-bottom: 1px solid var(--border-subtle);
 }
 .form-field-row:last-child { border-bottom: none; }
+
+/* ============================================================
+   MOBILE RESPONSIVENESS — NutriOPS v1.6.0
+   Breakpoints: mobile < 768px | tablet 768-1024px
+   ============================================================ */
+
+/* ── Bottom nav (mobile only) ─────────────────────────────── */
+.bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: var(--rail-bg);
+  border-top: 1px solid var(--rail-border);
+  z-index: 500;
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.bottom-nav-inner {
+  display: flex;
+  align-items: stretch;
+  height: 56px;
+}
+.bottom-nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--rail-muted);
+  font-size: 9px;
+  font-weight: 600;
+  font-family: var(--font);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 6px 4px;
+  transition: color var(--t);
+  position: relative;
+}
+.bottom-nav-item.active { color: #58a6ff; }
+.bottom-nav-item .bnav-icon { font-size: 20px; line-height: 1; }
+.bottom-nav-badge {
+  position: absolute;
+  top: 4px; right: calc(50% - 18px);
+  background: var(--red);
+  color: white;
+  font-size: 9px;
+  font-weight: 800;
+  border-radius: 10px;
+  padding: 1px 5px;
+  min-width: 16px;
+  text-align: center;
+  line-height: 14px;
+}
+
+/* ── Mobile hamburger menu ────────────────────────────────── */
+.mobile-header {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--rail-bg);
+  border-bottom: 1px solid var(--rail-border);
+  position: sticky;
+  top: 0;
+  z-index: 400;
+}
+.mobile-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mobile-header-brand span {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -.05em;
+  color: #e6edf3;
+}
+.mobile-menu-btn {
+  width: 36px; height: 36px;
+  border: none;
+  background: rgba(255,255,255,.08);
+  border-radius: 8px;
+  color: var(--rail-muted);
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mobile-drawer {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+}
+.mobile-drawer.open { display: block; }
+.mobile-drawer-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.6);
+}
+.mobile-drawer-panel {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: 280px;
+  background: var(--rail-bg);
+  border-right: 1px solid var(--rail-border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  animation: slideInLeft .2s ease;
+}
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+
+/* ── Main responsive breakpoints ─────────────────────────── */
+
+@media (max-width: 1024px) {
+  :root { --rail-width: 200px; }
+  .workspace-grid { grid-template-columns: 1fr; }
+  .management-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 768px) {
+  /* Hide desktop rail, show mobile header + bottom nav */
+  .super-rail { display: none !important; }
+  .mobile-header { display: flex !important; }
+  .bottom-nav { display: block !important; }
+
+  /* Main content area */
+  .super-shell { flex-direction: column; }
+  .super-main {
+    padding: 12px 14px;
+    padding-bottom: calc(56px + 16px + env(safe-area-inset-bottom));
+    min-height: calc(100vh - 56px);
+  }
+
+  /* Login */
+  .login-card {
+    padding: 28px 20px;
+    max-width: 100%;
+    border-radius: var(--r-lg);
+  }
+
+  /* Typography scale */
+  .page-header h1 { font-size: 18px; }
+  .page-header { flex-direction: column; gap: 10px; padding-bottom: 12px; }
+  .page-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+
+  /* Grids stack */
+  .workspace-grid { grid-template-columns: 1fr !important; gap: 10px; }
+  .management-grid { grid-template-columns: 1fr !important; gap: 10px; }
+  .grid-2 { grid-template-columns: 1fr !important; }
+  .dashboard-grid { grid-template-columns: 1fr !important; }
+  .forms-grid { grid-template-columns: 1fr !important; }
+  .company-grid { grid-template-columns: 1fr 1fr !important; gap: 8px; }
+
+  /* Cards */
+  .capture-fields { padding: 12px 14px; }
+  .card-head { padding: 12px 14px; }
+
+  /* Touch-friendly buttons */
+  .primary-action, .secondary-action {
+    padding: 10px 14px;
+    min-height: 40px;
+  }
+  .rail-menu-item { padding: 10px 12px; min-height: 40px; }
+
+  /* Chips — bigger touch targets */
+  .quick-chip { min-width: 80px; padding: 10px; }
+  .quick-chip strong { font-size: 11px; }
+
+  /* Equipment strip */
+  .chip-row { gap: 6px; }
+
+  /* Audit stats — scroll horizontally on very small */
+  .audit-stats { flex-wrap: wrap; gap: 8px; }
+  .audit-stat { min-width: calc(50% - 4px); flex: unset; }
+  .audit-stat strong { font-size: 20px; }
+
+  /* Audit filters — stack */
+  .audit-filters { flex-direction: column; gap: 8px; }
+  .audit-filters label { min-width: unset; }
+
+  /* Table — horizontal scroll */
+  .audit-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table { min-width: 600px; }
+
+  /* Alert banner */
+  .alert-banner { flex-direction: column; align-items: flex-start; gap: 6px; }
+
+  /* History items */
+  .history-item { padding: 10px 12px; }
+
+  /* Equipment maintenance rows */
+  .equipment-maintenance-row { padding: 10px 14px; flex-direction: column; gap: 8px; }
+  .equipment-row-actions { width: 100%; }
+
+  /* Info boxes */
+  .info-box { padding: 8px 10px; }
+
+  /* Actions row */
+  .actions-row { flex-direction: column; gap: 8px; }
+  .actions-row button { width: 100%; }
+
+  /* Dash cards */
+  .dash-card { padding: 14px; }
+  .dash-compliance strong { font-size: 22px; }
+
+  /* Page header compact */
+  .management-page { gap: 12px; }
+
+  /* Forms grid */
+  .form-card { padding: 12px; }
+
+  /* Kpi */
+  .kpi { padding: 8px 0; }
+
+  /* Range panel / timestamp */
+  .big-input-row { grid-template-columns: 1fr; }
+  .big-input input { font-size: 1.8rem; }
+
+  /* Capture topline */
+  .capture-topline { flex-wrap: wrap; }
+  .capture-meta { min-width: 50%; }
+
+  /* Eyebrow */
+  .eyebrow { font-size: 9px; }
+}
+
+@media (max-width: 480px) {
+  .super-main { padding: 10px 10px; padding-bottom: calc(56px + 16px + env(safe-area-inset-bottom)); }
+  .audit-stat { min-width: calc(50% - 4px); }
+  .company-grid { grid-template-columns: 1fr !important; }
+  .login-card { padding: 20px 16px; }
+  .page-header h1 { font-size: 16px; }
+  .dash-compliance strong { font-size: 20px; }
+  .quick-chip { min-width: 72px; padding: 8px; }
+}
+
+/* ── Tablet adjustments ───────────────────────────────────── */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .super-main { padding: 18px 20px; }
+  .workspace-grid { grid-template-columns: 1fr 280px; }
+  .page-header h1 { font-size: 20px; }
+}
+
+/* ── Safe area for notched phones ─────────────────────────── */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .login-card { padding-bottom: max(28px, env(safe-area-inset-bottom)); }
+}
+
+/* ── Prevent text size adjustment on iOS ─────────────────── */
+@media (max-width: 768px) {
+  input, textarea, select { font-size: 16px !important; }
+}

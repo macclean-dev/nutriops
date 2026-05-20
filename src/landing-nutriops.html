@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="NutriOPS — Conformidade sanitária digital para serviços de alimentação. Substitua planilhas em papel por registros digitais rastreáveis. RDC 216/2004.">
+<title>NutriOPS — Conformidade sanitária digital</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --blue:#0969da;--blue-dark:#0757ba;--green:#1a7f37;--amber:#9a6700;
+  --bg:#f6f8fa;--surface:#fff;--border:#e2e8f0;--text:#0f172a;--muted:#64748b;
+  --rail:#0d1117;
+  --r:10px;--r-lg:16px;--r-xl:24px;
+}
+html{scroll-behavior:smooth}
+body{font-family:-apple-system,'Segoe UI',system-ui,sans-serif;font-size:16px;line-height:1.6;color:var(--text);background:#fff}
+
+/* ── NAV ── */
+nav{
+  position:sticky;top:0;z-index:100;
+  background:rgba(255,255,255,.92);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+  padding:0 24px;
+}
+.nav-inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:60px}
+.nav-brand{display:flex;align-items:center;gap:9px;text-decoration:none}
+.nav-mark{width:30px;height:30px;background:linear-gradient(135deg,#1c73e8,#2da6ff);border-radius:8px;display:grid;place-items:center;font-size:14px;font-weight:800;color:white}
+.nav-brand-text{font-size:17px;font-weight:800;letter-spacing:-.05em;color:var(--text)}
+.nav-links{display:flex;align-items:center;gap:28px}
+.nav-links a{color:var(--muted);text-decoration:none;font-size:14px;font-weight:500;transition:color .15s}
+.nav-links a:hover{color:var(--text)}
+.nav-cta{background:var(--blue);color:white !important;padding:8px 18px;border-radius:8px;font-weight:600 !important;font-size:14px;transition:background .15s !important}
+.nav-cta:hover{background:var(--blue-dark) !important;color:white !important}
+.nav-mobile{display:none}
+
+/* ── HERO ── */
+.hero{
+  background:linear-gradient(180deg,#0d1117 0%,#1c2128 100%);
+  padding:80px 24px 100px;
+  text-align:center;
+  position:relative;
+  overflow:hidden;
+}
+.hero::before{
+  content:'';position:absolute;top:-200px;left:50%;transform:translateX(-50%);
+  width:800px;height:800px;border-radius:50%;
+  background:radial-gradient(circle,rgba(9,105,218,.2) 0%,transparent 65%);
+  pointer-events:none;
+}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:6px 14px;margin-bottom:28px;
+  background:rgba(9,105,218,.2);border:1px solid rgba(88,166,255,.3);
+  border-radius:20px;font-size:12px;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;color:#58a6ff;
+}
+.hero h1{
+  font-size:clamp(32px,6vw,68px);font-weight:800;letter-spacing:-.04em;
+  color:#e6edf3;line-height:1.05;margin-bottom:20px;max-width:800px;margin-left:auto;margin-right:auto;
+}
+.hero h1 span{
+  background:linear-gradient(135deg,#58a6ff,#79c0ff);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+.hero p{color:#8b949e;font-size:clamp(16px,2.5vw,20px);max-width:560px;margin:0 auto 36px;line-height:1.6}
+.hero-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:20px}
+.btn-primary{background:var(--blue);color:white;padding:14px 28px;border-radius:var(--r);font-size:16px;font-weight:700;text-decoration:none;transition:all .2s;display:inline-flex;align-items:center;gap:8px}
+.btn-primary:hover{background:var(--blue-dark);transform:translateY(-1px);box-shadow:0 8px 24px rgba(9,105,218,.3)}
+.btn-secondary{background:rgba(255,255,255,.08);color:#e6edf3;padding:14px 28px;border-radius:var(--r);font-size:16px;font-weight:600;text-decoration:none;border:1px solid rgba(255,255,255,.15);transition:all .2s;display:inline-flex;align-items:center;gap:8px}
+.btn-secondary:hover{background:rgba(255,255,255,.14);transform:translateY(-1px)}
+.hero-note{font-size:13px;color:#7d8590}
+.hero-img{
+  max-width:900px;margin:48px auto 0;
+  background:#161b22;border:1px solid rgba(240,246,252,.1);
+  border-radius:16px;overflow:hidden;
+  box-shadow:0 32px 80px rgba(0,0,0,.5);
+  position:relative;
+}
+.hero-img-bar{display:flex;align-items:center;gap:7px;padding:12px 16px;background:#0d1117;border-bottom:1px solid rgba(240,246,252,.08)}
+.dot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+.dot-red{background:#ff5f57}.dot-amber{background:#febc2e}.dot-green{background:#28c840}
+.hero-screen{padding:24px;display:grid;grid-template-columns:180px 1fr;gap:16px;min-height:340px}
+@media(max-width:600px){.hero-screen{grid-template-columns:1fr;grid-template-rows:auto 1fr}}
+.mock-rail{background:#0d1117;border-radius:10px;padding:14px 10px;display:flex;flex-direction:column;gap:6px}
+.mock-brand{display:flex;align-items:center;gap:7px;padding:4px 6px 10px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:4px}
+.mock-brand-mark{width:22px;height:22px;background:linear-gradient(135deg,#1c73e8,#2da6ff);border-radius:5px;display:grid;place-items:center;font-size:10px;font-weight:800;color:white;flex-shrink:0}
+.mock-brand-name{font-size:12px;font-weight:800;color:#e6edf3;letter-spacing:-.04em}
+.mock-nav-item{padding:6px 8px;border-radius:6px;font-size:11px;font-weight:500;color:#7d8590;cursor:pointer}
+.mock-nav-item.active{background:rgba(56,139,253,.15);color:#58a6ff;font-weight:700}
+.mock-main{display:flex;flex-direction:column;gap:12px}
+.mock-header{font-size:14px;font-weight:800;color:#e6edf3;letter-spacing:-.03em}
+.mock-chips{display:flex;gap:8px;flex-wrap:wrap}
+.mock-chip{padding:8px 12px;border-radius:8px;font-size:11px;font-weight:700;border:1.5px solid;flex-direction:column;display:flex;gap:2px}
+.chip-ok{background:#dafbe1;border-color:#4ac26b;color:#1a7f37}
+.chip-warn{background:#fdf8e3;border-color:#e3aa14;color:#9a6700}
+.chip-idle{background:#f6f8fa;border-color:#d0d7de;color:#656d76}
+.mock-chip span{font-size:9px;font-weight:500;color:inherit;opacity:.7}
+.mock-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mock-stat{background:#161b22;border-radius:8px;padding:10px 12px;border:1px solid rgba(255,255,255,.06)}
+.mock-stat-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#7d8590;margin-bottom:3px}
+.mock-stat-value{font-size:20px;font-weight:800;font-family:monospace;letter-spacing:-.04em}
+.green{color:#4ac26b}.amber{color:#e3aa14}.blue{color:#58a6ff}
+
+/* ── LOGOS ── */
+.logos{padding:32px 24px;border-bottom:1px solid var(--border);text-align:center}
+.logos p{font-size:13px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:20px}
+.logos-row{display:flex;justify-content:center;align-items:center;gap:32px;flex-wrap:wrap}
+.logo-tag{padding:8px 20px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:14px;font-weight:700;color:var(--muted)}
+
+/* ── SECTIONS ── */
+section{padding:80px 24px}
+.section-inner{max-width:1100px;margin:0 auto}
+.section-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--blue);margin-bottom:10px}
+h2{font-size:clamp(26px,4vw,40px);font-weight:800;letter-spacing:-.04em;line-height:1.15;margin-bottom:16px}
+.section-sub{font-size:17px;color:var(--muted);max-width:560px;line-height:1.6;margin-bottom:48px}
+
+/* ── PROBLEM ── */
+.problem{background:#0f172a;color:white}
+.problem h2{color:#e6edf3}
+.problem .section-sub{color:#94a3b8;max-width:800px}
+.problem-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-top:48px}
+.problem-card{background:#1e293b;border:1px solid #334155;border-radius:var(--r-lg);padding:24px}
+.problem-icon{font-size:28px;margin-bottom:12px}
+.problem-card h3{font-size:16px;font-weight:700;color:#e2e8f0;margin-bottom:8px}
+.problem-card p{font-size:14px;color:#94a3b8;line-height:1.6}
+
+/* ── FEATURES ── */
+.features-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px}
+.feature-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:24px;transition:all .2s}
+.feature-card:hover{box-shadow:0 8px 24px rgba(0,0,0,.08);transform:translateY(-2px)}
+.feature-icon-wrap{width:44px;height:44px;border-radius:10px;display:grid;place-items:center;font-size:22px;margin-bottom:14px}
+.icon-blue{background:#ddf4ff}.icon-green{background:#dafbe1}.icon-amber{background:#fdf8e3}.icon-purple{background:#f3e8ff}.icon-red{background:#ffebe9}.icon-teal{background:#ccfbf1}
+.feature-card h3{font-size:16px;font-weight:700;margin-bottom:8px}
+.feature-card p{font-size:14px;color:var(--muted);line-height:1.6}
+.feature-tag{display:inline-block;margin-top:10px;padding:2px 8px;background:#f1f5f9;border-radius:20px;font-size:11px;font-weight:600;color:var(--muted)}
+
+/* ── NORMA ── */
+.norma{background:linear-gradient(135deg,#1a7f37 0%,#2da44e 100%);color:white;border-radius:var(--r-xl);overflow:hidden;position:relative;margin:0 auto;max-width:1100px}
+.norma::before{content:'';position:absolute;top:-50%;right:-10%;width:500px;height:500px;border-radius:50%;background:rgba(255,255,255,.06);pointer-events:none}
+.norma-inner{padding:48px;display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}
+@media(max-width:700px){.norma-inner{grid-template-columns:1fr;padding:32px 24px}}
+.norma h2{font-size:30px;font-weight:800;letter-spacing:-.04em;color:white;margin-bottom:12px}
+.norma p{color:rgba(255,255,255,.85);font-size:15px;line-height:1.7}
+.norma-list{list-style:none;display:flex;flex-direction:column;gap:10px}
+.norma-list li{display:flex;align-items:flex-start;gap:10px;font-size:14px;color:rgba(255,255,255,.9)}
+.norma-check{width:20px;height:20px;background:rgba(255,255,255,.2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0;margin-top:2px}
+
+/* ── HOW IT WORKS ── */
+.steps-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0;counter-reset:step;position:relative}
+.steps-row::before{content:'';position:absolute;top:28px;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--border) 10%,var(--border) 90%,transparent);z-index:0}
+.step-item{padding:0 20px;position:relative;z-index:1}
+.step-num{width:56px;height:56px;background:var(--blue);border-radius:14px;display:grid;place-items:center;font-size:18px;font-weight:800;color:white;margin-bottom:16px;box-shadow:0 4px 14px rgba(9,105,218,.3)}
+.step-item h3{font-size:15px;font-weight:700;margin-bottom:6px}
+.step-item p{font-size:13px;color:var(--muted);line-height:1.6}
+
+/* ── PLANS ── */
+.plans-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px;max-width:1000px;margin:0 auto}
+.plan-card{background:var(--surface);border:2px solid var(--border);border-radius:var(--r-xl);padding:28px;position:relative;transition:all .2s}
+.plan-card.featured{border-color:var(--blue);box-shadow:0 0 0 4px rgba(9,105,218,.1)}
+.plan-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--blue);color:white;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+.plan-name{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px}
+.plan-price{font-size:36px;font-weight:800;letter-spacing:-.05em;margin-bottom:4px}
+.plan-price span{font-size:15px;font-weight:600;color:var(--muted)}
+.plan-period{font-size:13px;color:var(--muted);margin-bottom:20px}
+.plan-features{list-style:none;display:flex;flex-direction:column;gap:8px;margin-bottom:24px}
+.plan-features li{font-size:14px;display:flex;align-items:flex-start;gap:8px;color:var(--text)}
+.plan-features li::before{content:'✓';color:var(--green);font-weight:700;flex-shrink:0;margin-top:1px}
+.plan-cta{display:block;text-align:center;padding:12px;border-radius:var(--r);font-size:15px;font-weight:700;text-decoration:none;transition:all .2s}
+.plan-cta-primary{background:var(--blue);color:white}
+.plan-cta-primary:hover{background:var(--blue-dark)}
+.plan-cta-secondary{background:var(--bg);color:var(--text);border:1px solid var(--border)}
+.plan-cta-secondary:hover{background:#e2e8f0}
+
+/* ── TESTIMONIAL ── */
+.testimonials{background:var(--bg)}
+.testimonials-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px}
+.testimonial-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-xl);padding:28px}
+.testimonial-stars{color:#e3aa14;font-size:16px;margin-bottom:12px}
+.testimonial-text{font-size:15px;line-height:1.7;color:var(--text);margin-bottom:16px;font-style:italic}
+.testimonial-author{display:flex;align-items:center;gap:12px}
+.testimonial-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#1c73e8,#2da6ff);display:grid;place-items:center;font-size:14px;font-weight:800;color:white;flex-shrink:0}
+.testimonial-name{font-weight:700;font-size:14px}
+.testimonial-role{font-size:12px;color:var(--muted)}
+
+/* ── FAQ ── */
+.faq-list{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:0}
+.faq-item{border-bottom:1px solid var(--border);padding:20px 0}
+.faq-question{font-size:16px;font-weight:700;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+.faq-answer{font-size:14px;color:var(--muted);line-height:1.7}
+
+/* ── CTA SECTION ── */
+.cta-section{background:linear-gradient(135deg,#0d1117,#1c2128);text-align:center;padding:80px 24px}
+.cta-section h2{color:#e6edf3;margin-bottom:12px}
+.cta-section p{color:#8b949e;font-size:17px;margin-bottom:32px;max-width:480px;margin-left:auto;margin-right:auto}
+.cta-note{font-size:13px;color:#7d8590;margin-top:16px}
+
+/* ── FOOTER ── */
+footer{background:#0d1117;padding:48px 24px 32px;color:#8b949e}
+.footer-inner{max-width:1100px;margin:0 auto}
+.footer-top{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:40px;margin-bottom:40px}
+@media(max-width:700px){.footer-top{grid-template-columns:1fr 1fr}}
+.footer-brand{font-size:18px;font-weight:800;letter-spacing:-.04em;color:#e6edf3;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.footer-desc{font-size:13px;line-height:1.6;margin-bottom:16px}
+.footer-col h4{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#cdd9e5;margin-bottom:12px}
+.footer-col a{display:block;font-size:13px;color:#8b949e;text-decoration:none;margin-bottom:8px;transition:color .15s}
+.footer-col a:hover{color:#cdd9e5}
+.footer-bottom{padding-top:24px;border-top:1px solid rgba(240,246,252,.1);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;font-size:12px}
+.footer-badge{padding:4px 10px;background:rgba(26,127,55,.2);border:1px solid rgba(74,194,107,.3);border-radius:20px;color:#4ac26b;font-size:11px;font-weight:700}
+
+/* ── RESPONSIVE ── */
+@media(max-width:768px){
+  section{padding:56px 20px}
+  .nav-links{display:none}
+  .nav-mobile{display:block}
+  .hero{padding:60px 20px 72px}
+  .hero-screen{min-height:260px}
+  .mock-stats{grid-template-columns:1fr 1fr}
+  .steps-row::before{display:none}
+  .step-item{padding:0 0 24px;border-bottom:1px solid var(--border)}
+  .step-item:last-child{border-bottom:none}
+}
+@media(max-width:480px){
+  .plans-grid{grid-template-columns:1fr}
+  .footer-top{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-inner">
+    <a href="#" class="nav-brand">
+      <div class="nav-mark">N</div>
+      <span class="nav-brand-text">NutriOPS</span>
+    </a>
+    <div class="nav-links">
+      <a href="#features">Funcionalidades</a>
+      <a href="#norma">RDC 216</a>
+      <a href="#plans">Planos</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://nutriops.uniwares.net" class="nav-cta">Acessar →</a>
+    </div>
+    <a href="https://nutriops.uniwares.net" class="btn-primary nav-mobile" style="padding:9px 18px;font-size:14px">Acessar →</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge">🇧🇷 Feito para o food service brasileiro</div>
+  <h1>Conformidade sanitária<br><span>sem papel, sem stress</span></h1>
+  <p>O NutriOPS digitaliza o controle de temperatura, planilhas BPF, capacitação e relatórios da RDC 216/2004 — tudo em uma só plataforma, acessível do celular.</p>
+  <div class="hero-actions">
+    <a href="https://nutriops.uniwares.net" class="btn-primary">🚀 Começar grátis</a>
+    <a href="#features" class="btn-secondary">Ver funcionalidades</a>
+  </div>
+  <p class="hero-note">Sem cartão de crédito · Configuração em minutos · Suporte em português</p>
+
+  <!-- Mock screen -->
+  <div class="hero-img">
+    <div class="hero-img-bar">
+      <div class="dot dot-red"></div><div class="dot dot-amber"></div><div class="dot dot-green"></div>
+      <span style="margin-left:8px;font-size:12px;color:#7d8590;font-family:monospace">nutriops.uniwares.net</span>
+    </div>
+    <div class="hero-screen">
+      <div class="mock-rail">
+        <div class="mock-brand">
+          <div class="mock-brand-mark">N</div>
+          <span class="mock-brand-name">NutriOPS</span>
+        </div>
+        <div class="mock-nav-item active">🏠 Visão geral</div>
+        <div class="mock-nav-item">🌡️ Temperatura</div>
+        <div class="mock-nav-item">📋 Planilhas BPF</div>
+        <div class="mock-nav-item">📦 Validades</div>
+        <div class="mock-nav-item">🎓 Capacitação</div>
+        <div class="mock-nav-item">📊 Conformidade</div>
+        <div class="mock-nav-item">📄 Relatórios</div>
+      </div>
+      <div class="mock-main">
+        <div class="mock-header">Bom dia, Sila ✓</div>
+        <div class="mock-chips">
+          <div class="mock-chip chip-ok"><strong>-20°C</strong><span>Freezer</span></div>
+          <div class="mock-chip chip-ok"><strong>3°C</strong><span>Refrigerador</span></div>
+          <div class="mock-chip chip-warn"><strong>11°C</strong><span>Vitrine</span></div>
+          <div class="mock-chip chip-idle"><strong>—°C</strong><span>Cervejeiro</span></div>
+        </div>
+        <div class="mock-stats">
+          <div class="mock-stat"><div class="mock-stat-label">Conformidade</div><div class="mock-stat-value green">96%</div></div>
+          <div class="mock-stat"><div class="mock-stat-label">Registros hoje</div><div class="mock-stat-value blue">14</div></div>
+          <div class="mock-stat"><div class="mock-stat-label">Planilhas</div><div class="mock-stat-value amber">3/5</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- LOGOS -->
+<div class="logos">
+  <p>Utilizado por estabelecimentos em Brasília</p>
+  <div class="logos-row">
+    <div class="logo-tag">🎂 Swiss Confeitaria</div>
+    <div class="logo-tag">🍞 Bäckerei Padaria</div>
+    <div class="logo-tag">🏭 DBK Produção</div>
+  </div>
+</div>
+
+<!-- PROBLEM -->
+<section class="problem">
+  <div class="section-inner">
+    <div class="section-label" style="color:#58a6ff">O problema</div>
+    <h2 style="color:#e6edf3">Planilhas em papel<br>são um risco para sua empresa</h2>
+    <p class="section-sub">Dados ilegíveis, planilhas esquecidas, controles atrasados. Na hora da fiscalização, esses problemas viram multa — ou interdição.</p>
+    <div class="problem-grid">
+      <div class="problem-card"><div class="problem-icon">📝</div><h3>Registros manuais imprecisos</h3><p>Temperatura anotada "de cabeça", caligrafia ilegível, rasuras — tudo isso invalida o documento na fiscalização.</p></div>
+      <div class="problem-card"><div class="problem-icon">📁</div><h3>Documentação desorganizada</h3><p>Planilhas perdidas, pastas incompletas e histórico inacessível quando o fiscal chega de surpresa.</p></div>
+      <div class="problem-card"><div class="problem-icon">⏰</div><h3>Registros fora do horário</h3><p>Sem sistema, o colaborador muitas vezes preenche as planilhas retroativamente — o que é ilegal e invalidado.</p></div>
+      <div class="problem-card"><div class="problem-icon">🎓</div><h3>Capacitação sem controle</h3><p>Sem registro formal, não há como comprovar que a equipe foi treinada — outro item frequente de autuação.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="section-inner">
+    <div class="section-label">Funcionalidades</div>
+    <h2>Tudo que a RDC 216/2004<br>exige, em um só lugar</h2>
+    <p class="section-sub">Do registro de temperatura ao certificado de capacitação. Cada funcionalidade foi desenvolvida seguindo as exigências reais da Vigilância Sanitária.</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon-wrap icon-blue">🌡️</div>
+        <h3>Controle de temperatura</h3>
+        <p>Registro digital com carimbo de data e hora, alertas automáticos de desvio e impressão para auditoria.</p>
+        <span class="feature-tag">RDC 216 item 4.7</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon-wrap icon-green">📋</div>
+        <h3>Planilhas BPF</h3>
+        <p>Higiene pessoal, vetores e pragas, faxina, dedetização e mais — com validação digital do Responsável Técnico.</p>
+        <span class="feature-tag">RDC 216 item 4.8</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon-wrap icon-amber">🎓</div>
+        <h3>Capacitação da equipe</h3>
+        <p>Sessões de treinamento com lista de presença, assinatura e certificado PDF pronto para auditoria.</p>
+        <span class="feature-tag">RDC 216 item 4.6</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon-wrap icon-blue">📦</div>
+        <h3>Validades e estoque</h3>
+        <p>Alertas de vencimento, estoque mínimo e etiquetas digitais 60×60mm com CNPJ do estabelecimento.</p>
+        <span class="feature-tag">RDC 216 item 4.9</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon-wrap icon-teal">🚚</div>
+        <h3>Recebimento de mercadorias</h3>
+        <p>Checklist completo na entrada: temperatura, validade, embalagem, aparência e resultado aceito/rejeitado.</p>
+        <span class="feature-tag">RDC 216 item 4.5</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon-wrap icon-purple">📄</div>
+        <h3>Relatórios para fiscalização</h3>
+        <p>PDF com CNPJ, endereço, RT e CRN — pronto para entregar ao fiscal da Vigilância Sanitária a qualquer momento.</p>
+        <span class="feature-tag">ANVISA — Auditoria</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon-wrap icon-red">🍳</div>
+        <h3>Controles especiais</h3>
+        <p>Óleo de fritura, descongelamento, resfriamento e tratamento térmico — com critérios da norma sempre visíveis.</p>
+        <span class="feature-tag">RDC 216 item 4.8</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon-wrap icon-green">📑</div>
+        <h3>POPs digitais</h3>
+        <p>Biblioteca de Procedimentos Operacionais Padrão com passos numerados e impressão com assinatura do RT.</p>
+        <span class="feature-tag">RDC 216 — 8 POPs obrig.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- NORMA -->
+<section style="padding:80px 24px;background:var(--bg)">
+  <div class="section-inner">
+    <div class="norma">
+      <div class="norma-inner">
+        <div>
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.7);margin-bottom:10px">Conformidade legal</div>
+          <h2>Desenvolvido sobre<br>a RDC 216/2004</h2>
+          <p>Cada funcionalidade do NutriOPS foi mapeada a partir dos itens reais da RDC 216/2004 da ANVISA — a norma que rege todos os serviços de alimentação no Brasil.</p>
+        </div>
+        <ul class="norma-list" id="norma">
+          <li><div class="norma-check">✓</div>Controle de temperatura conforme item 4.7</li>
+          <li><div class="norma-check">✓</div>Higienização de instalações e equipamentos — item 4.2</li>
+          <li><div class="norma-check">✓</div>Capacitação de manipuladores — item 4.6</li>
+          <li><div class="norma-check">✓</div>Controle integrado de vetores e pragas — item 4.3</li>
+          <li><div class="norma-check">✓</div>Recebimento de matérias-primas — item 4.5</li>
+          <li><div class="norma-check">✓</div>8 POPs obrigatórios documentados</li>
+          <li><div class="norma-check">✓</div>Manual de Boas Práticas rastreável</li>
+          <li><div class="norma-check">✓</div>Registros com data, hora e identificação do responsável</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section style="background:#fff">
+  <div class="section-inner">
+    <div class="section-label">Como funciona</div>
+    <h2>Configure em minutos,<br>use para sempre</h2>
+    <p class="section-sub" style="margin-bottom:56px">Sem instalação, sem treinamento longo. Qualquer colaborador começa a usar no primeiro dia.</p>
+    <div class="steps-row">
+      <div class="step-item">
+        <div class="step-num">1</div>
+        <h3>Acesse pelo navegador</h3>
+        <p>Abra nutriops.uniwares.net em qualquer dispositivo. Funciona no celular, tablet e computador.</p>
+      </div>
+      <div class="step-item">
+        <div class="step-num">2</div>
+        <h3>Cadastre sua empresa</h3>
+        <p>Configure os dados do estabelecimento, equipamentos e colaboradores em poucos minutos.</p>
+      </div>
+      <div class="step-item">
+        <div class="step-num">3</div>
+        <h3>Faça o primeiro registro</h3>
+        <p>O colaborador entra com nome + PIN e registra as temperaturas na tela inicial.</p>
+      </div>
+      <div class="step-item">
+        <div class="step-num">4</div>
+        <h3>Exporte para o fiscal</h3>
+        <p>Com um clique, gera o relatório completo pronto para apresentar à Vigilância Sanitária.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PLANS -->
+<section style="background:var(--bg)" id="plans">
+  <div class="section-inner">
+    <div style="text-align:center;margin-bottom:48px">
+      <div class="section-label">Planos</div>
+      <h2>Simples e transparente</h2>
+      <p style="font-size:17px;color:var(--muted);max-width:440px;margin:0 auto">Sem contratos anuais. Cancele quando quiser. Suporte sempre em português.</p>
+    </div>
+    <div class="plans-grid">
+      <div class="plan-card">
+        <div class="plan-name">Loja</div>
+        <div class="plan-price">R$149<span>/mês</span></div>
+        <div class="plan-period">por unidade</div>
+        <ul class="plan-features">
+          <li>Controle de temperatura</li>
+          <li>Planilhas BPF completas</li>
+          <li>Controles especiais</li>
+          <li>Validades e estoque</li>
+          <li>Recebimento de mercadorias</li>
+          <li>Relatórios para fiscalização</li>
+          <li>App para celular (PWA)</li>
+          <li>Até 15 colaboradores</li>
+        </ul>
+        <a href="https://nutriops.uniwares.net" class="plan-cta plan-cta-secondary">Começar grátis</a>
+      </div>
+      <div class="plan-card featured">
+        <div class="plan-badge">Mais popular</div>
+        <div class="plan-name">Rede</div>
+        <div class="plan-price">R$349<span>/mês</span></div>
+        <div class="plan-period">até 3 unidades</div>
+        <ul class="plan-features">
+          <li>Tudo do plano Loja</li>
+          <li>Múltiplas unidades em uma tela</li>
+          <li>Painel da RT centralizado</li>
+          <li>POPs digitais</li>
+          <li>Capacitação com certificados</li>
+          <li>Exportação mensal automática</li>
+          <li>App desktop Windows</li>
+          <li>Colaboradores ilimitados</li>
+          <li>Supabase (dados na nuvem)</li>
+        </ul>
+        <a href="https://nutriops.uniwares.net" class="plan-cta plan-cta-primary">Começar grátis</a>
+      </div>
+      <div class="plan-card">
+        <div class="plan-name">Enterprise</div>
+        <div class="plan-price">Sob consulta</div>
+        <div class="plan-period">redes e grupos</div>
+        <ul class="plan-features">
+          <li>Tudo do plano Rede</li>
+          <li>Unidades ilimitadas</li>
+          <li>Dashboard executivo consolidado</li>
+          <li>Integração com ERP</li>
+          <li>SLA premium</li>
+          <li>Treinamento da equipe</li>
+          <li>Personalização da marca</li>
+        </ul>
+        <a href="mailto:contato@nutriops.com.br" class="plan-cta plan-cta-secondary">Falar com consultor</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIALS -->
+<section class="testimonials">
+  <div class="section-inner">
+    <div style="text-align:center;margin-bottom:40px">
+      <div class="section-label">Depoimentos</div>
+      <h2>Aprovado por quem usa na prática</h2>
+    </div>
+    <div class="testimonials-grid">
+      <div class="testimonial-card">
+        <div class="testimonial-stars">★★★★★</div>
+        <p class="testimonial-text">"Antes era uma correria na hora da fiscalização. Agora abro o NutriOPS e gero o relatório em segundos. O fiscal ficou impressionado com a organização."</p>
+        <div class="testimonial-author">
+          <div class="testimonial-avatar">A</div>
+          <div><div class="testimonial-name">Ana Paula S.</div><div class="testimonial-role">Nutricionista RT — Swiss &amp; Bäckerei</div></div>
+        </div>
+      </div>
+      <div class="testimonial-card">
+        <div class="testimonial-stars">★★★★★</div>
+        <p class="testimonial-text">"Os colaboradores adoraram o modo quiosque. Eles mesmos registram as temperaturas sem precisar de nenhum treinamento longo. É muito intuitivo."</p>
+        <div class="testimonial-author">
+          <div class="testimonial-avatar">F</div>
+          <div><div class="testimonial-name">Fran</div><div class="testimonial-role">Supervisora — Swiss &amp; Bäckerei</div></div>
+        </div>
+      </div>
+      <div class="testimonial-card">
+        <div class="testimonial-stars">★★★★★</div>
+        <p class="testimonial-text">"A produção ficou muito mais organizada. Controlamos câmaras, descongelamento e tratamento térmico em um só lugar. Os relatórios saem perfeitos para o fiscal."</p>
+        <div class="testimonial-author">
+          <div class="testimonial-avatar">D</div>
+          <div><div class="testimonial-name">Dominique G.</div><div class="testimonial-role">Supervisora — DBK Produção</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq" style="background:#fff">
+  <div class="section-inner" style="max-width:760px;margin:0 auto">
+    <div style="text-align:center;margin-bottom:40px">
+      <div class="section-label">FAQ</div>
+      <h2>Perguntas frequentes</h2>
+    </div>
+    <div class="faq-list">
+      <div class="faq-item">
+        <div class="faq-question">O NutriOPS substitui o Manual de Boas Práticas?</div>
+        <div class="faq-answer">O NutriOPS registra e digitaliza todos os controles exigidos pela RDC 216/2004. O Manual de Boas Práticas é um documento elaborado pela nutricionista RT e complementa os registros digitais — são dois documentos distintos e ambos necessários.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-question">Funciona sem internet?</div>
+        <div class="faq-answer">Sim. O NutriOPS funciona completamente offline. Os dados são salvos no dispositivo e sincronizados automaticamente com a nuvem quando a internet voltar. Ideal para estabelecimentos com conexão instável.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-question">Quantos dispositivos posso usar?</div>
+        <div class="faq-answer">Ilimitado. Cada colaborador acessa com seu próprio login (nome + PIN). Funciona em celulares, tablets e computadores simultaneamente.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-question">Os dados ficam seguros?</div>
+        <div class="faq-answer">Sim. Os dados são armazenados no Supabase (infraestrutura PostgreSQL de nível enterprise), com backup automático e criptografia. Nenhum dado é compartilhado com terceiros.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-question">Preciso treinar minha equipe?</div>
+        <div class="faq-answer">O NutriOPS foi projetado para ser intuitivo. A maioria dos colaboradores começa a registrar temperaturas no primeiro acesso, sem treinamento formal. O modo quiosque facilita ainda mais para estabelecimentos com alta rotatividade.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-question">Posso cancelar quando quiser?</div>
+        <div class="faq-answer">Sim. Não há fidelidade mínima. Cancele a qualquer momento sem multa. Seus dados ficam disponíveis para exportação por 30 dias após o cancelamento.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <div class="section-label" style="color:#58a6ff">Comece hoje</div>
+  <h2>Sua conformidade sanitária<br>a um clique de distância</h2>
+  <p>Pare de arriscar multas e interdições com planilhas em papel. O NutriOPS garante sua tranquilidade na próxima fiscalização.</p>
+  <div class="hero-actions">
+    <a href="https://nutriops.uniwares.net" class="btn-primary">🚀 Acessar grátis agora</a>
+    <a href="mailto:contato@nutriops.com.br" class="btn-secondary" style="border-color:rgba(255,255,255,.2)">Falar com a equipe</a>
+  </div>
+  <p class="cta-note">Sem cartão de crédito · Suporte em português · RDC 216/2004</p>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-top">
+      <div>
+        <div class="footer-brand">
+          <div class="nav-mark">N</div>
+          NutriOPS
+        </div>
+        <p class="footer-desc">Conformidade sanitária digital para serviços de alimentação. Desenvolvido no Brasil para o food service brasileiro.</p>
+        <div class="footer-badge">✓ RDC 216/2004 — ANVISA</div>
+      </div>
+      <div class="footer-col">
+        <h4>Produto</h4>
+        <a href="#features">Funcionalidades</a>
+        <a href="#plans">Planos e preços</a>
+        <a href="manual-nutriops.html">Manual do usuário</a>
+        <a href="https://nutriops.uniwares.net">Acessar</a>
+      </div>
+      <div class="footer-col">
+        <h4>Normas</h4>
+        <a href="#norma">RDC 216/2004</a>
+        <a href="#features">POPs obrigatórios</a>
+        <a href="#features">Planilhas BPF</a>
+        <a href="#features">Relatórios fiscais</a>
+      </div>
+      <div class="footer-col">
+        <h4>Contato</h4>
+        <a href="mailto:contato@nutriops.com.br">contato@nutriops.com.br</a>
+        <a href="mailto:suporte@nutriops.com.br">suporte@nutriops.com.br</a>
+        <a href="https://nutriops.uniwares.net">nutriops.uniwares.net</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 NutriOPS · Todos os direitos reservados</span>
+      <span>Feito com 🧡 em Brasília, Brasil</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

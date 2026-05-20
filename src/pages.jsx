@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { tenants as defaultTenants, globalAdmin } from './data';
 import { OnboardingWizard, readOnboardingTenants, writeOnboardingTenants } from './onboarding';
+import { signIn, signOut, signUp, resetPassword, readAuthSession, isSessionValid, refreshSession } from './auth';
 import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus } from './repository';
 import { FormsView } from './forms';
 import { TrainingView } from './training';
@@ -318,36 +319,55 @@ function NoPermission({ onBack }) {
 // ─── Login ─────────────────────────────────────────────────────────────────
 
 function LoginScreen({ onLogin }) {
-  const [tenantId,  setTenantId]  = useState(tenants[0].id);
+  const useSupabase = isSupabaseEnabled();
+  const [mode, setMode]         = useState(useSupabase ? 'email' : 'pin');
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+  const [resetSent, setResetSent] = useState(false);
+  const [tenantId, setTenantId] = useState(activeTenants[0]?.id ?? '');
   const [nameInput, setNameInput] = useState('');
-  const [pin,       setPin]       = useState('');
-  const [error,     setError]     = useState('');
-  const [useGlobal, setUseGlobal] = useState(false);
+  const [pin, setPin]           = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState('');
   const nameRef = useRef(null);
   const pinRef  = useRef(null);
+  const selectedTenant = activeTenants.find(t => t.id === tenantId) ?? activeTenants[0];
 
-  const selectedTenant = tenants.find((t) => t.id === tenantId) ?? tenants[0];
+  const handleEmailLogin = async () => {
+    setError(''); setLoading(true);
+    try { const s = await signIn({ email, password }); save(SESSION_KEY, s); onLogin(s); }
+    catch (e) { setError(e.message); }
+    setLoading(false);
+  };
 
-  useEffect(() => { setNameInput(''); setPin(''); setError(''); }, [tenantId, useGlobal]);
+  const handleReset = async () => {
+    if (!email.trim()) { setError('Informe seu e-mail.'); return; }
+    setLoading(true); setError('');
+    try { await resetPassword(email); setResetSent(true); } catch (e) { setError(e.message); }
+    setLoading(false);
+  };
 
-  const handleLogin = () => {
+  const handlePinLogin = () => {
     setError('');
-    if (useGlobal) {
+    const isAdmin = tenantId === '__admin__';
+    if (isAdmin) {
       if (pin !== (globalAdmin.pin ?? '9999')) { setError('PIN incorreto.'); return; }
-      const session = { tenantId: tenants[0].id, user: { ...globalAdmin } };
-      save(SESSION_KEY, session); onLogin(session); return;
+      const s = { tenantId: activeTenants[0]?.id, user: { ...globalAdmin } };
+      save(SESSION_KEY, s); onLogin(s); return;
     }
     const trimmed = nameInput.trim().toLowerCase();
     if (!trimmed) { setError('Informe seu nome.'); nameRef.current?.focus(); return; }
-    const users = readUsers(selectedTenant).filter((u) => u.status !== 'Inativo');
-    const user  = users.find((u) => u.name.toLowerCase() === trimmed)
-               ?? users.find((u) => u.name.toLowerCase().startsWith(trimmed))
-               ?? users.find((u) => trimmed.split(' ').every(w => u.name.toLowerCase().includes(w)));
-    if (!user) { setError('Nome não encontrado. Verifique a grafia.'); nameRef.current?.select(); return; }
+    const users = readUsers(selectedTenant).filter(u => u.status !== 'Inativo');
+    const user  = users.find(u => u.name.toLowerCase() === trimmed)
+               ?? users.find(u => u.name.toLowerCase().startsWith(trimmed))
+               ?? users.find(u => trimmed.split(' ').every(w => u.name.toLowerCase().includes(w)));
+    if (!user) { setError('Nome não encontrado.'); nameRef.current?.select(); return; }
     if (pin !== (user.pin ?? '0000')) { setError('PIN incorreto.'); pinRef.current?.select(); return; }
-    const session = { tenantId, user: { id:`${tenantId}-${user.name}`, name:user.name, role:user.role, location:user.location??'', storeId:user.storeId??null } };
-    save(SESSION_KEY, session); onLogin(session);
+    const s = { tenantId, user: { id:`${tenantId}-${user.name}`, name:user.name, role:user.role, location:user.location??'', storeId:user.storeId??null } };
+    save(SESSION_KEY, s); onLogin(s);
   };
+
+  const isAdmin = tenantId === '__admin__';
 
   return (
     <div className="login-screen">
@@ -356,45 +376,66 @@ function LoginScreen({ onLogin }) {
           <span className="brand-mark" style={{ width:36, height:36, fontSize:16, borderRadius:10 }}>N</span>
           <span style={{ fontSize:22, fontWeight:800, letterSpacing:'-.05em', color:'var(--text)' }}>NutriOPS</span>
         </div>
-        <h1 style={{ fontSize:24, fontWeight:800, letterSpacing:'-.04em', marginBottom:6 }}>Entrar</h1>
-        <p className="muted" style={{ marginBottom:24 }}>Selecione sua empresa, informe seu nome e PIN.</p>
-        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-          {!useGlobal ? (
-            <>
-              <label>Empresa
-                <select value={tenantId} onChange={(e) => setTenantId(e.target.value)}>
-                  {tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-              </label>
-              <label>Nome
-                <input ref={nameRef} value={nameInput}
-                  onChange={(e) => { setNameInput(e.target.value); setError(''); }}
-                  placeholder="Digite seu nome"
-                  onKeyDown={(e) => { if (e.key==='Enter') { e.preventDefault(); pinRef.current?.focus(); } }}
-                  autoComplete="off" autoCapitalize="words" />
-              </label>
-            </>
-          ) : (
-            <div style={{ padding:'12px 14px', background:'var(--blue-light)', border:'1px solid var(--blue-border)', borderRadius:'var(--r)', fontSize:13 }}>
-              <strong>Administrador global</strong> — acesso a todas as empresas
+
+        {resetSent ? (
+          <div>
+            <div style={{ padding:'14px', background:'var(--green-light)', border:'1px solid var(--green-border)', borderRadius:'var(--r)', marginBottom:16 }}>
+              <strong style={{ display:'block', color:'var(--green)', marginBottom:4 }}>✓ E-mail enviado!</strong>
+              <span style={{ fontSize:13, color:'var(--green)' }}>Verifique sua caixa de entrada.</span>
             </div>
-          )}
-          <label>PIN
-            <input ref={pinRef} type="password" inputMode="numeric" maxLength={6}
-              value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g,'')); setError(''); }}
-              placeholder="••••" autoComplete="off"
-              onKeyDown={(e) => { if (e.key==='Enter') handleLogin(); }}
-              style={{ letterSpacing:'0.3em', fontSize:22, textAlign:'center', fontFamily:'var(--mono)' }} />
-          </label>
-          {error && <div style={{ padding:'8px 12px', background:'var(--red-light)', border:'1px solid var(--red-border)', borderRadius:'var(--r)', color:'var(--red)', fontSize:13, fontWeight:600 }}>{error}</div>}
-          <button className="primary-action" style={{ marginTop:4 }} onClick={handleLogin}>Entrar</button>
-        </div>
-        <div style={{ marginTop:18, paddingTop:14, borderTop:'1px solid var(--border-subtle)', textAlign:'center' }}>
-          <button onClick={() => { setUseGlobal(!useGlobal); setPin(''); setError(''); setNameInput(''); }}
-            style={{ background:'none', border:'none', fontSize:11, color:'var(--text-secondary)', cursor:'pointer', textDecoration:'underline' }}>
-            {useGlobal ? 'Entrar como colaborador da unidade' : 'Entrar como administrador global'}
-          </button>
-        </div>
+            <button className="secondary-action" style={{ width:'100%' }} onClick={() => { setResetSent(false); setMode('email'); }}>← Voltar ao login</button>
+          </div>
+        ) : mode === 'reset' ? (
+          <div>
+            <h1 style={{ fontSize:22, fontWeight:800, letterSpacing:'-.04em', marginBottom:6 }}>Recuperar senha</h1>
+            <p className="muted" style={{ marginBottom:20 }}>Enviaremos um link para redefinir sua senha.</p>
+            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              <label>E-mail<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="seu@email.com" autoFocus onKeyDown={e=>{ if(e.key==='Enter') handleReset(); }} /></label>
+              {error && <div style={{ padding:'8px 12px', background:'var(--red-light)', border:'1px solid var(--red-border)', borderRadius:'var(--r)', color:'var(--red)', fontSize:13, fontWeight:600 }}>{error}</div>}
+              <button className="primary-action" onClick={handleReset} disabled={loading}>{loading ? 'Enviando…' : 'Enviar link'}</button>
+              <button className="ghost-action" onClick={() => setMode('email')}>← Voltar</button>
+            </div>
+          </div>
+        ) : mode === 'email' ? (
+          <div>
+            <h1 style={{ fontSize:22, fontWeight:800, letterSpacing:'-.04em', marginBottom:6 }}>Entrar</h1>
+            <p className="muted" style={{ marginBottom:20 }}>Acesse com e-mail e senha.</p>
+            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              <label>E-mail<input type="email" value={email} onChange={e=>{ setEmail(e.target.value); setError(''); }} placeholder="seu@email.com" autoFocus /></label>
+              <label>Senha<input type="password" value={password} onChange={e=>{ setPassword(e.target.value); setError(''); }} placeholder="••••••••" onKeyDown={e=>{ if(e.key==='Enter') handleEmailLogin(); }} /></label>
+              {error && <div style={{ padding:'8px 12px', background:'var(--red-light)', border:'1px solid var(--red-border)', borderRadius:'var(--r)', color:'var(--red)', fontSize:13, fontWeight:600 }}>{error}</div>}
+              <button className="primary-action attention" onClick={handleEmailLogin} disabled={loading||!email||!password}>{loading ? 'Entrando…' : 'Entrar'}</button>
+              <button className="ghost-action" style={{ fontSize:12 }} onClick={() => setMode('reset')}>Esqueci minha senha</button>
+            </div>
+            <div style={{ marginTop:16, paddingTop:14, borderTop:'1px solid var(--border-subtle)', textAlign:'center' }}>
+              <button onClick={() => setMode('pin')} style={{ background:'none', border:'none', fontSize:11, color:'var(--text-secondary)', cursor:'pointer', textDecoration:'underline' }}>Entrar com nome + PIN</button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <h1 style={{ fontSize:22, fontWeight:800, letterSpacing:'-.04em', marginBottom:6 }}>Entrar</h1>
+            <p className="muted" style={{ marginBottom:20 }}>{isAdmin ? 'Administrador global.' : 'Selecione a empresa, nome e PIN.'}</p>
+            <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+              {!isAdmin && (
+                <>
+                  <label>Empresa<select value={tenantId} onChange={e=>setTenantId(e.target.value)}>{activeTenants.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
+                  <label>Nome<input ref={nameRef} value={nameInput} onChange={e=>{ setNameInput(e.target.value); setError(''); }} placeholder="Digite seu nome" onKeyDown={e=>{ if(e.key==='Enter'){e.preventDefault();pinRef.current?.focus();} }} autoComplete="off" autoCapitalize="words" /></label>
+                </>
+              )}
+              {isAdmin && <div style={{ padding:'12px 14px', background:'var(--blue-light)', border:'1px solid var(--blue-border)', borderRadius:'var(--r)', fontSize:13 }}><strong>Administrador global</strong> — acesso a todas as empresas</div>}
+              <label>PIN<input ref={pinRef} type="password" inputMode="numeric" maxLength={6} value={pin} onChange={e=>{ setPin(e.target.value.replace(/\D/g,'')); setError(''); }} placeholder="••••" autoComplete="off" onKeyDown={e=>{ if(e.key==='Enter') handlePinLogin(); }} style={{ letterSpacing:'0.3em', fontSize:22, textAlign:'center', fontFamily:'var(--mono)' }} /></label>
+              {error && <div style={{ padding:'8px 12px', background:'var(--red-light)', border:'1px solid var(--red-border)', borderRadius:'var(--r)', color:'var(--red)', fontSize:13, fontWeight:600 }}>{error}</div>}
+              <button className="primary-action" style={{ marginTop:4 }} onClick={handlePinLogin}>Entrar</button>
+            </div>
+            <div style={{ marginTop:16, paddingTop:14, borderTop:'1px solid var(--border-subtle)', textAlign:'center', display:'flex', flexDirection:'column', gap:6 }}>
+              {useSupabase && <button onClick={() => setMode('email')} style={{ background:'none', border:'none', fontSize:11, color:'var(--text-secondary)', cursor:'pointer', textDecoration:'underline' }}>Entrar com e-mail e senha</button>}
+              <button onClick={() => { setTenantId(t => t === '__admin__' ? (activeTenants[0]?.id ?? '') : '__admin__'); setPin(''); setError(''); setNameInput(''); }} style={{ background:'none', border:'none', fontSize:11, color:'var(--text-secondary)', cursor:'pointer', textDecoration:'underline' }}>
+                {isAdmin ? 'Entrar como colaborador da unidade' : 'Entrar como administrador global'}
+              </button>
+            </div>
+          </div>
+        )}
+
         <p style={{ marginTop:10, fontSize:10, color:'var(--text-secondary)', textAlign:'center' }}>
           Conformidade sanitária digital · RDC 216/2004<br/>
           <span style={{ color:'var(--text-placeholder)' }}>v{APP_VERSION}</span>
@@ -403,6 +444,7 @@ function LoginScreen({ onLogin }) {
     </div>
   );
 }
+
 
 // ─── Rail ──────────────────────────────────────────────────────────────────
 

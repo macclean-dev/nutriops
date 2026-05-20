@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { tenants as defaultTenants, globalAdmin } from './data';
 import { OnboardingWizard, readOnboardingTenants, writeOnboardingTenants } from './onboarding';
 import { signIn, signOut, signUp, resetPassword, readAuthSession, isSessionValid, refreshSession } from './auth';
+import { AdminPanel, AdminLogin, readAdminAuth, writeAdminAuth, clearAdminAuth, readClients } from './admin';
 import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus } from './repository';
 import { FormsView } from './forms';
 import { TrainingView } from './training';
@@ -494,8 +495,18 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
   return (
     <aside className="super-rail">
       <div className="rail-brand">
-        <div className="brand-lockup"><span className="brand-mark">N</span><span className="brand-wordmark">NutriOPS</span></div>
-        <button onClick={onSearch} style={{ marginTop:8, width:'100%', padding:'6px 10px', background:'rgba(255,255,255,.06)', border:'1px solid rgba(255,255,255,.1)', borderRadius:8, color:'var(--rail-muted)', fontSize:12, cursor:'pointer', textAlign:'left', display:'flex', justifyContent:'space-between', alignItems:'center', fontFamily:'var(--font)' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+          <div className="brand-lockup"><span className="brand-mark">N</span><span className="brand-wordmark">NutriOPS</span></div>
+          <button className="dark-mode-toggle" title="Alternar modo escuro"
+            onClick={() => {
+              const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+              document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark');
+              localStorage.setItem('nutriops.dark.mode', String(!dark));
+            }}>
+            {document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙'}
+          </button>
+        </div>
+        <button onClick={onSearch} style={{ width:'100%', padding:'6px 10px', background:'rgba(255,255,255,.06)', border:'1px solid rgba(255,255,255,.1)', borderRadius:8, color:'var(--rail-muted)', fontSize:12, cursor:'pointer', textAlign:'left', display:'flex', justifyContent:'space-between', alignItems:'center', fontFamily:'var(--font)' }}>
           <span>🔍 Buscar…</span>
           <kbd style={{ fontSize:10, opacity:.6 }}>⌘K</kbd>
         </button>
@@ -2323,6 +2334,27 @@ export function App() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  // Check if accessed via token and account is blocked
+  const accessToken = localStorage.getItem('nutriops.access.token');
+  if (accessToken) {
+    const clients = readClients();
+    const client  = clients.find(c => c.accessToken === accessToken);
+    if (client && !client.active) {
+      return (
+        <div style={{ minHeight:'100vh', display:'grid', placeItems:'center', background:'var(--bg)', padding:24 }}>
+          <div style={{ textAlign:'center', maxWidth:360 }}>
+            <div style={{ fontSize:56, marginBottom:16 }}>🔒</div>
+            <h2 style={{ fontSize:22, fontWeight:800, marginBottom:8 }}>Conta inativa</h2>
+            <p style={{ color:'var(--text-secondary)', marginBottom:24 }}>Sua conta NutriOPS está temporariamente inativa. Entre em contato com o suporte.</p>
+            <a href="mailto:suporte@nutriops.com.br" style={{ display:'inline-block', padding:'10px 24px', background:'var(--blue)', color:'white', borderRadius:8, textDecoration:'none', fontWeight:700 }}>
+              Falar com suporte
+            </a>
+          </div>
+        </div>
+      );
+    }
+  }
+
   if (!session) return <LoginScreen onLogin={handleLogin} activeTenants={activeTenants} />;
 
   // Kiosk mode — full screen override
@@ -2346,6 +2378,11 @@ export function App() {
           <span>NutriOPS</span>
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          <button className="mobile-menu-btn" onClick={() => {
+            const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+            document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark');
+            localStorage.setItem('nutriops.dark.mode', String(!dark));
+          }}>{document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙'}</button>
           <button className="mobile-menu-btn" onClick={() => setShowSearch(true)}>🔍</button>
           <button className="mobile-menu-btn" onClick={() => setMobileDrawerOpen(true)}>☰</button>
         </div>

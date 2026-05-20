@@ -170,7 +170,7 @@ function ParticipantSelector({ allUsers, selected, onChange }) {
           Selecionar todos
         </button>
       </div>
-      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar funcionário…"
+      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar colaborador…"
         style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, fontFamily: 'inherit' }} />
       <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
         {filtered.map((u) => {
@@ -446,7 +446,7 @@ function EmployeeStatusPanel({ allUsers, sessions, config }) {
   return (
     <article className="management-card">
       <div className="card-head">
-        <div><span className="eyebrow">Situação da equipe</span><h2>Capacitação por funcionário</h2></div>
+        <div><span className="eyebrow">Situação da equipe</span><h2>Capacitação por colaborador</h2></div>
         <span className="badge neutral">Validade: {validity} meses</span>
       </div>
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)' }}>

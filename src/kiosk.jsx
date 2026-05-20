@@ -304,3 +304,177 @@ export function KioskSetup({ activeTenant, equipmentCatalog, session, onLaunch, 
     </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FORM KIOSK — Tablet mode for BPF forms
+// ═══════════════════════════════════════════════════════════════════════════
+
+import { readFormTemplates, readFormRecords, writeFormRecords, completionPct, getPeriodKey, catMeta } from './forms';
+
+function FormKioskField({ field, value, onChange }) {
+  if (field.type === 'cnc') {
+    return (
+      <div style={{ display:'flex', gap:12 }}>
+        {['C','NC'].map(opt => {
+          const on = value === opt;
+          const [bg,color,border] = opt==='C' ? ['#dafbe1','#1a7f37','#4ac26b'] : ['#ffebe9','#cf222e','#ff8182'];
+          return (
+            <button key={opt} onClick={() => onChange(on?'':opt)}
+              style={{ flex:1, height:64, borderRadius:14, border:`2.5px solid ${on?border:'#d0d7de'}`, background:on?bg:'white', color:on?color:'#94a3b8', fontWeight:800, fontSize:20, cursor:'pointer', transition:'all .12s', boxShadow:on?`0 0 0 3px ${border}44`:'none' }}>
+              {opt}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+  if (field.type === 'presence') {
+    const detected = value?.detected ?? false;
+    return (
+      <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+        <div style={{ display:'flex', gap:12 }}>
+          <button onClick={() => onChange({ ...value, detected:true })}
+            style={{ flex:1, height:60, borderRadius:14, border:`2.5px solid ${detected?'#ff8182':'#d0d7de'}`, background:detected?'#ffebe9':'white', color:detected?'#cf222e':'#94a3b8', fontWeight:700, fontSize:16, cursor:'pointer' }}>
+            ✕ Detectado
+          </button>
+          <button onClick={() => onChange({ ...value, detected:false })}
+            style={{ flex:1, height:60, borderRadius:14, border:`2.5px solid ${!detected?'#4ac26b':'#d0d7de'}`, background:!detected?'#dafbe1':'white', color:!detected?'#1a7f37':'#94a3b8', fontWeight:700, fontSize:16, cursor:'pointer' }}>
+            ✓ Sem ocorrência
+          </button>
+        </div>
+        {detected && (
+          <input value={value?.location??''} onChange={e=>onChange({ ...value, location:e.target.value })}
+            placeholder="Local (ex.: D=Distribuição)" style={{ width:'100%', padding:'14px', borderRadius:10, border:'1.5px solid #d0d7de', fontSize:16, fontFamily:'inherit' }} />
+        )}
+      </div>
+    );
+  }
+  if (field.type === 'date_sig') {
+    return (
+      <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+        <input type="date" value={value?.date??''} onChange={e=>onChange({ ...value, date:e.target.value })}
+          style={{ flex:1, minWidth:140, padding:'14px', borderRadius:10, border:'1.5px solid #d0d7de', fontSize:16, fontFamily:'inherit' }} />
+        <input value={value?.sig??''} onChange={e=>onChange({ ...value, sig:e.target.value })}
+          placeholder="Responsável" style={{ flex:2, minWidth:180, padding:'14px', borderRadius:10, border:'1.5px solid #d0d7de', fontSize:16, fontFamily:'inherit' }} />
+      </div>
+    );
+  }
+  if (field.type === 'text') {
+    return (
+      <textarea value={value??''} onChange={e=>onChange(e.target.value)}
+        placeholder="Observações…" style={{ width:'100%', padding:'14px', borderRadius:10, border:'1.5px solid #d0d7de', fontSize:16, fontFamily:'inherit', minHeight:80, resize:'vertical' }} />
+    );
+  }
+  return null;
+}
+
+export function FormKioskApp({ template, tenantId, tenantName, userName, userRole, onExit, onSave }) {
+  const [responses, setResponses] = useState({});
+  const [sectionIdx, setSectionIdx] = useState(0);
+  const [saving, setSaving]         = useState(false);
+  const [done, setDone]             = useState(false);
+  const [exitAttempts, setExitAttempts] = useState(0);
+  const [currentTime, setCurrentTime]   = useState(new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}));
+
+  useEffect(() => {
+    const t = setInterval(() => setCurrentTime(new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})), 10000);
+    return () => clearInterval(t);
+  }, []);
+
+  const section = template.sections[sectionIdx];
+  const allSections = template.sections;
+  const pct = completionPct(template, { responses });
+  const meta = catMeta(template.category);
+
+  const setField = (id, val) => setResponses(prev => ({ ...prev, [id]: val }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave(responses);
+    setSaving(false);
+    setDone(true);
+  };
+
+  const handleExit = () => {
+    if (exitAttempts < 2) { setExitAttempts(e => e+1); return; }
+    onExit();
+  };
+
+  if (done) return (
+    <div style={{ minHeight:'100vh', background:'#dafbe1', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, fontFamily:'-apple-system,"Segoe UI",system-ui,sans-serif' }}>
+      <div style={{ fontSize:80, color:'#1a7f37' }}>✓</div>
+      <h2 style={{ fontSize:28, fontWeight:800, color:'#1a7f37' }}>Planilha confirmada!</h2>
+      <p style={{ fontSize:16, color:'#065f46' }}>{template.title}</p>
+      <button onClick={onExit} style={{ marginTop:8, padding:'14px 32px', background:'#1a7f37', color:'white', border:'none', borderRadius:14, fontSize:18, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+        Concluir
+      </button>
+    </div>
+  );
+
+  return (
+    <div style={{ minHeight:'100vh', background:'#f0f4f8', fontFamily:'-apple-system,"Segoe UI",system-ui,sans-serif', userSelect:'none' }}>
+      {/* Header */}
+      <div style={{ background:'#0d1117', padding:'12px 20px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <div>
+          <div style={{ fontSize:12, color:'#7d8590', marginBottom:2 }}>{tenantName} · {userName}</div>
+          <div style={{ fontSize:15, fontWeight:800, color:'#e6edf3' }}>{template.title}</div>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+          <div style={{ textAlign:'right' }}>
+            <div style={{ fontSize:22, fontWeight:700, fontFamily:'monospace', color:'#e6edf3' }}>{currentTime}</div>
+            <div style={{ fontSize:10, color:'#7d8590' }}>{pct}% preenchido</div>
+          </div>
+          <button onClick={handleExit} style={{ background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.12)', color:'#7d8590', borderRadius:8, padding:'6px 10px', cursor:'pointer', fontSize:11, fontFamily:'inherit' }}>
+            {exitAttempts === 0 ? 'Sair' : exitAttempts === 1 ? 'Tem certeza?' : 'Sair agora'}
+          </button>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ height:4, background:'#21262d' }}>
+        <div style={{ height:'100%', width:`${pct}%`, background: meta.color, transition:'width .3s' }} />
+      </div>
+
+      {/* Section tabs */}
+      {allSections.length > 1 && (
+        <div style={{ background:'white', borderBottom:'1px solid #e2e8f0', display:'flex', padding:'0 16px', overflowX:'auto' }}>
+          {allSections.map((sec, i) => (
+            <button key={sec.id} onClick={() => setSectionIdx(i)} style={{ padding:'12px 16px', border:'none', borderBottom:`3px solid ${i===sectionIdx?meta.color:'transparent'}`, background:'transparent', fontSize:13, fontWeight:i===sectionIdx?700:500, color:i===sectionIdx?meta.color:'#64748b', cursor:'pointer', whiteSpace:'nowrap', fontFamily:'inherit' }}>
+              {sec.title}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Fields */}
+      <div style={{ padding:'20px 16px', maxWidth:680, margin:'0 auto', display:'flex', flexDirection:'column', gap:20 }}>
+        {section.fields.map(field => (
+          <div key={field.id} style={{ background:'white', borderRadius:16, padding:20, boxShadow:'0 1px 3px rgba(0,0,0,.08)' }}>
+            <div style={{ fontSize:16, fontWeight:700, marginBottom:field.hint?6:14, color:'#1c2128' }}>{field.label}</div>
+            {field.hint && <div style={{ fontSize:13, color:'#656d76', marginBottom:12 }}>{field.hint}</div>}
+            <FormKioskField field={field} value={responses[field.id]} onChange={v => setField(field.id, v)} />
+          </div>
+        ))}
+      </div>
+
+      {/* Navigation footer */}
+      <div style={{ position:'sticky', bottom:0, background:'white', borderTop:'1px solid #e2e8f0', padding:'12px 20px', display:'flex', justifyContent:'space-between', gap:12 }}>
+        <button onClick={() => setSectionIdx(i => Math.max(0, i-1))} disabled={sectionIdx===0}
+          style={{ padding:'12px 24px', borderRadius:12, border:'1px solid #d0d7de', background:'white', fontSize:15, fontWeight:600, cursor:sectionIdx===0?'not-allowed':'pointer', opacity:sectionIdx===0?0.4:1, fontFamily:'inherit', color:'#374151' }}>
+          ← Anterior
+        </button>
+        {sectionIdx < allSections.length - 1 ? (
+          <button onClick={() => setSectionIdx(i => i+1)}
+            style={{ flex:1, padding:'12px 24px', borderRadius:12, border:'none', background:meta.color, color:'white', fontSize:16, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+            Próxima seção →
+          </button>
+        ) : (
+          <button onClick={handleSave} disabled={saving || pct === 0}
+            style={{ flex:1, padding:'12px 24px', borderRadius:12, border:'none', background:pct>0?'#1a7f37':'#d0d7de', color:'white', fontSize:16, fontWeight:700, cursor:pct>0?'pointer':'not-allowed', fontFamily:'inherit' }}>
+            {saving ? 'Salvando…' : `✓ Confirmar preenchimento (${pct}%)`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

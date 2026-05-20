@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { FormKioskApp } from './kiosk';
+import { pushFormRecord } from './repository';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -172,7 +174,7 @@ export function generateFormPDF(template, record, tenant) {
 
 const TPL_HIGIENE_PESSOAL = () => ({
   id:uid(), category:'higiene_pessoal', frequency:'daily',
-  title:'Higiene Pessoal dos Funcionários',
+  title:'Higiene Pessoal dos Colaboradors',
   description:'Verificação diária de higiene, uniforme, comportamento e EPI. C=conforme / NC=não conforme.',
   sections:[{ id:uid(), title:'Verificação',
     fields:[
@@ -584,6 +586,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   const [templates, setTemplates] = useState(() => readFormTemplates(activeTenant));
   const [records,   setRecords]   = useState(() => readFormRecords(activeTenant.id));
   const [filling,   setFilling]   = useState(null);
+  const [kioskForm, setKioskForm] = useState(null); // tablet mode for a specific form
   const [catFilter, setCatFilter] = useState('all');
   const [histId,    setHistId]    = useState(null);
   const [tab,       setTab]       = useState('forms'); // 'forms' | 'validation'
@@ -605,7 +608,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
     const { template, periodKey } = filling;
     setRecords((prev) => {
       const ex = prev.find((r) => r.formId===template.id && r.periodKey===periodKey);
-      const up = {
+    const up = {
         id: ex?.id ?? uid(),
         tenantId: activeTenant.id, formId: template.id, formTitle: template.title,
         category: template.category, frequency: template.frequency, periodKey,
@@ -613,6 +616,8 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
         user: session?.user?.name ?? 'Usuário', role: session?.user?.role ?? '',
         createdAt: ex?.createdAt ?? new Date().toISOString(), updatedAt: new Date().toISOString(),
       };
+      // Push to Supabase
+      pushFormRecord(activeTenant.id, up);
       return ex ? prev.map((r) => r.id===ex.id?up:r) : [...prev, up];
     });
     setFilling(null);
@@ -625,6 +630,33 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   const pendingValidation = records.filter((r) => r.status==='submitted' && !r.validation).length;
   const filteredTemplates = catFilter==='all' ? templates : templates.filter((t) => t.category===catFilter);
   const categories = [...new Set(templates.map((t) => t.category))];
+
+  if (kioskForm) {
+    const { template, record, periodKey } = kioskForm;
+    return (
+      <FormKioskApp
+        template={template}
+        tenantId={activeTenant.id}
+        tenantName={activeTenant.name}
+        userName={session?.user?.name ?? '—'}
+        userRole={session?.user?.role ?? ''}
+        onExit={() => setKioskForm(null)}
+        onSave={async (responses) => {
+          const existing = records.find(r => r.formId === template.id && r.periodKey === periodKey);
+          const updated = {
+            id: existing?.id ?? crypto.randomUUID(),
+            tenantId: activeTenant.id, formId: template.id, formTitle: template.title,
+            category: template.category, frequency: template.frequency, periodKey,
+            responses, status: 'submitted',
+            user: session?.user?.name ?? '—', role: session?.user?.role ?? '',
+            createdAt: existing?.createdAt ?? new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          setRecords(prev => existing ? prev.map(r => r.id === existing.id ? updated : r) : [...prev, updated]);
+        }}
+      />
+    );
+  }
 
   if (filling) {
     return (
@@ -728,6 +760,10 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
                           win.document.close(); setTimeout(() => win.print(), 400);
                         }}>↓ PDF</button>
                       )}
+                      <button className="secondary-action" style={{ fontSize:11, padding:'5px 10px', background:'#0d1117', color:'white', borderColor:'transparent' }}
+                        onClick={() => { const pk2=getPeriodKey(tpl.frequency,today); setKioskForm({ template:tpl, record:getRecord(tpl,pk2), periodKey:pk2 }); }}>
+                        📱 Tablet
+                      </button>
                       <button className="primary-action" style={{ fontSize:12, padding:'6px 14px', background:isValidated?'var(--green)':`linear-gradient(135deg,${meta.color},${meta.color}cc)` }}
                         onClick={() => { const pk2=getPeriodKey(tpl.frequency,today); setFilling({ template:tpl, record:getRecord(tpl,pk2), periodKey:pk2 }); }}>
                         {isDone?'Ver / editar':isDraft?'Continuar':'Preencher'}

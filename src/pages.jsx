@@ -1,12 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { tenants, globalAdmin } from './data';
-import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue } from './repository';
+import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus } from './repository';
 import { FormsView } from './forms';
 import { TrainingView } from './training';
 import { ReportsView } from './reports';
 import { getPermissions, canAccess } from './permissions';
 import { POPsView, OilControlView, ThawControlView, CoolingControlView, ThermalControlView, printTodayReport, useBrowserNotifications } from './controls';
-import { KioskApp, KioskSetup } from './kiosk';
+import { KioskApp, KioskSetup, FormKioskApp } from './kiosk';
+import { RTPanelView, ProfileView, GlobalSearch, HandwashView, MonthlyExportView, SessionHistoryView, logSession } from './extras';
+import { ValidityStockView } from './validity';
+
+// ─── Versão ────────────────────────────────────────────────────────────────
+export const APP_VERSION = '1.6.0';
+export const APP_BUILD   = '2026.05.19';
 
 // ─── Temperatura utils ─────────────────────────────────────────────────────
 
@@ -173,6 +179,21 @@ function TempLineChart({ records, equipment, height = 180 }) {
 // VIEWS
 // ═══════════════════════════════════════════════════════════════════════════
 
+// ─── No Permission ─────────────────────────────────────────────────────────
+
+function NoPermission({ onBack }) {
+  return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'60vh', gap:16, padding:32 }}>
+      <div style={{ fontSize:64 }}>🔒</div>
+      <h2 style={{ fontSize:22, fontWeight:800, letterSpacing:'-.03em' }}>Acesso não autorizado</h2>
+      <p style={{ fontSize:14, color:'var(--text-secondary)', textAlign:'center', maxWidth:360 }}>
+        Você não tem permissão para acessar esta seção. Fale com o administrador se precisar de acesso.
+      </p>
+      <button className="secondary-action" onClick={onBack}>← Voltar à visão geral</button>
+    </div>
+  );
+}
+
 // ─── Login ─────────────────────────────────────────────────────────────────
 
 function LoginScreen({ onLogin }) {
@@ -203,7 +224,7 @@ function LoginScreen({ onLogin }) {
                ?? users.find((u) => trimmed.split(' ').every(w => u.name.toLowerCase().includes(w)));
     if (!user) { setError('Nome não encontrado. Verifique a grafia.'); nameRef.current?.select(); return; }
     if (pin !== (user.pin ?? '0000')) { setError('PIN incorreto.'); pinRef.current?.select(); return; }
-    const session = { tenantId, user: { id:`${tenantId}-${user.name}`, name:user.name, role:user.role, location:user.location??'' } };
+    const session = { tenantId, user: { id:`${tenantId}-${user.name}`, name:user.name, role:user.role, location:user.location??'', storeId:user.storeId??null } };
     save(SESSION_KEY, session); onLogin(session);
   };
 
@@ -254,7 +275,8 @@ function LoginScreen({ onLogin }) {
           </button>
         </div>
         <p style={{ marginTop:10, fontSize:10, color:'var(--text-secondary)', textAlign:'center' }}>
-          Conformidade sanitária digital · RDC 216/2004
+          Conformidade sanitária digital · RDC 216/2004<br/>
+          <span style={{ color:'var(--text-placeholder)' }}>v{APP_VERSION}</span>
         </p>
       </div>
     </div>
@@ -263,8 +285,22 @@ function LoginScreen({ onLogin }) {
 
 // ─── Rail ──────────────────────────────────────────────────────────────────
 
-function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenantChange, session, records, alertCount, actionCount, onLogout }) {
+function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenantChange, onStoreChange, activeStore, session, records, alertCount, actionCount, onLogout, onSearch }) {
   const perms = getPermissions(session?.user?.role);
+
+  // Compute validity alerts for badge
+  const validityAlertCount = useMemo(() => {
+    try {
+      const products = JSON.parse(localStorage.getItem(`nutriops.products.${activeTenant.id}`) ?? '[]');
+      const now = new Date().setHours(0,0,0,0);
+      return products.filter(p => {
+        if (!p.expiryDate) return false;
+        const days = Math.ceil((new Date(p.expiryDate + 'T12:00').getTime() - now) / 86400000);
+        const lowStock = p.minStock > 0 && p.currentStock < p.minStock;
+        return days <= 3 || days < 0 || lowStock;
+      }).length;
+    } catch { return 0; }
+  }, [activeTenant.id]);
   const navItems = [
     ['overview',   'Visão geral',           null],
     ['dashboard',  'Conformidade',           null],
@@ -273,24 +309,50 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
     ['pops',       'POPs',                   null],
     ['training',   'Capacitação',            null],
     ['receiving',  'Recebimento',            null],
+    ['validity',   'Validades e Estoque',     validityAlertCount > 0 ? validityAlertCount : null],
+    ['handwash',   'Higiene das mãos',       null],
     ['oil',        'Óleo de fritura',        null],
     ['thaw',       'Descongelamento',        null],
     ['cooling',    'Resfriamento',           null],
     ['thermal',    'Tratamento térmico',     null],
     ['reports',    'Relatórios',             null],
+    ['monthly',    'Exportação mensal',      null],
     ['audit',      'Auditoria',              null],
     ['alerts',     'Alertas',                alertCount > 0 ? alertCount : null],
     ['actions',    'Ações corretivas',       actionCount > 0 ? actionCount : null],
+    ['rtpanel',    'Painel RT',              null],
     ['turns',      'Turnos',                 null],
     ['users',      'Usuários',               null],
+    ['sessions',   'Histórico de acessos',   null],
     ['equipment',  'Equipamentos',           null],
+    ['profile',    'Meu perfil',             null],
     ['settings',   'Configurações',          null],
   ].filter(([key]) => canAccess(session?.user?.role, key));
   return (
     <aside className="super-rail">
       <div className="rail-brand">
         <div className="brand-lockup"><span className="brand-mark">N</span><span className="brand-wordmark">NutriOPS</span></div>
+        <button onClick={onSearch} style={{ marginTop:8, width:'100%', padding:'6px 10px', background:'rgba(255,255,255,.06)', border:'1px solid rgba(255,255,255,.1)', borderRadius:8, color:'var(--rail-muted)', fontSize:12, cursor:'pointer', textAlign:'left', display:'flex', justifyContent:'space-between', alignItems:'center', fontFamily:'var(--font)' }}>
+          <span>🔍 Buscar…</span>
+          <kbd style={{ fontSize:10, opacity:.6 }}>⌘K</kbd>
+        </button>
       </div>
+      {/* Multi-store selector */}
+      {activeTenant.multiStore && activeTenant.stores?.length > 1 && (
+        <div style={{ padding:'0 12px 8px' }}>
+          <div style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--rail-muted)', marginBottom:4 }}>Loja</div>
+          {activeTenant.stores.map(store => {
+            const isActive = (activeStore?.id ?? activeTenant.stores[0].id) === store.id;
+            return (
+              <button key={store.id} onClick={() => onStoreChange?.(store.id)}
+                style={{ width:'100%', textAlign:'left', padding:'6px 10px', marginBottom:3, borderRadius:8, border:`1px solid ${isActive?activeTenant.brandColor:'transparent'}`, background:isActive?`${activeTenant.brandColor}22`:'transparent', color:isActive?activeTenant.brandColor:'var(--rail-muted)', fontSize:12, fontWeight:isActive?700:500, cursor:'pointer', fontFamily:'var(--font)', transition:'all .12s' }}>
+                📍 {store.location}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div className="rail-section">
         <p className="rail-section-label">Empresas</p>
         <div className="rail-list">
@@ -319,6 +381,9 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
           ))}
         </div>
         <button className="rail-menu-item" style={{ marginTop:'auto', color:'var(--rail-muted)', borderTop:'1px solid var(--rail-border)', borderRadius:0 }} onClick={onLogout}>Sair</button>
+        <div style={{ padding:'8px 12px', fontSize:10, color:'var(--rail-muted)', borderTop:'1px solid var(--rail-border)', textAlign:'center' }}>
+          NutriOPS v{APP_VERSION} · {APP_BUILD}
+        </div>
       </div>
     </aside>
   );
@@ -547,6 +612,29 @@ function RecentHistory({ activeTenant, records }) {
 // ─── Overview ──────────────────────────────────────────────────────────────
 
 function OverviewView({ activeTenant, allTenants, onTenantChange, session, equipmentCatalog, records, onRecordSaved, alerts, notifPermission, onRequestNotif, onLaunchKiosk }) {
+  // Training expiry alerts
+  const trainingAlerts = useMemo(() => {
+    try {
+      const sessions  = JSON.parse(localStorage.getItem(`nutriops.training.sessions.${activeTenant.id}`) ?? '[]');
+      const config    = JSON.parse(localStorage.getItem(`nutriops.training.config.${activeTenant.id}`) ?? '{"validityMonths":12}');
+      const users     = JSON.parse(localStorage.getItem(`nutriops.users.${activeTenant.id}`) ?? 'null') ?? activeTenant.usersList ?? [];
+      const limitDays = (config.validityMonths ?? 12) * 30;
+      const now       = Date.now();
+      return users
+        .filter(u => u.status !== 'Inativo')
+        .map(u => {
+          const done = sessions
+            .filter(s => s.status === 'closed' && s.participants?.some(p => p.name === u.name && p.confirmed))
+            .sort((a,b) => new Date(b.date)-new Date(a.date));
+          const last     = done[0];
+          const daysAgo  = last ? Math.floor((now - new Date(last.date).getTime()) / 86400000) : null;
+          const status   = !last ? 'never' : daysAgo >= limitDays ? 'expired' : daysAgo >= limitDays * 0.85 ? 'warn' : 'ok';
+          return { name: u.name, role: u.role, status, daysAgo, lastTitle: last?.title };
+        })
+        .filter(u => u.status === 'warn' || u.status === 'expired' || u.status === 'never');
+    } catch { return []; }
+  }, [activeTenant.id]);
+
   return (
     <>
       {/* Notification permission banner */}
@@ -560,6 +648,18 @@ function OverviewView({ activeTenant, allTenants, onTenantChange, session, equip
         <div className="alert-banner">
           <span>⚠ {alerts.length} pendência{alerts.length > 1 ? 's' : ''} no turno atual</span>
           <span>{alerts.map((a) => a.equipment).join(', ')}</span>
+        </div>
+      )}
+
+      {/* Training expiry alert banner */}
+      {trainingAlerts.length > 0 && (
+        <div className="alert-banner" style={{ background:'var(--amber-light)', borderColor:'var(--amber-border)', marginBottom:16, flexWrap:'wrap', gap:8 }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+            <span style={{ fontWeight:700, color:'var(--amber)' }}>🎓 {trainingAlerts.length} colaborador{trainingAlerts.length!==1?'es':''} com capacitação vencida ou próxima do vencimento</span>
+            <span style={{ fontSize:12, color:'var(--text-secondary)' }}>
+              {trainingAlerts.slice(0,3).map(u => u.name).join(', ')}{trainingAlerts.length > 3 ? ` e mais ${trainingAlerts.length-3}` : ''}
+            </span>
+          </div>
         </div>
       )}
       <CompanyCards allTenants={allTenants} activeTenant={activeTenant} onTenantChange={onTenantChange} records={records} />
@@ -598,10 +698,33 @@ function DashboardView({ allTenants, records, activeTenant, onTenantChange }) {
       const eOk = er.filter((r) => resolveTemperatureTone(r) === 'ok').length;
       return { label: eq.label, total: er.length, ok: eOk, pct: er.length > 0 ? Math.round((eOk / er.length) * 100) : null };
     });
-    // Trend: last 7 days compliance
     const last7 = records.filter((r) => r.tenantId === tenant.id && now - new Date(r.createdAt).getTime() <= 7 * 86400000);
     const trend = last7.length > 0 ? Math.round((last7.filter(r=>resolveTemperatureTone(r)==='ok').length / last7.length) * 100) : null;
-    return { tenant, total, ok, warn, danger, compliance, today, equipStats, trend };
+
+    // Training status
+    let trainingAlertCount = 0;
+    try {
+      const sessions = JSON.parse(localStorage.getItem(`nutriops.training.sessions.${tenant.id}`) ?? '[]');
+      const config   = JSON.parse(localStorage.getItem(`nutriops.training.config.${tenant.id}`) ?? '{"validityMonths":12}');
+      const users    = JSON.parse(localStorage.getItem(`nutriops.users.${tenant.id}`) ?? 'null') ?? tenant.usersList ?? [];
+      const limitDays = (config.validityMonths ?? 12) * 30;
+      trainingAlertCount = users.filter(u => {
+        const done = sessions.filter(s => s.status==='closed' && s.participants?.some(p=>p.name===u.name&&p.confirmed)).sort((a,b)=>new Date(b.date)-new Date(a.date));
+        const last = done[0];
+        if (!last) return true;
+        const daysAgo = Math.floor((now - new Date(last.date).getTime()) / 86400000);
+        return daysAgo >= limitDays * 0.85;
+      }).length;
+    } catch { /**/ }
+
+    // Store breakdown for multi-store tenants
+    const storeStats = tenant.multiStore && tenant.stores?.length > 1 ? tenant.stores.map(store => {
+      const sr = tr.filter(r => r.storeId === store.id || r.storeName === store.name);
+      const sOk = sr.filter(r => resolveTemperatureTone(r) === 'ok').length;
+      return { store, total: sr.length, compliance: sr.length > 0 ? Math.round((sOk/sr.length)*100) : null };
+    }) : [];
+
+    return { tenant, total, ok, warn, danger, compliance, today, equipStats, trend, trainingAlertCount, storeStats };
   }), [allTenants, records, now, period]);
 
   // Consolidated totals
@@ -685,7 +808,15 @@ function DashboardView({ allTenants, records, activeTenant, onTenantChange }) {
           <article key={tenant.id} className={`dash-card ${activeTenant.id === tenant.id ? 'active' : ''}`}
             style={{ borderTopColor: tenant.brandColor }} onClick={() => onTenantChange(tenant.id)}>
             <div className="dash-card-head">
-              <div><span className="eyebrow">{tenant.segment}</span><h2 style={{ color: tenant.brandColor }}>{tenant.name}</h2></div>
+              <div>
+                <span className="eyebrow">{tenant.segment}</span>
+                <h2 style={{ color: tenant.brandColor }}>{tenant.name}</h2>
+                {trainingAlertCount > 0 && (
+                  <div style={{ marginTop:4 }}>
+                    <span className="badge warn" style={{ fontSize:10 }}>🎓 {trainingAlertCount} capacitação{trainingAlertCount!==1?'ões':''} vencendo</span>
+                  </div>
+                )}
+              </div>
               <div className="dash-compliance">
                 <strong style={{ color: compliance>=90?'var(--green)':compliance>=70?'var(--amber)':'var(--red)' }}>{compliance}%</strong>
                 <span>conformidade</span>
@@ -713,6 +844,19 @@ function DashboardView({ allTenants, records, activeTenant, onTenantChange }) {
                     <span>{eq.label}</span>
                     <div className="equip-bar-track"><div className="equip-bar-fill" style={{ width:`${eq.pct??0}%`, background: eq.pct===null?'var(--border)':eq.pct>=90?'var(--green)':eq.pct>=70?'var(--amber)':'var(--red)' }} /></div>
                     <strong>{eq.pct !== null ? `${eq.pct}%` : '—'}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+            {storeStats.length > 0 && (
+              <div style={{ padding:'8px 16px 4px', borderTop:'1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--text-secondary)', marginBottom:6 }}>Por loja</div>
+                {storeStats.map(({ store, total, compliance }) => (
+                  <div key={store.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'4px 0', fontSize:12 }}>
+                    <span style={{ color:'var(--text-secondary)' }}>📍 {store.location}</span>
+                    <span style={{ fontWeight:700, fontFamily:'var(--mono)', fontSize:13, color: compliance===null?'var(--text-secondary)':compliance>=90?'var(--green)':compliance>=70?'var(--amber)':'var(--red)' }}>
+                      {compliance !== null ? `${compliance}%` : `${total} reg.`}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -1428,6 +1572,7 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
       createdAt: new Date().toISOString(),
     };
     setItems((prev) => [record, ...prev].slice(0, 300));
+    pushReceivingRecord(activeTenant.id, record);
     // Reset form
     setFornecedor(''); setNf(''); setProduto(''); setQuantidade('');
     setValidade(''); setTemperatura(''); setChecks({}); setResultado('');
@@ -1596,6 +1741,7 @@ function OfflineIndicator() {
   const [queueCount, setQCount] = useState(() => getOfflineQueue().length);
   const [syncing, setSyncing]   = useState(false);
   const [syncResult, setSyncResult] = useState(null);
+  const syncStatus = getSyncStatus();
 
   useEffect(() => {
     const up   = () => { setOnline(true);  setQCount(getOfflineQueue().length); };
@@ -1605,7 +1751,6 @@ function OfflineIndicator() {
     return () => { window.removeEventListener('online', up); window.removeEventListener('offline', down); };
   }, []);
 
-  // Refresh queue count every 10s
   useEffect(() => {
     const t = setInterval(() => setQCount(getOfflineQueue().length), 10000);
     return () => clearInterval(t);
@@ -1699,16 +1844,14 @@ function SettingsView({ session }) {
   // ── Migrate localStorage → Supabase ──
   const handleMigrate = async () => {
     if (!isSupabaseEnabled()) { setMigrateResult({ tone:'warn', text:'Habilite o Supabase primeiro.' }); return; }
-    const raw = localStorage.getItem('nutriops.temperature.records');
-    const records = raw ? JSON.parse(raw) : [];
-    if (records.length === 0) { setMigrateResult({ tone:'warn', text:'Nenhum registro encontrado no localStorage.' }); return; }
     setMigrating(true); setMigrateResult(null);
-    let ok = 0, fail = 0;
-    for (const r of records) {
-      try { await supabaseRepository.create(r); ok++; } catch { fail++; }
+    try {
+      const result = await migrateAllToSupabase(tenants);
+      setMigrateResult({ tone: result.failed===0?'ok':'warn', text:`✓ ${result.pushed} registros migrados${result.failed>0?` · ${result.failed} falha(s)`:''}. Todos os módulos sincronizados.` });
+    } catch (e) {
+      setMigrateResult({ tone:'danger', text:`Erro na migração: ${e.message}` });
     }
     setMigrating(false);
-    setMigrateResult({ tone: fail===0?'ok':'warn', text:`${ok} registro${ok!==1?'s':''} migrado${ok!==1?'s':''}${fail>0?` · ${fail} falha(s)`:''}. ✓` });
   };
 
   // ── Change own PIN ──
@@ -1777,7 +1920,7 @@ function SettingsView({ session }) {
           <span className="badge neutral">{(() => { try { return JSON.parse(localStorage.getItem('nutriops.temperature.records')||'[]').length; } catch { return 0; } })()} registros locais</span>
         </div>
         <div style={{ padding:'14px 20px', display:'flex', flexDirection:'column', gap:12 }}>
-          <p className="muted">Envia todos os registros de temperatura do localStorage para o Supabase. Só funciona com o Supabase habilitado. Registros existentes no Supabase podem ser duplicados — execute apenas uma vez.</p>
+          <p className="muted">Envia todos os dados locais para o Supabase: temperatura, planilhas BPF, recebimento, produtos, controles especiais e movimentações de estoque. Execute apenas uma vez após configurar o Supabase.</p>
           <div className="actions-row">
             <button className="primary-action" onClick={handleMigrate} disabled={migrating||!isSupabaseEnabled()}>
               {migrating ? '⏳ Migrando…' : '↑ Migrar registros locais para Supabase'}
@@ -1821,50 +1964,64 @@ function SettingsView({ session }) {
 export function App() {
   const repository = useMemo(() => getTemperatureRepository(), []);
   const [session, setSession]   = useState(() => readSession());
-  const handleLogin  = useCallback((s) => setSession(s), []);
+  const handleLogin = useCallback((s) => {
+    setSession(s);
+    logSession(s.tenantId, s.user);
+  }, []);
   const handleLogout = useCallback(() => { localStorage.removeItem(SESSION_KEY); setSession(null); }, []);
 
   const perms = getPermissions(session?.user?.role);
 
-  // For non-multiTenant users, always lock to their own tenant
-  const resolvedTenantId = perms.multiTenant
-    ? (session?.tenantId ?? tenants[0].id)
-    : (session?.tenantId ?? tenants[0].id);
-
-  const [activeTenantId, setActiveTenantId] = useState(() => resolvedTenantId);
+  const [activeTenantId, setActiveTenantId] = useState(() => session?.tenantId ?? tenants[0].id);
+  const [activeStoreId, setActiveStoreId]   = useState(() => session?.storeId ?? null);
   const [activeView, setActiveView]         = useState('overview');
   const [records, setRecords]               = useState([]);
 
-  // Always derive activeTenant from tenants list — never fall back to tenants[0] for locked users
+  // Always derive activeTenant from tenants list
   const activeTenant = useMemo(() => {
     const found = tenants.find((t) => t.id === activeTenantId);
     if (found) return found;
-    // Fallback: use session's tenant or first tenant
     return tenants.find((t) => t.id === session?.tenantId) ?? tenants[0];
   }, [activeTenantId, session?.tenantId]);
 
-  // Always derive catalog from activeTenant — never stale
-  const equipmentCatalog = useMemo(() => readEquipmentCatalog(activeTenant), [activeTenant]);
+  // Active store object
+  const activeStore = useMemo(() => {
+    if (!activeStoreId) return activeTenant.stores?.[0] ?? null;
+    return activeTenant.stores?.find(s => s.id === activeStoreId) ?? activeTenant.stores?.[0] ?? null;
+  }, [activeTenant, activeStoreId]);
 
-  // Non-multiTenant users only see their own company — with safety fallback
+  // Equipment catalog — store-specific if multi-store
+  const equipmentCatalog = useMemo(() => {
+    if (activeTenant.multiStore && activeStoreId && activeTenant.storeEquipment?.[activeStoreId]) {
+      return activeTenant.storeEquipment[activeStoreId];
+    }
+    return readEquipmentCatalog(activeTenant);
+  }, [activeTenant, activeStoreId]);
+
   const visibleTenants = useMemo(() => {
     if (perms.multiTenant) return tenants;
     const own = tenants.filter((t) => t.id === session?.tenantId);
     return own.length > 0 ? own : [activeTenant];
   }, [perms.multiTenant, session?.tenantId, activeTenant]);
 
-  // Non-multiTenant users are locked to their company
   const handleTenantChange = useCallback((id) => {
     if (!perms.multiTenant) return;
     setActiveTenantId(id);
+    const t = tenants.find(x => x.id === id);
+    setActiveStoreId(t?.stores?.[0]?.id ?? null);
   }, [perms.multiTenant]);
 
-  // Sync activeTenantId with session on login
+  const handleStoreChange = useCallback((storeId) => {
+    setActiveStoreId(storeId);
+  }, []);
+
   useEffect(() => {
     if (session?.tenantId && !perms.multiTenant) {
       setActiveTenantId(session.tenantId);
+      // Lock collaborator to their store
+      if (session?.user?.storeId) setActiveStoreId(session.user.storeId);
     }
-  }, [session?.tenantId, perms.multiTenant]);
+  }, [session?.tenantId, session?.user?.storeId, perms.multiTenant]);
 
   const refreshRecords = useCallback(async () => {
     // Load records for all companies (RT/Admin) or just own company
@@ -1881,50 +2038,65 @@ export function App() {
   const { permission: notifPermission, request: requestNotif, notify: browserNotify } = useBrowserNotifications(turns, activeTenant.id);
 
   // Kiosk mode
-  const [kioskConfig, setKioskConfig] = useState(null);
+  const [kioskConfig, setKioskConfig]   = useState(null);
   const [showKioskSetup, setShowKioskSetup] = useState(false);
+  // Global search
+  const [showSearch, setShowSearch]     = useState(false);
 
   // Notify on out-of-range save
   const handleRecordSaved = useCallback(async () => {
     await refreshRecords();
   }, [refreshRecords]);
 
-  // Watch for new out-of-range records and notify
+  // Auto-sync on login and when coming online
   useEffect(() => {
-    if (notifPermission !== 'granted' || !records.length) return;
-    const last = records.find(r => r.tenantId === activeTenant.id);
-    if (!last) return;
-    const age = Date.now() - new Date(last.createdAt).getTime();
-    if (age > 30000) return; // only notify if saved < 30s ago
-    const v = Number(last.value), mn = Number(last.min), mx = Number(last.max);
-    if (!isNaN(v) && !isNaN(mn) && !isNaN(mx) && (v < mn || v > mx)) {
-      browserNotify(`🚨 Temperatura fora da faixa — ${activeTenant.name}`, `${last.equipmentInput || last.equipment}: ${v}°C (faixa ${mn}–${mx}°C)`);
-    }
-  }, [records, activeTenant.id, notifPermission, browserNotify]);
+    if (!session || !isSupabaseEnabled()) return;
+    const doSync = async () => {
+      if (!navigator.onLine) return;
+      try { await syncAllModules(session.tenantId); } catch { /* silent */ }
+    };
+    doSync();
+    window.addEventListener('online', doSync);
+    return () => window.removeEventListener('online', doSync);
+  }, [session?.tenantId]);
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setShowSearch(true); }
+      if (e.key === 'Escape') setShowSearch(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   if (!session) return <LoginScreen onLogin={handleLogin} />;
 
   // Kiosk mode — full screen override
   if (kioskConfig) return <KioskApp config={kioskConfig} onExit={() => setKioskConfig(null)} />;
 
-  const sharedProps = { activeTenant, allTenants: visibleTenants, onTenantChange: handleTenantChange };
+  const sharedProps = { activeTenant, allTenants: visibleTenants, onTenantChange: handleTenantChange, activeStore };
 
   return (
     <div className="super-shell">
+      {showSearch && <GlobalSearch records={records} allTenants={visibleTenants} onNavigate={setActiveView} onClose={() => setShowSearch(false)} />}
       {showKioskSetup && (
         <KioskSetup activeTenant={activeTenant} equipmentCatalog={equipmentCatalog} session={session}
           onLaunch={(cfg) => { setKioskConfig(cfg); setShowKioskSetup(false); }}
           onCancel={() => setShowKioskSetup(false)} />
       )}
       <RailNav {...sharedProps} activeView={activeView} setActiveView={setActiveView}
-        session={session} records={records} alertCount={alertCount} actionCount={actionCount} onLogout={handleLogout} />
+        session={session} records={records} alertCount={alertCount} actionCount={actionCount}
+        onLogout={handleLogout} onSearch={() => setShowSearch(true)}
+        onStoreChange={handleStoreChange} activeStore={activeStore} />
       <main className="super-main">
         {activeView === 'overview'   && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} />}
         {activeView === 'reports'    && <ReportsView allTenants={visibleTenants} records={records} />}
+        {activeView === 'monthly'    && <MonthlyExportView allTenants={visibleTenants} records={records} session={session} />}
         {activeView === 'forms'      && <FormsView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
         {activeView === 'pops'       && <POPsView {...sharedProps} session={session} />}
         {activeView === 'training'   && <TrainingView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
         {activeView === 'receiving'  && <RecebimentoView {...sharedProps} session={session} />}
+        {activeView === 'validity'   && <ValidityStockView {...sharedProps} session={session} />}
+        {activeView === 'handwash'   && <HandwashView {...sharedProps} session={session} />}
         {activeView === 'oil'        && <OilControlView {...sharedProps} session={session} />}
         {activeView === 'thaw'       && <ThawControlView {...sharedProps} session={session} />}
         {activeView === 'cooling'    && <CoolingControlView {...sharedProps} session={session} />}
@@ -1934,10 +2106,15 @@ export function App() {
         {activeView === 'audit'      && <AuditView allTenants={visibleTenants} records={records} session={session} />}
         {activeView === 'alerts'     && <AlertsView {...sharedProps} records={records} />}
         {activeView === 'actions'    && <CorrectiveActionsView {...sharedProps} records={records} />}
+        {activeView === 'rtpanel'    && <RTPanelView allTenants={visibleTenants} records={records} session={session} />}
         {activeView === 'turns'      && <TurnsView {...sharedProps} records={records} />}
         {activeView === 'users'      && <UsersView {...sharedProps} />}
+        {activeView === 'sessions'   && <SessionHistoryView {...sharedProps} />}
         {activeView === 'equipment'  && <EquipmentView {...sharedProps} />}
+        {activeView === 'profile'    && <ProfileView session={session} onLogout={handleLogout} />}
         {activeView === 'settings'   && <SettingsView session={session} />}
+        {/* Fallback for any route the user doesn't have access to */}
+        {!['overview','reports','monthly','forms','pops','training','receiving','validity','handwash','oil','thaw','cooling','thermal','dashboard','charts','audit','alerts','actions','rtpanel','turns','users','sessions','equipment','profile','settings'].includes(activeView) && <NoPermission onBack={() => setActiveView('overview')} />}
       </main>
       <OfflineIndicator />
     </div>

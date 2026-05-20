@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { pushSpecialControl } from './repository';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -321,7 +322,7 @@ export function OilControlView({ activeTenant, allTenants, onTenantChange, sessi
       user: session?.user?.name, createdAt: new Date().toISOString(),
     };
     setRecords(prev => [record, ...prev].slice(0, 200));
-    setEquipment(''); setAcidez(''); setCor(''); setOdor(''); setEspuma('');
+    pushSpecialControl('oil', activeTenant.id, record);
     setResultado(''); setAcao(''); setObs('');
     setSaved(true); setTimeout(() => setSaved(false), 3000);
   };
@@ -422,7 +423,9 @@ export function ThawControlView({ activeTenant, allTenants, onTenantChange, sess
 
   const handleSave = () => {
     if (!product.trim() || !resultado) return;
-    setRecords(prev => [{ id:uid(), tenantId:activeTenant.id, product:product.trim(), weight:weight.trim(), method, startAt, endAt, tempStart, tempEnd, resultado, obs:obs.trim(), user:session?.user?.name, createdAt:new Date().toISOString() }, ...prev].slice(0,200));
+    const thawRecord = { id:uid(), tenantId:activeTenant.id, product:product.trim(), weight:weight.trim(), method, startAt, endAt, tempStart, tempEnd, resultado, obs:obs.trim(), user:session?.user?.name, createdAt:new Date().toISOString() };
+    setRecords(prev => [thawRecord, ...prev].slice(0,200));
+    pushSpecialControl('thaw', activeTenant.id, thawRecord);
     setProduct(''); setWeight(''); setMethod('refrigerador'); setStartAt(''); setEndAt(''); setTempStart(''); setTempEnd(''); setResultado(''); setObs('');
     setSaved(true); setTimeout(() => setSaved(false), 3000);
   };
@@ -533,7 +536,9 @@ export function CoolingControlView({ activeTenant, allTenants, onTenantChange, s
 
   const handleSave = () => {
     if (!product.trim() || !resultado) return;
-    setRecords(prev => [{ id:uid(), tenantId:activeTenant.id, product:product.trim(), quantity:quantity.trim(), tempHot, time1, temp1, time2, temp2, method, resultado, obs:obs.trim(), user:session?.user?.name, createdAt:new Date().toISOString() }, ...prev].slice(0,200));
+    const coolRecord = { id:uid(), tenantId:activeTenant.id, product:product.trim(), quantity:quantity.trim(), tempHot, time1, temp1, time2, temp2, method, resultado, obs:obs.trim(), user:session?.user?.name, createdAt:new Date().toISOString() };
+    setRecords(prev => [coolRecord, ...prev].slice(0,200));
+    pushSpecialControl('cool', activeTenant.id, coolRecord);
     setProduct(''); setQuantity(''); setTempHot(''); setTime1(''); setTemp1(''); setTime2(''); setTemp2(''); setMethod('banho_gelo'); setResultado(''); setObs('');
     setSaved(true); setTimeout(() => setSaved(false), 3000);
   };
@@ -650,11 +655,13 @@ export function ThermalControlView({ activeTenant, allTenants, onTenantChange, s
 
   const handleSave = () => {
     if (!product.trim() || !resultado) return;
-    setRecords(prev => [{
+    const thermalRecord = {
       id: uid(), tenantId: activeTenant.id, product: product.trim(), quantity: quantity.trim(),
       equipment: equipment.trim(), tempTarget, tempReached, timeReached, holdTime,
       resultado, obs: obs.trim(), user: session?.user?.name, createdAt: new Date().toISOString()
-    }, ...prev].slice(0, 200));
+    };
+    setRecords(prev => [thermalRecord, ...prev].slice(0, 200));
+    pushSpecialControl('thermal', activeTenant.id, thermalRecord);
     setProduct(''); setQuantity(''); setEquipment(''); setTempTarget('');
     setTempReached(''); setTimeReached(''); setHoldTime(''); setResultado(''); setObs('');
     setSaved(true); setTimeout(() => setSaved(false), 3000);

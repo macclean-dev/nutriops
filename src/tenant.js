@@ -1,4 +1,4 @@
-export const tenantRoles = ["Funcionário", "Supervisor", "Nutricionista RT", "Fiscal"];
+export const tenantRoles = ["Colaborador", "Supervisor", "Nutricionista RT", "Fiscal"];
 
 export function buildTenantSession(tenant) {
   return {

@@ -8,11 +8,11 @@ export const PERMISSIONS = {
     multiTenant: false, canExport: false, canValidate: false, canManageUsers: false, canManageConfig: false, canSeeReports: false,
   },
   'Supervisor': {
-    nav: ['overview', 'forms', 'receiving', 'validity', 'handwash', 'oil', 'thaw', 'cooling', 'thermal', 'alerts', 'audit', 'profile'],
+    nav: ['overview', 'forms', 'receiving', 'validity', 'handwash', 'oil', 'thaw', 'cooling', 'thermal', 'alerts', 'audit', 'maintenance', 'profile'],
     multiTenant: false, canExport: true, canValidate: false, canManageUsers: false, canManageConfig: false, canSeeReports: true,
   },
   'Nutricionista RT': {
-    nav: ['overview', 'dashboard', 'charts', 'forms', 'pops', 'training', 'receiving', 'validity', 'handwash', 'oil', 'thaw', 'cooling', 'thermal', 'audit', 'alerts', 'actions', 'rtpanel', 'users', 'reports', 'monthly', 'profile'],
+    nav: ['overview', 'dashboard', 'charts', 'forms', 'pops', 'training', 'receiving', 'validity', 'handwash', 'oil', 'thaw', 'cooling', 'thermal', 'audit', 'alerts', 'actions', 'rtpanel', 'users', 'reports', 'monthly', 'maintenance', 'profile'],
     multiTenant: true, canExport: true, canValidate: true, canManageUsers: false, canManageConfig: false, canSeeReports: true,
   },
   'Administrador': {

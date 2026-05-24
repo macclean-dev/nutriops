@@ -265,8 +265,12 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
         <article className="management-card">
           <div style={{ padding:'40px 24px', textAlign:'center' }}>
             <p style={{ fontSize:32, marginBottom:12 }}>🔧</p>
-            <p className="muted" style={{ marginBottom:16 }}>Nenhum equipamento cadastrado ainda.</p>
-            {isManager && <button className="primary-action" onClick={() => setEditEquip({})}>+ Cadastrar primeiro equipamento</button>}
+            <h3 style={{ marginBottom:8 }}>Nenhum equipamento cadastrado</h3>
+            <p className="muted" style={{ marginBottom:20 }}>Cadastre seus equipamentos para criar planos preventivos e ordens de serviço.</p>
+            <div style={{ display:'flex', gap:10, justifyContent:'center', flexWrap:'wrap' }}>
+              {isManager && <button className="primary-action" onClick={() => { setEditEquip({}); setTab('equipments'); }}>+ Cadastrar equipamento</button>}
+              <button className="secondary-action" onClick={() => { setEditOrder({}); setTab('orders'); }}>📋 Abrir ordem de serviço</button>
+            </div>
           </div>
         </article>
       )}
@@ -428,6 +432,9 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
           <p className="muted">Planos preventivos, ordens de serviço e histórico completo.</p>
         </div>
         <div className="page-actions">
+          <button className="secondary-action" onClick={() => { setEditOrder({}); setTab('orders'); }}>
+            📋 + Nova OS
+          </button>
           <button className="secondary-action" onClick={() => printMaintenanceReport(activeTenant, equipments, logs, orders)}>
             🖨️ Exportar PDF
           </button>

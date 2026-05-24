@@ -1,6 +1,6 @@
 export const ROLES = ['Colaborador', 'Supervisor', 'Nutricionista RT', 'Administrador', 'Super-admin'];
 
-const ALL_VIEWS = ['overview','dashboard','charts','forms','pops','training','receiving','validity','handwash','oil','thaw','cooling','thermal','audit','reports','monthly','alerts','actions','rtpanel','turns','users','sessions','equipment','profile','settings'];
+const ALL_VIEWS = ['overview','dashboard','charts','forms','pops','training','receiving','validity','handwash','oil','thaw','cooling','thermal','audit','reports','monthly','alerts','actions','rtpanel','turns','users','sessions','equipment','maintenance','profile','settings'];
 
 export const PERMISSIONS = {
   'Colaborador': {

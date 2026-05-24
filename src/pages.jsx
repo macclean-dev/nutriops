@@ -6,6 +6,10 @@ import { AdminPanel, AdminLogin, readAdminAuth, writeAdminAuth, clearAdminAuth, 
 import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
 import { trackUsage } from './repository';
 import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus } from './repository';
+import { MaintenanceView } from './maintenance';
+
+// ─── helpers re-exported from maintenance ──────────────────────────────────
+function addDays(iso, days) { const d = new Date(iso || new Date()); d.setDate(d.getDate() + days); return d.toISOString().slice(0,10); }
 import { FormsView } from './forms';
 import { TrainingView } from './training';
 import { ReportsView } from './reports';
@@ -256,7 +260,7 @@ function MobileDrawer({ open, onClose, activeView, setActiveView, session, activ
     ['turns',      '⏰', 'Turnos'],
     ['users',      '👥', 'Usuários'],
     ['sessions',   '📋', 'Histórico de acessos'],
-    ['equipment',  '🔧', 'Equipamentos'],
+    ['maintenance','🔧', 'Manutenção', null, maintAlertCount > 0 ? maintAlertCount : null],
     ['profile',    '👤', 'Meu perfil'],
     ['settings',   '⚙️', 'Configurações'],
   ].filter(([key]) => canAccess(session?.user?.role, key));
@@ -353,20 +357,84 @@ function LoginScreen({ onLogin, activeTenants }) {
   const handlePinLogin = () => {
     setError('');
     const isAdmin = tenantId === '__admin__';
+
     if (isAdmin) {
       if (pin !== (globalAdmin.pin ?? '9999')) { setError('PIN incorreto.'); return; }
       const s = { tenantId: activeTenants[0]?.id, user: { ...globalAdmin } };
       save(SESSION_KEY, s); onLogin(s); return;
     }
-    const trimmed = nameInput.trim().toLowerCase();
-    if (!trimmed) { setError('Informe seu nome.'); nameRef.current?.focus(); return; }
-    const users = readUsers(selectedTenant).filter(u => u.status !== 'Inativo');
-    const user  = users.find(u => u.name.toLowerCase() === trimmed)
-               ?? users.find(u => u.name.toLowerCase().startsWith(trimmed))
-               ?? users.find(u => trimmed.split(' ').every(w => u.name.toLowerCase().includes(w)));
-    if (!user) { setError('Nome não encontrado.'); nameRef.current?.select(); return; }
-    if (pin !== (user.pin ?? '0000')) { setError('PIN incorreto.'); pinRef.current?.select(); return; }
-    const s = { tenantId, user: { id:`${tenantId}-${user.name}`, name:user.name, role:user.role, location:user.location??'', storeId:user.storeId??null } };
+
+    const raw = nameInput.trim().toLowerCase();
+    if (!raw) { setError('Informe seu usuário.'); nameRef.current?.focus(); return; }
+
+    // Parse username@empresa format
+    let username = raw;
+    let tenantHint = null;
+
+    if (raw.includes('@')) {
+      const parts = raw.split('@');
+      username    = parts[0].trim();
+      tenantHint  = parts[1].trim();
+    }
+
+    // Tenant alias map for common shortcuts
+    const TENANT_ALIASES = {
+      'swiss':    'swiss',
+      'backerei': 'backerei',
+      'bakerei':  'backerei',
+      'bakery':   'backerei',
+      'dbk':      'dbk-producao',
+      'dbkprod':  'dbk-producao',
+      'producao': 'dbk-producao',
+    };
+
+    // Determine which tenants to search
+    const resolvedHint = tenantHint ? (TENANT_ALIASES[tenantHint] ?? tenantHint) : null;
+    const tenantsToSearch = resolvedHint
+      ? activeTenants.filter(t => t.id === resolvedHint || t.id.includes(resolvedHint))
+      : activeTenants.filter(t => t.id === tenantId);
+
+    if (tenantHint && tenantsToSearch.length === 0) {
+      setError(`Empresa "@${tenantHint}" não encontrada.`);
+      return;
+    }
+
+    // Search user across matched tenants
+    let foundUser = null;
+    let foundTenantId = null;
+
+    for (const tenant of tenantsToSearch) {
+      const users = readUsers(tenant).filter(u => u.status !== 'Inativo');
+      // Match by first name or full name (normalized)
+      const normalize = s => s.toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, '.');
+      const user = users.find(u => normalize(u.name) === username)
+                ?? users.find(u => normalize(u.name).split('.')[0] === username)
+                ?? users.find(u => normalize(u.name).startsWith(username));
+      if (user) { foundUser = user; foundTenantId = tenant.id; break; }
+    }
+
+    if (!foundUser) {
+      setError(`Usuário "${raw}" não encontrado.`);
+      nameRef.current?.select();
+      return;
+    }
+
+    if (pin !== (foundUser.pin ?? '0000')) {
+      setError('PIN incorreto.');
+      pinRef.current?.select();
+      return;
+    }
+
+    const s = {
+      tenantId: foundTenantId,
+      user: {
+        id: `${foundTenantId}-${foundUser.name}`,
+        name: foundUser.name, role: foundUser.role,
+        location: foundUser.location ?? '', storeId: foundUser.storeId ?? null,
+      },
+    };
     save(SESSION_KEY, s); onLogin(s);
   };
 
@@ -417,16 +485,35 @@ function LoginScreen({ onLogin, activeTenants }) {
         ) : (
           <div>
             <h1 style={{ fontSize:22, fontWeight:800, letterSpacing:'-.04em', marginBottom:6 }}>Entrar</h1>
-            <p className="muted" style={{ marginBottom:20 }}>{isAdmin ? 'Administrador global.' : 'Selecione a empresa, nome e PIN.'}</p>
+            <p className="muted" style={{ marginBottom:20 }}>
+              {isAdmin ? 'Administrador global.' : 'Digite seu usuário e PIN.'}
+            </p>
             <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
               {!isAdmin && (
-                <>
-                  <label>Empresa<select value={tenantId} onChange={e=>setTenantId(e.target.value)}>{activeTenants.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
-                  <label>Nome<input ref={nameRef} value={nameInput} onChange={e=>{ setNameInput(e.target.value); setError(''); }} placeholder="Digite seu nome" onKeyDown={e=>{ if(e.key==='Enter'){e.preventDefault();pinRef.current?.focus();} }} autoComplete="off" autoCapitalize="words" /></label>
-                </>
+                <label>Usuário
+                  <input ref={nameRef} value={nameInput}
+                    onChange={e=>{ setNameInput(e.target.value); setError(''); }}
+                    placeholder="ex: fran@backerei"
+                    onKeyDown={e=>{ if(e.key==='Enter'){e.preventDefault();pinRef.current?.focus();} }}
+                    autoComplete="username" autoCapitalize="none" autoCorrect="off"
+                    style={{ fontFamily:'var(--mono)', fontSize:15 }} />
+                  <span style={{ fontSize:11, color:'var(--text-secondary)', marginTop:4, display:'block' }}>
+                    formato: <strong>nome@empresa</strong> — ex: sila@backerei, mateus@dbk, anapaula@swiss
+                  </span>
+                </label>
               )}
-              {isAdmin && <div style={{ padding:'12px 14px', background:'var(--blue-light)', border:'1px solid var(--blue-border)', borderRadius:'var(--r)', fontSize:13 }}><strong>Administrador global</strong> — acesso a todas as empresas</div>}
-              <label>PIN<input ref={pinRef} type="password" inputMode="numeric" maxLength={6} value={pin} onChange={e=>{ setPin(e.target.value.replace(/\D/g,'')); setError(''); }} placeholder="••••" autoComplete="off" onKeyDown={e=>{ if(e.key==='Enter') handlePinLogin(); }} style={{ letterSpacing:'0.3em', fontSize:22, textAlign:'center', fontFamily:'var(--mono)' }} /></label>
+              {isAdmin && (
+                <div style={{ padding:'12px 14px', background:'var(--blue-light)', border:'1px solid var(--blue-border)', borderRadius:'var(--r)', fontSize:13 }}>
+                  <strong>Administrador global</strong> — acesso a todas as empresas
+                </div>
+              )}
+              <label>PIN
+                <input ref={pinRef} type="password" inputMode="numeric" maxLength={6}
+                  value={pin} onChange={e=>{ setPin(e.target.value.replace(/\D/g,'')); setError(''); }}
+                  placeholder="••••" autoComplete="current-password"
+                  onKeyDown={e=>{ if(e.key==='Enter') handlePinLogin(); }}
+                  style={{ letterSpacing:'0.3em', fontSize:22, textAlign:'center', fontFamily:'var(--mono)' }} />
+              </label>
               {error && <div style={{ padding:'8px 12px', background:'var(--red-light)', border:'1px solid var(--red-border)', borderRadius:'var(--r)', color:'var(--red)', fontSize:13, fontWeight:600 }}>{error}</div>}
               <button className="primary-action" style={{ marginTop:4 }} onClick={handlePinLogin}>Entrar</button>
             </div>
@@ -490,7 +577,7 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
     ['turns',      'Turnos',                 null],
     ['users',      'Usuários',               null],
     ['sessions',   'Histórico de acessos',   null],
-    ['equipment',  'Equipamentos',           null],
+    ['maintenance', 'Manutenção',             null],
     ['profile',    'Meu perfil',             null],
     ['settings',   'Configurações',          null],
   ].filter(([key]) => canAccess(session?.user?.role, key));
@@ -2049,6 +2136,62 @@ function SettingsView({ session, activeTenant }) {
   };
 
   // ── Migrate localStorage → Supabase ──
+  // ── Backup / export ──
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportBackup = () => {
+    setExporting(true);
+    try {
+      const backup = {
+        version: APP_VERSION,
+        exportedAt: new Date().toISOString(),
+        tenantId: activeTenant?.id,
+        tenantName: activeTenant?.name,
+        data: {},
+      };
+
+      // Collect all localStorage keys for this tenant
+      const tenantId = activeTenant?.id;
+      const keys = Object.keys(localStorage).filter(k =>
+        k.includes(tenantId) || k.includes('nutriops.')
+      );
+
+      keys.forEach(key => {
+        try { backup.data[key] = JSON.parse(localStorage.getItem(key)); } catch { backup.data[key] = localStorage.getItem(key); }
+      });
+
+      // Download as JSON
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `nutriops-backup-${tenantId}-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleImportBackup = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const backup = JSON.parse(ev.target.result);
+        if (!backup.data) { alert('Arquivo de backup inválido.'); return; }
+        if (!window.confirm(`Restaurar backup de ${backup.tenantName} (${backup.exportedAt?.slice(0,10)})?\n\nIsso vai sobrescrever os dados locais.`)) return;
+        Object.entries(backup.data).forEach(([key, value]) => {
+          try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+        });
+        alert('✓ Backup restaurado! A página será recarregada.');
+        window.location.reload();
+      } catch { alert('Erro ao ler o arquivo de backup.'); }
+    };
+    reader.readAsText(file);
+  };
+
   const handleMigrate = async () => {
     if (!isSupabaseEnabled()) { setMigrateResult({ tone:'warn', text:'Habilite o Supabase primeiro.' }); return; }
     setMigrating(true); setMigrateResult(null);
@@ -2187,7 +2330,27 @@ function SettingsView({ session, activeTenant }) {
         </div>
       </article>
 
-      {/* Change PIN */}
+      {/* Backup & Restore */}
+      <article className="management-card" style={{ marginTop:16 }}>
+        <div className="card-head">
+          <div><span className="eyebrow">Dados</span><h2>Backup e restauração</h2></div>
+        </div>
+        <div style={{ padding:'14px 20px', display:'flex', flexDirection:'column', gap:12 }}>
+          <p className="muted">Exporte todos os dados da empresa para um arquivo JSON. Use para backup ou para migrar para outro dispositivo.</p>
+          <div className="actions-row">
+            <button className="secondary-action" onClick={handleExportBackup} disabled={exporting}>
+              {exporting ? '⏳ Exportando…' : '↓ Exportar backup completo'}
+            </button>
+            <label style={{ cursor:'pointer' }}>
+              <span className="secondary-action" style={{ display:'inline-block' }}>↑ Restaurar backup</span>
+              <input type="file" accept=".json" onChange={handleImportBackup} style={{ display:'none' }} />
+            </label>
+          </div>
+          <div style={{ padding:'10px 12px', background:'var(--amber-light)', border:'1px solid var(--amber-border)', borderRadius:'var(--r)', fontSize:12, color:'var(--amber)' }}>
+            ⚠ Restaurar substitui os dados locais. Faça um backup antes.
+          </div>
+        </div>
+      </article>
       <article className="management-card" style={{ marginTop:16 }}>
         <div className="card-head"><div><span className="eyebrow">Segurança</span><h2>Alterar meu PIN</h2></div>
           <span className="badge neutral">{session?.user?.name}</span>
@@ -2310,6 +2473,18 @@ export function App() {
 
   const turns       = readTurns(activeTenant);
   const alertCount  = useMemo(() => computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id).length, [records, activeTenant.id, equipmentCatalog]);
+  const maintAlertCount = useMemo(() => {
+    const equips = JSON.parse(localStorage.getItem(`nutriops.equip_assets.${activeTenant.id}`) ?? '[]');
+    const logs   = JSON.parse(localStorage.getItem(`nutriops.maint_logs.${activeTenant.id}`) ?? '[]');
+    return equips.reduce((count, eq) => {
+      return count + (eq.maintenancePlans ?? []).filter(plan => {
+        const last = logs.filter(l=>l.equipmentId===eq.id&&l.planId===plan.id).sort((a,b)=>new Date(b.executedAt)-new Date(a.executedAt))[0];
+        const nextDue = last ? addDays(last.executedAt, plan.frequencyDays) : plan.nextDue;
+        const days = Math.ceil((new Date(nextDue).getTime() - new Date().setHours(0,0,0,0)) / 86400000);
+        return days <= 7;
+      }).length;
+    }, 0);
+  }, [activeTenant.id]);
   const actionCount = useMemo(() => readActions(activeTenant.id).filter((a) => a.status !== 'resolvida').length, [records, activeTenant.id]);
   const { permission: notifPermission, request: requestNotif, notify: browserNotify } = useBrowserNotifications(turns, activeTenant.id);
 
@@ -2455,6 +2630,7 @@ export function App() {
         {activeView === 'sessions'   && <SessionHistoryView {...sharedProps} />}
         {activeView === 'equipment'  && <EquipmentView {...sharedProps} />}
         {activeView === 'profile'    && <ProfileView session={session} onLogout={handleLogout} />}
+        {activeView === 'maintenance' && <MaintenanceView {...sharedProps} session={session} />}
         {activeView === 'settings'   && <SettingsView session={session} activeTenant={activeTenant} />}
         {/* Fallback for any route the user doesn't have access to */}
         {!['overview','reports','monthly','forms','pops','training','receiving','validity','handwash','oil','thaw','cooling','thermal','dashboard','charts','audit','alerts','actions','rtpanel','turns','users','sessions','equipment','profile','settings'].includes(activeView) && <NoPermission onBack={() => setActiveView('overview')} />}

@@ -541,7 +541,6 @@ function LoginScreen({ onLogin, activeTenants }) {
 function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenantChange, onStoreChange, activeStore, session, records, alertCount, actionCount, maintAlertCount = 0, onLogout, onSearch }) {
   const perms = getPermissions(session?.user?.role);
 
-  // Compute validity alerts for badge
   const validityAlertCount = useMemo(() => {
     try {
       const products = JSON.parse(localStorage.getItem(`nutriops.products.${activeTenant.id}`) ?? '[]');
@@ -549,40 +548,97 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
       return products.filter(p => {
         if (!p.expiryDate) return false;
         const days = Math.ceil((new Date(p.expiryDate + 'T12:00').getTime() - now) / 86400000);
-        const lowStock = p.minStock > 0 && p.currentStock < p.minStock;
-        return days <= 3 || days < 0 || lowStock;
+        return days <= 3 || days < 0 || (p.minStock > 0 && p.currentStock < p.minStock);
       }).length;
     } catch { return 0; }
   }, [activeTenant.id]);
-  const navItems = [
-    ['overview',   'Visão geral',           null],
-    ['dashboard',  'Conformidade',           null],
-    ['charts',     'Gráficos',               null],
-    ['forms',      'Planilhas BPF',          null],
-    ['pops',       'POPs',                   null],
-    ['training',   'Capacitação',            null],
-    ['receiving',  'Recebimento',            null],
-    ['validity',   'Validades e Estoque',     validityAlertCount > 0 ? validityAlertCount : null],
-    ['handwash',   'Higiene das mãos',       null],
-    ['oil',        'Óleo de fritura',        null],
-    ['thaw',       'Descongelamento',        null],
-    ['cooling',    'Resfriamento',           null],
-    ['thermal',    'Tratamento térmico',     null],
-    ['reports',    'Relatórios',             null],
-    ['monthly',    'Exportação mensal',      null],
-    ['audit',      'Auditoria',              null],
-    ['alerts',     'Alertas',                alertCount > 0 ? alertCount : null],
-    ['actions',    'Ações corretivas',       actionCount > 0 ? actionCount : null],
-    ['rtpanel',    'Painel RT',              null],
-    ['turns',      'Turnos',                 null],
-    ['users',      'Usuários',               null],
-    ['sessions',   'Histórico de acessos',   null],
-    ['maintenance', 'Manutenção',             null],
-    ['profile',    'Meu perfil',             null],
-    ['settings',   'Configurações',          null],
-  ].filter(([key]) => canAccess(session?.user?.role, key));
+
+  // Groups — each group has a label, icon, and items
+  // Items: [key, label, badge]
+  const GROUPS = [
+    {
+      id: 'daily', label: 'Operação diária', defaultOpen: true,
+      items: [
+        ['overview',  '🏠', 'Visão geral',        null],
+        ['forms',     '📋', 'Planilhas BPF',       null],
+        ['receiving', '🚚', 'Recebimento',         null],
+        ['validity',  '📦', 'Validades e Estoque', validityAlertCount || null],
+      ],
+    },
+    {
+      id: 'controls', label: 'Controles especiais', defaultOpen: false,
+      items: [
+        ['handwash', '🙌', 'Higiene das mãos',   null],
+        ['oil',      '🍳', 'Óleo de fritura',     null],
+        ['thaw',     '❄️',  'Descongelamento',     null],
+        ['cooling',  '🌡️', 'Resfriamento',        null],
+        ['thermal',  '🔥', 'Tratamento térmico',  null],
+      ],
+    },
+    {
+      id: 'quality', label: 'Qualidade', defaultOpen: true,
+      items: [
+        ['pops',        '📑', 'POPs',        null],
+        ['training',    '🎓', 'Capacitação', null],
+        ['maintenance', '🔧', 'Manutenção',  maintAlertCount || null],
+      ],
+    },
+    {
+      id: 'reports', label: 'Relatórios', defaultOpen: false,
+      items: [
+        ['dashboard', '📊', 'Conformidade',     null],
+        ['charts',    '📈', 'Gráficos',         null],
+        ['reports',   '📄', 'Relatórios',       null],
+        ['monthly',   '📅', 'Exportação mensal',null],
+        ['audit',     '🔍', 'Auditoria',        null],
+      ],
+    },
+    {
+      id: 'manage', label: 'Gestão', defaultOpen: true,
+      items: [
+        ['alerts',   '⚠️',  'Alertas',           alertCount || null],
+        ['actions',  '✅', 'Ações corretivas',   actionCount || null],
+        ['rtpanel',  '👩‍⚕️', 'Painel RT',         null],
+        ['turns',    '⏰', 'Turnos',             null],
+        ['users',    '👥', 'Usuários',           null],
+        ['sessions', '📋', 'Histórico de acessos',null],
+      ],
+    },
+    {
+      id: 'account', label: 'Conta', defaultOpen: true,
+      items: [
+        ['profile',  '👤', 'Meu perfil',    null],
+        ['settings', '⚙️',  'Configurações', null],
+      ],
+    },
+  ];
+
+  // Auto-open group that contains activeView
+  const getDefaultOpen = (group) => {
+    if (group.defaultOpen) return true;
+    return group.items.some(([key]) => key === activeView);
+  };
+
+  const [openGroups, setOpenGroups] = useState(() => {
+    const state = {};
+    GROUPS.forEach(g => { state[g.id] = getDefaultOpen(g); });
+    return state;
+  });
+
+  // Auto-open group when navigating into it
+  useEffect(() => {
+    GROUPS.forEach(g => {
+      if (g.items.some(([key]) => key === activeView)) {
+        setOpenGroups(prev => ({ ...prev, [g.id]: true }));
+      }
+    });
+  }, [activeView]);
+
+  const toggleGroup = (id) => setOpenGroups(prev => ({ ...prev, [id]: !prev[id] }));
+
   return (
     <aside className="super-rail">
+      {/* Brand */}
       <div className="rail-brand">
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
           <div className="brand-lockup"><span className="brand-mark">N</span><span className="brand-wordmark">NutriOPS</span></div>
@@ -600,6 +656,7 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
           <kbd style={{ fontSize:10, opacity:.6 }}>⌘K</kbd>
         </button>
       </div>
+
       {/* Multi-store selector */}
       {activeTenant.multiStore && activeTenant.stores?.length > 1 && (
         <div style={{ padding:'0 12px 8px' }}>
@@ -616,36 +673,76 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
         </div>
       )}
 
-      <div className="rail-section">
-        <p className="rail-section-label">Empresas</p>
-        <div className="rail-list">
-          {(perms.multiTenant ? allTenants : allTenants.filter(t => t.id === session?.tenantId || activeTenant.id === t.id)).map((t) => (
-            <button key={t.id} className={`rail-company ${activeTenant.id === t.id ? 'active' : ''}`} style={{ borderLeftColor: t.brandColor }}
-              onClick={() => perms.multiTenant ? onTenantChange(t.id) : null}
-              disabled={!perms.multiTenant}>
-              <strong>{t.name}</strong>
-              <span style={{ color: t.brandColor }}>{t.segment} · {records.filter((r) => r.tenantId === t.id).length} reg.</span>
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Session info */}
       <div className="rail-card">
         <span className="eyebrow">Sessão</span>
         <strong>{session.user.name}</strong>
-        <span style={{ fontSize: 11, color: 'var(--rail-muted)', display: 'block', marginTop: 2 }}>{session.user.role}</span>
+        <span style={{ fontSize:11, color:'var(--rail-muted)', display:'block', marginTop:2 }}>{session.user.role} · {activeTenant.name}</span>
       </div>
+
+      {/* Grouped nav */}
       <div className="rail-menu">
-        <div className="rail-menu-list">
-          {navItems.map(([key, label, count]) => (
-            <button key={key} className={`rail-menu-item ${activeView === key ? 'active' : ''}`} onClick={() => setActiveView(key)}>
-              {label}
-              {count !== null && <span style={{ marginLeft:'auto', background: key==='actions'?'var(--amber)':'var(--red)', color:'white', borderRadius:10, fontSize:10, fontWeight:800, padding:'1px 6px' }}>{count}</span>}
-            </button>
-          ))}
+        <div className="rail-menu-list" style={{ display:'flex', flexDirection:'column', gap:2 }}>
+          {GROUPS.map(group => {
+            // Filter items by permission
+            const visibleItems = group.items.filter(([key]) => canAccess(session?.user?.role, key));
+            if (visibleItems.length === 0) return null;
+
+            const isOpen   = openGroups[group.id] ?? group.defaultOpen;
+            const hasAlert = visibleItems.some(([,,, badge]) => badge);
+            const hasActive = visibleItems.some(([key]) => key === activeView);
+
+            return (
+              <div key={group.id}>
+                {/* Group header */}
+                <button onClick={() => toggleGroup(group.id)}
+                  style={{
+                    width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between',
+                    padding:'5px 12px', border:'none', background:'transparent',
+                    cursor:'pointer', fontFamily:'var(--font)',
+                  }}>
+                  <span style={{
+                    fontSize:10, fontWeight:700, textTransform:'uppercase',
+                    letterSpacing:'.07em',
+                    color: hasActive ? '#58a6ff' : 'var(--rail-muted)',
+                    transition:'color .15s',
+                  }}>
+                    {group.label}
+                    {!isOpen && hasAlert && <span style={{ marginLeft:5, width:6, height:6, borderRadius:3, background:'var(--red)', display:'inline-block', verticalAlign:'middle' }} />}
+                  </span>
+                  <span style={{ fontSize:9, color:'var(--rail-muted)', transition:'transform .2s', display:'inline-block', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+                </button>
+
+                {/* Group items */}
+                {isOpen && (
+                  <div style={{ display:'flex', flexDirection:'column', gap:1, paddingBottom:4 }}>
+                    {visibleItems.map(([key, icon, label, badge]) => (
+                      <button key={key}
+                        className={`rail-menu-item ${activeView === key ? 'active' : ''}`}
+                        onClick={() => setActiveView(key)}
+                        style={{ paddingLeft:20 }}>
+                        <span style={{ marginRight:7, fontSize:13 }}>{icon}</span>
+                        {label}
+                        {badge && (
+                          <span style={{ marginLeft:'auto', background: key==='actions'?'var(--amber)':'var(--red)', color:'white', borderRadius:10, fontSize:10, fontWeight:800, padding:'1px 6px' }}>
+                            {badge}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-        <button className="rail-menu-item" style={{ marginTop:'auto', color:'var(--rail-muted)', borderTop:'1px solid var(--rail-border)', borderRadius:0 }} onClick={onLogout}>Sair</button>
+
+        {/* Footer */}
+        <button className="rail-menu-item" style={{ marginTop:'auto', color:'var(--rail-muted)', borderTop:'1px solid var(--rail-border)', borderRadius:0 }} onClick={onLogout}>
+          ↩ Sair
+        </button>
         <div style={{ padding:'8px 12px', fontSize:10, color:'var(--rail-muted)', borderTop:'1px solid var(--rail-border)', textAlign:'center' }}>
-          NutriOPS v{APP_VERSION} · {APP_BUILD}
+          NutriOPS v{APP_VERSION}
         </div>
       </div>
     </aside>

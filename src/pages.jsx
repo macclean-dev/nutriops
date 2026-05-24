@@ -234,7 +234,7 @@ function BottomNav({ activeView, setActiveView, session, alertCount, actionCount
 
 // ─── Mobile Drawer ─────────────────────────────────────────────────────────
 
-function MobileDrawer({ open, onClose, activeView, setActiveView, session, activeTenant, allTenants, onTenantChange, onLogout, alertCount, actionCount }) {
+function MobileDrawer({ open, onClose, activeView, setActiveView, session, activeTenant, allTenants, onTenantChange, onLogout, alertCount, actionCount, maintAlertCount = 0 }) {
   const perms = getPermissions(session?.user?.role);
 
   const navItems = [
@@ -538,7 +538,7 @@ function LoginScreen({ onLogin, activeTenants }) {
 
 // ─── Rail ──────────────────────────────────────────────────────────────────
 
-function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenantChange, onStoreChange, activeStore, session, records, alertCount, actionCount, onLogout, onSearch }) {
+function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenantChange, onStoreChange, activeStore, session, records, alertCount, actionCount, maintAlertCount = 0, onLogout, onSearch }) {
   const perms = getPermissions(session?.user?.role);
 
   // Compute validity alerts for badge
@@ -2598,11 +2598,12 @@ export function App() {
         activeView={activeView} setActiveView={setActiveView}
         session={session} activeTenant={activeTenant} allTenants={visibleTenants}
         onTenantChange={handleTenantChange} onLogout={handleLogout}
-        alertCount={alertCount} actionCount={actionCount} />
+        alertCount={alertCount} actionCount={actionCount} maintAlertCount={maintAlertCount} />
 
       {/* Desktop rail */}
       <RailNav {...sharedProps} activeView={activeView} setActiveView={setActiveView}
         session={session} records={records} alertCount={alertCount} actionCount={actionCount}
+        maintAlertCount={maintAlertCount}
         onLogout={handleLogout} onSearch={() => setShowSearch(true)}
         onStoreChange={handleStoreChange} activeStore={activeStore} />
       <main className="super-main">

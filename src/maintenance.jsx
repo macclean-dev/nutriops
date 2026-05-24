@@ -198,10 +198,16 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
                   </div>
                   <div style={{ textAlign:'right' }}>
                     <div style={{ fontSize:14, fontWeight:800, color:'var(--red)', fontFamily:'var(--mono)' }}>{dueLabel(plan.days)}</div>
-                    <button className="primary-action" style={{ fontSize:11, padding:'4px 10px', marginTop:4 }}
-                      onClick={() => setShowLogModal({ equipment: eq, plan })}>
-                      ✓ Registrar execução
-                    </button>
+                    <div style={{ display:'flex', gap:6, marginTop:4, justifyContent:'flex-end' }}>
+                      <button className="primary-action" style={{ fontSize:11, padding:'4px 10px' }}
+                        onClick={() => setShowLogModal({ equipment: eq, plan })}>
+                        ✓ Registrar
+                      </button>
+                      <button className="secondary-action" style={{ fontSize:11, padding:'4px 10px' }}
+                        onClick={() => setEditOrder({ equipmentId: eq.id })}>
+                        + OS
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))
@@ -297,7 +303,10 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
                 </div>
                 <div style={{ display:'flex', gap:6 }}>
                   <button className="secondary-action" style={{ fontSize:11 }} onClick={() => setShowLogModal({ equipment: eq })}>
-                    + Registrar
+                    ✓ Registrar
+                  </button>
+                  <button className="secondary-action" style={{ fontSize:11 }} onClick={() => setEditOrder({ equipmentId: eq.id })}>
+                    + Abrir OS
                   </button>
                   {isManager && <button className="ghost-action" style={{ fontSize:11 }} onClick={() => setEditEquip(eq)}>Editar</button>}
                 </div>

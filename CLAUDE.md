@@ -135,6 +135,19 @@ git add -A && git reset src/data.js
 
 ---
 
+## GitHub Actions CI
+
+Workflow `.github/workflows/ci.yml` (rodando `npm test` + `npm run build`)
+está versionado localmente mas ainda **não foi pushado** — o PAT atual não
+tem scope `workflow`. Pra ativar:
+
+1. GitHub → Settings → Developer settings → Personal access tokens
+2. Edita o token usado nesse repo
+3. Marca o scope `workflow`
+4. Salva, depois `git add .github/workflows/ci.yml && git commit -m "ci: build + test em push/PR" && git push`
+
+A partir daí, todo PR e push pra `main` roda build + 38 testes automaticamente.
+
 ## Pendências conhecidas
 
 | Prioridade | Item |

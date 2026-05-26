@@ -44,6 +44,16 @@ git commit -m "mensagem"
 git push
 ```
 
+### Variáveis de ambiente
+
+`.env.example` lista as envs esperadas. Copia pra `.env.local` em dev. Em
+produção, configura em Vercel → Project → Settings → Environment Variables.
+`.env.local` está no `.gitignore` e nunca deve ir pro repo.
+
+| Variável | Onde é usada | Default |
+|----------|--------------|---------|
+| `VITE_ADMIN_PASSWORD` | Senha do `/admin` | `nutriops@admin2026` (fallback, com warning no console) |
+
 ### Antes de marcar tarefa como "done"
 
 - `npm run build` passa sem erro

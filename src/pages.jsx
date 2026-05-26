@@ -96,6 +96,9 @@ const readActions           = (id) => load(actionsKey(id),    []);
 const writeActions          = (id, v) => save(actionsKey(id), v);
 const readSession           = ()   => load(SESSION_KEY, null);
 
+// PIN overrides — extraídos pra ./pin (testáveis e reutilizáveis)
+import { getEffectivePin, hasPinOverride, writePinOverride, isWeakPin } from './pin';
+
 // ─── Equipment utils ───────────────────────────────────────────────────────
 
 function normalizeEquipmentName(input, catalog = []) {
@@ -372,6 +375,11 @@ function LoginScreen({ onLogin, activeTenants }) {
   const [pin, setPin]           = useState('');
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState('');
+  // Reset de PIN obrigatório no 1º login: quando autenticamos um user que
+  // ainda não tem override em localStorage, mostramos o setup antes do app.
+  const [pinResetCtx, setPinResetCtx] = useState(null); // { session, foundTenantId, foundUser }
+  const [newPin, setNewPin]       = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
   const nameRef = useRef(null);
   const pinRef  = useRef(null);
   const selectedTenant = activeTenants.find(t => t.id === tenantId) ?? activeTenants[0];
@@ -457,7 +465,8 @@ function LoginScreen({ onLogin, activeTenants }) {
       return;
     }
 
-    if (pin !== (foundUser.pin ?? '0000')) {
+    const effectivePin = getEffectivePin(foundTenantId, foundUser);
+    if (pin !== effectivePin) {
       setError('PIN incorreto.');
       pinRef.current?.select();
       return;
@@ -471,7 +480,32 @@ function LoginScreen({ onLogin, activeTenants }) {
         location: foundUser.location ?? '', storeId: foundUser.storeId ?? null,
       },
     };
+
+    // 1º login (sem override): obrigamos a trocar o PIN antes de entrar
+    if (!hasPinOverride(foundTenantId, foundUser.name)) {
+      setPinResetCtx({ session: s, foundTenantId, foundUser });
+      setError('');
+      setNewPin(''); setConfirmPin('');
+      return;
+    }
+
     save(SESSION_KEY, s); onLogin(s);
+  };
+
+  const handleSetPin = () => {
+    setError('');
+    if (!/^\d{4,6}$/.test(newPin)) { setError('PIN deve ter 4 a 6 dígitos.'); return; }
+    if (newPin === confirmPin) {
+      // Rejeitar PINs óbvios
+      if (isWeakPin(newPin)) {
+        setError('PIN muito fácil. Escolha outra combinação.'); return;
+      }
+      writePinOverride(pinResetCtx.foundTenantId, pinResetCtx.foundUser.name, newPin);
+      save(SESSION_KEY, pinResetCtx.session);
+      onLogin(pinResetCtx.session);
+    } else {
+      setError('PINs não conferem.');
+    }
   };
 
   const isAdmin = tenantId === '__admin__';
@@ -483,10 +517,36 @@ function LoginScreen({ onLogin, activeTenants }) {
           <BrandLockup size="lg" theme="light" idPrefix="login" showSub={false} />
         </div>
 
-        {resetSent ? (
+        {pinResetCtx ? (
+          <div>
+            <span className="eyebrow" style={{ color:'var(--primary)' }}>Primeiro acesso</span>
+            <h1 style={{ fontSize:22, fontWeight:700, letterSpacing:'-.04em', marginBottom:6, fontFamily:'var(--serif)' }}>Defina seu PIN</h1>
+            <p className="muted" style={{ marginBottom:20 }}>
+              Olá, <strong style={{ color:'var(--text)' }}>{pinResetCtx.foundUser.name}</strong>. Crie um PIN pessoal de 4 a 6 dígitos. Esse PIN substitui o de fábrica e fica salvo neste dispositivo.
+            </p>
+            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              <label>
+                Novo PIN
+                <input type="password" inputMode="numeric" maxLength={6} autoFocus
+                  value={newPin} onChange={e => setNewPin(e.target.value.replace(/\D/g,''))}
+                  placeholder="••••" />
+              </label>
+              <label>
+                Confirmar PIN
+                <input type="password" inputMode="numeric" maxLength={6}
+                  value={confirmPin} onChange={e => setConfirmPin(e.target.value.replace(/\D/g,''))}
+                  onKeyDown={e => { if (e.key === 'Enter') handleSetPin(); }}
+                  placeholder="••••" />
+              </label>
+              {error && <div style={{ padding:'8px 12px', background:'var(--red-light)', border:'1px solid var(--red-border)', borderRadius:'var(--r)', color:'var(--red)', fontSize:13, fontWeight:600 }}>{error}</div>}
+              <button className="primary-action" style={{ width:'100%' }} onClick={handleSetPin}>Salvar PIN e entrar</button>
+              <button className="ghost-action" style={{ width:'100%' }} onClick={() => { setPinResetCtx(null); setError(''); }}>Cancelar</button>
+            </div>
+          </div>
+        ) : resetSent ? (
           <div>
             <div style={{ padding:'14px', background:'var(--green-light)', border:'1px solid var(--green-border)', borderRadius:'var(--r)', marginBottom:16 }}>
-              <strong style={{ display:'block', color:'var(--green)', marginBottom:4 }}>✓ E-mail enviado!</strong>
+              <strong style={{ display:'block', color:'var(--green)', marginBottom:4 }}>E-mail enviado</strong>
               <span style={{ fontSize:13, color:'var(--green)' }}>Verifique sua caixa de entrada.</span>
             </div>
             <button className="secondary-action" style={{ width:'100%' }} onClick={() => { setResetSent(false); setMode('email'); }}>← Voltar ao login</button>
@@ -635,65 +695,12 @@ function NavIcon({ id, size = 16 }) {
   return icons[id] ?? <svg {...s}><circle cx="12" cy="12" r="4"/></svg>;
 }
 
-// ─── Hub routes ─────────────────────────────────────────────────────────
-// Hubs agregam sub-views numa rota só. Permite menu mais enxuto (Nexum-style)
-// preservando deep-links para sub-views individuais.
-export const CONTROLS_KEYS = ['controls', 'handwash', 'oil', 'thaw', 'cooling', 'thermal'];
-export const REPORTS_KEYS  = ['reportsHub', 'dashboard', 'charts', 'reports', 'monthly', 'audit'];
-export const TEAM_KEYS     = ['team', 'users', 'turns', 'sessions'];
-
-// Helper pra destacar o item do hub quando uma sub-view dele está ativa
-export function isItemActive(itemKey, activeView) {
-  if (itemKey === activeView) return true;
-  if (itemKey === 'controls'   && CONTROLS_KEYS.includes(activeView)) return true;
-  if (itemKey === 'reportsHub' && REPORTS_KEYS.includes(activeView))  return true;
-  if (itemKey === 'team'       && TEAM_KEYS.includes(activeView))     return true;
-  return false;
-}
-
-// ─── Nav structure compartilhada por RailNav e MobileDrawer ──────────────
-// Items: [key, iconId, label, badge?]
-// Cada item é uma rota única. Hubs (controls/reportsHub/team) agrupam
-// sub-views internamente via tabs.
-function buildNavSections({ validityAlertCount = 0, maintAlertCount = 0, alertCount = 0, actionCount = 0 } = {}) {
-  return [
-    {
-      label: 'Operação',
-      items: [
-        ['overview',  'overview',  'Visão geral'],
-        ['forms',     'forms',     'Planilhas BPF'],
-        ['receiving', 'receiving', 'Recebimento'],
-        ['validity',  'validity',  'Validades', validityAlertCount || null],
-        ['controls',  'thermal',   'Controles especiais'],
-      ],
-    },
-    {
-      label: 'Qualidade',
-      items: [
-        ['pops',        'pops',        'POPs'],
-        ['training',    'training',    'Capacitação'],
-        ['maintenance', 'maintenance', 'Manutenção', maintAlertCount || null],
-      ],
-    },
-    {
-      label: 'Gestão',
-      items: [
-        ['alerts',     'alerts',    'Alertas',          alertCount  || null],
-        ['actions',    'actions',   'Ações corretivas', actionCount || null],
-        ['rtpanel',    'rtpanel',   'Painel RT'],
-        ['reportsHub', 'dashboard', 'Relatórios'],
-        ['team',       'users',     'Equipe'],
-      ],
-    },
-    {
-      label: 'Conta',
-      items: [
-        ['profile',  'profile',  'Meu perfil'],
-        ['settings', 'settings', 'Configurações'],
-      ],
-    },
-  ];
-}
+// Estrutura de nav + hubs vêm de ./nav (testáveis e puros)
+import { CONTROLS_KEYS, REPORTS_KEYS, TEAM_KEYS, isItemActive, buildNavSections, resolveHubTab as resolveHubTabBase } from './nav';
+// Wrapper que passa o localStorage do browser pro resolveHubTab puro
+const resolveHubTab = (activeView, hubId, defaultSub, subIds) =>
+  resolveHubTabBase(activeView, hubId, defaultSub, subIds, typeof localStorage !== 'undefined' ? localStorage : null);
+export { CONTROLS_KEYS, REPORTS_KEYS, TEAM_KEYS, isItemActive };
 
 function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenantChange, onStoreChange, activeStore, session, records, alertCount, actionCount, maintAlertCount = 0, onLogout, onSearch }) {
   const perms = getPermissions(session?.user?.role);
@@ -2623,18 +2630,6 @@ function HubTabs({ tabs, current, onChange }) {
       })}
     </div>
   );
-}
-
-// Picks the current sub-id given an activeView that may be 'hubId' OR any sub-id.
-// Persists the last sub-id chosen per hub.
-function resolveHubTab(activeView, hubId, defaultSub, subIds) {
-  if (activeView === hubId) {
-    const persisted = localStorage.getItem(`nutriops.${hubId}.lastTab`);
-    if (persisted && subIds.includes(persisted)) return persisted;
-    return defaultSub;
-  }
-  if (subIds.includes(activeView)) return activeView;
-  return defaultSub;
 }
 
 function ControlsHub({ activeView, setActiveView, session, ...rest }) {

@@ -1,3 +1,20 @@
 dist/
 .DS_Store
 src/.DS_Store
+HANDOFF.md
+
+# Local environment & secrets — nunca commitar
+.env
+.env.local
+.env.*.local
+
+# Local Claude Code config (não fazer parte do repo)
+.claude/
+
+# Vite cache
+node_modules/.vite/
+
+# OS / editor
+*.swp
+.idea/
+.vscode/

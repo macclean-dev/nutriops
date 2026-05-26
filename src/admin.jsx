@@ -38,7 +38,14 @@ function clientStatus(client) {
 
 // ─── ADMIN LOGIN ───────────────────────────────────────────────────────────
 
-const ADMIN_PASSWORD = 'nutriops@admin2026'; // change this!
+// Senha do painel admin. Em produção é injetada via Vercel env var
+// VITE_ADMIN_PASSWORD. Em dev cai no fallback abaixo (e loga aviso).
+const ENV_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD;
+const FALLBACK_PASSWORD = 'nutriops@admin2026';
+const ADMIN_PASSWORD = ENV_PASSWORD || FALLBACK_PASSWORD;
+if (!ENV_PASSWORD && import.meta.env.PROD) {
+  console.warn('[NutriOPS] VITE_ADMIN_PASSWORD não setada no ambiente de produção. Usando fallback inseguro.');
+}
 
 export function AdminLogin({ onLogin }) {
   const [pw, setPw]     = useState('');

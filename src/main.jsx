@@ -1,7 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './pages';
-import { AdminPanel, AdminLogin, readAdminAuth, clearAdminAuth, readClients } from './admin';
+// Admin é lazy — só baixa quando o usuário acessa /admin
+const AdminPanel = lazy(() => import('./admin').then(m => ({ default: m.AdminPanel })));
+const AdminLogin = lazy(() => import('./admin').then(m => ({ default: m.AdminLogin })));
+// Utilities pequenas vêm de admin-storage (não puxa o painel pesado)
+import { readAdminAuth, clearAdminAuth, readClients } from './admin-storage';
 import './styles.css';
 
 // Register service worker
@@ -35,6 +39,24 @@ function handleAccessToken() {
   localStorage.setItem('nutriops.access.clientId', client.id);
   localStorage.setItem('nutriops.access.clientName', client.name);
 
+  // Auto-configurar Supabase se o cliente tem config no record do admin.
+  // Isso elimina "modo local por device" — qualquer aparelho que abrir o
+  // link já entra com sync ligado.
+  if (client.supabase?.url && client.supabase?.anonKey) {
+    const existing = JSON.parse(localStorage.getItem('nutriops.supabase.config') ?? 'null');
+    const tenantConfig = {
+      url: client.supabase.url,
+      anonKey: client.supabase.anonKey,
+      enabled: true,
+      source: 'tenant',
+      syncedAt: new Date().toISOString(),
+    };
+    if (!existing || existing.url !== tenantConfig.url || existing.anonKey !== tenantConfig.anonKey) {
+      localStorage.setItem('nutriops.supabase.config', JSON.stringify(tenantConfig));
+      console.info('[NutriOPS] Supabase auto-configurado a partir do token do cliente');
+    }
+  }
+
   // Clean URL without reload
   window.history.replaceState({}, '', '/');
 }
@@ -59,8 +81,21 @@ function Root() {
   useEffect(() => { handleAccessToken(); }, []);
 
   if (isAdmin) {
-    if (!adminAuthed) return <AdminLogin onLogin={() => setAdminAuthed(true)} />;
-    return <AdminPanel onExit={() => { clearAdminAuth(); setAdminAuthed(false); window.location.href = '/'; }} />;
+    const adminFallback = (
+      <div style={{ minHeight:'100vh', display:'grid', placeItems:'center', background:'#181715', color:'#9b9590', fontFamily:'system-ui, sans-serif' }}>
+        Carregando painel admin…
+      </div>
+    );
+    if (!adminAuthed) return (
+      <Suspense fallback={adminFallback}>
+        <AdminLogin onLogin={() => setAdminAuthed(true)} />
+      </Suspense>
+    );
+    return (
+      <Suspense fallback={adminFallback}>
+        <AdminPanel onExit={() => { clearAdminAuth(); setAdminAuthed(false); window.location.href = '/'; }} />
+      </Suspense>
+    );
   }
 
   return <App />;

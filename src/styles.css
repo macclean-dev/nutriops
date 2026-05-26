@@ -62,6 +62,8 @@
 /* ===== RESET ===== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+@keyframes nutriops-spin { to { transform: rotate(360deg); } }
+
 body {
   font-family: var(--font);
   font-size: 14px;

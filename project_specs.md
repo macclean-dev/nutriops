@@ -101,8 +101,15 @@ por tenant é épico pendente.
 
 ## Serviços externos
 
-- **Supabase** (Postgres + REST) — credenciais por cliente, configuradas em
-  `Settings → Sincronização`
+- **Supabase** (Postgres + REST) — credenciais por cliente. Três caminhos
+  pra configurar (em ordem de prioridade):
+  1. **Por tenant via `/admin`** — abre o cliente no painel, expande
+     "Sincronização Supabase" e cola URL + anonKey. Qualquer device que
+     abrir o link `?token=` herda essa config.
+  2. **Por tenant em `data.js`** — campo opcional `supabase: { url, anonKey }`
+     no objeto do tenant. `handleLogin` em pages.jsx auto-popula. Útil pros
+     3 tenants demo (Swiss/Bäckerei/DBK) que não usam o fluxo de token.
+  3. **Por device em `Settings → Sincronização`** — fallback manual
 - **EmailJS** — chaves no `src/email.js`:
   - Public Key: `1ef0FtPY7bx_V4tA6`
   - Service: `service_vmc3qlr`

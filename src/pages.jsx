@@ -1,24 +1,46 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { tenants as defaultTenants, globalAdmin } from './data';
-import { OnboardingWizard, readOnboardingTenants, writeOnboardingTenants } from './onboarding';
+import { readOnboardingTenants, writeOnboardingTenants } from './onboarding-storage';
 import { signIn, signOut, signUp, resetPassword, readAuthSession, isSessionValid, refreshSession } from './auth';
-import { AdminPanel, AdminLogin, readAdminAuth, writeAdminAuth, clearAdminAuth, readClients } from './admin';
+import { readAdminAuth, writeAdminAuth, clearAdminAuth, readClients } from './admin';
 import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
 import { trackUsage } from './repository';
 import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus } from './repository';
-import { MaintenanceView } from './maintenance';
+import { getPermissions, canAccess } from './permissions';
+import { useBrowserNotifications } from './notifications';
+import { APP_VERSION, NutriMark, BrandLockup } from './brand';
+
+// ─── Lazy view loading ────────────────────────────────────────────────────
+// Cada chunk só baixa quando o usuário navega pra view correspondente.
+// Mantém as utilities (logSession, printTodayReport) com dynamic import
+// inline nos call sites, pra não puxar o módulo inteiro no boot.
+const lazyView = (importer, name) => lazy(() => importer().then(m => ({ default: m[name] })));
+
+const OnboardingWizard     = lazyView(() => import('./onboarding'), 'OnboardingWizard');
+const AdminPanel           = lazyView(() => import('./admin'),      'AdminPanel');
+const AdminLogin           = lazyView(() => import('./admin'),      'AdminLogin');
+const FormsView            = lazyView(() => import('./forms'),      'FormsView');
+const TrainingView         = lazyView(() => import('./training'),   'TrainingView');
+const ReportsView          = lazyView(() => import('./reports'),    'ReportsView');
+const MaintenanceView      = lazyView(() => import('./maintenance'),'MaintenanceView');
+const ValidityStockView    = lazyView(() => import('./validity'),   'ValidityStockView');
+const POPsView             = lazyView(() => import('./controls'),   'POPsView');
+const OilControlView       = lazyView(() => import('./controls'),   'OilControlView');
+const ThawControlView      = lazyView(() => import('./controls'),   'ThawControlView');
+const CoolingControlView   = lazyView(() => import('./controls'),   'CoolingControlView');
+const ThermalControlView   = lazyView(() => import('./controls'),   'ThermalControlView');
+const KioskApp             = lazyView(() => import('./kiosk'),      'KioskApp');
+const KioskSetup           = lazyView(() => import('./kiosk'),      'KioskSetup');
+const FormKioskApp         = lazyView(() => import('./kiosk'),      'FormKioskApp');
+const RTPanelView          = lazyView(() => import('./extras'),     'RTPanelView');
+const ProfileView          = lazyView(() => import('./extras'),     'ProfileView');
+const GlobalSearch         = lazyView(() => import('./extras'),     'GlobalSearch');
+const HandwashView         = lazyView(() => import('./extras'),     'HandwashView');
+const MonthlyExportView    = lazyView(() => import('./extras'),     'MonthlyExportView');
+const SessionHistoryView   = lazyView(() => import('./extras'),     'SessionHistoryView');
 
 // ─── helpers re-exported from maintenance ──────────────────────────────────
 function addDays(iso, days) { const d = new Date(iso || new Date()); d.setDate(d.getDate() + days); return d.toISOString().slice(0,10); }
-import { FormsView } from './forms';
-import { TrainingView } from './training';
-import { ReportsView } from './reports';
-import { getPermissions, canAccess } from './permissions';
-import { POPsView, OilControlView, ThawControlView, CoolingControlView, ThermalControlView, printTodayReport, useBrowserNotifications } from './controls';
-import { KioskApp, KioskSetup, FormKioskApp } from './kiosk';
-import { RTPanelView, ProfileView, GlobalSearch, HandwashView, MonthlyExportView, SessionHistoryView, logSession } from './extras';
-import { ValidityStockView } from './validity';
-import { APP_VERSION, NutriMark, BrandLockup } from './brand';
 
 // Re-export APP_VERSION pra manter a API que extras.jsx já consome.
 export { APP_VERSION };
@@ -311,6 +333,15 @@ function MobileDrawer({ open, onClose, activeView, setActiveView, session, activ
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ViewLoading() {
+  return (
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'40vh', gap:12 }}>
+      <span style={{ width:18, height:18, borderRadius:'50%', border:'2px solid var(--border)', borderTopColor:'var(--primary)', animation:'nutriops-spin .8s linear infinite', display:'inline-block' }} />
+      <span style={{ fontSize:12, color:'var(--text-secondary)', letterSpacing:'.08em', textTransform:'uppercase' }}>Carregando…</span>
     </div>
   );
 }
@@ -1031,7 +1062,7 @@ function OverviewView({ activeTenant, allTenants, onTenantChange, session, equip
         <button className="secondary-action" style={{ fontSize:12, background:'#0d1117', color:'white', borderColor:'transparent' }} onClick={onLaunchKiosk}>
           🖥️ Modo quiosque
         </button>
-        <button className="secondary-action" style={{ fontSize:12 }} onClick={() => printTodayReport(activeTenant, records)}>
+        <button className="secondary-action" style={{ fontSize:12 }} onClick={async () => { const m = await import('./controls'); m.printTodayReport(activeTenant, records); }}>
           🖨️ Imprimir registros de hoje
         </button>
       </div>
@@ -2676,8 +2707,28 @@ export function App() {
 
   const handleLogin = useCallback((s) => {
     setSession(s);
-    logSession(s.tenantId, s.user);
-  }, []);
+    // logSession é uma chamada one-shot — usa dynamic import pra não puxar
+    // extras.jsx no boot (33KB+).
+    import('./extras').then(m => m.logSession(s.tenantId, s.user)).catch(() => {});
+    // Auto-config Supabase a partir do tenant (data.js ou onboarding) — fallback
+    // pra dispositivos que não entraram via link ?token=
+    try {
+      const tenant = activeTenants.find(t => t.id === s.tenantId);
+      if (tenant?.supabase?.url && tenant?.supabase?.anonKey) {
+        const existing = JSON.parse(localStorage.getItem('nutriops.supabase.config') ?? 'null');
+        if (!existing || !existing.enabled) {
+          localStorage.setItem('nutriops.supabase.config', JSON.stringify({
+            url: tenant.supabase.url,
+            anonKey: tenant.supabase.anonKey,
+            enabled: true,
+            source: 'tenant',
+            syncedAt: new Date().toISOString(),
+          }));
+          console.info(`[NutriOPS] Supabase auto-configurado pelo tenant ${tenant.id}`);
+        }
+      }
+    } catch (e) { console.warn('[NutriOPS] auto-config Supabase falhou:', e?.message); }
+  }, [activeTenants]);
   const handleLogout = useCallback(() => { localStorage.removeItem(SESSION_KEY); setSession(null); }, []);
 
   // Show onboarding wizard for genuinely new users (no session, no onboarding data, not on demo)
@@ -2692,10 +2743,14 @@ export function App() {
     writeOnboardingTenants(newTenants);
   };
 
-  if (isNewUser) return <OnboardingWizard onComplete={handleOnboardingComplete} onHaveAccount={() => {
-    localStorage.removeItem('nutriops.access.token');
-    window.location.href = '/';
-  }} />;
+  if (isNewUser) return (
+    <Suspense fallback={<ViewLoading />}>
+      <OnboardingWizard onComplete={handleOnboardingComplete} onHaveAccount={() => {
+        localStorage.removeItem('nutriops.access.token');
+        window.location.href = '/';
+      }} />
+    </Suspense>
+  );
 
   const perms = getPermissions(session?.user?.role);
 
@@ -2861,17 +2916,27 @@ export function App() {
   }
 
   // Kiosk mode — full screen override
-  if (kioskConfig) return <KioskApp config={kioskConfig} onExit={() => setKioskConfig(null)} />;
+  if (kioskConfig) return (
+    <Suspense fallback={<ViewLoading />}>
+      <KioskApp config={kioskConfig} onExit={() => setKioskConfig(null)} />
+    </Suspense>
+  );
 
   const sharedProps = { activeTenant, allTenants: visibleTenants, onTenantChange: handleTenantChange, activeStore };
 
   return (
     <div className="super-shell">
-      {showSearch && <GlobalSearch records={records} allTenants={visibleTenants} onNavigate={setActiveView} onClose={() => setShowSearch(false)} />}
+      {showSearch && (
+        <Suspense fallback={null}>
+          <GlobalSearch records={records} allTenants={visibleTenants} onNavigate={setActiveView} onClose={() => setShowSearch(false)} />
+        </Suspense>
+      )}
       {showKioskSetup && (
-        <KioskSetup activeTenant={activeTenant} equipmentCatalog={equipmentCatalog} session={session}
-          onLaunch={(cfg) => { setKioskConfig(cfg); setShowKioskSetup(false); }}
-          onCancel={() => setShowKioskSetup(false)} />
+        <Suspense fallback={null}>
+          <KioskSetup activeTenant={activeTenant} equipmentCatalog={equipmentCatalog} session={session}
+            onLaunch={(cfg) => { setKioskConfig(cfg); setShowKioskSetup(false); }}
+            onCancel={() => setShowKioskSetup(false)} />
+        </Suspense>
       )}
 
       {/* Mobile header (visible on small screens only) */}
@@ -2905,44 +2970,46 @@ export function App() {
         onStoreChange={handleStoreChange} activeStore={activeStore} />
       <main className="super-main">
         <LocalModeBanner session={session} setActiveView={setActiveView} />
-        {activeView === 'overview'   && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} trialStatus={trialStatus} />}
-        {activeView === 'forms'      && <FormsView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
-        {activeView === 'pops'       && <POPsView {...sharedProps} session={session} />}
-        {activeView === 'training'   && <TrainingView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
-        {activeView === 'receiving'  && <RecebimentoView {...sharedProps} session={session} />}
-        {activeView === 'validity'   && <ValidityStockView {...sharedProps} session={session} />}
+        <Suspense fallback={<ViewLoading />}>
+          {activeView === 'overview'   && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} trialStatus={trialStatus} />}
+          {activeView === 'forms'      && <FormsView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
+          {activeView === 'pops'       && <POPsView {...sharedProps} session={session} />}
+          {activeView === 'training'   && <TrainingView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
+          {activeView === 'receiving'  && <RecebimentoView {...sharedProps} session={session} />}
+          {activeView === 'validity'   && <ValidityStockView {...sharedProps} session={session} />}
 
-        {/* Hub: Controles especiais (handwash/oil/thaw/cooling/thermal) */}
-        {CONTROLS_KEYS.includes(activeView) && (
-          <ControlsHub activeView={activeView} setActiveView={setActiveView} {...sharedProps} session={session} />
-        )}
+          {/* Hub: Controles especiais (handwash/oil/thaw/cooling/thermal) */}
+          {CONTROLS_KEYS.includes(activeView) && (
+            <ControlsHub activeView={activeView} setActiveView={setActiveView} {...sharedProps} session={session} />
+          )}
 
-        {/* Hub: Relatórios (dashboard/charts/reports/monthly/audit) */}
-        {REPORTS_KEYS.includes(activeView) && (
-          <ReportsHub activeView={activeView} setActiveView={setActiveView}
-            allTenants={visibleTenants} records={records} session={session} {...sharedProps} />
-        )}
+          {/* Hub: Relatórios (dashboard/charts/reports/monthly/audit) */}
+          {REPORTS_KEYS.includes(activeView) && (
+            <ReportsHub activeView={activeView} setActiveView={setActiveView}
+              allTenants={visibleTenants} records={records} session={session} {...sharedProps} />
+          )}
 
-        {activeView === 'alerts'     && <AlertsView {...sharedProps} records={records} />}
-        {activeView === 'actions'    && <CorrectiveActionsView {...sharedProps} records={records} />}
-        {activeView === 'rtpanel'    && <RTPanelView allTenants={visibleTenants} records={records} session={session} />}
+          {activeView === 'alerts'     && <AlertsView {...sharedProps} records={records} />}
+          {activeView === 'actions'    && <CorrectiveActionsView {...sharedProps} records={records} />}
+          {activeView === 'rtpanel'    && <RTPanelView allTenants={visibleTenants} records={records} session={session} />}
 
-        {/* Hub: Equipe (users/turns/sessions) */}
-        {TEAM_KEYS.includes(activeView) && (
-          <TeamHub activeView={activeView} setActiveView={setActiveView}
-            session={session} records={records} {...sharedProps} />
-        )}
+          {/* Hub: Equipe (users/turns/sessions) */}
+          {TEAM_KEYS.includes(activeView) && (
+            <TeamHub activeView={activeView} setActiveView={setActiveView}
+              session={session} records={records} {...sharedProps} />
+          )}
 
-        {activeView === 'equipment'   && <EquipmentView {...sharedProps} />}
-        {activeView === 'profile'     && <ProfileView session={session} onLogout={handleLogout} />}
-        {activeView === 'maintenance' && <MaintenanceView {...sharedProps} session={session} />}
-        {activeView === 'settings'    && <SettingsView session={session} activeTenant={activeTenant} />}
-        {/* Fallback for any route the user doesn't have access to */}
-        {![
-          'overview','forms','pops','training','receiving','validity',
-          ...CONTROLS_KEYS, ...REPORTS_KEYS, ...TEAM_KEYS,
-          'alerts','actions','rtpanel','equipment','profile','maintenance','settings',
-        ].includes(activeView) && <NoPermission onBack={() => setActiveView('overview')} />}
+          {activeView === 'equipment'   && <EquipmentView {...sharedProps} />}
+          {activeView === 'profile'     && <ProfileView session={session} onLogout={handleLogout} />}
+          {activeView === 'maintenance' && <MaintenanceView {...sharedProps} session={session} />}
+          {activeView === 'settings'    && <SettingsView session={session} activeTenant={activeTenant} />}
+          {/* Fallback for any route the user doesn't have access to */}
+          {![
+            'overview','forms','pops','training','receiving','validity',
+            ...CONTROLS_KEYS, ...REPORTS_KEYS, ...TEAM_KEYS,
+            'alerts','actions','rtpanel','equipment','profile','maintenance','settings',
+          ].includes(activeView) && <NoPermission onBack={() => setActiveView('overview')} />}
+        </Suspense>
       </main>
       <OfflineIndicator />
       <BottomNav activeView={activeView} setActiveView={setActiveView}

@@ -2,22 +2,13 @@ import React, { useState } from 'react';
 import { saveCompanyProfile } from './pages';
 import { sendWelcomeEmail, sendAdminNotification } from './email';
 import { BrandLockup } from './brand';
+import { readOnboardingTenants, writeOnboardingTenants, clearOnboardingTenants } from './onboarding-storage';
 
-// ─── Storage ───────────────────────────────────────────────────────────────
-
-const ONBOARDING_KEY = 'nutriops.onboarding.tenants';
-
-export function readOnboardingTenants() {
-  try { const r = localStorage.getItem(ONBOARDING_KEY); return r ? JSON.parse(r) : null; } catch { return null; }
-}
-
-export function writeOnboardingTenants(tenants) {
-  try { localStorage.setItem(ONBOARDING_KEY, JSON.stringify(tenants)); } catch {}
-}
-
-export function clearOnboarding() {
-  try { localStorage.removeItem(ONBOARDING_KEY); } catch {}
-}
+// Re-export pra manter API antiga (pages.jsx ainda importa daqui).
+// Imports leves devem usar ./onboarding-storage diretamente pra evitar puxar
+// o wizard inteiro no boot.
+export { readOnboardingTenants, writeOnboardingTenants };
+export const clearOnboarding = clearOnboardingTenants;
 
 function uid() { return crypto.randomUUID().slice(0, 8); }
 

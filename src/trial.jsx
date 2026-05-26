@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { readClients } from './admin';
+import { readClients } from './admin-storage';
 import { BrandLockup } from './brand';
 
 // ─── Trial check ───────────────────────────────────────────────────────────

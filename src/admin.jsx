@@ -1,20 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { getAllUsageStats } from './repository';
 import { BrandLockup, APP_VERSION } from './brand';
+import { readClients, writeClients, readAdminAuth, writeAdminAuth, clearAdminAuth } from './admin-storage';
 
-// ─── Storage ───────────────────────────────────────────────────────────────
-
-const CLIENTS_KEY = 'nutriops.admin.clients';
-const ADMIN_KEY   = 'nutriops.admin.auth';
-
-const ls = (k, fb) => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : fb; } catch { return fb; } };
-const lw = (k, v)  => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
-
-export function readClients()         { return ls(CLIENTS_KEY, []); }
-export function writeClients(v)       { lw(CLIENTS_KEY, v); }
-export function readAdminAuth()       { return ls(ADMIN_KEY, null); }
-export function writeAdminAuth(v)     { lw(ADMIN_KEY, v); }
-export function clearAdminAuth()      { try { localStorage.removeItem(ADMIN_KEY); } catch {} }
+// Re-export storage helpers pra preservar a API que pages.jsx/trial.jsx
+// consumiam (com import from './admin'). Os imports leves agora podem ser
+// feitos direto de ./admin-storage pra evitar puxar o painel inteiro.
+export { readClients, writeClients, readAdminAuth, writeAdminAuth, clearAdminAuth };
 
 function uid() { return crypto.randomUUID().slice(0, 12); }
 function fmtDate(iso) { try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return '—'; } }
@@ -105,6 +97,12 @@ function ClientModal({ client, onSave, onClose }) {
   const [notes, setNotes]         = useState(client?.notes ?? '');
   const [billingDay, setBillingDay] = useState(client?.billingDay ?? 5);
   const [billingStatus, setBillingStatus] = useState(client?.billingStatus ?? 'ok');
+  // Sincronização opcional — quando preenchida, qualquer device que abrir o
+  // link do cliente já entra com Supabase ligado (sem precisar configurar
+  // em cada aparelho).
+  const [sbUrl, setSbUrl]         = useState(client?.supabase?.url ?? '');
+  const [sbKey, setSbKey]         = useState(client?.supabase?.anonKey ?? '');
+  const [showSync, setShowSync]   = useState(Boolean(client?.supabase?.url));
 
   const selectedPlan = PLANS.find(p => p.id === plan);
   const trialEndsAt  = plan === 'trial' && !editing
@@ -123,6 +121,11 @@ function ClientModal({ client, onSave, onClose }) {
       updatedAt: new Date().toISOString(),
       // Access token for client to use
       accessToken: client?.accessToken ?? `nt_${uid()}${uid()}`,
+      // Supabase config — opcional. Quando preenchido, devices auto-configuram
+      // ao abrir o link com ?token=
+      supabase: sbUrl.trim() && sbKey.trim()
+        ? { url: sbUrl.trim(), anonKey: sbKey.trim() }
+        : null,
     });
     onClose();
   };
@@ -197,6 +200,37 @@ function ClientModal({ client, onSave, onClose }) {
             <input type="checkbox" checked={active} onChange={e=>setActive(e.target.checked)} style={{ width:16, height:16, accentColor:'#cc785c' }} />
             Acesso ativo
           </label>
+
+          {/* Sincronização opcional */}
+          <div style={{ borderTop:'1px solid #e5ddd0', paddingTop:14, marginTop:4 }}>
+            <button type="button" onClick={() => setShowSync(s => !s)}
+              style={{ background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:600, color:'#6b6760', display:'flex', alignItems:'center', gap:6, padding:0, letterSpacing:'.06em', textTransform:'uppercase' }}>
+              <span style={{ transition:'transform .15s', transform: showSync ? 'rotate(90deg)' : 'rotate(0deg)' }}>›</span>
+              Sincronização Supabase (opcional)
+            </button>
+            {showSync && (
+              <div style={{ display:'flex', flexDirection:'column', gap:10, marginTop:10, padding:'12px 14px', background:'#faf9f5', border:'1px solid #e5ddd0', borderRadius:8 }}>
+                <p style={{ fontSize:11, color:'#6b6760', margin:0, lineHeight:1.5 }}>
+                  Preenchendo aqui, qualquer aparelho que abrir o link de acesso desse cliente
+                  já entra com a nuvem ligada automaticamente. Sem essas duas linhas, o app
+                  funciona em "modo local" — os dados ficam só no aparelho.
+                </p>
+                <label style={{ display:'flex', flexDirection:'column', gap:5, fontSize:12, fontWeight:600, color:'#6b6760' }}>
+                  Supabase URL
+                  <input value={sbUrl} onChange={e=>setSbUrl(e.target.value)}
+                    placeholder="https://xxxxx.supabase.co" style={inputStyle} />
+                </label>
+                <label style={{ display:'flex', flexDirection:'column', gap:5, fontSize:12, fontWeight:600, color:'#6b6760' }}>
+                  Supabase anon key
+                  <input value={sbKey} onChange={e=>setSbKey(e.target.value)} type="password"
+                    placeholder="eyJhbGciOi..." style={inputStyle} />
+                </label>
+                <p style={{ fontSize:11, color:'#6b6760', margin:0 }}>
+                  Encontre em: Supabase → Project Settings → API.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
         <div style={{ display:'flex', gap:10, marginTop:20 }}>
           <button onClick={onClose} style={{ flex:1, padding:'10px', borderRadius:8, border:'1px solid #d9d1c4', background:'white', cursor:'pointer', fontSize:14, fontWeight:600, fontFamily:'inherit' }}>Cancelar</button>

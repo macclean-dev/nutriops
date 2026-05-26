@@ -162,8 +162,8 @@ function TempLineChart({ records, equipment, height = 180 }) {
         <line x1={0} y1={bandBot} x2={cW} y2={bandBot} stroke="#4ac26b" strokeDasharray="4 3" strokeWidth={1} opacity={.7} />
         <text x={cW + 4} y={bandTop} fontSize={9} fill="#1a7f37" dominantBaseline="middle">máx {limits.max}°</text>
         <text x={cW + 4} y={bandBot} fontSize={9} fill="#1a7f37" dominantBaseline="middle">mín {limits.min}°</text>
-        <path d={areaPath} fill="#0969da" fillOpacity={.06} />
-        <path d={linePath} fill="none" stroke="#0969da" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        <path d={areaPath} fill="#1d4e89" fillOpacity={.06} />
+        <path d={linePath} fill="none" stroke="#1d4e89" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
         {pts.map((p, i) => {
           const tone = resolveTemperatureTone(p.r);
           const color = tone === 'ok' ? '#1a7f37' : tone === 'warn' ? '#9a6700' : '#cf222e';
@@ -209,11 +209,11 @@ function BottomNav({ activeView, setActiveView, session, alertCount, actionCount
   }, [session?.tenantId]);
 
   const items = [
-    { key: 'overview',  icon: '🏠', label: 'Início',    badge: 0 },
-    { key: 'forms',     icon: '📋', label: 'BPF',       badge: 0 },
-    { key: 'validity',  icon: '📦', label: 'Validades', badge: validityAlertCount },
-    { key: 'alerts',    icon: '⚠️', label: 'Alertas',   badge: alertCount },
-    { key: 'dashboard', icon: '📊', label: 'Relatório', badge: 0 },
+    { key: 'overview',  iconId: 'overview',  label: 'Início',    badge: 0 },
+    { key: 'forms',     iconId: 'forms',     label: 'BPF',       badge: 0 },
+    { key: 'validity',  iconId: 'validity',  label: 'Validades', badge: validityAlertCount },
+    { key: 'alerts',    iconId: 'alerts',    label: 'Alertas',   badge: alertCount },
+    { key: 'dashboard', iconId: 'dashboard', label: 'Relatório', badge: 0 },
   ].filter(item => canAccess(session?.user?.role, item.key));
 
   return (
@@ -223,7 +223,7 @@ function BottomNav({ activeView, setActiveView, session, alertCount, actionCount
           <button key={item.key} className={`bottom-nav-item ${activeView === item.key ? 'active' : ''}`}
             onClick={() => setActiveView(item.key)}>
             {item.badge > 0 && <span className="bottom-nav-badge">{item.badge}</span>}
-            <span className="bnav-icon">{item.icon}</span>
+            <span className="bnav-icon"><NavIcon id={item.iconId} size={22} /></span>
             <span>{item.label}</span>
           </button>
         ))}
@@ -235,36 +235,19 @@ function BottomNav({ activeView, setActiveView, session, alertCount, actionCount
 // ─── Mobile Drawer ─────────────────────────────────────────────────────────
 
 function MobileDrawer({ open, onClose, activeView, setActiveView, session, activeTenant, allTenants, onTenantChange, onLogout, alertCount, actionCount, maintAlertCount = 0 }) {
-  const perms = getPermissions(session?.user?.role);
+  const validityAlertCount = useMemo(() => {
+    try {
+      const products = JSON.parse(localStorage.getItem(`nutriops.products.${activeTenant.id}`) ?? '[]');
+      const now = new Date().setHours(0,0,0,0);
+      return products.filter(p => {
+        if (!p.expiryDate) return false;
+        const days = Math.ceil((new Date(p.expiryDate + 'T12:00').getTime() - now) / 86400000);
+        return days <= 3 || days < 0 || (p.minStock > 0 && p.currentStock < p.minStock);
+      }).length;
+    } catch { return 0; }
+  }, [activeTenant?.id]);
 
-  const navItems = [
-    ['overview',   '🏠', 'Visão geral'],
-    ['dashboard',  '📊', 'Conformidade'],
-    ['charts',     '📈', 'Gráficos'],
-    ['forms',      '📋', 'Planilhas BPF'],
-    ['pops',       '📑', 'POPs'],
-    ['training',   '🎓', 'Capacitação'],
-    ['receiving',  '🚚', 'Recebimento'],
-    ['validity',   '📦', 'Validades'],
-    ['handwash',   '🙌', 'Higiene das mãos'],
-    ['oil',        '🍳', 'Óleo de fritura'],
-    ['thaw',       '❄️', 'Descongelamento'],
-    ['cooling',    '🌡️', 'Resfriamento'],
-    ['thermal',    '🔥', 'Tratamento térmico'],
-    ['reports',    '📄', 'Relatórios'],
-    ['monthly',    '📅', 'Exportação mensal'],
-    ['audit',      '🔍', 'Auditoria'],
-    ['alerts',     '⚠️', `Alertas${alertCount > 0 ? ` (${alertCount})` : ''}`],
-    ['actions',    '✅', 'Ações corretivas'],
-    ['rtpanel',    '👩‍⚕️', 'Painel RT'],
-    ['turns',      '⏰', 'Turnos'],
-    ['users',      '👥', 'Usuários'],
-    ['sessions',   '📋', 'Histórico de acessos'],
-    ['maintenance','🔧', 'Manutenção', null, maintAlertCount > 0 ? maintAlertCount : null],
-    ['profile',    '👤', 'Meu perfil'],
-    ['settings',   '⚙️', 'Configurações'],
-  ].filter(([key]) => canAccess(session?.user?.role, key));
-
+  const SECTIONS = buildNavSections({ validityAlertCount, maintAlertCount, alertCount, actionCount });
   const navigate = (key) => { setActiveView(key); onClose(); };
 
   if (!open) return null;
@@ -273,29 +256,48 @@ function MobileDrawer({ open, onClose, activeView, setActiveView, session, activ
       <div className="mobile-drawer-overlay" onClick={onClose} />
       <div className="mobile-drawer-panel">
         {/* Header */}
-        <div style={{ padding:'16px', borderBottom:'1px solid var(--rail-border)' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
-            <div className="brand-mark" style={{ width:28, height:28, fontSize:13 }}>N</div>
-            <span style={{ fontSize:15, fontWeight:800, letterSpacing:'-.05em', color:'#e6edf3' }}>NutriOPS</span>
-            <span style={{ marginLeft:'auto', fontSize:11, color:'var(--rail-muted)' }}>v{APP_VERSION}</span>
+        <div style={{ padding:'18px 16px 14px', borderBottom:'1px solid var(--rail-border)' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+            <BrandLockup size="sm" idPrefix="drw" />
+            <span style={{ fontSize:10, color:'var(--rail-muted)', letterSpacing:'.12em', textTransform:'uppercase' }}>v{APP_VERSION}</span>
           </div>
-          {/* Company selector */}
           {allTenants.length > 1 && (
             <select value={activeTenant.id} onChange={e => { onTenantChange(e.target.value); onClose(); }}
-              style={{ width:'100%', background:'rgba(255,255,255,.08)', border:'1px solid var(--rail-border)', color:'#cdd9e5', borderRadius:8, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13 }}>
+              style={{ width:'100%', background:'rgba(255,255,255,.05)', border:'1px solid var(--rail-border)', color:'var(--rail-text)', borderRadius:8, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13 }}>
               {allTenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           )}
         </div>
         {/* Nav items */}
         <div style={{ flex:1, overflowY:'auto', padding:'8px' }}>
-          {navItems.map(([key, icon, label]) => (
-            <button key={key} onClick={() => navigate(key)}
-              style={{ width:'100%', textAlign:'left', padding:'10px 12px', border:'none', borderRadius:8, background:activeView===key?'rgba(56,139,253,.15)':'transparent', color:activeView===key?'#58a6ff':'var(--rail-muted)', fontFamily:'var(--font)', fontSize:14, fontWeight:activeView===key?700:500, cursor:'pointer', display:'flex', alignItems:'center', gap:10, marginBottom:2 }}>
-              <span style={{ fontSize:16, width:20, textAlign:'center' }}>{icon}</span>
-              {label}
-            </button>
-          ))}
+          {SECTIONS.map((section, sIdx) => {
+            const visibleItems = section.items.filter(([key]) => canAccess(session?.user?.role, key));
+            if (visibleItems.length === 0) return null;
+            return (
+              <div key={section.label} style={{ marginTop: sIdx === 0 ? 0 : 10 }}>
+                <div className="rail-section-label">{section.label}</div>
+                <div style={{ display:'flex', flexDirection:'column', gap:1, marginTop:2 }}>
+                  {visibleItems.map(([key, iconId, label, badge]) => (
+                    <button key={key} onClick={() => navigate(key)}
+                      className={`rail-menu-item ${activeView === key ? 'active' : ''}`}
+                      style={{ display:'flex', alignItems:'center', gap:10, minHeight:40 }}>
+                      <NavIcon id={iconId} />
+                      <span style={{ flex:1 }}>{label}</span>
+                      {badge && (
+                        <span style={{
+                          background: key==='actions' ? 'var(--amber)' : 'var(--red)',
+                          color:'white', borderRadius:10, fontSize:10, fontWeight:700,
+                          padding:'1px 6px', flexShrink:0, lineHeight:1.4,
+                        }}>
+                          {badge}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
         {/* Footer */}
         <div style={{ padding:'12px 16px', borderTop:'1px solid var(--rail-border)' }}>
@@ -443,9 +445,8 @@ function LoginScreen({ onLogin, activeTenants }) {
   return (
     <div className="login-screen">
       <div className="login-card">
-        <div className="brand-lockup" style={{ marginBottom:28 }}>
-          <span className="brand-mark" style={{ width:36, height:36, fontSize:16, borderRadius:10 }}>N</span>
-          <span style={{ fontSize:22, fontWeight:800, letterSpacing:'-.05em', color:'var(--text)' }}>NutriOPS</span>
+        <div style={{ marginBottom:28 }}>
+          <BrandLockup size="lg" theme="light" idPrefix="login" showSub={false} />
         </div>
 
         {resetSent ? (
@@ -538,10 +539,66 @@ function LoginScreen({ onLogin, activeTenants }) {
 
 // ─── Rail ──────────────────────────────────────────────────────────────────
 
+// ─── Brand mark — calligraphic "N" (suite design language com Nexum) ─────
+
+function NutriMark({ size = 21, idPrefix = 'nut' }) {
+  const d = `${idPrefix}-d`;
+  const r = `${idPrefix}-r`;
+  return (
+    <svg width={size} height={size} viewBox="0 0 30 30" fill="none">
+      <defs>
+        {/* Diagonal — traço coral (assinatura do NutriOPS) */}
+        <linearGradient id={d} x1="7" y1="4" x2="23" y2="26" gradientUnits="userSpaceOnUse">
+          <stop offset="0%"   stopColor="#cc785c" stopOpacity="0.78"/>
+          <stop offset="100%" stopColor="#cc785c"/>
+        </linearGradient>
+        {/* Right stem — sobe do coral em direção ao branco */}
+        <linearGradient id={r} x1="23" y1="26" x2="23" y2="4" gradientUnits="userSpaceOnUse">
+          <stop offset="0%"   stopColor="rgba(255,255,255,0.40)"/>
+          <stop offset="38%"  stopColor="#ffffff"/>
+          <stop offset="100%" stopColor="#ffffff"/>
+        </linearGradient>
+      </defs>
+      {/* Left stem — branco sólido */}
+      <line x1="7"  y1="4"  x2="7"  y2="26" stroke="#ffffff"       strokeWidth="4.5" strokeLinecap="round"/>
+      {/* Diagonal — coral calligráfico (mais fino) */}
+      <line x1="7"  y1="4"  x2="23" y2="26" stroke={`url(#${d})`} strokeWidth="3"   strokeLinecap="round"/>
+      {/* Right stem — gradiente coral→branco */}
+      <line x1="23" y1="26" x2="23" y2="4"  stroke={`url(#${r})`} strokeWidth="4.5" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function BrandLockup({ size = 'lg', showSub = true, idPrefix = 'sid', theme = 'dark' }) {
+  const isSm    = size === 'sm';
+  const markBox = isSm ? 28 : 34;
+  const markSvg = isSm ? 17 : 21;
+  const wordSz  = isSm ? 18 : 22;
+  const radius  = isSm ? 8 : 10;
+  const isLight = theme === 'light';
+  const wordColor = isLight ? 'var(--text)' : '#fff';
+  const subColor  = isLight ? 'var(--text-secondary)' : 'rgba(255,255,255,.28)';
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap: isSm ? 8 : 10, textDecoration:'none' }}>
+      <div className="brand-mark" style={{ width: markBox, height: markBox, borderRadius: radius }}>
+        <NutriMark size={markSvg} idPrefix={idPrefix} />
+      </div>
+      <div>
+        <div className="brand-wordmark" style={{ fontSize: wordSz, color: wordColor }}>NutriOPS</div>
+        {showSub && (
+          <div style={{ fontSize: 9, color: subColor, letterSpacing:'.18em', textTransform:'uppercase', marginTop: 3 }}>
+            Food Safety · v{APP_VERSION}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Nav Icons — SVG outline, 16×16, stroke 1.5 ──────────────────────────
 
-function NavIcon({ id }) {
-  const s = { width:16, height:16, viewBox:'0 0 24 24', fill:'none', stroke:'currentColor', strokeWidth:1.75, strokeLinecap:'round', strokeLinejoin:'round', flexShrink:0 };
+function NavIcon({ id, size = 16 }) {
+  const s = { width:size, height:size, viewBox:'0 0 24 24', fill:'none', stroke:'currentColor', strokeWidth:1.75, strokeLinecap:'round', strokeLinejoin:'round', flexShrink:0 };
   const icons = {
     overview:    <svg {...s}><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
     forms:       <svg {...s}><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>,
@@ -573,6 +630,68 @@ function NavIcon({ id }) {
   return icons[id] ?? <svg {...s}><circle cx="12" cy="12" r="4"/></svg>;
 }
 
+// ─── Nav structure compartilhada por RailNav e MobileDrawer ──────────────
+// Items: [key, iconId, label, badge?]
+function buildNavSections({ validityAlertCount = 0, maintAlertCount = 0, alertCount = 0, actionCount = 0 } = {}) {
+  return [
+    {
+      label: 'Operação',
+      items: [
+        ['overview',  'overview',  'Visão geral'],
+        ['forms',     'forms',     'Planilhas BPF'],
+        ['receiving', 'receiving', 'Recebimento'],
+        ['validity',  'validity',  'Validades', validityAlertCount || null],
+      ],
+    },
+    {
+      label: 'Controles especiais',
+      items: [
+        ['handwash', 'handwash', 'Higiene das mãos'],
+        ['oil',      'oil',      'Óleo de fritura'],
+        ['thaw',     'thaw',     'Descongelamento'],
+        ['cooling',  'cooling',  'Resfriamento'],
+        ['thermal',  'thermal',  'Tratamento térmico'],
+      ],
+    },
+    {
+      label: 'Qualidade',
+      items: [
+        ['pops',        'pops',        'POPs'],
+        ['training',    'training',    'Capacitação'],
+        ['maintenance', 'maintenance', 'Manutenção', maintAlertCount || null],
+      ],
+    },
+    {
+      label: 'Relatórios',
+      items: [
+        ['dashboard', 'dashboard', 'Conformidade'],
+        ['charts',    'charts',    'Gráficos'],
+        ['reports',   'reports',   'Relatórios'],
+        ['monthly',   'monthly',   'Exportação mensal'],
+        ['audit',     'audit',     'Auditoria'],
+      ],
+    },
+    {
+      label: 'Gestão',
+      items: [
+        ['alerts',   'alerts',   'Alertas',          alertCount  || null],
+        ['actions',  'actions',  'Ações corretivas', actionCount || null],
+        ['rtpanel',  'rtpanel',  'Painel RT'],
+        ['turns',    'turns',    'Turnos'],
+        ['users',    'users',    'Usuários'],
+        ['sessions', 'sessions', 'Acessos'],
+      ],
+    },
+    {
+      label: 'Conta',
+      items: [
+        ['profile',  'profile',  'Meu perfil'],
+        ['settings', 'settings', 'Configurações'],
+      ],
+    },
+  ];
+}
+
 function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenantChange, onStoreChange, activeStore, session, records, alertCount, actionCount, maintAlertCount = 0, onLogout, onSearch }) {
   const perms = getPermissions(session?.user?.role);
 
@@ -588,95 +707,14 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
     } catch { return 0; }
   }, [activeTenant.id]);
 
-  // Groups — each group has a label, icon, and items
-  // Items: [key, label, badge]
-  const GROUPS = [
-    {
-      id: 'daily', label: 'Operação diária', defaultOpen: true,
-      items: [
-        ['overview',  'overview',   'Visão geral',         null],
-        ['forms',     'forms',      'Planilhas BPF',       null],
-        ['receiving', 'receiving',  'Recebimento',         null],
-        ['validity',  'validity',   'Validades e Estoque', validityAlertCount || null],
-      ],
-    },
-    {
-      id: 'controls', label: 'Controles especiais', defaultOpen: false,
-      items: [
-        ['handwash', 'handwash',  'Higiene das mãos',   null],
-        ['oil',      'oil',       'Óleo de fritura',    null],
-        ['thaw',     'thaw',      'Descongelamento',    null],
-        ['cooling',  'cooling',   'Resfriamento',       null],
-        ['thermal',  'thermal',   'Tratamento térmico', null],
-      ],
-    },
-    {
-      id: 'quality', label: 'Qualidade', defaultOpen: true,
-      items: [
-        ['pops',        'pops',        'POPs',        null],
-        ['training',    'training',    'Capacitação', null],
-        ['maintenance', 'maintenance', 'Manutenção',  maintAlertCount || null],
-      ],
-    },
-    {
-      id: 'reports', label: 'Relatórios', defaultOpen: false,
-      items: [
-        ['dashboard', 'dashboard', 'Conformidade',      null],
-        ['charts',    'charts',    'Gráficos',          null],
-        ['reports',   'reports',   'Relatórios',        null],
-        ['monthly',   'monthly',   'Exportação mensal', null],
-        ['audit',     'audit',     'Auditoria',         null],
-      ],
-    },
-    {
-      id: 'manage', label: 'Gestão', defaultOpen: true,
-      items: [
-        ['alerts',   'alerts',   'Alertas',              alertCount  || null],
-        ['actions',  'actions',  'Ações corretivas',     actionCount || null],
-        ['rtpanel',  'rtpanel',  'Painel RT',            null],
-        ['turns',    'turns',    'Turnos',               null],
-        ['users',    'users',    'Usuários',             null],
-        ['sessions', 'sessions', 'Histórico de acessos', null],
-      ],
-    },
-    {
-      id: 'account', label: 'Conta', defaultOpen: true,
-      items: [
-        ['profile',  'profile',  'Meu perfil',    null],
-        ['settings', 'settings', 'Configurações', null],
-      ],
-    },
-  ];
-
-  // Auto-open group that contains activeView
-  const getDefaultOpen = (group) => {
-    if (group.defaultOpen) return true;
-    return group.items.some(([key]) => key === activeView);
-  };
-
-  const [openGroups, setOpenGroups] = useState(() => {
-    const state = {};
-    GROUPS.forEach(g => { state[g.id] = getDefaultOpen(g); });
-    return state;
-  });
-
-  // Auto-open group when navigating into it
-  useEffect(() => {
-    GROUPS.forEach(g => {
-      if (g.items.some(([key]) => key === activeView)) {
-        setOpenGroups(prev => ({ ...prev, [g.id]: true }));
-      }
-    });
-  }, [activeView]);
-
-  const toggleGroup = (id) => setOpenGroups(prev => ({ ...prev, [id]: !prev[id] }));
+  const SECTIONS = buildNavSections({ validityAlertCount, maintAlertCount, alertCount, actionCount });
 
   return (
     <aside className="super-rail">
       {/* Brand */}
       <div className="rail-brand">
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
-          <div className="brand-lockup"><span className="brand-mark">N</span><span className="brand-wordmark">NutriOPS</span></div>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+          <BrandLockup size="lg" idPrefix="sid" />
           <button className="dark-mode-toggle" title="Alternar modo escuro"
             onClick={() => {
               const dark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -686,7 +724,7 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
             {document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙'}
           </button>
         </div>
-        <button onClick={onSearch} style={{ width:'100%', padding:'6px 10px', background:'rgba(255,255,255,.06)', border:'1px solid rgba(255,255,255,.1)', borderRadius:8, color:'var(--rail-muted)', fontSize:12, cursor:'pointer', textAlign:'left', display:'flex', justifyContent:'space-between', alignItems:'center', fontFamily:'var(--font)' }}>
+        <button onClick={onSearch} style={{ width:'100%', padding:'7px 10px', background:'rgba(255,255,255,.05)', border:'1px solid rgba(255,255,255,.08)', borderRadius:8, color:'var(--rail-muted)', fontSize:12, cursor:'pointer', textAlign:'left', display:'flex', justifyContent:'space-between', alignItems:'center', fontFamily:'var(--font)' }}>
           <span>🔍 Buscar…</span>
           <kbd style={{ fontSize:10, opacity:.6 }}>⌘K</kbd>
         </button>
@@ -715,70 +753,49 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
         <span style={{ fontSize:11, color:'var(--rail-muted)', display:'block', marginTop:2 }}>{session.user.role} · {activeTenant.name}</span>
       </div>
 
-      {/* Grouped nav */}
+      {/* Flat nav */}
       <div className="rail-menu">
-        <div className="rail-menu-list" style={{ display:'flex', flexDirection:'column', gap:2 }}>
-          {GROUPS.map(group => {
-            // Filter items by permission
-            const visibleItems = group.items.filter(([key]) => canAccess(session?.user?.role, key));
+        <div className="rail-menu-list" style={{ padding:'8px 8px 4px' }}>
+          {SECTIONS.map((section, sIdx) => {
+            const visibleItems = section.items.filter(([key]) => canAccess(session?.user?.role, key));
             if (visibleItems.length === 0) return null;
-
-            const isOpen   = openGroups[group.id] ?? group.defaultOpen;
-            const hasAlert = visibleItems.some(([,,, badge]) => badge);
-            const hasActive = visibleItems.some(([key]) => key === activeView);
-
             return (
-              <div key={group.id}>
-                {/* Group header */}
-                <button onClick={() => toggleGroup(group.id)}
-                  style={{
-                    width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between',
-                    padding:'5px 12px', border:'none', background:'transparent',
-                    cursor:'pointer', fontFamily:'var(--font)',
-                  }}>
-                  <span style={{
-                    fontSize:10, fontWeight:700, textTransform:'uppercase',
-                    letterSpacing:'.07em',
-                    color: hasActive ? '#58a6ff' : 'var(--rail-muted)',
-                    transition:'color .15s',
-                  }}>
-                    {group.label}
-                    {!isOpen && hasAlert && <span style={{ marginLeft:5, width:6, height:6, borderRadius:3, background:'var(--red)', display:'inline-block', verticalAlign:'middle' }} />}
-                  </span>
-                  <span style={{ fontSize:9, color:'var(--rail-muted)', transition:'transform .2s', display:'inline-block', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
-                </button>
-
-                {/* Group items */}
-                {isOpen && (
-                  <div style={{ display:'flex', flexDirection:'column', gap:1, paddingBottom:4 }}>
-                    {visibleItems.map(([key, iconId, label, badge]) => (
-                      <button key={key}
-                        className={`rail-menu-item ${activeView === key ? 'active' : ''}`}
-                        onClick={() => setActiveView(key)}
-                        style={{ paddingLeft:16, display:'flex', alignItems:'center', gap:9 }}>
-                        <NavIcon id={iconId} />
-                        <span style={{ flex:1 }}>{label}</span>
-                        {badge && (
-                          <span style={{ background: key==='actions'?'var(--amber)':'var(--red)', color:'white', borderRadius:10, fontSize:10, fontWeight:800, padding:'1px 6px', flexShrink:0 }}>
-                            {badge}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
+              <div key={section.label} style={{ marginTop: sIdx === 0 ? 0 : 10 }}>
+                <div className="rail-section-label">{section.label}</div>
+                <div style={{ display:'flex', flexDirection:'column', gap:1, marginTop:2 }}>
+                  {visibleItems.map(([key, iconId, label, badge]) => (
+                    <button key={key}
+                      className={`rail-menu-item ${activeView === key ? 'active' : ''}`}
+                      onClick={() => setActiveView(key)}
+                      style={{ display:'flex', alignItems:'center', gap:10 }}>
+                      <NavIcon id={iconId} />
+                      <span style={{ flex:1 }}>{label}</span>
+                      {badge && (
+                        <span style={{
+                          background: key==='actions' ? 'var(--amber)' : 'var(--red)',
+                          color:'white', borderRadius:10, fontSize:10, fontWeight:700,
+                          padding:'1px 6px', flexShrink:0, lineHeight:1.4,
+                        }}>
+                          {badge}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
               </div>
             );
           })}
         </div>
 
         {/* Footer */}
-        <button className="rail-menu-item" style={{ marginTop:'auto', color:'var(--rail-muted)', borderTop:'1px solid var(--rail-border)', borderRadius:0, display:'flex', alignItems:'center', gap:9 }} onClick={onLogout}>
-          <NavIcon id="logout" />
-          <span>Sair</span>
-        </button>
-        <div style={{ padding:'8px 12px', fontSize:10, color:'var(--rail-muted)', borderTop:'1px solid var(--rail-border)', textAlign:'center' }}>
-          NutriOPS v{APP_VERSION}
+        <div style={{ marginTop:'auto', borderTop:'1px solid var(--rail-border)', padding:'6px 8px' }}>
+          <button className="rail-menu-item" style={{ display:'flex', alignItems:'center', gap:10 }} onClick={onLogout}>
+            <NavIcon id="logout" />
+            <span>Sair</span>
+          </button>
+        </div>
+        <div style={{ padding:'8px 12px 12px', fontSize:9, color:'var(--rail-muted)', textAlign:'center', letterSpacing:'.12em', textTransform:'uppercase' }}>
+          v{APP_VERSION} · Uniwares
         </div>
       </div>
     </aside>
@@ -2712,8 +2729,7 @@ export function App() {
       {/* Mobile header (visible on small screens only) */}
       <header className="mobile-header">
         <div className="mobile-header-brand">
-          <div className="brand-mark" style={{ width:28, height:28, fontSize:13 }}>N</div>
-          <span>NutriOPS</span>
+          <BrandLockup size="sm" showSub={false} idPrefix="mob" />
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
           <button className="mobile-menu-btn" onClick={() => {

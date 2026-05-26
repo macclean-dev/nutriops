@@ -44,9 +44,9 @@ export function TrialBanner({ status, onDismiss }) {
   if (status.reason === 'trial_warning') {
     return (
       <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
         padding: '10px 16px', background: 'var(--amber-light)', border: '1px solid var(--amber-border)',
-        borderRadius: 10, marginBottom: 16, flexWrap: 'wrap', gap: 8,
+        borderRadius: 10, marginBottom: 16, flexWrap: 'wrap',
       }}>
         <div>
           <span style={{ fontWeight: 700, color: 'var(--amber)' }}>

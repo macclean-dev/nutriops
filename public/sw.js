@@ -1,7 +1,9 @@
-// NutriOPS Service Worker — cache-first for app shell, offline fallback
-const CACHE = 'nutriops-v1';
+// NutriOPS Service Worker — network-first com cache fallback
+// __BUILD_ID__ é substituído no build (scripts/version-sw.js). Em dev fica fixo.
+const CACHE = 'nutriops-__BUILD_ID__';
 
 self.addEventListener('install', (e) => {
+  // Ativa o novo SW imediatamente, sem esperar a aba fechar.
   self.skipWaiting();
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/index.html'])));
 });

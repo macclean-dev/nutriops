@@ -2100,6 +2100,64 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
 
 // ─── Offline Indicator ─────────────────────────────────────────────────────
 
+// Banner sticky no topo quando Supabase está desligado nesse dispositivo.
+// Mostra que os dados ficam só locais — exatamente o cenário "loja sem sync".
+// Esconde sozinho quando Supabase é habilitado.
+function LocalModeBanner({ session, setActiveView }) {
+  const [enabled, setEnabled] = useState(() => isSupabaseEnabled());
+  const [dismissed, setDismissed] = useState(() => {
+    return localStorage.getItem('nutriops.local.banner.dismissed') === new Date().toDateString();
+  });
+
+  // Re-check a cada minuto (caso o usuário tenha ativado em outra aba)
+  useEffect(() => {
+    const t = setInterval(() => setEnabled(isSupabaseEnabled()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (enabled || dismissed) return null;
+
+  const role = session?.user?.role;
+  const canConfigure = role === 'Administrador' || role === 'Super-admin' || role === 'Nutricionista RT';
+
+  const dismiss = () => {
+    localStorage.setItem('nutriops.local.banner.dismissed', new Date().toDateString());
+    setDismissed(true);
+  };
+
+  return (
+    <div style={{
+      display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
+      padding:'10px 16px', marginBottom:16,
+      background:'var(--amber-light)', border:'1px solid var(--amber-border)',
+      borderRadius:'var(--r-lg)', flexWrap:'wrap',
+    }}>
+      <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+        <strong style={{ color:'var(--amber)', fontSize:13 }}>
+          Modo local — os dados ficam só neste dispositivo
+        </strong>
+        <span style={{ color:'var(--text-secondary)', fontSize:12 }}>
+          {canConfigure
+            ? 'Configure a sincronização em Configurações pra ver os registros no painel web.'
+            : 'Peça pro administrador habilitar a sincronização em Configurações.'}
+        </span>
+      </div>
+      <div style={{ display:'flex', gap:6 }}>
+        {canConfigure && (
+          <button onClick={() => setActiveView('settings')}
+            style={{ padding:'6px 14px', borderRadius:'var(--r)', border:'1px solid var(--amber-border)', background:'var(--amber)', color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'var(--font)' }}>
+            Configurar agora
+          </button>
+        )}
+        <button onClick={dismiss}
+          style={{ padding:'6px 10px', borderRadius:'var(--r)', border:'1px solid var(--amber-border)', background:'transparent', color:'var(--amber)', fontSize:12, fontWeight:500, cursor:'pointer', fontFamily:'var(--font)' }}>
+          Dispensar hoje
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function OfflineIndicator() {
   const [online, setOnline]     = useState(() => navigator.onLine);
   const [queueCount, setQCount] = useState(() => getOfflineQueue().length);
@@ -2138,23 +2196,23 @@ function OfflineIndicator() {
     <div style={{
       position: 'fixed', bottom: 16, right: 16, zIndex: 100,
       display: 'flex', alignItems: 'center', gap: 10,
-      padding: '10px 14px', borderRadius: 10,
-      background: online ? '#fdf8e3' : '#ffebe9',
-      border: `1px solid ${online ? '#e3aa14' : '#ff8182'}`,
-      boxShadow: '0 4px 16px rgba(0,0,0,.12)',
+      padding: '10px 14px', borderRadius: 'var(--r-lg)',
+      background: online ? 'var(--amber-light)' : 'var(--red-light)',
+      border: `1px solid ${online ? 'var(--amber-border)' : 'var(--red-border)'}`,
+      boxShadow: 'var(--shadow-lg)',
       fontSize: 13, fontFamily: 'var(--font)',
     }}>
-      <span style={{ fontWeight: 700, color: online ? '#9a6700' : '#cf222e' }}>
-        {online ? `⚡ ${queueCount} registro${queueCount > 1 ? 's' : ''} para sincronizar` : '📡 Sem conexão'}
+      <span style={{ fontWeight: 600, color: online ? 'var(--amber)' : 'var(--red)' }}>
+        {online ? `${queueCount} registro${queueCount > 1 ? 's' : ''} para sincronizar` : 'Sem conexão'}
       </span>
       {online && queueCount > 0 && isSupabaseEnabled() && (
         <button onClick={handleSync} disabled={syncing}
-          style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #e3aa14', background: '#9a6700', color: 'white', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font)' }}>
+          style={{ padding: '4px 12px', borderRadius: 'var(--r)', border: 'none', background: 'var(--amber)', color: 'white', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)' }}>
           {syncing ? 'Sincronizando…' : 'Sincronizar'}
         </button>
       )}
       {syncResult && (
-        <span style={{ fontSize: 11, color: '#065f46' }}>✓ {syncResult.synced} sincronizado{syncResult.synced > 1 ? 's' : ''}</span>
+        <span style={{ fontSize: 11, color: 'var(--green)' }}>{syncResult.synced} sincronizado{syncResult.synced > 1 ? 's' : ''}</span>
       )}
     </div>
   );
@@ -2733,14 +2791,24 @@ export function App() {
 
   // Auto-sync on login and when coming online
   useEffect(() => {
-    if (!session || !isSupabaseEnabled()) return;
-    const doSync = async () => {
-      if (!navigator.onLine) return;
-      try { await syncAllModules(session.tenantId); } catch { /* silent */ }
+    if (!session || !isSupabaseEnabled()) {
+      if (session) console.info('[NutriOPS] auto-sync skip — Supabase desativado neste dispositivo');
+      return;
+    }
+    const doSync = async (trigger = 'boot') => {
+      if (!navigator.onLine) { console.info(`[NutriOPS] auto-sync skip (${trigger}) — offline`); return; }
+      console.info(`[NutriOPS] auto-sync start (${trigger}) tenant=${session.tenantId}`);
+      try {
+        const result = await syncAllModules(session.tenantId);
+        console.info(`[NutriOPS] auto-sync done (${trigger}) — ${result.synced}/${result.total} módulos`);
+      } catch (e) {
+        console.warn(`[NutriOPS] auto-sync failed (${trigger}):`, e?.message ?? e);
+      }
     };
-    doSync();
-    window.addEventListener('online', doSync);
-    return () => window.removeEventListener('online', doSync);
+    doSync('boot');
+    const onlineHandler = () => doSync('online-event');
+    window.addEventListener('online', onlineHandler);
+    return () => window.removeEventListener('online', onlineHandler);
   }, [session?.tenantId]);
   useEffect(() => {
     const handler = (e) => {
@@ -2836,6 +2904,7 @@ export function App() {
         onLogout={handleLogout} onSearch={() => setShowSearch(true)}
         onStoreChange={handleStoreChange} activeStore={activeStore} />
       <main className="super-main">
+        <LocalModeBanner session={session} setActiveView={setActiveView} />
         {activeView === 'overview'   && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} trialStatus={trialStatus} />}
         {activeView === 'forms'      && <FormsView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
         {activeView === 'pops'       && <POPsView {...sharedProps} session={session} />}

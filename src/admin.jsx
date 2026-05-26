@@ -234,7 +234,7 @@ function AccessTokenModal({ client, onClose }) {
         </div>
         <div style={{ display:'flex', gap:10 }}>
           <button onClick={() => copy(url)} style={{ flex:2, padding:'10px', borderRadius:8, border:'none', background: copied?'#2d6e4a':'#cc785c', color:'white', cursor:'pointer', fontSize:14, fontWeight:700, fontFamily:'inherit', transition:'background .2s' }}>
-            {copied ? '✓ Copiado!' : '📋 Copiar link'}
+            {copied ? 'Copiado' : 'Copiar link'}
           </button>
           <button onClick={() => copy(client.accessToken)} style={{ flex:1, padding:'10px', borderRadius:8, border:'1px solid #d9d1c4', background:'white', cursor:'pointer', fontSize:13, fontWeight:600, fontFamily:'inherit' }}>
             Só o token

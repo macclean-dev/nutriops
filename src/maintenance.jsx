@@ -446,9 +446,9 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
 
       {/* Tabs */}
       <div style={{ display:'flex', gap:6, marginBottom:20, flexWrap:'wrap' }}>
-        {[['dashboard','📊 Painel'],['equipments','🔧 Equipamentos'],['orders','📋 Ordens de serviço'],['history','📜 Histórico']].map(([key,label]) => (
+        {[['dashboard','Painel'],['equipments','Equipamentos'],['orders','Ordens de serviço'],['history','Histórico']].map(([key,label]) => (
           <button key={key} onClick={() => setTab(key)}
-            style={{ padding:'7px 14px', borderRadius:8, border:'1px solid var(--border)', background:tab===key?'var(--text)':'var(--surface)', color:tab===key?'white':'var(--text)', fontWeight:600, fontSize:13, cursor:'pointer', fontFamily:'var(--font)' }}>
+            style={{ padding:'7px 14px', borderRadius:8, border:'1px solid var(--border)', background:tab===key?'var(--primary)':'var(--surface)', color:tab===key?'white':'var(--text)', fontWeight:600, fontSize:13, cursor:'pointer', fontFamily:'var(--font)' }}>
             {label}
             {key==='dashboard' && overdue > 0 && <span style={{ marginLeft:6, background:'var(--red)', color:'white', borderRadius:10, padding:'1px 6px', fontSize:10 }}>{overdue}</span>}
             {key==='orders' && openOrders > 0 && <span style={{ marginLeft:6, background:'var(--amber)', color:'white', borderRadius:10, padding:'1px 6px', fontSize:10 }}>{openOrders}</span>}

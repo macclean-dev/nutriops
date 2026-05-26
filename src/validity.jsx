@@ -495,9 +495,9 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
 
       {/* Tabs */}
       <div style={{ display:'flex', gap:6, marginBottom:20 }}>
-        {[['dashboard','📊 Dashboard'],['products','📦 Produtos'],['add', editingId?'✏️ Editar':'➕ Cadastrar'],['stock','⟳ Movimentação']].map(([key,label]) => (
+        {[['dashboard','Dashboard'],['products','Produtos'],['add', editingId?'Editar':'Cadastrar'],['stock','Movimentação']].map(([key,label]) => (
           <button key={key} onClick={() => { if(key!=='add') { resetForm(); } setTab(key); }}
-            style={{ padding:'7px 14px', borderRadius:8, border:'1px solid var(--border)', background:tab===key?'var(--text)':'var(--surface)', color:tab===key?'white':'var(--text)', fontWeight:600, fontSize:13, cursor:'pointer', fontFamily:'var(--font)' }}>
+            style={{ padding:'7px 14px', borderRadius:8, border:'1px solid var(--border)', background:tab===key?'var(--primary)':'var(--surface)', color:tab===key?'white':'var(--text)', fontWeight:600, fontSize:13, cursor:'pointer', fontFamily:'var(--font)' }}>
             {label}
           </button>
         ))}

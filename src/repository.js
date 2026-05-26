@@ -54,18 +54,24 @@ export function setSyncStatus(status)   { lw(SYNC_STATUS_KEY, { ...getSyncStatus
 // ─── Generic module syncer ──────────────────────────────────────────────────
 
 export async function syncModule({ table, localKey, tenantId, toRow, fromRow, filter = '' }) {
-  if (!isSupabaseEnabled() || !navigator.onLine) return { ok: false, reason: 'offline_or_disabled' };
+  if (!isSupabaseEnabled() || !navigator.onLine) {
+    console.debug(`[repo] syncModule(${table}) skip — offline_or_disabled`);
+    return { ok: false, reason: 'offline_or_disabled' };
+  }
+  console.debug(`[repo] syncModule(${table} tenant=${tenantId}) start`);
   try {
-    // Pull from Supabase
     const q = [`tenant_id=eq.${tenantId}`, 'order=created_at.desc', 'limit=1000', filter].filter(Boolean).join('&');
     const rows = await sbFetch(table, { filter: q });
     const remoteRecords = rows.map(fromRow);
-    // Merge with local (remote wins on conflict by id)
     const local = ls(localKey, []);
     const merged = mergeByKey([...local, ...remoteRecords], 'id');
     lw(localKey, merged);
+    console.debug(`[repo] syncModule(${table}) done — pulled ${remoteRecords.length} remote, ${merged.length} total`);
     return { ok: true, count: remoteRecords.length };
-  } catch (e) { return { ok: false, reason: e.message }; }
+  } catch (e) {
+    console.warn(`[repo] syncModule(${table}) failed:`, e.message);
+    return { ok: false, reason: e.message };
+  }
 }
 
 function mergeByKey(arr, key) {
@@ -82,16 +88,27 @@ function mergeByKey(arr, key) {
 // ─── Push local data to Supabase ───────────────────────────────────────────
 
 export async function pushModule({ table, localKey, toRow }) {
-  if (!isSupabaseEnabled() || !navigator.onLine) return { ok: false };
+  if (!isSupabaseEnabled() || !navigator.onLine) {
+    console.debug(`[repo] pushModule(${table}) skip — offline_or_disabled`);
+    return { ok: false };
+  }
   const records = ls(localKey, []);
-  if (!records.length) return { ok: true, pushed: 0 };
+  if (!records.length) {
+    console.debug(`[repo] pushModule(${table}) skip — nada local`);
+    return { ok: true, pushed: 0 };
+  }
+  console.debug(`[repo] pushModule(${table}) start — ${records.length} registros locais`);
   let pushed = 0, failed = 0;
   for (const record of records) {
     try {
       await sbFetch(table, { method: 'POST', body: toRow(record), prefer: 'resolution=merge-duplicates,return=minimal' });
       pushed++;
-    } catch { failed++; }
+    } catch (e) {
+      failed++;
+      if (failed === 1) console.warn(`[repo] pushModule(${table}) primeiro erro:`, e.message);
+    }
   }
+  console.debug(`[repo] pushModule(${table}) done — ${pushed} ok, ${failed} falharam`);
   return { ok: true, pushed, failed };
 }
 
@@ -185,7 +202,11 @@ export const supabaseRepository = {
   },
   async syncQueue() {
     const queue = getOfflineQueue();
-    if (!queue.length || !navigator.onLine) return { synced:0, failed:0, remaining:queue.length };
+    if (!queue.length || !navigator.onLine) {
+      console.debug(`[repo] syncQueue skip — ${queue.length} pendentes, online=${navigator.onLine}`);
+      return { synced:0, failed:0, remaining:queue.length };
+    }
+    console.debug(`[repo] syncQueue start — ${queue.length} pendentes`);
     let synced = 0, failed = 0;
     const remaining = [];
     for (const item of queue) {
@@ -197,6 +218,7 @@ export const supabaseRepository = {
     }
     lw(OFFLINE_Q_KEY, remaining);
     setSyncStatus({ lastSync: new Date().toISOString(), pending: remaining.length });
+    console.debug(`[repo] syncQueue done — ${synced} ok, ${failed} falharam, ${remaining.length} ainda na fila`);
     return { synced, failed, remaining: remaining.length };
   },
   async exportCsv(records = []) { return localRepository.exportCsv(records); },
@@ -397,7 +419,12 @@ export async function syncSpecialControls(type, tenantId) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function syncAllModules(tenantId) {
-  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false, reason:'offline_or_disabled' };
+  if (!isSupabaseEnabled() || !navigator.onLine) {
+    console.debug('[repo] syncAllModules skip — offline_or_disabled');
+    return { ok:false, reason:'offline_or_disabled' };
+  }
+  console.info(`[repo] syncAllModules start — tenant=${tenantId}`);
+  const t0 = Date.now();
   const results = await Promise.allSettled([
     syncFormRecords(tenantId),
     syncReceiving(tenantId),
@@ -407,10 +434,10 @@ export async function syncAllModules(tenantId) {
     syncSpecialControls('cool', tenantId),
     syncSpecialControls('thermal', tenantId),
   ]);
-  // Also sync temperature queue
   await supabaseRepository.syncQueue();
   setSyncStatus({ lastSync: new Date().toISOString(), pending: getOfflineQueue().length });
   const ok = results.filter(r => r.status === 'fulfilled' && r.value?.ok).length;
+  console.info(`[repo] syncAllModules done — ${ok}/${results.length} módulos ok em ${Date.now()-t0}ms`);
   return { ok: true, synced: ok, total: results.length };
 }
 

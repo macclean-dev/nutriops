@@ -1,18 +1,31 @@
 export const ROLES = ['Colaborador', 'Supervisor', 'Nutricionista RT', 'Administrador', 'Super-admin'];
 
-const ALL_VIEWS = ['overview','dashboard','charts','forms','pops','training','receiving','validity','handwash','oil','thaw','cooling','thermal','audit','reports','monthly','alerts','actions','rtpanel','turns','users','sessions','equipment','maintenance','profile','settings'];
+// Hubs agrupam sub-views (Nexum-style flat nav). Cada hub é um meta-route.
+// O usuário precisa de acesso ao hub para abrir o agrupador, e o hub filtra
+// internamente as sub-tabs pelo mesmo canAccess.
+const ALL_VIEWS = [
+  'overview','forms','pops','training','receiving','validity',
+  // Hub: controles especiais
+  'controls', 'handwash','oil','thaw','cooling','thermal',
+  // Hub: relatórios
+  'reportsHub', 'dashboard','charts','reports','monthly','audit',
+  'alerts','actions','rtpanel',
+  // Hub: equipe
+  'team', 'users','turns','sessions',
+  'equipment','maintenance','profile','settings',
+];
 
 export const PERMISSIONS = {
   'Colaborador': {
-    nav: ['overview', 'forms', 'receiving', 'validity', 'handwash', 'oil', 'thaw', 'cooling', 'thermal', 'profile'],
+    nav: ['overview','forms','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','profile'],
     multiTenant: false, canExport: false, canValidate: false, canManageUsers: false, canManageConfig: false, canSeeReports: false,
   },
   'Supervisor': {
-    nav: ['overview', 'forms', 'receiving', 'validity', 'handwash', 'oil', 'thaw', 'cooling', 'thermal', 'alerts', 'audit', 'maintenance', 'profile'],
+    nav: ['overview','forms','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','alerts','reportsHub','audit','maintenance','profile'],
     multiTenant: false, canExport: true, canValidate: false, canManageUsers: false, canManageConfig: false, canSeeReports: true,
   },
   'Nutricionista RT': {
-    nav: ['overview', 'dashboard', 'charts', 'forms', 'pops', 'training', 'receiving', 'validity', 'handwash', 'oil', 'thaw', 'cooling', 'thermal', 'audit', 'alerts', 'actions', 'rtpanel', 'users', 'reports', 'monthly', 'maintenance', 'profile'],
+    nav: ['overview','forms','pops','training','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','reportsHub','dashboard','charts','reports','monthly','audit','alerts','actions','rtpanel','team','users','sessions','maintenance','profile'],
     multiTenant: true, canExport: true, canValidate: true, canManageUsers: false, canManageConfig: false, canSeeReports: true,
   },
   'Administrador': {

@@ -195,7 +195,7 @@ export function ProfileView({ session, onLogout }) {
           <div className="card-head"><div><span className="eyebrow">Dados</span><h2>Informações da conta</h2></div></div>
           <div style={{ padding:'16px 20px', display:'flex', flexDirection:'column', gap:12 }}>
             <div style={{ display:'flex', alignItems:'center', gap:16, padding:'16px', background:'var(--surface-muted)', borderRadius:'var(--r)', border:'1px solid var(--border-subtle)' }}>
-              <div style={{ width:56, height:56, borderRadius:'50%', background:'linear-gradient(135deg,#1c73e8,#2da6ff)', display:'grid', placeItems:'center', fontSize:22, fontWeight:800, color:'white', flexShrink:0 }}>
+              <div style={{ width:56, height:56, borderRadius:'50%', background:'var(--primary,#cc785c)', display:'grid', placeItems:'center', fontSize:22, fontWeight:800, color:'white', flexShrink:0 }}>
                 {session?.user?.name?.charAt(0) ?? '?'}
               </div>
               <div>
@@ -414,8 +414,8 @@ export function HandwashView({ activeTenant, allTenants, onTenantChange, session
               <div style={{ display:'flex', gap:8 }}>
                 {[['conforme','✓ Conforme'],['nao_conforme','✗ Não conforme']].map(([val,lbl]) => {
                   const on = result===val;
-                  const [bg,color,border] = val==='conforme'?['#dafbe1','#1a7f37','#4ac26b']:['#ffebe9','#cf222e','#ff8182'];
-                  return <button key={val} onClick={()=>setResult(on?'':val)} style={{ flex:1, padding:'10px', borderRadius:8, border:`1.5px solid ${on?border:'#d0d7de'}`, background:on?bg:'white', color:on?color:'#656d76', fontWeight:on?700:500, fontSize:13, cursor:'pointer', fontFamily:'inherit' }}>{lbl}</button>;
+                  const [bg,color,border] = val==='conforme'?['#dafbe1','#2d6e4a','#4ac26b']:['#ffebe9','#c0392b','#ff8182'];
+                  return <button key={val} onClick={()=>setResult(on?'':val)} style={{ flex:1, padding:'10px', borderRadius:8, border:`1.5px solid ${on?border:'#d9d1c4'}`, background:on?bg:'white', color:on?color:'#6b6760', fontWeight:on?700:500, fontSize:13, cursor:'pointer', fontFamily:'inherit' }}>{lbl}</button>;
                 })}
               </div>
             </div>
@@ -492,7 +492,7 @@ export function MonthlyExportView({ allTenants, records, session }) {
       <td><strong>${r.equipmentInput||r.equipment||'—'}</strong></td>
       <td style="font-family:monospace;font-weight:700">${r.value}°C</td>
       <td>${r.min??'?'}–${r.max??'?'}°C</td>
-      <td style="color:${(()=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx?'#1a7f37':v>=mn-3&&v<=mx+3?'#9a6700':'#cf222e';})()};font-weight:700">${(()=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx?'Conforme':v>=mn-3&&v<=mx+3?'Desvio':'Fora da faixa';})()}</td>
+      <td style="color:${(()=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx?'#2d6e4a':v>=mn-3&&v<=mx+3?'#8a4e00':'#c0392b';})()};font-weight:700">${(()=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx?'Conforme':v>=mn-3&&v<=mx+3?'Desvio':'Fora da faixa';})()}</td>
       <td>${r.user||'—'}</td>
       <td>${r.note||'—'}</td>
     </tr>`).join('');
@@ -511,27 +511,27 @@ export function MonthlyExportView({ allTenants, records, session }) {
     const win = window.open('', '_blank');
     win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
     <title>Relatório Mensal — ${monthLabel}</title>
-    <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:10px;color:#1c2128;padding:20px}
-    h1{font-size:16px;font-weight:800;margin-bottom:4px}h2{font-size:12px;font-weight:700;margin:16px 0 6px;color:#0969da;padding-bottom:4px;border-bottom:1px solid #d0d7de}
-    .meta{color:#656d76;font-size:9px;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #d0d7de}
-    .kpi-row{display:flex;gap:12px;margin-bottom:16px}.kpi{flex:1;padding:10px;background:#f6f8fa;border:1px solid #d0d7de;border-radius:6px}
-    .kpi span{font-size:8px;color:#656d76;text-transform:uppercase;display:block;margin-bottom:3px}.kpi strong{font-size:18px;font-weight:800;font-family:monospace}
-    table{width:100%;border-collapse:collapse;margin-bottom:8px}th{background:#f6f8fa;padding:5px 6px;text-align:left;font-size:8px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #d0d7de;color:#656d76}
+    <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:10px;color:#141413;padding:20px}
+    h1{font-size:16px;font-weight:800;margin-bottom:4px}h2{font-size:12px;font-weight:700;margin:16px 0 6px;color:#cc785c;padding-bottom:4px;border-bottom:1px solid #d9d1c4}
+    .meta{color:#6b6760;font-size:9px;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #d9d1c4}
+    .kpi-row{display:flex;gap:12px;margin-bottom:16px}.kpi{flex:1;padding:10px;background:#faf9f5;border:1px solid #d9d1c4;border-radius:6px}
+    .kpi span{font-size:8px;color:#6b6760;text-transform:uppercase;display:block;margin-bottom:3px}.kpi strong{font-size:18px;font-weight:800;font-family:monospace}
+    table{width:100%;border-collapse:collapse;margin-bottom:8px}th{background:#faf9f5;padding:5px 6px;text-align:left;font-size:8px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #d9d1c4;color:#6b6760}
     td{padding:5px 6px;border-bottom:1px solid #eaeef2;font-size:9px}
-    .sig{display:flex;gap:40px;margin-top:32px}.sig-line{flex:1;border-top:1px solid #374151;padding-top:4px;font-size:9px;color:#656d76;text-align:center}
-    .footer{margin-top:16px;padding-top:8px;border-top:1px solid #d0d7de;font-size:8px;color:#9198a1;display:flex;justify-content:space-between}
+    .sig{display:flex;gap:40px;margin-top:32px}.sig-line{flex:1;border-top:1px solid #374151;padding-top:4px;font-size:9px;color:#6b6760;text-align:center}
+    .footer{margin-top:16px;padding-top:8px;border-top:1px solid #d9d1c4;font-size:8px;color:#9198a1;display:flex;justify-content:space-between}
     @page{size:A4;margin:12mm}</style></head><body>
     <h1>Relatório Mensal de Conformidade Sanitária</h1>
     <div class="meta">${tenantFilter === 'all' ? 'Todas as empresas' : allTenants.find(t=>t.id===tenantFilter)?.name} · ${monthLabel} · Gerado por ${session?.user?.name||'—'} em ${date} · RDC 216/2004</div>
     <div class="kpi-row">
       <div class="kpi"><span>Total de registros</span><strong>${monthRecords.length}</strong></div>
-      <div class="kpi"><span>Conformes</span><strong style="color:#1a7f37">${monthRecords.filter(r=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx;}).length}</strong></div>
-      <div class="kpi"><span>Desvios</span><strong style="color:#9a6700">${monthRecords.filter(r=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn-3&&v<mn||v>mx&&v<=mx+3;}).length}</strong></div>
-      <div class="kpi"><span>Críticos</span><strong style="color:#cf222e">${monthRecords.filter(r=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v<mn-3||v>mx+3;}).length}</strong></div>
+      <div class="kpi"><span>Conformes</span><strong style="color:#2d6e4a">${monthRecords.filter(r=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx;}).length}</strong></div>
+      <div class="kpi"><span>Desvios</span><strong style="color:#8a4e00">${monthRecords.filter(r=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn-3&&v<mn||v>mx&&v<=mx+3;}).length}</strong></div>
+      <div class="kpi"><span>Críticos</span><strong style="color:#c0392b">${monthRecords.filter(r=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v<mn-3||v>mx+3;}).length}</strong></div>
       <div class="kpi"><span>Conformidade</span><strong>${monthRecords.length>0?Math.round((monthRecords.filter(r=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx;}).length/monthRecords.length)*100):0}%</strong></div>
     </div>
     <h2>1. Registros de Temperatura</h2>
-    ${monthRecords.length===0?'<p style="color:#656d76">Nenhum registro no período.</p>':`<table><thead><tr><th>Data</th><th>Hora</th><th>Empresa</th><th>Equipamento</th><th>Temp.</th><th>Faixa</th><th>Status</th><th>Responsável</th><th>Obs.</th></tr></thead><tbody>${tempRows}</tbody></table>`}
+    ${monthRecords.length===0?'<p style="color:#6b6760">Nenhum registro no período.</p>':`<table><thead><tr><th>Data</th><th>Hora</th><th>Empresa</th><th>Equipamento</th><th>Temp.</th><th>Faixa</th><th>Status</th><th>Responsável</th><th>Obs.</th></tr></thead><tbody>${tempRows}</tbody></table>`}
     <h2>2. Planilhas de Controle BPF</h2>
     <table><thead><tr><th>Empresa</th><th>Planilha</th><th>Frequência</th><th>Preenchimentos</th><th>Validados RT</th></tr></thead><tbody>${bpfRows||'<tr><td colspan="5">Sem dados.</td></tr>'}</tbody></table>
     <div class="sig">

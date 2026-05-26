@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { saveCompanyProfile } from './pages';
 import { sendWelcomeEmail, sendAdminNotification } from './email';
+import { BrandLockup } from './brand';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ const DEFAULT_EQUIPMENT = {
 };
 
 const BRAND_COLORS = [
-  '#0969da','#1a7f37','#b91c1c','#d4a017','#7c3aed','#0891b2','#be185d','#ea580c',
+  '#cc785c','#2d6e4a','#b91c1c','#d4a017','#7c3aed','#0891b2','#be185d','#ea580c',
 ];
 
 // ─── Step indicators ───────────────────────────────────────────────────────
@@ -197,10 +198,9 @@ export function OnboardingWizard({ onComplete, onHaveAccount }) {
       <div style={{ width:'100%', maxWidth:520, background:'var(--surface)', border:'1px solid var(--border)', borderRadius:20, padding:'36px 40px', boxShadow:'0 8px 32px rgba(0,0,0,.1)' }}>
 
         {/* Header */}
-        <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:28 }}>
-          <div style={{ width:30, height:30, borderRadius:8, background:'linear-gradient(135deg,#1c73e8,#2da6ff)', display:'grid', placeItems:'center', fontSize:14, fontWeight:800, color:'white' }}>N</div>
-          <span style={{ fontSize:16, fontWeight:800, letterSpacing:'-.05em' }}>NutriOPS</span>
-          <span style={{ marginLeft:'auto', fontSize:12, color:'var(--text-secondary)' }}>Passo {step+1} de {TOTAL_STEPS}</span>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:28 }}>
+          <BrandLockup size="sm" theme="light" idPrefix="onb" showSub={false} />
+          <span style={{ fontSize:12, color:'var(--text-secondary)', letterSpacing:'.06em', textTransform:'uppercase' }}>Passo {step+1} de {TOTAL_STEPS}</span>
         </div>
 
         <StepBar step={step} total={TOTAL_STEPS} />

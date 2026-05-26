@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { readClients } from './admin';
+import { BrandLockup } from './brand';
 
 // ─── Trial check ───────────────────────────────────────────────────────────
 
@@ -98,33 +99,32 @@ export function TrialExpiredScreen({ client }) {
     <div style={{
       minHeight: '100vh', display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      background: 'linear-gradient(180deg,#0d1117,#1c2128)',
+      background: 'linear-gradient(180deg,#181715,#141413)',
       padding: 24, textAlign: 'center', fontFamily: '-apple-system,"Segoe UI",system-ui,sans-serif',
     }}>
       {/* Brand */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 40 }}>
-        <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#1c73e8,#2da6ff)', display: 'grid', placeItems: 'center', fontSize: 16, fontWeight: 800, color: 'white' }}>N</div>
-        <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.05em', color: '#e6edf3' }}>NutriOPS</span>
+      <div style={{ marginBottom: 40 }}>
+        <BrandLockup size="lg" idPrefix="trial" showSub={false} />
       </div>
 
       <div style={{ maxWidth: 460 }}>
         <div style={{ fontSize: 64, marginBottom: 16 }}>⏰</div>
-        <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-.04em', color: '#e6edf3', marginBottom: 12, lineHeight: 1.2 }}>
+        <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-.04em', color: '#f0ece4', marginBottom: 12, lineHeight: 1.2 }}>
           Seu trial de 14 dias encerrou
         </h1>
-        <p style={{ fontSize: 16, color: '#8b949e', marginBottom: 32, lineHeight: 1.6 }}>
+        <p style={{ fontSize: 16, color: '#c5c0ba', marginBottom: 32, lineHeight: 1.6 }}>
           Obrigado por testar o NutriOPS, {client?.name || 'você'}! Para continuar acessando seus dados e registros, escolha um plano.
         </p>
 
         {/* Plans */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 28 }}>
           {[
-            { label: 'Loja', price: 149, desc: '1 unidade · até 15 colaboradores', color: '#0969da' },
-            { label: 'Rede', price: 349, desc: 'Até 3 unidades · ilimitado', color: '#1a7f37', featured: true },
+            { label: 'Loja', price: 149, desc: '1 unidade · até 15 colaboradores', color: '#cc785c' },
+            { label: 'Rede', price: 349, desc: 'Até 3 unidades · ilimitado', color: '#2d6e4a', featured: true },
           ].map(plan => (
             <div key={plan.label} style={{
               padding: '18px 16px', borderRadius: 14,
-              border: `2px solid ${plan.featured ? plan.color : 'rgba(240,246,252,.15)'}`,
+              border: `2px solid ${plan.featured ? plan.color : 'rgba(255,255,255,.12)'}`,
               background: plan.featured ? `${plan.color}22` : 'rgba(255,255,255,.05)',
               position: 'relative',
             }}>
@@ -133,9 +133,9 @@ export function TrialExpiredScreen({ client }) {
                   Mais popular
                 </div>
               )}
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#e6edf3', marginBottom: 4 }}>{plan.label}</div>
-              <div style={{ fontSize: 24, fontWeight: 800, fontFamily: 'monospace', color: plan.color, marginBottom: 4 }}>R${plan.price}<span style={{ fontSize: 13, fontWeight: 500, color: '#8b949e' }}>/mês</span></div>
-              <div style={{ fontSize: 12, color: '#8b949e' }}>{plan.desc}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#f0ece4', marginBottom: 4 }}>{plan.label}</div>
+              <div style={{ fontSize: 24, fontWeight: 800, fontFamily: 'monospace', color: plan.color, marginBottom: 4 }}>R${plan.price}<span style={{ fontSize: 13, fontWeight: 500, color: '#c5c0ba' }}>/mês</span></div>
+              <div style={{ fontSize: 12, color: '#c5c0ba' }}>{plan.desc}</div>
             </div>
           ))}
         </div>
@@ -143,7 +143,7 @@ export function TrialExpiredScreen({ client }) {
         <a href="mailto:contato@nutriops.com.br?subject=Quero assinar o NutriOPS&body=Olá! Meu trial expirou e gostaria de assinar o plano."
           style={{
             display: 'inline-block', width: '100%', padding: '14px',
-            background: 'linear-gradient(135deg,#0969da,#2d7de8)', color: 'white',
+            background: 'var(--primary,#cc785c)', color: 'white',
             borderRadius: 12, textDecoration: 'none', fontSize: 16, fontWeight: 700,
             marginBottom: 12, boxSizing: 'border-box',
           }}>

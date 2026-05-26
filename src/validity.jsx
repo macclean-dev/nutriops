@@ -75,18 +75,18 @@ export function generateLabel(product, tenant, session) {
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Etiqueta — ${product.name}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Arial,sans-serif;font-size:10px;color:#1c2128}
-    .label{width:60mm;height:60mm;padding:4mm;border:1px solid #d0d7de;border-radius:2mm;display:flex;flex-direction:column;justify-content:space-between;page-break-after:always}
+    body{font-family:Arial,sans-serif;font-size:10px;color:#141413}
+    .label{width:60mm;height:60mm;padding:4mm;border:1px solid #d9d1c4;border-radius:2mm;display:flex;flex-direction:column;justify-content:space-between;page-break-after:always}
     .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #eaeef2;padding-bottom:2mm;margin-bottom:2mm}
     .product-name{font-size:12px;font-weight:800;line-height:1.2}
-    .badge{font-size:8px;font-weight:700;padding:1px 5px;border-radius:10px;background:#ddf4ff;color:#0969da;border:1px solid #54aeff;white-space:nowrap}
-    .row{display:flex;justify-content:space-between;padding:1mm 0;border-bottom:1px solid #f6f8fa}
+    .badge{font-size:8px;font-weight:700;padding:1px 5px;border-radius:10px;background:rgba(29,78,137,.10);color:#cc785c;border:1px solid rgba(29,78,137,.4);white-space:nowrap}
+    .row{display:flex;justify-content:space-between;padding:1mm 0;border-bottom:1px solid #faf9f5}
     .row:last-child{border-bottom:none}
-    .row span{font-size:9px;color:#656d76}
+    .row span{font-size:9px;color:#6b6760}
     .row strong{font-size:9px;font-weight:700}
     .val-box{background:#dafbe1;border:1px solid #4ac26b;border-radius:2mm;padding:2mm;text-align:center;margin-top:2mm}
-    .val-box span{font-size:8px;color:#1a7f37;display:block}
-    .val-box strong{font-size:11px;font-weight:800;color:#1a7f37}
+    .val-box span{font-size:8px;color:#2d6e4a;display:block}
+    .val-box strong{font-size:11px;font-weight:800;color:#2d6e4a}
     .footer{font-size:7px;color:#9198a1;text-align:center;padding-top:1mm;border-top:1px solid #eaeef2}
     @page{size:60mm 60mm;margin:0}
   </style></head><body>

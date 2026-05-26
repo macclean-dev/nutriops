@@ -231,22 +231,22 @@ function generateFiscalPDF({ tenant, periodLabel, tempStats, bpfStats, trainingS
 
   const tempRows = tempStats.map(s => `<tr>
     <td>${s.equip}</td><td>${s.total}</td>
-    <td style="color:${s.compliance>=90?'#1a7f37':s.compliance>=70?'#9a6700':'#cf222e'};font-weight:700">${s.compliance}%</td>
+    <td style="color:${s.compliance>=90?'#2d6e4a':s.compliance>=70?'#8a4e00':'#c0392b'};font-weight:700">${s.compliance}%</td>
     <td>${s.avg}°C</td><td>${s.ok}</td><td>${s.warn}</td><td>${s.danger}</td>
   </tr>`).join('');
 
   const bpfRows = bpfStats.map(s => `<tr>
     <td>${s.title}</td><td>${freqLabel(s.frequency)}</td>
-    <td style="color:${s.periods[0]?.status==='submitted'?'#1a7f37':'#cf222e'};font-weight:700">
+    <td style="color:${s.periods[0]?.status==='submitted'?'#2d6e4a':'#c0392b'};font-weight:700">
       ${s.periods[0]?.status==='submitted'?'✓ Concluído':'Pendente'}
     </td>
-    <td>${s.validated ? '<span style="color:#1a7f37">✓ Validado</span>' : '—'}</td>
+    <td>${s.validated ? '<span style="color:#2d6e4a">✓ Validado</span>' : '—'}</td>
   </tr>`).join('');
 
   const trainRows = trainingStats.map(s => `<tr>
     <td>${s.name}</td><td>${s.role}</td>
     <td>${s.lastDate ? formatDate(s.lastDate) : '—'}</td>
-    <td style="color:${s.status==='ok'?'#1a7f37':s.status==='warn'?'#9a6700':'#cf222e'};font-weight:700">
+    <td style="color:${s.status==='ok'?'#2d6e4a':s.status==='warn'?'#8a4e00':'#c0392b'};font-weight:700">
       ${s.status==='ok'?'Em dia':s.status==='warn'?'Renovar em breve':s.status==='never'?'Nunca capacitado':'Vencido'}
     </td>
   </tr>`).join('');
@@ -255,15 +255,15 @@ function generateFiscalPDF({ tenant, periodLabel, tempStats, bpfStats, trainingS
   <title>Relatório Fiscal — ${tenant}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Arial,sans-serif;font-size:10px;color:#1c2128;padding:20px}
+    body{font-family:Arial,sans-serif;font-size:10px;color:#141413;padding:20px}
     h1{font-size:16px;font-weight:800;margin-bottom:4px}
-    h2{font-size:12px;font-weight:700;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid #d0d7de;color:#0969da}
-    .meta{color:#656d76;font-size:9px;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #d0d7de}
+    h2{font-size:12px;font-weight:700;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid #d9d1c4;color:#cc785c}
+    .meta{color:#6b6760;font-size:9px;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #d9d1c4}
     table{width:100%;border-collapse:collapse;margin-bottom:8px}
-    th{background:#f6f8fa;padding:5px 8px;text-align:left;font-size:8px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #d0d7de;color:#656d76}
+    th{background:#faf9f5;padding:5px 8px;text-align:left;font-size:8px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #d9d1c4;color:#6b6760}
     td{padding:6px 8px;border-bottom:1px solid #eaeef2;font-size:9px}
     tr:last-child td{border-bottom:none}
-    .footer{margin-top:16px;padding-top:10px;border-top:1px solid #d0d7de;display:flex;justify-content:space-between;font-size:8px;color:#9198a1}
+    .footer{margin-top:16px;padding-top:10px;border-top:1px solid #d9d1c4;display:flex;justify-content:space-between;font-size:8px;color:#9198a1}
     @page{size:A4;margin:12mm}
   </style></head><body>
   <h1>Relatório Fiscal de Conformidade Sanitária</h1>

@@ -18,13 +18,16 @@ import { POPsView, OilControlView, ThawControlView, CoolingControlView, ThermalC
 import { KioskApp, KioskSetup, FormKioskApp } from './kiosk';
 import { RTPanelView, ProfileView, GlobalSearch, HandwashView, MonthlyExportView, SessionHistoryView, logSession } from './extras';
 import { ValidityStockView } from './validity';
+import { APP_VERSION, NutriMark, BrandLockup } from './brand';
+
+// Re-export APP_VERSION pra manter a API que extras.jsx já consome.
+export { APP_VERSION };
 
 // ─── Tenant resolution ─────────────────────────────────────────────────────
 // Use onboarded tenants if available, otherwise fall back to built-in tenants
 const tenants = readOnboardingTenants() ?? defaultTenants;
 const IS_DEMO  = !readOnboardingTenants(); // true when using default data
-export const APP_VERSION = '1.6.0';
-export const APP_BUILD   = '2026.05.19';
+export const APP_BUILD = '2026.05.19';
 
 // ─── Temperatura utils ─────────────────────────────────────────────────────
 
@@ -279,7 +282,7 @@ function MobileDrawer({ open, onClose, activeView, setActiveView, session, activ
                 <div style={{ display:'flex', flexDirection:'column', gap:1, marginTop:2 }}>
                   {visibleItems.map(([key, iconId, label, badge]) => (
                     <button key={key} onClick={() => navigate(key)}
-                      className={`rail-menu-item ${activeView === key ? 'active' : ''}`}
+                      className={`rail-menu-item ${isItemActive(key, activeView) ? 'active' : ''}`}
                       style={{ display:'flex', alignItems:'center', gap:10, minHeight:40 }}>
                       <NavIcon id={iconId} />
                       <span style={{ flex:1 }}>{label}</span>
@@ -539,61 +542,8 @@ function LoginScreen({ onLogin, activeTenants }) {
 
 // ─── Rail ──────────────────────────────────────────────────────────────────
 
-// ─── Brand mark — calligraphic "N" (suite design language com Nexum) ─────
-
-function NutriMark({ size = 21, idPrefix = 'nut' }) {
-  const d = `${idPrefix}-d`;
-  const r = `${idPrefix}-r`;
-  return (
-    <svg width={size} height={size} viewBox="0 0 30 30" fill="none">
-      <defs>
-        {/* Diagonal — traço coral (assinatura do NutriOPS) */}
-        <linearGradient id={d} x1="7" y1="4" x2="23" y2="26" gradientUnits="userSpaceOnUse">
-          <stop offset="0%"   stopColor="#cc785c" stopOpacity="0.78"/>
-          <stop offset="100%" stopColor="#cc785c"/>
-        </linearGradient>
-        {/* Right stem — sobe do coral em direção ao branco */}
-        <linearGradient id={r} x1="23" y1="26" x2="23" y2="4" gradientUnits="userSpaceOnUse">
-          <stop offset="0%"   stopColor="rgba(255,255,255,0.40)"/>
-          <stop offset="38%"  stopColor="#ffffff"/>
-          <stop offset="100%" stopColor="#ffffff"/>
-        </linearGradient>
-      </defs>
-      {/* Left stem — branco sólido */}
-      <line x1="7"  y1="4"  x2="7"  y2="26" stroke="#ffffff"       strokeWidth="4.5" strokeLinecap="round"/>
-      {/* Diagonal — coral calligráfico (mais fino) */}
-      <line x1="7"  y1="4"  x2="23" y2="26" stroke={`url(#${d})`} strokeWidth="3"   strokeLinecap="round"/>
-      {/* Right stem — gradiente coral→branco */}
-      <line x1="23" y1="26" x2="23" y2="4"  stroke={`url(#${r})`} strokeWidth="4.5" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-function BrandLockup({ size = 'lg', showSub = true, idPrefix = 'sid', theme = 'dark' }) {
-  const isSm    = size === 'sm';
-  const markBox = isSm ? 28 : 34;
-  const markSvg = isSm ? 17 : 21;
-  const wordSz  = isSm ? 18 : 22;
-  const radius  = isSm ? 8 : 10;
-  const isLight = theme === 'light';
-  const wordColor = isLight ? 'var(--text)' : '#fff';
-  const subColor  = isLight ? 'var(--text-secondary)' : 'rgba(255,255,255,.28)';
-  return (
-    <div style={{ display:'flex', alignItems:'center', gap: isSm ? 8 : 10, textDecoration:'none' }}>
-      <div className="brand-mark" style={{ width: markBox, height: markBox, borderRadius: radius }}>
-        <NutriMark size={markSvg} idPrefix={idPrefix} />
-      </div>
-      <div>
-        <div className="brand-wordmark" style={{ fontSize: wordSz, color: wordColor }}>NutriOPS</div>
-        {showSub && (
-          <div style={{ fontSize: 9, color: subColor, letterSpacing:'.18em', textTransform:'uppercase', marginTop: 3 }}>
-            Food Safety · v{APP_VERSION}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+// Brand primitives (NutriMark, BrandLockup, APP_VERSION) vêm de ./brand
+// (compartilhado com admin.jsx, onboarding.jsx, trial.jsx, kiosk.jsx)
 
 // ─── Nav Icons — SVG outline, 16×16, stroke 1.5 ──────────────────────────
 
@@ -630,8 +580,26 @@ function NavIcon({ id, size = 16 }) {
   return icons[id] ?? <svg {...s}><circle cx="12" cy="12" r="4"/></svg>;
 }
 
+// ─── Hub routes ─────────────────────────────────────────────────────────
+// Hubs agregam sub-views numa rota só. Permite menu mais enxuto (Nexum-style)
+// preservando deep-links para sub-views individuais.
+export const CONTROLS_KEYS = ['controls', 'handwash', 'oil', 'thaw', 'cooling', 'thermal'];
+export const REPORTS_KEYS  = ['reportsHub', 'dashboard', 'charts', 'reports', 'monthly', 'audit'];
+export const TEAM_KEYS     = ['team', 'users', 'turns', 'sessions'];
+
+// Helper pra destacar o item do hub quando uma sub-view dele está ativa
+export function isItemActive(itemKey, activeView) {
+  if (itemKey === activeView) return true;
+  if (itemKey === 'controls'   && CONTROLS_KEYS.includes(activeView)) return true;
+  if (itemKey === 'reportsHub' && REPORTS_KEYS.includes(activeView))  return true;
+  if (itemKey === 'team'       && TEAM_KEYS.includes(activeView))     return true;
+  return false;
+}
+
 // ─── Nav structure compartilhada por RailNav e MobileDrawer ──────────────
 // Items: [key, iconId, label, badge?]
+// Cada item é uma rota única. Hubs (controls/reportsHub/team) agrupam
+// sub-views internamente via tabs.
 function buildNavSections({ validityAlertCount = 0, maintAlertCount = 0, alertCount = 0, actionCount = 0 } = {}) {
   return [
     {
@@ -641,16 +609,7 @@ function buildNavSections({ validityAlertCount = 0, maintAlertCount = 0, alertCo
         ['forms',     'forms',     'Planilhas BPF'],
         ['receiving', 'receiving', 'Recebimento'],
         ['validity',  'validity',  'Validades', validityAlertCount || null],
-      ],
-    },
-    {
-      label: 'Controles especiais',
-      items: [
-        ['handwash', 'handwash', 'Higiene das mãos'],
-        ['oil',      'oil',      'Óleo de fritura'],
-        ['thaw',     'thaw',     'Descongelamento'],
-        ['cooling',  'cooling',  'Resfriamento'],
-        ['thermal',  'thermal',  'Tratamento térmico'],
+        ['controls',  'thermal',   'Controles especiais'],
       ],
     },
     {
@@ -662,24 +621,13 @@ function buildNavSections({ validityAlertCount = 0, maintAlertCount = 0, alertCo
       ],
     },
     {
-      label: 'Relatórios',
-      items: [
-        ['dashboard', 'dashboard', 'Conformidade'],
-        ['charts',    'charts',    'Gráficos'],
-        ['reports',   'reports',   'Relatórios'],
-        ['monthly',   'monthly',   'Exportação mensal'],
-        ['audit',     'audit',     'Auditoria'],
-      ],
-    },
-    {
       label: 'Gestão',
       items: [
-        ['alerts',   'alerts',   'Alertas',          alertCount  || null],
-        ['actions',  'actions',  'Ações corretivas', actionCount || null],
-        ['rtpanel',  'rtpanel',  'Painel RT'],
-        ['turns',    'turns',    'Turnos'],
-        ['users',    'users',    'Usuários'],
-        ['sessions', 'sessions', 'Acessos'],
+        ['alerts',     'alerts',    'Alertas',          alertCount  || null],
+        ['actions',    'actions',   'Ações corretivas', actionCount || null],
+        ['rtpanel',    'rtpanel',   'Painel RT'],
+        ['reportsHub', 'dashboard', 'Relatórios'],
+        ['team',       'users',     'Equipe'],
       ],
     },
     {
@@ -765,7 +713,7 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
                 <div style={{ display:'flex', flexDirection:'column', gap:1, marginTop:2 }}>
                   {visibleItems.map(([key, iconId, label, badge]) => (
                     <button key={key}
-                      className={`rail-menu-item ${activeView === key ? 'active' : ''}`}
+                      className={`rail-menu-item ${isItemActive(key, activeView) ? 'active' : ''}`}
                       onClick={() => setActiveView(key)}
                       style={{ display:'flex', alignItems:'center', gap:10 }}>
                       <NavIcon id={iconId} />
@@ -2528,6 +2476,138 @@ function SettingsView({ session, activeTenant }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// HUB VIEWS — agrupam sub-views relacionadas em tabs (Nexum-style flat nav)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function HubTabs({ tabs, current, onChange }) {
+  return (
+    <div style={{
+      display:'flex', gap:4, padding:4, marginBottom:16,
+      background:'var(--surface-muted)', border:'1px solid var(--border-subtle)',
+      borderRadius:'var(--r-lg)', overflowX:'auto',
+    }}>
+      {tabs.map(t => {
+        const isActive = current === t.id;
+        return (
+          <button key={t.id} onClick={() => onChange(t.id)}
+            style={{
+              display:'flex', alignItems:'center', gap:7, padding:'7px 12px',
+              borderRadius:'var(--r)', border:'none', cursor:'pointer',
+              fontFamily:'var(--font)', fontSize:13,
+              fontWeight: isActive ? 600 : 500,
+              background: isActive ? 'var(--surface)' : 'transparent',
+              color: isActive ? 'var(--primary)' : 'var(--text-secondary)',
+              boxShadow: isActive ? '0 1px 3px rgba(20,20,19,.06)' : 'none',
+              transition:'all .15s',
+              whiteSpace:'nowrap',
+            }}>
+            <NavIcon id={t.iconId} />
+            <span>{t.label}</span>
+            {t.badge > 0 && (
+              <span style={{
+                background:'var(--red)', color:'white', borderRadius:10,
+                fontSize:10, fontWeight:700, padding:'1px 6px', lineHeight:1.4,
+              }}>{t.badge}</span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Picks the current sub-id given an activeView that may be 'hubId' OR any sub-id.
+// Persists the last sub-id chosen per hub.
+function resolveHubTab(activeView, hubId, defaultSub, subIds) {
+  if (activeView === hubId) {
+    const persisted = localStorage.getItem(`nutriops.${hubId}.lastTab`);
+    if (persisted && subIds.includes(persisted)) return persisted;
+    return defaultSub;
+  }
+  if (subIds.includes(activeView)) return activeView;
+  return defaultSub;
+}
+
+function ControlsHub({ activeView, setActiveView, session, ...rest }) {
+  const TABS = [
+    { id: 'handwash', iconId: 'handwash', label: 'Higiene das mãos',  Component: HandwashView },
+    { id: 'oil',      iconId: 'oil',      label: 'Óleo de fritura',   Component: OilControlView },
+    { id: 'thaw',     iconId: 'thaw',     label: 'Descongelamento',   Component: ThawControlView },
+    { id: 'cooling',  iconId: 'cooling',  label: 'Resfriamento',      Component: CoolingControlView },
+    { id: 'thermal',  iconId: 'thermal',  label: 'Tratamento térmico', Component: ThermalControlView },
+  ];
+  const visibleTabs = TABS.filter(t => canAccess(session?.user?.role, t.id));
+  const subIds = visibleTabs.map(t => t.id);
+  const current = resolveHubTab(activeView, 'controls', subIds[0] ?? 'handwash', subIds);
+  const handleChange = (id) => {
+    localStorage.setItem('nutriops.controls.lastTab', id);
+    setActiveView(id);
+  };
+  const Active = visibleTabs.find(t => t.id === current)?.Component;
+  if (!Active) return <NoPermission onBack={() => setActiveView('overview')} />;
+  return (
+    <>
+      <HubTabs tabs={visibleTabs} current={current} onChange={handleChange} />
+      <Active session={session} {...rest} />
+    </>
+  );
+}
+
+function ReportsHub({ activeView, setActiveView, session, allTenants, records, ...rest }) {
+  const TABS = [
+    { id: 'dashboard', iconId: 'dashboard', label: 'Conformidade' },
+    { id: 'charts',    iconId: 'charts',    label: 'Gráficos' },
+    { id: 'reports',   iconId: 'reports',   label: 'Relatórios' },
+    { id: 'monthly',   iconId: 'monthly',   label: 'Exportação mensal' },
+    { id: 'audit',     iconId: 'audit',     label: 'Auditoria' },
+  ];
+  const visibleTabs = TABS.filter(t => canAccess(session?.user?.role, t.id));
+  const subIds = visibleTabs.map(t => t.id);
+  const current = resolveHubTab(activeView, 'reportsHub', subIds[0] ?? 'dashboard', subIds);
+  const handleChange = (id) => {
+    localStorage.setItem('nutriops.reportsHub.lastTab', id);
+    setActiveView(id);
+  };
+  const shared = { session, allTenants, records, ...rest };
+  if (!visibleTabs.length) return <NoPermission onBack={() => setActiveView('overview')} />;
+  return (
+    <>
+      <HubTabs tabs={visibleTabs} current={current} onChange={handleChange} />
+      {current === 'dashboard' && <DashboardView {...shared} />}
+      {current === 'charts'    && <ChartsView    {...shared} />}
+      {current === 'reports'   && <ReportsView   allTenants={allTenants} records={records} />}
+      {current === 'monthly'   && <MonthlyExportView allTenants={allTenants} records={records} session={session} />}
+      {current === 'audit'     && <AuditView     allTenants={allTenants} records={records} session={session} />}
+    </>
+  );
+}
+
+function TeamHub({ activeView, setActiveView, session, records, ...rest }) {
+  const TABS = [
+    { id: 'users',    iconId: 'users',    label: 'Usuários' },
+    { id: 'turns',    iconId: 'turns',    label: 'Turnos' },
+    { id: 'sessions', iconId: 'sessions', label: 'Histórico de acessos' },
+  ];
+  const visibleTabs = TABS.filter(t => canAccess(session?.user?.role, t.id));
+  const subIds = visibleTabs.map(t => t.id);
+  const current = resolveHubTab(activeView, 'team', subIds[0] ?? 'users', subIds);
+  const handleChange = (id) => {
+    localStorage.setItem('nutriops.team.lastTab', id);
+    setActiveView(id);
+  };
+  const shared = { session, records, ...rest };
+  if (!visibleTabs.length) return <NoPermission onBack={() => setActiveView('overview')} />;
+  return (
+    <>
+      <HubTabs tabs={visibleTabs} current={current} onChange={handleChange} />
+      {current === 'users'    && <UsersView {...shared} />}
+      {current === 'turns'    && <TurnsView {...shared} />}
+      {current === 'sessions' && <SessionHistoryView {...shared} />}
+    </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // ROOT APP
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -2757,33 +2837,43 @@ export function App() {
         onStoreChange={handleStoreChange} activeStore={activeStore} />
       <main className="super-main">
         {activeView === 'overview'   && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} trialStatus={trialStatus} />}
-        {activeView === 'reports'    && <ReportsView allTenants={visibleTenants} records={records} />}
-        {activeView === 'monthly'    && <MonthlyExportView allTenants={visibleTenants} records={records} session={session} />}
         {activeView === 'forms'      && <FormsView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
         {activeView === 'pops'       && <POPsView {...sharedProps} session={session} />}
         {activeView === 'training'   && <TrainingView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
         {activeView === 'receiving'  && <RecebimentoView {...sharedProps} session={session} />}
         {activeView === 'validity'   && <ValidityStockView {...sharedProps} session={session} />}
-        {activeView === 'handwash'   && <HandwashView {...sharedProps} session={session} />}
-        {activeView === 'oil'        && <OilControlView {...sharedProps} session={session} />}
-        {activeView === 'thaw'       && <ThawControlView {...sharedProps} session={session} />}
-        {activeView === 'cooling'    && <CoolingControlView {...sharedProps} session={session} />}
-        {activeView === 'thermal'    && <ThermalControlView {...sharedProps} session={session} />}
-        {activeView === 'dashboard'  && <DashboardView {...sharedProps} records={records} />}
-        {activeView === 'charts'     && <ChartsView {...sharedProps} records={records} />}
-        {activeView === 'audit'      && <AuditView allTenants={visibleTenants} records={records} session={session} />}
+
+        {/* Hub: Controles especiais (handwash/oil/thaw/cooling/thermal) */}
+        {CONTROLS_KEYS.includes(activeView) && (
+          <ControlsHub activeView={activeView} setActiveView={setActiveView} {...sharedProps} session={session} />
+        )}
+
+        {/* Hub: Relatórios (dashboard/charts/reports/monthly/audit) */}
+        {REPORTS_KEYS.includes(activeView) && (
+          <ReportsHub activeView={activeView} setActiveView={setActiveView}
+            allTenants={visibleTenants} records={records} session={session} {...sharedProps} />
+        )}
+
         {activeView === 'alerts'     && <AlertsView {...sharedProps} records={records} />}
         {activeView === 'actions'    && <CorrectiveActionsView {...sharedProps} records={records} />}
         {activeView === 'rtpanel'    && <RTPanelView allTenants={visibleTenants} records={records} session={session} />}
-        {activeView === 'turns'      && <TurnsView {...sharedProps} records={records} />}
-        {activeView === 'users'      && <UsersView {...sharedProps} />}
-        {activeView === 'sessions'   && <SessionHistoryView {...sharedProps} />}
-        {activeView === 'equipment'  && <EquipmentView {...sharedProps} />}
-        {activeView === 'profile'    && <ProfileView session={session} onLogout={handleLogout} />}
+
+        {/* Hub: Equipe (users/turns/sessions) */}
+        {TEAM_KEYS.includes(activeView) && (
+          <TeamHub activeView={activeView} setActiveView={setActiveView}
+            session={session} records={records} {...sharedProps} />
+        )}
+
+        {activeView === 'equipment'   && <EquipmentView {...sharedProps} />}
+        {activeView === 'profile'     && <ProfileView session={session} onLogout={handleLogout} />}
         {activeView === 'maintenance' && <MaintenanceView {...sharedProps} session={session} />}
-        {activeView === 'settings'   && <SettingsView session={session} activeTenant={activeTenant} />}
+        {activeView === 'settings'    && <SettingsView session={session} activeTenant={activeTenant} />}
         {/* Fallback for any route the user doesn't have access to */}
-        {!['overview','reports','monthly','forms','pops','training','receiving','validity','handwash','oil','thaw','cooling','thermal','dashboard','charts','audit','alerts','actions','rtpanel','turns','users','sessions','equipment','profile','settings'].includes(activeView) && <NoPermission onBack={() => setActiveView('overview')} />}
+        {![
+          'overview','forms','pops','training','receiving','validity',
+          ...CONTROLS_KEYS, ...REPORTS_KEYS, ...TEAM_KEYS,
+          'alerts','actions','rtpanel','equipment','profile','maintenance','settings',
+        ].includes(activeView) && <NoPermission onBack={() => setActiveView('overview')} />}
       </main>
       <OfflineIndicator />
       <BottomNav activeView={activeView} setActiveView={setActiveView}

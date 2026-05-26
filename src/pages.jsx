@@ -576,11 +576,35 @@ function LoginScreen({ onLogin, activeTenants }) {
 // Brand primitives (NutriMark, BrandLockup, APP_VERSION) vêm de ./brand
 // (compartilhado com admin.jsx, onboarding.jsx, trial.jsx, kiosk.jsx)
 
+// ─── Dark mode toggle — usa SVG (sol/lua) em vez de emoji ─────────────────
+
+function DarkModeToggle({ className = 'dark-mode-toggle', size = 16 }) {
+  const [isDark, setIsDark] = useState(() =>
+    typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'dark'
+  );
+  const toggle = () => {
+    const next = !isDark;
+    document.documentElement.setAttribute('data-theme', next ? 'dark' : 'light');
+    localStorage.setItem('nutriops.dark.mode', String(next));
+    setIsDark(next);
+  };
+  return (
+    <button className={className} onClick={toggle}
+      aria-label={isDark ? 'Mudar para modo claro' : 'Mudar para modo escuro'}
+      title={isDark ? 'Modo claro' : 'Modo escuro'}>
+      <NavIcon id={isDark ? 'sun' : 'moon'} size={size} />
+    </button>
+  );
+}
+
 // ─── Nav Icons — SVG outline, 16×16, stroke 1.5 ──────────────────────────
 
 function NavIcon({ id, size = 16 }) {
   const s = { width:size, height:size, viewBox:'0 0 24 24', fill:'none', stroke:'currentColor', strokeWidth:1.75, strokeLinecap:'round', strokeLinejoin:'round', flexShrink:0 };
   const icons = {
+    search:      <svg {...s}><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
+    sun:         <svg {...s}><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>,
+    moon:        <svg {...s}><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>,
     overview:    <svg {...s}><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
     forms:       <svg {...s}><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>,
     receiving:   <svg {...s}><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
@@ -694,17 +718,13 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
       <div className="rail-brand">
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
           <BrandLockup size="lg" idPrefix="sid" />
-          <button className="dark-mode-toggle" title="Alternar modo escuro"
-            onClick={() => {
-              const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-              document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark');
-              localStorage.setItem('nutriops.dark.mode', String(!dark));
-            }}>
-            {document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙'}
-          </button>
+          <DarkModeToggle />
         </div>
         <button onClick={onSearch} style={{ width:'100%', padding:'7px 10px', background:'rgba(255,255,255,.05)', border:'1px solid rgba(255,255,255,.08)', borderRadius:8, color:'var(--rail-muted)', fontSize:12, cursor:'pointer', textAlign:'left', display:'flex', justifyContent:'space-between', alignItems:'center', fontFamily:'var(--font)' }}>
-          <span>🔍 Buscar…</span>
+          <span style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <NavIcon id="search" />
+            Buscar…
+          </span>
           <kbd style={{ fontSize:10, opacity:.6 }}>⌘K</kbd>
         </button>
       </div>
@@ -2945,13 +2965,15 @@ export function App() {
           <BrandLockup size="sm" showSub={false} idPrefix="mob" />
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-          <button className="mobile-menu-btn" onClick={() => {
-            const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-            document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark');
-            localStorage.setItem('nutriops.dark.mode', String(!dark));
-          }}>{document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙'}</button>
-          <button className="mobile-menu-btn" onClick={() => setShowSearch(true)}>🔍</button>
-          <button className="mobile-menu-btn" onClick={() => setMobileDrawerOpen(true)}>☰</button>
+          <DarkModeToggle className="mobile-menu-btn" size={20} />
+          <button className="mobile-menu-btn" onClick={() => setShowSearch(true)} aria-label="Buscar">
+            <NavIcon id="search" size={20} />
+          </button>
+          <button className="mobile-menu-btn" onClick={() => setMobileDrawerOpen(true)} aria-label="Menu">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
+              <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+            </svg>
+          </button>
         </div>
       </header>
 

@@ -493,14 +493,30 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
         </div>
       </div>
 
-      {/* Tabs */}
-      <div style={{ display:'flex', gap:6, marginBottom:20 }}>
-        {[['dashboard','Dashboard'],['products','Produtos'],['add', editingId?'Editar':'Cadastrar'],['stock','Movimentação']].map(([key,label]) => (
-          <button key={key} onClick={() => { if(key!=='add') { resetForm(); } setTab(key); }}
-            style={{ padding:'7px 14px', borderRadius:8, border:'1px solid var(--border)', background:tab===key?'var(--primary)':'var(--surface)', color:tab===key?'white':'var(--text)', fontWeight:600, fontSize:13, cursor:'pointer', fontFamily:'var(--font)' }}>
-            {label}
-          </button>
-        ))}
+      {/* Tabs — mesmo visual do HubTabs do design system */}
+      <div style={{
+        display:'flex', gap:4, padding:4, marginBottom:16,
+        background:'var(--surface-muted)', border:'1px solid var(--border-subtle)',
+        borderRadius:'var(--r-lg)', overflowX:'auto',
+      }}>
+        {[['dashboard','Dashboard'],['products','Produtos'],['add', editingId?'Editar':'Cadastrar'],['stock','Movimentação']].map(([key,label]) => {
+          const isActive = tab === key;
+          return (
+            <button key={key} onClick={() => { if(key!=='add') { resetForm(); } setTab(key); }}
+              style={{
+                display:'flex', alignItems:'center', gap:7, padding:'7px 12px',
+                borderRadius:'var(--r)', border:'none', cursor:'pointer',
+                fontFamily:'var(--font)', fontSize:13,
+                fontWeight: isActive ? 600 : 500,
+                background: isActive ? 'var(--surface)' : 'transparent',
+                color: isActive ? 'var(--primary)' : 'var(--text-secondary)',
+                boxShadow: isActive ? '0 1px 3px rgba(20,20,19,.06)' : 'none',
+                transition:'all .15s', whiteSpace:'nowrap',
+              }}>
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {tab === 'dashboard' && renderDashboard()}

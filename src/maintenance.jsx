@@ -444,16 +444,32 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
         </div>
       </div>
 
-      {/* Tabs */}
-      <div style={{ display:'flex', gap:6, marginBottom:20, flexWrap:'wrap' }}>
-        {[['dashboard','Painel'],['equipments','Equipamentos'],['orders','Ordens de serviço'],['history','Histórico']].map(([key,label]) => (
-          <button key={key} onClick={() => setTab(key)}
-            style={{ padding:'7px 14px', borderRadius:8, border:'1px solid var(--border)', background:tab===key?'var(--primary)':'var(--surface)', color:tab===key?'white':'var(--text)', fontWeight:600, fontSize:13, cursor:'pointer', fontFamily:'var(--font)' }}>
-            {label}
-            {key==='dashboard' && overdue > 0 && <span style={{ marginLeft:6, background:'var(--red)', color:'white', borderRadius:10, padding:'1px 6px', fontSize:10 }}>{overdue}</span>}
-            {key==='orders' && openOrders > 0 && <span style={{ marginLeft:6, background:'var(--amber)', color:'white', borderRadius:10, padding:'1px 6px', fontSize:10 }}>{openOrders}</span>}
-          </button>
-        ))}
+      {/* Tabs — mesmo visual do HubTabs do design system */}
+      <div style={{
+        display:'flex', gap:4, padding:4, marginBottom:16,
+        background:'var(--surface-muted)', border:'1px solid var(--border-subtle)',
+        borderRadius:'var(--r-lg)', overflowX:'auto',
+      }}>
+        {[['dashboard','Painel'],['equipments','Equipamentos'],['orders','Ordens de serviço'],['history','Histórico']].map(([key,label]) => {
+          const isActive = tab === key;
+          return (
+            <button key={key} onClick={() => setTab(key)}
+              style={{
+                display:'flex', alignItems:'center', gap:7, padding:'7px 12px',
+                borderRadius:'var(--r)', border:'none', cursor:'pointer',
+                fontFamily:'var(--font)', fontSize:13,
+                fontWeight: isActive ? 600 : 500,
+                background: isActive ? 'var(--surface)' : 'transparent',
+                color: isActive ? 'var(--primary)' : 'var(--text-secondary)',
+                boxShadow: isActive ? '0 1px 3px rgba(20,20,19,.06)' : 'none',
+                transition:'all .15s', whiteSpace:'nowrap',
+              }}>
+              <span>{label}</span>
+              {key==='dashboard' && overdue > 0 && <span style={{ background:'var(--red)', color:'white', borderRadius:10, padding:'1px 6px', fontSize:10, fontWeight:700, lineHeight:1.4 }}>{overdue}</span>}
+              {key==='orders' && openOrders > 0 && <span style={{ background:'var(--amber)', color:'white', borderRadius:10, padding:'1px 6px', fontSize:10, fontWeight:700, lineHeight:1.4 }}>{openOrders}</span>}
+            </button>
+          );
+        })}
       </div>
 
       {tab === 'dashboard'   && renderDashboard()}

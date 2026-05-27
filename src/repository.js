@@ -281,6 +281,52 @@ export async function pushFormRecord(tenantId, record) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// FORM TEMPLATES (customizações por tenant — Vitrine Confeitaria, etc.)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function tmplToRow(t, tenantId) {
+  return {
+    id: t.id, tenant_id: tenantId,
+    category: t.category, frequency: t.frequency,
+    title: t.title, description: t.description ?? null,
+    sections: t.sections,
+    updated_at: t.updatedAt ?? new Date().toISOString(),
+  };
+}
+function tmplFromRow(row) {
+  return {
+    id: row.id, category: row.category, frequency: row.frequency,
+    title: row.title, description: row.description,
+    sections: row.sections,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function syncFormTemplates(tenantId) {
+  return syncModule({
+    table: 'form_templates',
+    localKey: `nutriops.forms.templates.${tenantId}`,
+    tenantId,
+    toRow: (t) => tmplToRow(t, tenantId),
+    fromRow: tmplFromRow,
+  });
+}
+
+export async function pushFormTemplate(tenantId, template) {
+  const localKey = `nutriops.forms.templates.${tenantId}`;
+  const existing = ls(localKey, []);
+  const updated  = existing.find(t => t.id === template.id)
+    ? existing.map(t => t.id === template.id ? template : t)
+    : [...existing, template];
+  lw(localKey, updated);
+  if (!isSupabaseEnabled()) return;
+  if (!navigator.onLine) { enqueue('form_templates', 'upsert', tmplToRow(template, tenantId)); return; }
+  try {
+    await sbFetch('form_templates', { method:'POST', body:tmplToRow(template, tenantId), prefer:'resolution=merge-duplicates,return=minimal' });
+  } catch { enqueue('form_templates', 'upsert', tmplToRow(template, tenantId)); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // RECEIVING RECORDS
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -427,6 +473,7 @@ export async function syncAllModules(tenantId) {
   const t0 = Date.now();
   const results = await Promise.allSettled([
     syncFormRecords(tenantId),
+    syncFormTemplates(tenantId),
     syncReceiving(tenantId),
     syncProducts(tenantId),
     syncSpecialControls('oil', tenantId),
@@ -519,6 +566,18 @@ create table if not exists form_records (
 );
 create index if not exists idx_forms_tenant on form_records(tenant_id);
 create index if not exists idx_forms_period on form_records(period_key);
+
+-- 2b. Templates de planilhas (customizações por tenant)
+create table if not exists form_templates (
+  id uuid primary key,
+  tenant_id text not null,
+  category text, frequency text,
+  title text not null, description text,
+  sections jsonb not null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+create index if not exists idx_tmpl_tenant on form_templates(tenant_id);
 
 -- 3. Recebimento
 create table if not exists receiving_records (

@@ -8,7 +8,8 @@
     "build": "vite build && node scripts/version-sw.js",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "migrate:backup": "node scripts/migrate-backup.js"
   },
   "dependencies": {
     "react": "^19.1.0",

@@ -33,16 +33,27 @@ clientes pagando. O ROI dessa reescrita é negativo agora.
 
 ## Regras críticas
 
-### `src/data.js` nunca vai ao GitHub
+### `src/data.js` e PINs
 
-Tem PINs e tenants reais. Fluxo de push:
+A partir do split (`src/tenants-public.js` + `src/data.js`), os defaults
+de PIN (`0000` colaboradores, `6270` Fran, `8771` Ana Paula, `9999` admin)
+ficam no `data.js` e **são commitáveis** — são apenas valores de fábrica
+sobrescritos pelo PIN reset obrigatório no 1º login.
 
-```bash
-git add -A
-git reset src/data.js   # ou: git rm --cached src/data.js 2>/dev/null; true
-git commit -m "mensagem"
-git push
-```
+**Não commitar:**
+
+- `nutriops.pin.overrides.{tenantId}` no localStorage — fica só no device
+- Qualquer alteração em `data.js` que coloque PINs **específicos** de
+  cliente pago (ex.: a Fran pediu PIN `4729`). Nesses casos:
+
+  ```bash
+  git add -A
+  git reset src/data.js
+  git commit -m "mensagem"
+  git push
+  ```
+
+- `data.js` com `usersList` de cliente real que não passou pelo `/admin`.
 
 ### Variáveis de ambiente
 
@@ -53,6 +64,20 @@ produção, configura em Vercel → Project → Settings → Environment Variabl
 | Variável | Onde é usada | Default |
 |----------|--------------|---------|
 | `VITE_ADMIN_PASSWORD` | Senha do `/admin` | `nutriops@admin2026` (fallback, com warning no console) |
+| `VITE_SB_URL` | URL do projeto Supabase compartilhado pelos tenants seed | vazio (modo local por device) |
+| `VITE_SB_ANON_KEY` | Anon key pública desse projeto Supabase | vazio (modo local por device) |
+
+Quando `VITE_SB_URL` + `VITE_SB_ANON_KEY` estão preenchidas no build, todos
+os 3 tenants seed (Swiss, Bäckerei, DBK Produção) ganham `tenant.supabase`
+automaticamente, e `handleLogin` em `pages.jsx` propaga pro localStorage do
+device. Resultado: qualquer aparelho que abrir o app já entra sincronizando.
+
+### Onde mora cada parte de tenant
+
+- `src/tenants-public.js` — metadata pura (id, nome, segmento, equipamentos).
+  **Pode commitar.** Sem PINs, sem credenciais.
+- `src/data.js` — `usersList` com PINs + `globalAdmin`. **Gitignored.**
+  Importa de `tenants-public.js` e merge no runtime.
 
 ### Antes de marcar tarefa como "done"
 

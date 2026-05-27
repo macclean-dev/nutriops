@@ -4,7 +4,7 @@ export const ROLES = ['Colaborador', 'Supervisor', 'Nutricionista RT', 'Administ
 // O usuário precisa de acesso ao hub para abrir o agrupador, e o hub filtra
 // internamente as sub-tabs pelo mesmo canAccess.
 const ALL_VIEWS = [
-  'overview','forms','pops','training','receiving','validity',
+  'overview','overview-v2','forms','pops','training','receiving','validity',
   // Hub: controles especiais
   'controls', 'handwash','oil','thaw','cooling','thermal',
   // Hub: relatórios
@@ -17,15 +17,15 @@ const ALL_VIEWS = [
 
 export const PERMISSIONS = {
   'Colaborador': {
-    nav: ['overview','forms','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','profile'],
+    nav: ['overview','overview-v2','forms','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','profile'],
     multiTenant: false, canExport: false, canValidate: false, canManageUsers: false, canManageConfig: false, canSeeReports: false,
   },
   'Supervisor': {
-    nav: ['overview','forms','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','alerts','reportsHub','audit','maintenance','profile'],
+    nav: ['overview','overview-v2','forms','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','alerts','reportsHub','audit','maintenance','profile'],
     multiTenant: false, canExport: true, canValidate: false, canManageUsers: false, canManageConfig: false, canSeeReports: true,
   },
   'Nutricionista RT': {
-    nav: ['overview','forms','pops','training','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','reportsHub','dashboard','charts','reports','monthly','audit','alerts','actions','rtpanel','team','users','sessions','maintenance','profile'],
+    nav: ['overview','overview-v2','forms','pops','training','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','reportsHub','dashboard','charts','reports','monthly','audit','alerts','actions','rtpanel','team','users','sessions','maintenance','profile'],
     multiTenant: true, canExport: true, canValidate: true, canManageUsers: false, canManageConfig: false, canSeeReports: true,
   },
   'Administrador': {

@@ -38,6 +38,7 @@ const GlobalSearch         = lazyView(() => import('./extras'),     'GlobalSearc
 const HandwashView         = lazyView(() => import('./extras'),     'HandwashView');
 const MonthlyExportView    = lazyView(() => import('./extras'),     'MonthlyExportView');
 const SessionHistoryView   = lazyView(() => import('./extras'),     'SessionHistoryView');
+const OverviewV2           = lazyView(() => import('./overview-v2'), 'OverviewV2');
 
 // ─── helpers re-exported from maintenance ──────────────────────────────────
 function addDays(iso, days) { const d = new Date(iso || new Date()); d.setDate(d.getDate() + days); return d.toISOString().slice(0,10); }
@@ -1030,7 +1031,7 @@ function RecentHistory({ activeTenant, records }) {
 
 // ─── Overview ──────────────────────────────────────────────────────────────
 
-function OverviewView({ activeTenant, allTenants, onTenantChange, session, equipmentCatalog, records, onRecordSaved, alerts, notifPermission, onRequestNotif, onLaunchKiosk, trialStatus }) {
+function OverviewView({ activeTenant, allTenants, onTenantChange, session, equipmentCatalog, records, onRecordSaved, alerts, notifPermission, onRequestNotif, onLaunchKiosk, trialStatus, onTryV2 }) {
   // Training expiry alerts
   const trainingAlerts = useMemo(() => {
     try {
@@ -1084,13 +1085,35 @@ function OverviewView({ activeTenant, allTenants, onTenantChange, session, equip
           </div>
         </div>
       )}
+      {onTryV2 && (
+        <div style={{
+          display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
+          padding:'10px 14px', marginBottom:14,
+          background:'rgba(204,120,92,.08)', border:'1px solid rgba(204,120,92,.25)',
+          borderRadius:'var(--r-lg)',
+        }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+            <strong style={{ fontSize:13, color:'var(--text)' }}>Nova Visão Geral disponível</strong>
+            <span style={{ fontSize:12, color:'var(--text-secondary)' }}>
+              Dashboard adaptado ao seu perfil com gráficos de temperatura por equipamento.
+            </span>
+          </div>
+          <button onClick={onTryV2} style={{
+            padding:'8px 16px', borderRadius:'var(--r)', border:'none',
+            background:'var(--primary)', color:'white', fontSize:13, fontWeight:600,
+            cursor:'pointer', fontFamily:'var(--font)', whiteSpace:'nowrap',
+          }}>
+            Experimentar →
+          </button>
+        </div>
+      )}
       <CompanyCards allTenants={allTenants} activeTenant={activeTenant} onTenantChange={onTenantChange} records={records} />
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
         <button className="secondary-action" style={{ fontSize:12, background:'#0d1117', color:'white', borderColor:'transparent' }} onClick={onLaunchKiosk}>
-          🖥️ Modo quiosque
+          Modo quiosque
         </button>
         <button className="secondary-action" style={{ fontSize:12 }} onClick={async () => { const m = await import('./controls'); m.printTodayReport(activeTenant, records); }}>
-          🖨️ Imprimir registros de hoje
+          Imprimir registros de hoje
         </button>
       </div>
       <div className="workspace-grid">
@@ -2988,7 +3011,8 @@ export function App() {
       <main className="super-main">
         <LocalModeBanner session={session} setActiveView={setActiveView} />
         <Suspense fallback={<ViewLoading />}>
-          {activeView === 'overview'   && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} trialStatus={trialStatus} />}
+          {activeView === 'overview'   && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} trialStatus={trialStatus} onTryV2={() => setActiveView('overview-v2')} />}
+          {activeView === 'overview-v2' && <OverviewV2 {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onLaunchKiosk={() => setShowKioskSetup(true)} onNavigate={setActiveView} onBack={() => setActiveView('overview')} />}
           {activeView === 'forms'      && <FormsView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
           {activeView === 'pops'       && <POPsView {...sharedProps} session={session} />}
           {activeView === 'training'   && <TrainingView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
@@ -3022,7 +3046,7 @@ export function App() {
           {activeView === 'settings'    && <SettingsView session={session} activeTenant={activeTenant} />}
           {/* Fallback for any route the user doesn't have access to */}
           {![
-            'overview','forms','pops','training','receiving','validity',
+            'overview','overview-v2','forms','pops','training','receiving','validity',
             ...CONTROLS_KEYS, ...REPORTS_KEYS, ...TEAM_KEYS,
             'alerts','actions','rtpanel','equipment','profile','maintenance','settings',
           ].includes(activeView) && <NoPermission onBack={() => setActiveView('overview')} />}

@@ -327,6 +327,91 @@ export async function pushFormTemplate(tenantId, template) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// EQUIPMENT CATALOG (por tenant — label/aliases/location/min/max)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function eqToRow(eq, tenantId) {
+  return {
+    tenant_id: tenantId,
+    label: eq.label,
+    aliases: Array.isArray(eq.aliases) ? eq.aliases : [],
+    location: eq.location ?? null,
+    min_temp: eq.minTemp ?? null,
+    max_temp: eq.maxTemp ?? null,
+    updated_at: new Date().toISOString(),
+  };
+}
+function eqFromRow(row) {
+  return {
+    label: row.label,
+    aliases: Array.isArray(row.aliases) ? row.aliases : [],
+    location: row.location,
+    minTemp: row.min_temp,
+    maxTemp: row.max_temp,
+  };
+}
+
+const EQ_KEY = (tenantId) => `nutriops.equip_assets.${tenantId}`;
+
+export async function syncEquipmentCatalog(tenantId) {
+  if (!isSupabaseEnabled() || !navigator.onLine) {
+    console.debug('[repo] syncEquipmentCatalog skip — offline_or_disabled');
+    return { ok: false, reason: 'offline_or_disabled' };
+  }
+  console.debug(`[repo] syncEquipmentCatalog(tenant=${tenantId}) start`);
+  try {
+    const q = `tenant_id=eq.${tenantId}&order=label.asc&limit=500`;
+    const rows = await sbFetch('equipment_catalog', { filter: q });
+    const remote = rows.map(eqFromRow);
+    // Estratégia: cloud é a fonte de verdade. Substitui o local.
+    // (Cadastro de equipamento é raro o suficiente pra não termos conflitos.)
+    if (remote.length > 0) {
+      lw(EQ_KEY(tenantId), remote);
+    }
+    console.debug(`[repo] syncEquipmentCatalog done — ${remote.length} itens`);
+    return { ok: true, count: remote.length };
+  } catch (e) {
+    console.warn(`[repo] syncEquipmentCatalog failed:`, e.message);
+    return { ok: false, reason: e.message };
+  }
+}
+
+export async function pushEquipmentItem(tenantId, equipment) {
+  if (!isSupabaseEnabled()) return;
+  if (!navigator.onLine) { enqueue('equipment_catalog', 'upsert', eqToRow(equipment, tenantId)); return; }
+  try {
+    await sbFetch('equipment_catalog', {
+      method: 'POST',
+      body: eqToRow(equipment, tenantId),
+      prefer: 'resolution=merge-duplicates,return=minimal',
+    });
+  } catch { enqueue('equipment_catalog', 'upsert', eqToRow(equipment, tenantId)); }
+}
+
+export async function pushAllEquipment(tenantId, catalog) {
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok: false };
+  let pushed = 0, failed = 0;
+  for (const eq of (catalog || [])) {
+    try { await pushEquipmentItem(tenantId, eq); pushed++; }
+    catch { failed++; }
+  }
+  return { ok: true, pushed, failed };
+}
+
+export async function deleteEquipmentItem(tenantId, label) {
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok: false };
+  try {
+    await sbFetch('equipment_catalog', {
+      method: 'DELETE',
+      filter: `tenant_id=eq.${tenantId}&label=eq.${encodeURIComponent(label)}`,
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // RECEIVING RECORDS
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -474,6 +559,7 @@ export async function syncAllModules(tenantId) {
   const results = await Promise.allSettled([
     syncFormRecords(tenantId),
     syncFormTemplates(tenantId),
+    syncEquipmentCatalog(tenantId),
     syncReceiving(tenantId),
     syncProducts(tenantId),
     syncSpecialControls('oil', tenantId),
@@ -578,6 +664,19 @@ create table if not exists form_templates (
   updated_at timestamptz default now()
 );
 create index if not exists idx_tmpl_tenant on form_templates(tenant_id);
+
+-- 2c. Catálogo de equipamentos por tenant (nome, faixa, localização)
+create table if not exists equipment_catalog (
+  tenant_id text not null,
+  label text not null,
+  aliases jsonb,
+  location text,
+  min_temp numeric,
+  max_temp numeric,
+  updated_at timestamptz default now(),
+  primary key (tenant_id, label)
+);
+create index if not exists idx_eq_tenant on equipment_catalog(tenant_id);
 
 -- 3. Recebimento
 create table if not exists receiving_records (

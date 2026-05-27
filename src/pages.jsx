@@ -5,7 +5,7 @@ import { signIn, signOut, signUp, resetPassword, readAuthSession, isSessionValid
 import { readAdminAuth, writeAdminAuth, clearAdminAuth, readClients } from './admin';
 import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
 import { trackUsage } from './repository';
-import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus } from './repository';
+import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog } from './repository';
 import { getPermissions, canAccess } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
@@ -1985,13 +1985,18 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
     setCatalog((prev) => editingIndex === null
       ? [...prev, next]
       : prev.map((item, i) => i === editingIndex ? { ...item, ...next } : item));
+    // Sync pro Supabase (no-op se desligado/offline; cai na fila)
+    pushEquipmentItem(activeTenant.id, next).catch(() => {});
     cancelEdit();
   };
 
   const removeItem = (i) => {
-    if (!window.confirm(`Remover "${catalog[i]?.label}"?`)) return;
+    const item = catalog[i];
+    if (!item) return;
+    if (!window.confirm(`Remover "${item.label}"?`)) return;
     setCatalog((prev) => prev.filter((_, idx) => idx !== i));
     if (editingIndex === i) cancelEdit();
+    deleteEquipmentItem(activeTenant.id, item.label).catch(() => {});
   };
 
   const filtered = catalog

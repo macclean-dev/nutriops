@@ -160,6 +160,18 @@ git add -A && git reset src/data.js
 
 ---
 
+## Sync por tenant (via Supabase)
+
+Tabelas que sincronizam via `syncAllModules`:
+- `temperature_records` · `form_records` · `form_templates`
+- **`equipment_catalog`** (label/aliases/location/min_temp/max_temp por tenant)
+- `receiving_records` · `products` · `stock_logs` · `special_controls`
+
+Equipment catalog: salvar em qualquer device chama `pushEquipmentItem`;
+boot em qualquer outro device chama `syncEquipmentCatalog` e puxa updates.
+Cloud é source-of-truth: se remoto > 0, sobrescreve local. Se remoto vazio,
+cai no seed de `tenants-public.js`.
+
 ## GitHub Actions CI
 
 Workflow `.github/workflows/ci.yml` (rodando `npm test` + `npm run build`)

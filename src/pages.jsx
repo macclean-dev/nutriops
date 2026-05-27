@@ -367,7 +367,9 @@ function NoPermission({ onBack }) {
 
 function LoginScreen({ onLogin, activeTenants }) {
   const useSupabase = isSupabaseEnabled();
-  const [mode, setMode]         = useState(useSupabase ? 'email' : 'pin');
+  // Default sempre PIN — Supabase no NutriOPS é só pra dados, não pra auth.
+  // Quando o épico "Supabase Auth real" for feito, voltamos a depender de useSupabase.
+  const [mode, setMode]         = useState('pin');
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [resetSent, setResetSent] = useState(false);

@@ -36,6 +36,7 @@ export function buildNavSections({
       items: [
         ['pops',        'pops',        'POPs'],
         ['training',    'training',    'Capacitação'],
+        ['equipment',   'thermal',     'Equipamentos'],
         ['maintenance', 'maintenance', 'Manutenção', maintAlertCount || null],
       ],
     },

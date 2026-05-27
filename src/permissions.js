@@ -21,11 +21,11 @@ export const PERMISSIONS = {
     multiTenant: false, canExport: false, canValidate: false, canManageUsers: false, canManageConfig: false, canSeeReports: false,
   },
   'Supervisor': {
-    nav: ['overview','overview-v2','forms','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','alerts','reportsHub','audit','maintenance','profile'],
+    nav: ['overview','overview-v2','forms','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','alerts','reportsHub','audit','equipment','maintenance','profile'],
     multiTenant: false, canExport: true, canValidate: false, canManageUsers: false, canManageConfig: false, canSeeReports: true,
   },
   'Nutricionista RT': {
-    nav: ['overview','overview-v2','forms','pops','training','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','reportsHub','dashboard','charts','reports','monthly','audit','alerts','actions','rtpanel','team','users','sessions','maintenance','profile'],
+    nav: ['overview','overview-v2','forms','pops','training','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','reportsHub','dashboard','charts','reports','monthly','audit','alerts','actions','rtpanel','team','users','sessions','equipment','maintenance','profile'],
     multiTenant: true, canExport: true, canValidate: true, canManageUsers: false, canManageConfig: false, canSeeReports: true,
   },
   'Administrador': {

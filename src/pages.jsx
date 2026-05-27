@@ -9,6 +9,8 @@ import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupa
 import { getPermissions, canAccess } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
+import { resolveLimits as resolveLimitsFromCatalog, heuristicLimits, suggestLimits } from './limits';
+import { EquipmentDetailModal } from './equipment-detail';
 
 // ─── Lazy view loading ────────────────────────────────────────────────────
 // Cada chunk só baixa quando o usuário navega pra view correspondente.
@@ -54,10 +56,10 @@ export const APP_BUILD = '2026.05.19';
 
 // ─── Temperatura utils ─────────────────────────────────────────────────────
 
-function resolveTemperatureLimits(label = '') {
-  const l = label.toLowerCase();
-  if (l.includes('freezer') || l.includes('congel') || l.includes('congelada')) return { min: -25, max: -18 };
-  return { min: 0, max: 9 };
+// Wrapper que aceita o catálogo do tenant pra usar min/max cadastrado.
+// Sem catálogo, cai na heurística pelo nome (compat com call sites antigos).
+function resolveTemperatureLimits(label = '', catalog = null) {
+  return resolveLimitsFromCatalog(label, catalog);
 }
 function resolveTemperatureTone(record) {
   const v = Number(record?.value), mn = Number(record?.min), mx = Number(record?.max);
@@ -867,7 +869,7 @@ function TemperatureCapture({ activeTenant, session, equipmentCatalog, onRecordS
   }, [activeTenant.id]);
 
   const activeEntry  = getEquipmentEntry(equipmentCatalog, activeEquipment);
-  const limits       = resolveTemperatureLimits(activeEquipment);
+  const limits       = resolveTemperatureLimits(activeEquipment, equipmentCatalog);
   const numericValue = Number(value);
   const hasValue     = value !== '' && !isNaN(numericValue);
   const inRange      = hasValue && numericValue >= limits.min && numericValue <= limits.max;
@@ -904,8 +906,10 @@ function TemperatureCapture({ activeTenant, session, equipmentCatalog, onRecordS
     measuredAt: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
     controlMode: observationEquipment === label ? 'observation' : 'routine',
     observationInterval: observationEquipment === label ? Number(observationInterval) : null,
-    value: Number(val), note: nt, min: resolveTemperatureLimits(label).min, max: resolveTemperatureLimits(label).max,
-  }), [activeTenant, session, observationEquipment, observationInterval]);
+    value: Number(val), note: nt,
+    min: resolveTemperatureLimits(label, equipmentCatalog).min,
+    max: resolveTemperatureLimits(label, equipmentCatalog).max,
+  }), [activeTenant, session, observationEquipment, observationInterval, equipmentCatalog]);
 
   const handleSaveAll = async () => {
     if (pendingDrafts === 0) return;
@@ -1326,6 +1330,7 @@ function ChartsView({ activeTenant, allTenants, onTenantChange, records }) {
   const catalog = readEquipmentCatalog(activeTenant);
   const [selectedEquipment, setSelectedEquipment] = useState(catalog[0]?.label ?? '');
   const [periodDays, setPeriodDays] = useState('30');
+  const [drillEq, setDrillEq] = useState(null); // equipamento aberto no modal
 
   useEffect(() => { setSelectedEquipment(readEquipmentCatalog(activeTenant)[0]?.label ?? ''); }, [activeTenant.id]);
 
@@ -1333,6 +1338,14 @@ function ChartsView({ activeTenant, allTenants, onTenantChange, records }) {
     const cutoff = Date.now() - Number(periodDays) * 86400000;
     return records.filter((r) => r.tenantId === activeTenant.id && new Date(r.createdAt).getTime() >= cutoff);
   }, [records, activeTenant.id, periodDays]);
+
+  // Histórico do equipamento aberto no drill-down (cronológico crescente)
+  const drillHistory = useMemo(() => {
+    if (!drillEq) return [];
+    return tenantRecords
+      .filter(r => (r.equipment || r.equipmentInput || r.equipmentKey) === drillEq.label)
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  }, [tenantRecords, drillEq]);
 
   return (
     <section className="management-page">
@@ -1367,6 +1380,10 @@ function ChartsView({ activeTenant, allTenants, onTenantChange, records }) {
               <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} />Conforme</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--amber)', display: 'inline-block' }} />Desvio</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--red)', display: 'inline-block' }} />Crítico</span>
+              <button onClick={() => setDrillEq(catalog.find(eq => eq.label === selectedEquipment) ?? { label: selectedEquipment })}
+                style={{ marginLeft:6, padding:'5px 12px', borderRadius:'var(--r)', border:'1px solid var(--primary)', background:'transparent', color:'var(--primary)', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'var(--font)' }}>
+                Detalhes completos →
+              </button>
             </div>
           </div>
           <div style={{ padding: '16px 20px' }}>
@@ -1385,7 +1402,7 @@ function ChartsView({ activeTenant, allTenants, onTenantChange, records }) {
           const pct = er.length > 0 ? Math.round((eOk / er.length) * 100) : null;
           const last = er[0];
           return (
-            <article key={eq.label} className={`dash-card ${selectedEquipment === eq.label ? 'active' : ''}`} style={{ borderTopColor: pct === null ? 'var(--border)' : pct >= 90 ? 'var(--green)' : pct >= 70 ? 'var(--amber)' : 'var(--red)', cursor: 'pointer' }} onClick={() => setSelectedEquipment(eq.label)}>
+            <article key={eq.label} className={`dash-card ${selectedEquipment === eq.label ? 'active' : ''}`} style={{ borderTopColor: pct === null ? 'var(--border)' : pct >= 90 ? 'var(--green)' : pct >= 70 ? 'var(--amber)' : 'var(--red)', cursor: 'pointer' }} onClick={() => setDrillEq(eq)} title="Abrir histórico completo">
               <div className="dash-card-head">
                 <div><span className="eyebrow">Equipamento</span><h2>{eq.label}</h2></div>
                 <div className="dash-compliance">
@@ -1400,10 +1417,22 @@ function ChartsView({ activeTenant, allTenants, onTenantChange, records }) {
                 <div className="dash-stat danger"><span>Crítico</span><strong>{eDanger}</strong></div>
               </div>
               {last && <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8 }}>Último: <strong style={{ fontFamily: 'var(--mono)' }}>{last.value}°C</strong> · {formatCompactDateTime(last.createdAt)}</p>}
+              <p style={{ fontSize:10, color:'var(--primary)', marginTop:6, fontWeight:600, letterSpacing:'.06em', textTransform:'uppercase' }}>
+                Click pra abrir histórico completo →
+              </p>
             </article>
           );
         })}
       </div>
+
+      {/* Drill-down modal — abre ao clicar num card ou em "Detalhes completos" */}
+      {drillEq && (
+        <EquipmentDetailModal
+          equipment={drillEq}
+          history={drillHistory}
+          onClose={() => setDrillEq(null)}
+        />
+      )}
     </section>
   );
 }
@@ -1913,53 +1942,171 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
   const [labelInput, setLabelInput]         = useState('');
   const [aliasInput, setAliasInput]         = useState('');
   const [locationInput, setLocationInput]   = useState('');
+  const [minInput, setMinInput]             = useState('');
+  const [maxInput, setMaxInput]             = useState('');
   const [editingIndex, setEditingIndex]     = useState(null);
   const [search, setSearch]                 = useState('');
   const [locationFilter, setLocationFilter] = useState('');
-  useEffect(() => { setCatalog(readEquipmentCatalog(activeTenant)); setEditingIndex(null); setLabelInput(''); setAliasInput(''); setLocationInput(''); }, [activeTenant.id]);
+  const resetForm = () => { setEditingIndex(null); setLabelInput(''); setAliasInput(''); setLocationInput(''); setMinInput(''); setMaxInput(''); };
+  useEffect(() => { setCatalog(readEquipmentCatalog(activeTenant)); resetForm(); }, [activeTenant.id]);
   useEffect(() => { writeEquipmentCatalog(activeTenant.id, catalog); }, [activeTenant.id, catalog]);
-  const startEdit = (i) => { const item = catalog[i]; setEditingIndex(i); setLabelInput(item.label); setAliasInput(item.aliases?.join(', ') ?? ''); setLocationInput(item.location ?? ''); };
-  const cancelEdit = () => { setEditingIndex(null); setLabelInput(''); setAliasInput(''); setLocationInput(''); };
+
+  // Sugestão automática de faixa quando o usuário digita o nome (só preenche
+  // se os campos estiverem vazios — não sobrescreve o que o user escolheu)
+  const suggestRangeFromLabel = (label) => {
+    if (minInput !== '' || maxInput !== '') return;
+    const suggested = suggestLimits(label);
+    setMinInput(String(suggested.min));
+    setMaxInput(String(suggested.max));
+  };
+
+  const startEdit = (i) => {
+    const item = catalog[i];
+    setEditingIndex(i);
+    setLabelInput(item.label);
+    setAliasInput(item.aliases?.join(', ') ?? '');
+    setLocationInput(item.location ?? '');
+    setMinInput(item.minTemp != null ? String(item.minTemp) : '');
+    setMaxInput(item.maxTemp != null ? String(item.maxTemp) : '');
+  };
+  const cancelEdit = () => resetForm();
+
   const saveItem = () => {
     const label = labelInput.trim(); if (!label) return;
-    const aliases = aliasInput.split(',').map((s) => s.trim()).filter(Boolean), location = locationInput.trim() || null;
-    setCatalog((prev) => editingIndex === null ? [...prev, { label, aliases, location }] : prev.map((item, i) => i === editingIndex ? { ...item, label, aliases, location } : item));
+    const aliases = aliasInput.split(',').map((s) => s.trim()).filter(Boolean);
+    const location = locationInput.trim() || null;
+    const minN = minInput === '' ? null : Number(minInput);
+    const maxN = maxInput === '' ? null : Number(maxInput);
+    if (minN != null && maxN != null && minN > maxN) {
+      window.alert('Mínimo precisa ser menor ou igual ao máximo.');
+      return;
+    }
+    const next = { label, aliases, location, minTemp: minN, maxTemp: maxN };
+    setCatalog((prev) => editingIndex === null
+      ? [...prev, next]
+      : prev.map((item, i) => i === editingIndex ? { ...item, ...next } : item));
     cancelEdit();
   };
-  const removeItem = (i) => { if (!window.confirm(`Remover "${catalog[i]?.label}"?`)) return; setCatalog((prev) => prev.filter((_, idx) => idx !== i)); if (editingIndex === i) cancelEdit(); };
-  const filtered = catalog.filter((item) => { const q = search.toLowerCase(), lf = locationFilter.toLowerCase(); return (!q || item.label.toLowerCase().includes(q) || item.aliases?.some((a) => a.toLowerCase().includes(q))) && (!lf || String(item.location ?? '').toLowerCase().includes(lf)); }).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' }));
+
+  const removeItem = (i) => {
+    if (!window.confirm(`Remover "${catalog[i]?.label}"?`)) return;
+    setCatalog((prev) => prev.filter((_, idx) => idx !== i));
+    if (editingIndex === i) cancelEdit();
+  };
+
+  const filtered = catalog
+    .filter((item) => {
+      const q = search.toLowerCase(), lf = locationFilter.toLowerCase();
+      return (!q || item.label.toLowerCase().includes(q) || item.aliases?.some((a) => a.toLowerCase().includes(q)))
+          && (!lf || String(item.location ?? '').toLowerCase().includes(lf));
+    })
+    .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' }));
+
+  const fmtRange = (item) => {
+    if (item.minTemp != null && item.maxTemp != null) return `${item.minTemp}° a ${item.maxTemp}°`;
+    const h = heuristicLimits(item.label);
+    return `${h.min}° a ${h.max}° (auto)`;
+  };
+
   return (
     <section className="management-page">
-      <div className="page-header"><div><span className="eyebrow">Cadastro</span><h1>Equipamentos</h1><p className="muted">Nomes e apelidos usados no autocomplete do registro de temperatura.</p></div><div className="page-actions"><span className="badge subtle">{activeTenant.name}</span></div></div>
+      <div className="page-header">
+        <div>
+          <span className="eyebrow">Cadastro</span>
+          <h1>Equipamentos</h1>
+          <p className="muted">Equipamentos monitorados, suas faixas permitidas e onde ficam.</p>
+        </div>
+        <div className="page-actions"><span className="badge subtle">{activeTenant.name}</span></div>
+      </div>
       <div className="management-grid">
         <article className="management-card">
-          <div className="card-head"><div><span className="eyebrow">{editingIndex === null ? 'Novo' : 'Editando'}</span><h2>{editingIndex === null ? 'Cadastrar equipamento' : catalog[editingIndex]?.label ?? ''}</h2></div><span className="badge neutral">{catalog.length}</span></div>
-          <div className={`editing-banner ${editingIndex !== null ? 'active' : ''}`}><span className="eyebrow">Modo edição</span><strong>Editando: {catalog[editingIndex]?.label}</strong><p>Altere os campos e clique em Salvar.</p></div>
+          <div className="card-head">
+            <div>
+              <span className="eyebrow">{editingIndex === null ? 'Novo' : 'Editando'}</span>
+              <h2>{editingIndex === null ? 'Cadastrar equipamento' : catalog[editingIndex]?.label ?? ''}</h2>
+            </div>
+            <span className="badge neutral">{catalog.length}</span>
+          </div>
+          <div className={`editing-banner ${editingIndex !== null ? 'active' : ''}`}>
+            <span className="eyebrow">Modo edição</span>
+            <strong>Editando: {catalog[editingIndex]?.label}</strong>
+            <p>Altere os campos e clique em Salvar.</p>
+          </div>
           <div className="capture-fields">
-            <label>Empresa<select value={activeTenant.id} onChange={(e) => onTenantChange(e.target.value)}>{allTenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
-            <label>Nome padrão<input value={labelInput} onChange={(e) => setLabelInput(e.target.value)} placeholder="Ex.: Freezer, Refrigerador" /></label>
-            <label>Variações / apelidos<input value={aliasInput} onChange={(e) => setAliasInput(e.target.value)} placeholder="Ex.: freezer, câmara congelada" /></label>
-            <label>Localização (opcional)<input value={locationInput} onChange={(e) => setLocationInput(e.target.value)} placeholder="Ex.: cozinha, estoque" /></label>
+            <label>Empresa
+              <select value={activeTenant.id} onChange={(e) => onTenantChange(e.target.value)}>
+                {allTenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </label>
+            <label>Nome padrão
+              <input value={labelInput}
+                onChange={(e) => setLabelInput(e.target.value)}
+                onBlur={(e) => suggestRangeFromLabel(e.target.value)}
+                placeholder="Ex.: Freezer, Refrigerador, Vitrine" />
+            </label>
+            <label>Variações / apelidos
+              <input value={aliasInput} onChange={(e) => setAliasInput(e.target.value)}
+                placeholder="Ex.: freezer, câmara congelada" />
+            </label>
+            <label>Localização (opcional)
+              <input value={locationInput} onChange={(e) => setLocationInput(e.target.value)}
+                placeholder="Ex.: cozinha, estoque" />
+            </label>
+            <div className="grid-2">
+              <label>Temp. mínima (°C)
+                <input type="number" inputMode="decimal" step="0.1"
+                  value={minInput} onChange={(e) => setMinInput(e.target.value)}
+                  placeholder="Ex.: 0" />
+              </label>
+              <label>Temp. máxima (°C)
+                <input type="number" inputMode="decimal" step="0.1"
+                  value={maxInput} onChange={(e) => setMaxInput(e.target.value)}
+                  placeholder="Ex.: 9" />
+              </label>
+            </div>
+            <p className="muted" style={{ fontSize:11, margin:'-4px 0 0' }}>
+              Sugestão automática quando você sai do campo Nome. Pode sobrescrever.
+              Sem faixa cadastrada, o app usa fallback heurístico (freezer = -25 a -18, resto = 0 a 9).
+            </p>
             <div className="actions-row">
               {editingIndex !== null && <button className="secondary-action" onClick={cancelEdit}>Cancelar</button>}
-              <button className="primary-action" onClick={saveItem}>{editingIndex === null ? 'Adicionar' : 'Salvar alteração'}</button>
+              <button className="primary-action" onClick={saveItem}>
+                {editingIndex === null ? 'Adicionar' : 'Salvar alteração'}
+              </button>
             </div>
           </div>
         </article>
         <article className="management-card">
-          <div className="card-head"><div><span className="eyebrow">Lista</span><h2>Equipamentos cadastrados</h2></div><span className="badge neutral">{filtered.length}/{catalog.length}</span></div>
+          <div className="card-head">
+            <div>
+              <span className="eyebrow">Lista</span>
+              <h2>Equipamentos cadastrados</h2>
+            </div>
+            <span className="badge neutral">{filtered.length}/{catalog.length}</span>
+          </div>
           <div className="capture-fields equipment-filters">
             <label>Buscar<input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nome ou apelido" /></label>
             <label>Localização<input value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} placeholder="Filtrar por local" /></label>
           </div>
           <div className="equipment-maintenance-list">
-            {filtered.length === 0 ? <p className="muted" style={{ padding: '16px 20px' }}>Nenhum equipamento encontrado.</p>
-              : filtered.map((item) => { const ri = catalog.indexOf(item); return (
-                <div key={`${item.label}-${ri}`} className={`equipment-maintenance-row ${editingIndex === ri ? 'editing' : ''}`}>
-                  <div><strong>{item.label}</strong><span>{item.aliases?.length ? item.aliases.join(' · ') : 'Sem apelidos'}</span><span>{item.location ?? 'Sem localização'}</span></div>
-                  <div className="equipment-row-actions"><button className="ghost-action" onClick={() => startEdit(ri)}>Editar</button><button className="ghost-action danger" onClick={() => removeItem(ri)}>Remover</button></div>
-                </div>
-              ); })}
+            {filtered.length === 0
+              ? <p className="muted" style={{ padding: '16px 20px' }}>Nenhum equipamento encontrado.</p>
+              : filtered.map((item) => {
+                  const ri = catalog.indexOf(item);
+                  return (
+                    <div key={`${item.label}-${ri}`} className={`equipment-maintenance-row ${editingIndex === ri ? 'editing' : ''}`}>
+                      <div>
+                        <strong>{item.label}</strong>
+                        <span>{item.aliases?.length ? item.aliases.join(' · ') : 'Sem apelidos'}</span>
+                        <span>{item.location ?? 'Sem localização'} · <strong style={{ color:'var(--green)' }}>{fmtRange(item)}</strong></span>
+                      </div>
+                      <div className="equipment-row-actions">
+                        <button className="ghost-action" onClick={() => startEdit(ri)}>Editar</button>
+                        <button className="ghost-action danger" onClick={() => removeItem(ri)}>Remover</button>
+                      </div>
+                    </div>
+                  );
+                })}
           </div>
         </article>
       </div>

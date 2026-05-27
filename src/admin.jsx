@@ -4,6 +4,7 @@ import { BrandLockup, APP_VERSION } from './brand';
 import { readClients, writeClients, readAdminAuth, writeAdminAuth, clearAdminAuth } from './admin-storage';
 import { sendWelcomeEmail, sendAccessGrantedEmail } from './email';
 import { tenantsBase } from './tenants-public';
+import { resolveLimits as resolveLimitsCat, resolveTone as resolveToneCat } from './limits';
 
 // Re-export storage helpers pra preservar a API que pages.jsx/trial.jsx
 // consumiam (com import from './admin'). Os imports leves agora podem ser
@@ -357,17 +358,11 @@ function AccessTokenModal({ client, onClose, onClientUpdate }) {
 // HEALTH VIEW — saúde operacional dos tenants
 // ═══════════════════════════════════════════════════════════════════════════
 
-function resolveTone(value, min, max) {
-  const v = Number(value), mn = Number(min), mx = Number(max);
-  if (isNaN(v) || isNaN(mn) || isNaN(mx)) return 'neutral';
-  if (v >= mn && v <= mx) return 'ok';
-  if (v >= mn - 3 && v <= mx + 3) return 'warn';
-  return 'danger';
-}
-function resolveLimits(label = '') {
-  const l = label.toLowerCase();
-  if (l.includes('freezer') || l.includes('congel')) return { min: -25, max: -18 };
-  return { min: 0, max: 9 };
+// resolveTone e resolveLimits vêm de ./limits. Aqui usamos snake_case porque
+// records vêm direto do Supabase REST (min_value, max_value).
+const resolveTone   = resolveToneCat;
+function resolveLimits(label, ctx = null) {
+  return resolveLimitsCat(label, ctx);
 }
 function fmtRelative(iso) {
   if (!iso) return '—';
@@ -535,12 +530,14 @@ function HealthView({ clients }) {
     for (const [tid, { records, users }] of Object.entries(out)) {
       const lastActivity = records[0]?.created_at;
       const ok = records.filter(r => {
-        const limits = resolveLimits(r.equipment_input);
-        return resolveTone(r.value, limits.min, limits.max) === 'ok';
+        const min = r.min_value != null ? r.min_value : resolveLimits(r.equipment_input).min;
+        const max = r.max_value != null ? r.max_value : resolveLimits(r.equipment_input).max;
+        return resolveTone(r.value, min, max) === 'ok';
       }).length;
       const nonCompliant = records.filter(r => {
-        const limits = resolveLimits(r.equipment_input);
-        return resolveTone(r.value, limits.min, limits.max) === 'danger';
+        const min = r.min_value != null ? r.min_value : resolveLimits(r.equipment_input).min;
+        const max = r.max_value != null ? r.max_value : resolveLimits(r.equipment_input).max;
+        return resolveTone(r.value, min, max) === 'danger';
       }).length;
       final[tid] = {
         recordsLast7d: records.length,

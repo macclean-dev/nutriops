@@ -456,9 +456,14 @@ function LoginScreen({ onLogin, activeTenants }) {
       const normalize = s => s.toLowerCase()
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
         .replace(/\s+/g, '.');
+      // Estratégias de match: nome completo → primeiro nome → começa com
+      // → sem separadores (anapaula bate Ana Paula Saraiva)
+      const flat = (s) => normalize(s).replace(/\./g, '');
       const user = users.find(u => normalize(u.name) === username)
                 ?? users.find(u => normalize(u.name).split('.')[0] === username)
-                ?? users.find(u => normalize(u.name).startsWith(username));
+                ?? users.find(u => normalize(u.name).startsWith(username))
+                ?? users.find(u => flat(u.name) === username)
+                ?? users.find(u => flat(u.name).startsWith(username));
       if (user) { foundUser = user; foundTenantId = tenant.id; break; }
     }
 

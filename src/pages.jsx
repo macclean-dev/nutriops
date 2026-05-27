@@ -1140,6 +1140,23 @@ function OverviewView({ activeTenant, allTenants, onTenantChange, session, equip
 function DashboardView({ allTenants, records, activeTenant, onTenantChange }) {
   const now = Date.now();
   const [period, setPeriod] = useState(30);
+  const [drill, setDrill] = useState(null); // { tenant, equipment }
+
+  // Histórico do equipamento selecionado pro drill-down (match case-insensitive,
+  // sem acento, todos os campos possíveis do record)
+  const drillHistory = useMemo(() => {
+    if (!drill) return [];
+    const norm = s => String(s || '').toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const target = norm(drill.equipment.label);
+    return records
+      .filter(r => r.tenantId === drill.tenant.id)
+      .filter(r => {
+        const cands = [r.equipment, r.equipmentInput, r.equipmentKey].filter(Boolean);
+        return cands.some(c => norm(c) === target);
+      })
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  }, [records, drill]);
 
   const stats = useMemo(() => allTenants.map((tenant) => {
     const tr = records.filter((r) => r.tenantId === tenant.id && now - new Date(r.createdAt).getTime() <= period * 86400000);
@@ -1296,11 +1313,18 @@ function DashboardView({ allTenants, records, activeTenant, onTenantChange }) {
             {equipStats.length > 0 && (
               <div className="equip-breakdown">
                 {equipStats.map((eq) => (
-                  <div key={eq.label} className="equip-bar-row">
+                  <button key={eq.label} className="equip-bar-row"
+                    onClick={(e) => {
+                      e.stopPropagation(); // não dispara o onClick do card (que troca tenant)
+                      const equipment = readEquipmentCatalog(tenant).find(x => x.label === eq.label) ?? { label: eq.label };
+                      setDrill({ tenant, equipment });
+                    }}
+                    title="Abrir histórico do equipamento"
+                    style={{ background:'none', border:'none', cursor:'pointer', textAlign:'left', width:'100%', padding:0, fontFamily:'inherit', color:'inherit' }}>
                     <span>{eq.label}</span>
                     <div className="equip-bar-track"><div className="equip-bar-fill" style={{ width:`${eq.pct??0}%`, background: eq.pct===null?'var(--border)':eq.pct>=90?'var(--green)':eq.pct>=70?'var(--amber)':'var(--red)' }} /></div>
                     <strong>{eq.pct !== null ? `${eq.pct}%` : '—'}</strong>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -1320,6 +1344,15 @@ function DashboardView({ allTenants, records, activeTenant, onTenantChange }) {
           </article>
         ))}
       </div>
+
+      {/* Drill-down do equipamento ao clicar numa barra */}
+      {drill && (
+        <EquipmentDetailModal
+          equipment={drill.equipment}
+          history={drillHistory}
+          onClose={() => setDrill(null)}
+        />
+      )}
     </section>
   );
 }

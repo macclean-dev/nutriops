@@ -1,8 +1,7 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { tenants as defaultTenants, globalAdmin } from './data';
 import { readOnboardingTenants, writeOnboardingTenants } from './onboarding-storage';
-import { signIn, signOut, signUp, resetPassword, readAuthSession, isSessionValid, refreshSession } from './auth';
-import { readAdminAuth, writeAdminAuth, clearAdminAuth, readClients } from './admin';
+import { readAdminAuth, writeAdminAuth, clearAdminAuth, readClients } from './admin-storage';
 import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
 import { trackUsage } from './repository';
 import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog } from './repository';
@@ -10,7 +9,6 @@ import { getPermissions, canAccess } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
 import { resolveLimits as resolveLimitsFromCatalog, heuristicLimits, suggestLimits } from './limits';
-import { EquipmentDetailModal } from './equipment-detail';
 
 // ─── Lazy view loading ────────────────────────────────────────────────────
 // Cada chunk só baixa quando o usuário navega pra view correspondente.
@@ -42,6 +40,7 @@ const MonthlyExportView    = lazyView(() => import('./extras'),     'MonthlyExpo
 const SessionHistoryView   = lazyView(() => import('./extras'),     'SessionHistoryView');
 const OverviewV2           = lazyView(() => import('./overview-v2'), 'OverviewV2');
 const SetupPinScreen       = lazyView(() => import('./setup-tenant'), 'SetupPinScreen');
+const EquipmentDetailModal = lazyView(() => import('./equipment-detail'), 'EquipmentDetailModal');
 
 // ─── helpers re-exported from maintenance ──────────────────────────────────
 function addDays(iso, days) { const d = new Date(iso || new Date()); d.setDate(d.getDate() + days); return d.toISOString().slice(0,10); }
@@ -392,7 +391,11 @@ function LoginScreen({ onLogin, activeTenants }) {
 
   const handleEmailLogin = async () => {
     setError(''); setLoading(true);
-    try { const s = await signIn({ email, password }); save(SESSION_KEY, s); onLogin(s); }
+    try {
+      const { signIn } = await import('./auth');
+      const s = await signIn({ email, password });
+      save(SESSION_KEY, s); onLogin(s);
+    }
     catch (e) { setError(e.message); }
     setLoading(false);
   };
@@ -400,7 +403,11 @@ function LoginScreen({ onLogin, activeTenants }) {
   const handleReset = async () => {
     if (!email.trim()) { setError('Informe seu e-mail.'); return; }
     setLoading(true); setError('');
-    try { await resetPassword(email); setResetSent(true); } catch (e) { setError(e.message); }
+    try {
+      const { resetPassword } = await import('./auth');
+      await resetPassword(email);
+      setResetSent(true);
+    } catch (e) { setError(e.message); }
     setLoading(false);
   };
 
@@ -1348,11 +1355,13 @@ function DashboardView({ allTenants, records, activeTenant, onTenantChange }) {
 
       {/* Drill-down do equipamento ao clicar numa barra */}
       {drill && (
-        <EquipmentDetailModal
-          equipment={drill.equipment}
-          history={drillHistory}
-          onClose={() => setDrill(null)}
-        />
+        <Suspense fallback={null}>
+          <EquipmentDetailModal
+            equipment={drill.equipment}
+            history={drillHistory}
+            onClose={() => setDrill(null)}
+          />
+        </Suspense>
       )}
     </section>
   );
@@ -1461,11 +1470,13 @@ function ChartsView({ activeTenant, allTenants, onTenantChange, records }) {
 
       {/* Drill-down modal — abre ao clicar num card ou em "Detalhes completos" */}
       {drillEq && (
-        <EquipmentDetailModal
-          equipment={drillEq}
-          history={drillHistory}
-          onClose={() => setDrillEq(null)}
-        />
+        <Suspense fallback={null}>
+          <EquipmentDetailModal
+            equipment={drillEq}
+            history={drillHistory}
+            onClose={() => setDrillEq(null)}
+          />
+        </Suspense>
       )}
     </section>
   );
@@ -1633,11 +1644,13 @@ function AuditView({ allTenants, records, session }) {
 
       {/* Drill-down modal — abre ao clicar no nome de um equipamento */}
       {drillEq && (
-        <EquipmentDetailModal
-          equipment={drillEq.equipment}
-          history={drillHistory}
-          onClose={() => setDrillEq(null)}
-        />
+        <Suspense fallback={null}>
+          <EquipmentDetailModal
+            equipment={drillEq.equipment}
+            history={drillHistory}
+            onClose={() => setDrillEq(null)}
+          />
+        </Suspense>
       )}
     </section>
   );

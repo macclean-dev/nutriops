@@ -7,7 +7,6 @@ const AdminLogin = lazy(() => import('./admin').then(m => ({ default: m.AdminLog
 // Utilities pequenas vêm de admin-storage (não puxa o painel pesado)
 import { readAdminAuth, clearAdminAuth, readClients } from './admin-storage';
 import { readOnboardingTenants, writeOnboardingTenants } from './onboarding-storage';
-import { fetchTenantByToken, isTenantSyncEnabled } from './tenant-sync';
 import './styles.css';
 
 // Register service worker
@@ -55,14 +54,17 @@ async function handleAccessToken() {
 
   // Caminho 2 — cliente abriu em outro device. Busca no Supabase.
   let remoteTenant = null;
-  if (!client && isTenantSyncEnabled()) {
-    console.info('[NutriOPS] token não encontrado no localStorage; consultando Supabase…');
-    const result = await fetchTenantByToken(token);
-    if (result.ok) {
-      remoteTenant = result.tenant;
-      console.info(`[NutriOPS] tenant ${remoteTenant.id} (${remoteTenant.name}) carregado do Supabase`);
-    } else {
-      console.warn('[NutriOPS] tenant não encontrado:', result.reason);
+  if (!client) {
+    const { fetchTenantByToken, isTenantSyncEnabled } = await import('./tenant-sync');
+    if (isTenantSyncEnabled()) {
+      console.info('[NutriOPS] token não encontrado no localStorage; consultando Supabase…');
+      const result = await fetchTenantByToken(token);
+      if (result.ok) {
+        remoteTenant = result.tenant;
+        console.info(`[NutriOPS] tenant ${remoteTenant.id} (${remoteTenant.name}) carregado do Supabase`);
+      } else {
+        console.warn('[NutriOPS] tenant não encontrado:', result.reason);
+      }
     }
   }
 

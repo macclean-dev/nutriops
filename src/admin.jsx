@@ -859,6 +859,55 @@ function TenantHealthCard({ tenant, metrics, client }) {
   );
 }
 
+// Mini-sparkline 30 dias — width fixo, height 28px, sem libs
+function HistoryChart({ days, color = '#cc785c', maxOverride = null }) {
+  if (!days?.length) return null;
+  const max = maxOverride ?? Math.max(1, ...days.map(d => d.count));
+  const W = 240, H = 28, PAD = 2;
+  const innerW = W - PAD * 2;
+  const innerH = H - PAD * 2;
+  const dx = days.length > 1 ? innerW / (days.length - 1) : 0;
+
+  // Path da linha
+  const pts = days.map((d, i) => ({
+    x: PAD + i * dx,
+    y: PAD + innerH - (d.count / max) * innerH,
+  }));
+  const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+  const areaPath = `${linePath} L ${pts[pts.length-1].x.toFixed(1)} ${H-PAD} L ${pts[0].x.toFixed(1)} ${H-PAD} Z`;
+
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ display:'block' }}>
+      <path d={areaPath} fill={color} fillOpacity={0.12} />
+      <path d={linePath} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// Agrega registros do tenant em buckets diários nos últimos N dias.
+// Devolve array [{ date: 'YYYY-MM-DD', count: n }] ordenado cronologicamente.
+function bucketByDay(records, days = 30) {
+  const buckets = new Map();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Inicializa buckets vazios pra todos os dias do range
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    buckets.set(d.toISOString().slice(0, 10), 0);
+  }
+
+  for (const r of records) {
+    const day = r.created_at?.slice(0, 10);
+    if (day && buckets.has(day)) {
+      buckets.set(day, buckets.get(day) + 1);
+    }
+  }
+
+  return [...buckets.entries()].map(([date, count]) => ({ date, count }));
+}
+
 function HealthView({ clients, onAlertsChange, onEditClient }) {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
@@ -870,10 +919,11 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
     setLoading(true); setError(null);
     (async () => {
       try {
-        // Pull recent records — limit 1000 to avoid pulling forever
-        const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+        // Pull últimos 30 dias pra alimentar tanto métricas 7d quanto sparkline 30d.
+        // Limit 5000 cobre 3 tenants com até ~50 leituras/dia.
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
         const data = await fetchSupabase('temperature_records',
-          `created_at=gte.${sevenDaysAgo}&order=created_at.desc&limit=1000`);
+          `created_at=gte.${thirtyDaysAgo}&order=created_at.desc&limit=5000`);
         if (!cancelled) setRecords(data);
       } catch (e) {
         if (!cancelled) setError(e.message);
@@ -884,10 +934,13 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
     return () => { cancelled = true; };
   }, [refreshAt]);
 
-  // Aggregate metrics per tenant
+  // Aggregate metrics per tenant — métricas usam só os últimos 7d pra continuar
+  // sendo "saúde recente"; sparkline usa os 30d completos.
   const metricsByTenant = useMemo(() => {
+    const sevenDaysAgoMs = Date.now() - 7 * 86400000;
     const out = {};
     for (const r of records) {
+      if (new Date(r.created_at).getTime() < sevenDaysAgoMs) continue;
       const tid = r.tenant_id;
       if (!out[tid]) out[tid] = { records: [], users: new Set() };
       out[tid].records.push(r);
@@ -915,6 +968,21 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
       };
     }
     return final;
+  }, [records]);
+
+  // Histórico 30d por tenant — sparkline cumulativa por dia
+  const historyByTenant = useMemo(() => {
+    const byTenant = {};
+    for (const r of records) {
+      const tid = r.tenant_id;
+      if (!byTenant[tid]) byTenant[tid] = [];
+      byTenant[tid].push(r);
+    }
+    const out = {};
+    for (const [tid, recs] of Object.entries(byTenant)) {
+      out[tid] = bucketByDay(recs, 30);
+    }
+    return out;
   }, [records]);
 
   const defaultMetrics = { recordsLast7d:0, activeUsers7d:0, lastActivity:null, conformity:null, nonCompliant:0 };
@@ -946,7 +1014,7 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
             Saúde dos tenants
           </h2>
           <p style={{ fontSize:13, color:'#6b6760', margin:'4px 0 0' }}>
-            Métricas dos últimos 7 dias agregadas direto do Supabase. Atualizado {loading ? '...' : 'agora'}.
+            Métricas (7d) e tendência (30d) agregadas direto do Supabase. Atualizado {loading ? '...' : 'agora'}.
           </p>
         </div>
         <button onClick={() => setRefreshAt(t => t+1)} disabled={loading}
@@ -956,6 +1024,79 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
       </div>
 
       <AlertsCard alerts={alerts} onAction={handleAlertAction} />
+
+      {/* Tendência 30 dias — sparkline por tenant pra detectar queda de uso cedo */}
+      {Object.keys(historyByTenant).length > 0 && (
+        <div style={{
+          background:'white', border:'1px solid #d9d1c4', borderRadius:12,
+          padding:'18px 22px', marginBottom:16,
+        }}>
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:10, fontWeight:700, letterSpacing:'.12em', textTransform:'uppercase', color:'#6b6760' }}>
+              Tendência operacional
+            </div>
+            <h3 style={{ fontFamily:'Times-Roman, serif', fontSize:22, fontWeight:400, margin:'2px 0 0', letterSpacing:'-.02em', color:'#141413' }}>
+              Volume de registros — últimos 30 dias
+            </h3>
+          </div>
+
+          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+            {tenantsBase.map(t => {
+              const days = historyByTenant[t.id] ?? bucketByDay([], 30);
+              const total = days.reduce((sum, d) => sum + d.count, 0);
+              const half = Math.floor(days.length / 2);
+              const firstHalf  = days.slice(0, half).reduce((s, d) => s + d.count, 0);
+              const secondHalf = days.slice(half).reduce((s, d) => s + d.count, 0);
+              const delta = firstHalf > 0 ? Math.round(((secondHalf - firstHalf) / firstHalf) * 100) : null;
+              const deltaColor = delta == null ? '#9b9590'
+                : delta >= 10 ? '#2d6e4a'
+                : delta <= -25 ? '#c0392b'
+                : delta <= -10 ? '#8a4e00'
+                : '#6b6760';
+
+              return (
+                <div key={t.id} style={{
+                  display:'grid', gridTemplateColumns:'minmax(160px, 1.2fr) auto 90px 70px',
+                  alignItems:'center', gap:16,
+                  padding:'8px 0', borderBottom:'1px solid #f0ece4',
+                }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10, minWidth:0 }}>
+                    <span style={{
+                      flexShrink:0, width:8, height:8, borderRadius:'50%',
+                      background: t.brandColor ?? '#cc785c',
+                    }} />
+                    <div style={{ minWidth:0 }}>
+                      <div style={{ fontSize:13, fontWeight:600, color:'#141413', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                        {t.name}
+                      </div>
+                      <div style={{ fontSize:10, color:'#6b6760', letterSpacing:'.04em', textTransform:'uppercase' }}>
+                        {t.segment ?? 'unidade'}
+                      </div>
+                    </div>
+                  </div>
+                  <HistoryChart days={days} color={t.brandColor ?? '#cc785c'} />
+                  <div style={{ textAlign:'right' }}>
+                    <div style={{ fontSize:18, fontWeight:600, fontFamily:'monospace', color:'#141413', lineHeight:1.1 }}>
+                      {total}
+                    </div>
+                    <div style={{ fontSize:9, color:'#6b6760', letterSpacing:'.10em', textTransform:'uppercase' }}>
+                      registros
+                    </div>
+                  </div>
+                  <div style={{ textAlign:'right' }}>
+                    <div style={{ fontSize:13, fontWeight:700, color: deltaColor, lineHeight:1.1 }}>
+                      {delta == null ? '—' : `${delta > 0 ? '+' : ''}${delta}%`}
+                    </div>
+                    <div style={{ fontSize:9, color:'#6b6760', letterSpacing:'.10em', textTransform:'uppercase' }}>
+                      15d vs 15d
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {error && (
         <div style={{ padding:'12px 16px', background:'#fdecea', border:'1px solid #c0392b', borderRadius:10, color:'#c0392b', fontSize:13, marginBottom:16 }}>
@@ -982,9 +1123,9 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
 
       {/* Footer summary */}
       <div style={{ marginTop:20, padding:'12px 16px', background:'#f0ece4', borderRadius:10, fontSize:12, color:'#6b6760' }}>
-        Total agregado: <strong>{records.length}</strong> leituras nos últimos 7 dias
-        em <strong>{Object.keys(metricsByTenant).length}</strong> tenant(s) com atividade.
-        Janela limitada a 1000 registros mais recentes.
+        Total agregado: <strong>{records.length}</strong> leituras nos últimos 30 dias
+        em <strong>{Object.keys(historyByTenant).length}</strong> tenant(s) com atividade.
+        Janela limitada a 5000 registros mais recentes.
       </div>
     </div>
   );

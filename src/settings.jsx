@@ -3,6 +3,7 @@ import { APP_VERSION } from './brand';
 import {
   getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled,
   supabaseRepository, SUPABASE_SQL, migrateAllToSupabase,
+  getOfflineQueue, getSyncStatus,
 } from './repository';
 
 const COMPANY_PROFILE_KEY = (tenantId) => `nutriops.company.profile.${tenantId}`;
@@ -243,10 +244,19 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
       <article className="management-card" style={{ marginTop:16 }}>
         <div className="card-head">
           <div><span className="eyebrow">Migração</span><h2>Transferir dados locais para o Supabase</h2></div>
-          <span className="badge neutral">{(() => { try { return JSON.parse(localStorage.getItem('nutriops.temperature.records')||'[]').length; } catch { return 0; } })()} registros locais</span>
+          <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+            <span className="badge neutral">{(() => { try { return JSON.parse(localStorage.getItem('nutriops.temperature.records')||'[]').length; } catch { return 0; } })()} temperaturas</span>
+            <span className="badge neutral">{getOfflineQueue().length} na fila</span>
+            <span className="badge neutral" style={{ fontSize:10 }}>{(() => { const s = getSyncStatus(); return s?.lastSync ? `sync ${new Date(s.lastSync).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}` : 'sem sync'; })()}</span>
+          </div>
         </div>
         <div style={{ padding:'14px 20px', display:'flex', flexDirection:'column', gap:12 }}>
           <p className="muted">Envia todos os dados locais para o Supabase: temperatura, planilhas BPF, recebimento, produtos, controles especiais e movimentações de estoque. Execute apenas uma vez após configurar o Supabase.</p>
+          {!isSupabaseEnabled() && getOfflineQueue().length > 0 && (
+            <div className="submission warn">
+              ⚠ Há {getOfflineQueue().length} registros aguardando sincronização. Eles serão enviados automaticamente assim que o Supabase for habilitado e a página recarregar.
+            </div>
+          )}
           <div className="actions-row">
             <button className="primary-action" onClick={handleMigrate} disabled={migrating||!isSupabaseEnabled()}>
               {migrating ? '⏳ Migrando…' : '↑ Migrar registros locais para Supabase'}

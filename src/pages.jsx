@@ -1530,55 +1530,104 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
 // Banner sticky no topo quando Supabase está desligado nesse dispositivo.
 // Mostra que os dados ficam só locais — exatamente o cenário "loja sem sync".
 // Esconde sozinho quando Supabase é habilitado.
-function LocalModeBanner({ session, setActiveView }) {
+// Conta registros não sincronizados em todos os módulos. Custo baixo porque
+// só roda quando Supabase está off (banner visível) e cada chave é uma leitura.
+function countLocalRecords(tenantId) {
+  if (!tenantId) return 0;
+  let total = 0;
+  try {
+    const temps = JSON.parse(localStorage.getItem('nutriops.temperature.records') ?? '[]');
+    total += temps.filter(r => r.tenantId === tenantId).length;
+  } catch {}
+  const tenantKeys = [
+    `nutriops.forms.records.${tenantId}`,
+    `nutriops.receiving.${tenantId}`,
+    `nutriops.products.${tenantId}`,
+    `nutriops.stocklogs.${tenantId}`,
+    `nutriops.oil.${tenantId}`, `nutriops.thaw.${tenantId}`,
+    `nutriops.cool.${tenantId}`, `nutriops.thermal.${tenantId}`,
+  ];
+  for (const k of tenantKeys) {
+    try { total += (JSON.parse(localStorage.getItem(k) ?? '[]') || []).length; } catch {}
+  }
+  return total;
+}
+
+function LocalModeBanner({ session, activeTenant, setActiveView }) {
   const [enabled, setEnabled] = useState(() => isSupabaseEnabled());
-  const [dismissed, setDismissed] = useState(() => {
-    return localStorage.getItem('nutriops.local.banner.dismissed') === new Date().toDateString();
+  const [dismissedUntil, setDismissedUntil] = useState(() => {
+    const v = localStorage.getItem('nutriops.local.banner.dismissed_until');
+    return v ? Number(v) : 0;
   });
+  const [localCount, setLocalCount] = useState(() => countLocalRecords(activeTenant?.id));
 
   // Re-check a cada minuto (caso o usuário tenha ativado em outra aba)
   useEffect(() => {
-    const t = setInterval(() => setEnabled(isSupabaseEnabled()), 60_000);
+    const t = setInterval(() => {
+      setEnabled(isSupabaseEnabled());
+      setLocalCount(countLocalRecords(activeTenant?.id));
+    }, 60_000);
     return () => clearInterval(t);
-  }, []);
+  }, [activeTenant?.id]);
 
-  if (enabled || dismissed) return null;
+  // Recompute quando o tenant trocar
+  useEffect(() => { setLocalCount(countLocalRecords(activeTenant?.id)); }, [activeTenant?.id]);
+
+  const isDismissed = dismissedUntil > Date.now();
+  if (enabled || isDismissed) return null;
 
   const role = session?.user?.role;
   const canConfigure = role === 'Administrador' || role === 'Super-admin' || role === 'Nutricionista RT';
 
+  // Cor + tom escalam com volume de dados locais — alerta máximo quando a
+  // perda potencial é grande.
+  let tone = 'amber';
+  if (localCount >= 100) tone = 'red';
+  else if (localCount >= 20) tone = 'amber';
+  // Dismiss curto (1h) — não pode ficar invisível um dia inteiro com risco crescente
   const dismiss = () => {
-    localStorage.setItem('nutriops.local.banner.dismissed', new Date().toDateString());
-    setDismissed(true);
+    const until = Date.now() + 60 * 60 * 1000; // 1h
+    localStorage.setItem('nutriops.local.banner.dismissed_until', String(until));
+    setDismissedUntil(until);
   };
+
+  const tones = {
+    amber: { bg:'var(--amber-light)', border:'var(--amber-border)', fg:'var(--amber)' },
+    red:   { bg:'var(--red-light)',   border:'var(--red-border)',   fg:'var(--red)'   },
+  };
+  const c = tones[tone];
+
+  const headline = tone === 'red'
+    ? `⚠ ${localCount} registros só neste dispositivo — risco de perda`
+    : localCount > 0
+      ? `Modo local — ${localCount} registros aguardando sincronização`
+      : 'Modo local — os dados ficam só neste dispositivo';
 
   return (
     <div style={{
       display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
       padding:'10px 16px', marginBottom:16,
-      background:'var(--amber-light)', border:'1px solid var(--amber-border)',
+      background:c.bg, border:`1px solid ${c.border}`,
       borderRadius:'var(--r-lg)', flexWrap:'wrap',
     }}>
       <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
-        <strong style={{ color:'var(--amber)', fontSize:13 }}>
-          Modo local — os dados ficam só neste dispositivo
-        </strong>
+        <strong style={{ color:c.fg, fontSize:13 }}>{headline}</strong>
         <span style={{ color:'var(--text-secondary)', fontSize:12 }}>
           {canConfigure
-            ? 'Configure a sincronização em Configurações pra ver os registros no painel web.'
+            ? 'Configure a sincronização em Configurações pra enviar pro Supabase e ver em outros dispositivos.'
             : 'Peça pro administrador habilitar a sincronização em Configurações.'}
         </span>
       </div>
       <div style={{ display:'flex', gap:6 }}>
         {canConfigure && (
           <button onClick={() => setActiveView('settings')}
-            style={{ padding:'6px 14px', borderRadius:'var(--r)', border:'1px solid var(--amber-border)', background:'var(--amber)', color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'var(--font)' }}>
+            style={{ padding:'6px 14px', borderRadius:'var(--r)', border:`1px solid ${c.border}`, background:c.fg, color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'var(--font)' }}>
             Configurar agora
           </button>
         )}
         <button onClick={dismiss}
-          style={{ padding:'6px 10px', borderRadius:'var(--r)', border:'1px solid var(--amber-border)', background:'transparent', color:'var(--amber)', fontSize:12, fontWeight:500, cursor:'pointer', fontFamily:'var(--font)' }}>
-          Dispensar hoje
+          style={{ padding:'6px 10px', borderRadius:'var(--r)', border:`1px solid ${c.border}`, background:'transparent', color:c.fg, fontSize:12, fontWeight:500, cursor:'pointer', fontFamily:'var(--font)' }}>
+          Dispensar 1h
         </button>
       </div>
     </div>
@@ -1921,6 +1970,26 @@ export function App() {
     await refreshRecords();
   }, [refreshRecords]);
 
+  // Log status do sync no boot — visibilidade pra debugar device cliente
+  // direto do DevTools. Roda 1x por sessão.
+  useEffect(() => {
+    const cfg = getSupabaseConfig();
+    const queue = getOfflineQueue();
+    const status = getSyncStatus();
+    console.info('[NutriOPS] boot — Supabase:',
+      isSupabaseEnabled() ? `ON (${cfg.url})` : 'OFF (modo local)',
+      '| queue:', queue.length,
+      '| last sync:', status?.lastSync ?? 'nunca'
+    );
+    if (!isSupabaseEnabled() && queue.length === 0) {
+      // Conta registros locais por módulo pra mostrar o que está em risco
+      try {
+        const temps = JSON.parse(localStorage.getItem('nutriops.temperature.records') ?? '[]').length;
+        if (temps > 0) console.warn(`[NutriOPS] ⚠ ${temps} registros de temperatura só locais — habilite o Supabase em Configurações.`);
+      } catch {}
+    }
+  }, []);
+
   // Auto-sync on login and when coming online
   useEffect(() => {
     if (!session || !isSupabaseEnabled()) {
@@ -2077,7 +2146,7 @@ export function App() {
         onLogout={handleLogout} onSearch={() => setShowSearch(true)}
         onStoreChange={handleStoreChange} activeStore={activeStore} />
       <main className="super-main">
-        <LocalModeBanner session={session} setActiveView={setActiveView} />
+        <LocalModeBanner session={session} activeTenant={activeTenant} setActiveView={setActiveView} />
         <Suspense fallback={<ViewLoading />}>
           {activeView === 'overview'   && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} trialStatus={trialStatus} onTryV2={() => setActiveView('overview-v2')} />}
           {activeView === 'overview-v2' && <OverviewV2 {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onLaunchKiosk={() => setShowKioskSetup(true)} onNavigate={setActiveView} onBack={() => setActiveView('overview')} />}

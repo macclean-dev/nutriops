@@ -41,9 +41,18 @@ async function sbFetch(table, params = {}) {
 export function getOfflineQueue()   { return ls(OFFLINE_Q_KEY, []); }
 export function clearOfflineQueue() { lw(OFFLINE_Q_KEY, []); }
 
+// Cap pra não estourar localStorage em devices que nunca habilitam Supabase.
+// 5000 é > 1 ano de uso normal (15 registros/dia × 365 ≈ 5500).
+const OFFLINE_Q_CAP = 5000;
+
 function enqueue(table, operation, payload) {
   const q = getOfflineQueue();
-  lw(OFFLINE_Q_KEY, [...q, { table, operation, payload, _at: new Date().toISOString() }]);
+  const next = [...q, { table, operation, payload, _at: new Date().toISOString() }];
+  if (next.length > OFFLINE_Q_CAP) {
+    console.warn(`[repo] offline queue atingiu ${OFFLINE_Q_CAP} items — descartando os mais antigos`);
+    next.splice(0, next.length - OFFLINE_Q_CAP);
+  }
+  lw(OFFLINE_Q_KEY, next);
 }
 
 // ─── Sync status ────────────────────────────────────────────────────────────
@@ -156,6 +165,9 @@ export const localRepository = {
     const record = { id: input.id ?? crypto.randomUUID(), createdAt: new Date().toISOString(), ...input };
     const current = ls(RECORDS_KEY, []);
     lw(RECORDS_KEY, [record, ...current].slice(0, 1000));
+    // Enfileira mesmo sem Supabase habilitado — quando ativar depois, syncQueue
+    // empurra tudo. Sem isso, temps gravadas em modo local somem da cloud.
+    enqueue('temperature_records', 'upsert', tempToRow(record));
     return record;
   },
   async exportCsv(records = []) {
@@ -272,9 +284,12 @@ export async function pushFormRecord(tenantId, record) {
     ? existing.map(r => r.id === record.id ? record : r)
     : [...existing, record];
   lw(localKey, updated);
-  // Push to Supabase if enabled
-  if (!isSupabaseEnabled()) return;
-  if (!navigator.onLine) { enqueue('form_records', 'upsert', formToRow(record)); return; }
+  // Enfileira mesmo com Supabase off — quando o user habilitar depois,
+  // syncQueue() empurra tudo. Evita perda silenciosa.
+  if (!isSupabaseEnabled() || !navigator.onLine) {
+    enqueue('form_records', 'upsert', formToRow(record));
+    return;
+  }
   try {
     await sbFetch('form_records', { method:'POST', body:formToRow(record), prefer:'resolution=merge-duplicates,return=minimal' });
   } catch { enqueue('form_records', 'upsert', formToRow(record)); }
@@ -319,8 +334,10 @@ export async function pushFormTemplate(tenantId, template) {
     ? existing.map(t => t.id === template.id ? template : t)
     : [...existing, template];
   lw(localKey, updated);
-  if (!isSupabaseEnabled()) return;
-  if (!navigator.onLine) { enqueue('form_templates', 'upsert', tmplToRow(template, tenantId)); return; }
+  if (!isSupabaseEnabled() || !navigator.onLine) {
+    enqueue('form_templates', 'upsert', tmplToRow(template, tenantId));
+    return;
+  }
   try {
     await sbFetch('form_templates', { method:'POST', body:tmplToRow(template, tenantId), prefer:'resolution=merge-duplicates,return=minimal' });
   } catch { enqueue('form_templates', 'upsert', tmplToRow(template, tenantId)); }
@@ -377,8 +394,10 @@ export async function syncEquipmentCatalog(tenantId) {
 }
 
 export async function pushEquipmentItem(tenantId, equipment) {
-  if (!isSupabaseEnabled()) return;
-  if (!navigator.onLine) { enqueue('equipment_catalog', 'upsert', eqToRow(equipment, tenantId)); return; }
+  if (!isSupabaseEnabled() || !navigator.onLine) {
+    enqueue('equipment_catalog', 'upsert', eqToRow(equipment, tenantId));
+    return;
+  }
   try {
     await sbFetch('equipment_catalog', {
       method: 'POST',
@@ -440,8 +459,10 @@ export async function pushReceivingRecord(tenantId, record) {
   const localKey = `nutriops.receiving.${tenantId}`;
   const existing = ls(localKey, []);
   lw(localKey, [record, ...existing].slice(0, 300));
-  if (!isSupabaseEnabled()) return;
-  if (!navigator.onLine) { enqueue('receiving_records', 'insert', recvToRow(record)); return; }
+  if (!isSupabaseEnabled() || !navigator.onLine) {
+    enqueue('receiving_records', 'insert', recvToRow(record));
+    return;
+  }
   try {
     await sbFetch('receiving_records', { method:'POST', body:recvToRow(record), prefer:'return=minimal' });
   } catch { enqueue('receiving_records', 'insert', recvToRow(record)); }
@@ -481,8 +502,10 @@ export async function pushProduct(tenantId, product) {
     ? existing.map(p => p.id === product.id ? product : p)
     : [...existing, product];
   lw(localKey, updated);
-  if (!isSupabaseEnabled()) return;
-  if (!navigator.onLine) { enqueue('products', 'upsert', productToRow({ ...product, tenantId })); return; }
+  if (!isSupabaseEnabled() || !navigator.onLine) {
+    enqueue('products', 'upsert', productToRow({ ...product, tenantId }));
+    return;
+  }
   try {
     await sbFetch('products', { method:'POST', body:productToRow({ ...product, tenantId }), prefer:'resolution=merge-duplicates,return=minimal' });
   } catch { enqueue('products', 'upsert', productToRow({ ...product, tenantId })); }
@@ -500,8 +523,10 @@ export async function pushStockLog(tenantId, log) {
   const localKey = `nutriops.stocklogs.${tenantId}`;
   const existing = ls(localKey, []);
   lw(localKey, [log, ...existing].slice(0, 500));
-  if (!isSupabaseEnabled()) return;
-  if (!navigator.onLine) { enqueue('stock_logs', 'insert', stockToRow(log, tenantId)); return; }
+  if (!isSupabaseEnabled() || !navigator.onLine) {
+    enqueue('stock_logs', 'insert', stockToRow(log, tenantId));
+    return;
+  }
   try {
     await sbFetch('stock_logs', { method:'POST', body:stockToRow(log, tenantId), prefer:'return=minimal' });
   } catch { enqueue('stock_logs', 'insert', stockToRow(log, tenantId)); }
@@ -526,8 +551,10 @@ export async function pushSpecialControl(type, tenantId, record) {
   const localKey = `nutriops.${type}.${tenantId}`;
   const existing = ls(localKey, []);
   lw(localKey, [record, ...existing].slice(0, 200));
-  if (!isSupabaseEnabled()) return;
-  if (!navigator.onLine) { enqueue('special_controls', 'insert', controlToRow(type, record, tenantId)); return; }
+  if (!isSupabaseEnabled() || !navigator.onLine) {
+    enqueue('special_controls', 'insert', controlToRow(type, record, tenantId));
+    return;
+  }
   try {
     await sbFetch('special_controls', { method:'POST', body:controlToRow(type, record, tenantId), prefer:'return=minimal' });
   } catch { enqueue('special_controls', 'insert', controlToRow(type, record, tenantId)); }

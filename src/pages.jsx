@@ -4,7 +4,7 @@ import { readOnboardingTenants, writeOnboardingTenants } from './onboarding-stor
 import { readAdminAuth, writeAdminAuth, clearAdminAuth, readClients } from './admin-storage';
 import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
 import { trackUsage } from './repository';
-import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog } from './repository';
+import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError } from './repository';
 import { getPermissions, canAccess } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
@@ -1553,6 +1553,51 @@ function countLocalRecords(tenantId) {
   return total;
 }
 
+// Banner pra quando Supabase retorna 401/403 — anon key inválida (rotacionada
+// ou RLS bloqueando). Sem isso, os pushes caem na queue silenciosamente
+// e o user nunca sabe que precisa reconectar.
+function SupabaseAuthErrorBanner({ session, setActiveView }) {
+  const [err, setErr] = useState(() => getSupabaseAuthError());
+  useEffect(() => {
+    const t = setInterval(() => setErr(getSupabaseAuthError()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  if (!err) return null;
+  const role = session?.user?.role;
+  const canFix = role === 'Administrador' || role === 'Super-admin' || role === 'Nutricionista RT';
+  return (
+    <div role="alert" style={{
+      display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
+      padding:'10px 16px', marginBottom:16,
+      background:'var(--red-light)', border:'1px solid var(--red-border)',
+      borderRadius:'var(--r-lg)', flexWrap:'wrap',
+    }}>
+      <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+        <strong style={{ color:'var(--red)', fontSize:13 }}>
+          ⚠ Sincronização falhando — chave do Supabase inválida (HTTP {err.status})
+        </strong>
+        <span style={{ color:'var(--text-secondary)', fontSize:12 }}>
+          {canFix
+            ? 'Reconecte em Configurações ou atualize a anon key. Última falha em ' + new Date(err.at).toLocaleString('pt-BR') + '.'
+            : 'Peça pro administrador atualizar a chave em Configurações.'}
+        </span>
+      </div>
+      <div style={{ display:'flex', gap:6 }}>
+        {canFix && (
+          <button onClick={() => setActiveView('settings')}
+            style={{ padding:'6px 14px', borderRadius:'var(--r)', border:'1px solid var(--red-border)', background:'var(--red)', color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'var(--font)' }}>
+            Reconectar
+          </button>
+        )}
+        <button onClick={() => { clearSupabaseAuthError(); setErr(null); }}
+          style={{ padding:'6px 10px', borderRadius:'var(--r)', border:'1px solid var(--red-border)', background:'transparent', color:'var(--red)', fontSize:12, fontWeight:500, cursor:'pointer', fontFamily:'var(--font)' }}>
+          Dispensar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function LocalModeBanner({ session, activeTenant, setActiveView }) {
   const [enabled, setEnabled] = useState(() => isSupabaseEnabled());
   const [dismissedUntil, setDismissedUntil] = useState(() => {
@@ -1831,11 +1876,18 @@ export function App() {
     import('./extras').then(m => m.logSession(s.tenantId, s.user)).catch(() => {});
     // Auto-config Supabase a partir do tenant (data.js ou onboarding) — fallback
     // pra dispositivos que não entraram via link ?token=
+    // IMPORTANTE: sobrescreve config existente se URL ou anon key mudaram —
+    // cobre rotação de anon key + mudança de projeto Supabase. Bug observado
+    // na Swiss: devices ficavam com config velha mesmo após Vercel atualizar.
     try {
       const tenant = activeTenants.find(t => t.id === s.tenantId);
       if (tenant?.supabase?.url && tenant?.supabase?.anonKey) {
         const existing = JSON.parse(localStorage.getItem('nutriops.supabase.config') ?? 'null');
-        if (!existing || !existing.enabled) {
+        const urlMudou    = existing?.url     !== tenant.supabase.url;
+        const keyMudou    = existing?.anonKey !== tenant.supabase.anonKey;
+        const semConfig   = !existing;
+        const desabilitado = existing && !existing.enabled;
+        if (semConfig || desabilitado || urlMudou || keyMudou) {
           localStorage.setItem('nutriops.supabase.config', JSON.stringify({
             url: tenant.supabase.url,
             anonKey: tenant.supabase.anonKey,
@@ -1843,7 +1895,8 @@ export function App() {
             source: 'tenant',
             syncedAt: new Date().toISOString(),
           }));
-          console.info(`[NutriOPS] Supabase auto-configurado pelo tenant ${tenant.id}`);
+          const motivo = semConfig ? 'sem config' : desabilitado ? 'estava desabilitado' : urlMudou ? 'URL mudou' : 'anon key rotacionou';
+          console.info(`[NutriOPS] Supabase auto-configurado pelo tenant ${tenant.id} (${motivo})`);
         }
       }
     } catch (e) { console.warn('[NutriOPS] auto-config Supabase falhou:', e?.message); }
@@ -2147,6 +2200,7 @@ export function App() {
         onStoreChange={handleStoreChange} activeStore={activeStore} />
       <main className="super-main">
         <LocalModeBanner session={session} activeTenant={activeTenant} setActiveView={setActiveView} />
+        <SupabaseAuthErrorBanner session={session} setActiveView={setActiveView} />
         <Suspense fallback={<ViewLoading />}>
           {activeView === 'overview'   && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} trialStatus={trialStatus} onTryV2={() => setActiveView('overview-v2')} />}
           {activeView === 'overview-v2' && <OverviewV2 {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onLaunchKiosk={() => setShowKioskSetup(true)} onNavigate={setActiveView} onBack={() => setActiveView('overview')} />}

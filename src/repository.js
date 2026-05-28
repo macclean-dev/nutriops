@@ -23,6 +23,23 @@ function sbHeaders() {
 }
 function sbBase() { return `${getSupabaseConfig().url}/rest/v1`; }
 
+// Flag persistente — quando anon key rotaciona, devices ficam com key
+// inválida. Detectamos 401/403 e marcamos pra que pages.jsx mostre banner.
+const AUTH_ERROR_KEY = 'nutriops.supabase.auth_error';
+export function getSupabaseAuthError() {
+  try { return JSON.parse(localStorage.getItem(AUTH_ERROR_KEY) ?? 'null'); } catch { return null; }
+}
+export function clearSupabaseAuthError() {
+  try { localStorage.removeItem(AUTH_ERROR_KEY); } catch {}
+}
+function markSupabaseAuthError(status, table) {
+  try {
+    localStorage.setItem(AUTH_ERROR_KEY, JSON.stringify({
+      status, table, at: new Date().toISOString(),
+    }));
+  } catch {}
+}
+
 // Generic Supabase REST call
 async function sbFetch(table, params = {}) {
   const { method='GET', filter='', body=null, prefer='' } = params;
@@ -30,7 +47,13 @@ async function sbFetch(table, params = {}) {
   const headers = { ...sbHeaders() };
   if (prefer) headers['Prefer'] = prefer;
   const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
-  if (!res.ok) throw new Error(`SB ${method} ${table}: ${res.status}`);
+  if (!res.ok) {
+    // 401/403 = anon key inválida ou RLS bloqueando. Marca pra UI mostrar banner.
+    if (res.status === 401 || res.status === 403) markSupabaseAuthError(res.status, table);
+    throw new Error(`SB ${method} ${table}: ${res.status}`);
+  }
+  // Sucesso → limpa flag se existia (key foi corrigida)
+  if (getSupabaseAuthError()) clearSupabaseAuthError();
   if (method === 'DELETE') return true;
   const text = await res.text();
   return text ? JSON.parse(text) : null;

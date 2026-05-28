@@ -13,7 +13,49 @@ import './styles.css';
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
-      .then(reg => { setInterval(() => reg.update(), 30 * 60 * 1000); })
+      .then(reg => {
+        // Re-checa a cada 30min se há nova versão
+        setInterval(() => reg.update(), 30 * 60 * 1000);
+        // Quando o SW novo aparece em waiting, mostra UI pra recarregar.
+        // Crítico: sem isso, devices PWA ficam presos em bundles antigos
+        // (problema real observado na Swiss — env vars do Vercel não
+        // propagavam porque o SW servia bundle pre-env).
+        const showUpdateToast = () => {
+          if (document.getElementById('nutriops-sw-update')) return;
+          const t = document.createElement('div');
+          t.id = 'nutriops-sw-update';
+          t.setAttribute('role', 'alert');
+          t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#cc785c;color:#fff;padding:12px 18px;border-radius:12px;font-family:system-ui,sans-serif;font-size:14px;box-shadow:0 12px 32px rgba(0,0,0,.32);display:flex;gap:14px;align-items:center;z-index:9999;max-width:90vw';
+          t.innerHTML = '<span>Nova versão disponível</span><button id="nutriops-sw-reload" style="background:#fff;color:#cc785c;border:none;padding:6px 14px;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;font-size:13px">Atualizar agora</button><button id="nutriops-sw-later" aria-label="Dispensar" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.4);padding:6px 10px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:12px">Depois</button>';
+          document.body.appendChild(t);
+          document.getElementById('nutriops-sw-reload').onclick = () => {
+            reg.waiting?.postMessage('SKIP_WAITING');
+            window.location.reload();
+          };
+          document.getElementById('nutriops-sw-later').onclick = () => t.remove();
+        };
+        if (reg.waiting) showUpdateToast();
+        reg.addEventListener('updatefound', () => {
+          const newSw = reg.installing;
+          if (!newSw) return;
+          newSw.addEventListener('statechange', () => {
+            // installed + tem controller anterior = update pronto, esperando
+            if (newSw.state === 'installed' && navigator.serviceWorker.controller) {
+              showUpdateToast();
+            }
+          });
+        });
+        // Quando o user aceitou e o SW novo assumiu controle, reload já
+        // disparou via botão. Mas se assumiu por outro motivo, recarrega
+        // pra garantir bundle novo na próxima renderização.
+        let reloaded = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (reloaded) return;
+          reloaded = true;
+          // Pequeno delay pra evitar loop se 2 abas atualizam simultaneamente
+          setTimeout(() => window.location.reload(), 100);
+        });
+      })
       .catch(err => console.warn('[NutriOPS] SW failed:', err));
   });
 }

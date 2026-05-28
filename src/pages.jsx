@@ -1485,6 +1485,9 @@ function AuditView({ allTenants, records, session }) {
   });
   const [signingPeriod, setSigningPeriod] = useState(false);
   const [rtNote, setRtNote] = useState('');
+  // Drill-down — abrir histórico completo do equipamento ao clicar na coluna.
+  // Carrega { equipment: { label }, tenantId } pra suportar visão multi-tenant.
+  const [drillEq, setDrillEq] = useState(null);
 
   const isRT = ['Nutricionista RT','Administrador','Super-admin'].includes(session?.user?.role);
 
@@ -1509,6 +1512,23 @@ function AuditView({ allTenants, records, session }) {
   }, [records, tenantFilter, periodFilter, statusFilter, equipFilter, searchFilter]);
 
   const stats = useMemo(() => ({ total: filtered.length, ok: filtered.filter((r) => resolveTemperatureTone(r) === 'ok').length, warn: filtered.filter((r) => resolveTemperatureTone(r) === 'warn').length, danger: filtered.filter((r) => resolveTemperatureTone(r) === 'danger').length }), [filtered]);
+
+  // Histórico do equipamento aberto no drill-down (cronológico crescente,
+  // escopo no tenant do registro clicado pra evitar misturar Swiss + Bäckerei
+  // num drill multi-tenant).
+  const drillHistory = useMemo(() => {
+    if (!drillEq) return [];
+    const norm = s => String(s || '').toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const target = norm(drillEq.equipment.label);
+    return records
+      .filter(r => r.tenantId === drillEq.tenantId)
+      .filter(r => {
+        const cands = [r.equipment, r.equipmentInput, r.equipmentKey].filter(Boolean);
+        return cands.some(c => norm(c) === target);
+      })
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  }, [records, drillEq]);
 
   const exportCSV = async () => {
     const csv = await repository.exportCsv(filtered);
@@ -1586,12 +1606,22 @@ function AuditView({ allTenants, records, session }) {
       </div>
       <div className="audit-table-wrap">
         {filtered.length === 0 ? <p className="muted" style={{ padding: '32px 20px' }}>Nenhum registro encontrado.</p>
-          : <table className="table"><thead><tr><th>Data / Hora</th><th>Empresa</th><th>Equipamento</th><th>Temp.</th><th>Faixa</th><th>Responsável</th><th>Status</th><th>Observação</th></tr></thead>
+          : <table className="table"><thead><tr><th>Data / Hora</th><th>Empresa</th><th>Equipamento <small style={{ color:'var(--primary)', fontWeight:600, letterSpacing:'.04em', textTransform:'uppercase', fontSize:9 }}>click→</small></th><th>Temp.</th><th>Faixa</th><th>Responsável</th><th>Status</th><th>Observação</th></tr></thead>
             <tbody>{filtered.map((r) => { const tone = resolveTemperatureTone(r); return (
               <tr key={r.id} className={`audit-row-${tone}`}>
                 <td style={{ fontFamily: 'var(--mono)', fontSize: 12, whiteSpace: 'nowrap' }}>{formatCompactDateTime(r.createdAt)}</td>
                 <td>{r.tenantName}</td>
-                <td><strong>{r.equipmentInput || r.equipment}</strong>{r.equipmentLocation && <><br /><small style={{ color: 'var(--text-secondary)' }}>{r.equipmentLocation}</small></>}</td>
+                <td>
+                  <button
+                    type="button"
+                    onClick={() => setDrillEq({ equipment: { label: r.equipmentInput || r.equipment }, tenantId: r.tenantId })}
+                    title="Abrir histórico completo deste equipamento"
+                    style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontFamily:'inherit', fontSize:'inherit', color:'inherit', textAlign:'left', display:'block' }}
+                  >
+                    <strong style={{ borderBottom:'1px dashed var(--text-secondary)' }}>{r.equipmentInput || r.equipment}</strong>
+                  </button>
+                  {r.equipmentLocation && <small style={{ color: 'var(--text-secondary)', display:'block', marginTop:2 }}>{r.equipmentLocation}</small>}
+                </td>
                 <td style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 16 }}>{r.value}°C</td>
                 <td style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-secondary)' }}>{r.min ?? '?'}–{r.max ?? '?'}°C</td>
                 <td>{r.user}{r.role && <><br /><small style={{ color: 'var(--text-secondary)' }}>{r.role}</small></>}</td>
@@ -1600,6 +1630,15 @@ function AuditView({ allTenants, records, session }) {
               </tr>
             ); })}</tbody></table>}
       </div>
+
+      {/* Drill-down modal — abre ao clicar no nome de um equipamento */}
+      {drillEq && (
+        <EquipmentDetailModal
+          equipment={drillEq.equipment}
+          history={drillHistory}
+          onClose={() => setDrillEq(null)}
+        />
+      )}
     </section>
   );
 }

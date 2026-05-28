@@ -41,6 +41,7 @@ const HandwashView         = lazyView(() => import('./extras'),     'HandwashVie
 const MonthlyExportView    = lazyView(() => import('./extras'),     'MonthlyExportView');
 const SessionHistoryView   = lazyView(() => import('./extras'),     'SessionHistoryView');
 const OverviewV2           = lazyView(() => import('./overview-v2'), 'OverviewV2');
+const SetupPinScreen       = lazyView(() => import('./setup-tenant'), 'SetupPinScreen');
 
 // ─── helpers re-exported from maintenance ──────────────────────────────────
 function addDays(iso, days) { const d = new Date(iso || new Date()); d.setDate(d.getDate() + days); return d.toISOString().slice(0,10); }
@@ -2966,21 +2967,28 @@ export function App() {
   // or when explicitly requested via ?onboarding=1
   const hasToken        = Boolean(localStorage.getItem('nutriops.access.token'));
   const wantsOnboarding = window.location.search.includes('onboarding=1');
-  const isNewUser       = !session && !readOnboardingTenants() && (hasToken || wantsOnboarding);
+
+  // Tenant criado via /admin (vem do Supabase com setupPinHash). Quando ainda
+  // não tem usersList povoado, o cliente precisa passar pelo SetupPinScreen
+  // antes de virar tenant operacional.
+  const pendingSetupTenant = !session && hasToken
+    ? (activeTenants ?? []).find(t => t.setupPinHash && (!t.usersList || t.usersList.length === 0))
+    : null;
+
+  const isNewUser = !session && !pendingSetupTenant && !readOnboardingTenants() && (hasToken || wantsOnboarding);
 
   const handleOnboardingComplete = (newTenants) => {
     setActiveTenants(newTenants);
     writeOnboardingTenants(newTenants);
   };
 
-  if (isNewUser) return (
-    <Suspense fallback={<ViewLoading />}>
-      <OnboardingWizard onComplete={handleOnboardingComplete} onHaveAccount={() => {
-        localStorage.removeItem('nutriops.access.token');
-        window.location.href = '/';
-      }} />
-    </Suspense>
-  );
+  const handleSetupComplete = (newSession, updatedTenant) => {
+    setActiveTenants(prev => {
+      const others = prev.filter(t => t.id !== updatedTenant.id);
+      return [updatedTenant, ...others];
+    });
+    setSession(newSession);
+  };
 
   const perms = getPermissions(session?.user?.role);
 
@@ -3137,6 +3145,21 @@ export function App() {
   useEffect(() => {
     if (session?.tenantId && activeView) trackUsage(session.tenantId, activeView);
   }, [activeView, session?.tenantId]);
+
+  if (pendingSetupTenant) return (
+    <Suspense fallback={<ViewLoading />}>
+      <SetupPinScreen tenant={pendingSetupTenant} onComplete={handleSetupComplete} />
+    </Suspense>
+  );
+
+  if (isNewUser) return (
+    <Suspense fallback={<ViewLoading />}>
+      <OnboardingWizard onComplete={handleOnboardingComplete} onHaveAccount={() => {
+        localStorage.removeItem('nutriops.access.token');
+        window.location.href = '/';
+      }} />
+    </Suspense>
+  );
 
   if (!session) return <LoginScreen onLogin={handleLogin} activeTenants={activeTenants} />;
 

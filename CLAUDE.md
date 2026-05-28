@@ -13,7 +13,7 @@ com 3 clientes (Swiss, Bäckerei, DBK Produção). Detalhes técnicos completos 
 - **Prod:** https://nutriops.uniwares.net
 - **Repo:** https://github.com/macclean-dev/nutriops.git
 - **Local:** `/Users/mac/Documents/NutriOPS/`
-- **Versão atual:** v1.6.0
+- **Versão atual:** v1.8.0
 
 ---
 
@@ -167,10 +167,57 @@ Tabelas que sincronizam via `syncAllModules`:
 - **`equipment_catalog`** (label/aliases/location/min_temp/max_temp por tenant)
 - `receiving_records` · `products` · `stock_logs` · `special_controls`
 
+Tabela `tenants` (separada do `syncAllModules`):
+- Espelha tenants criados via `/admin` pra que clientes consigam abrir
+  o link `?token=` em qualquer device e baixar a metadata + hash do
+  setup PIN. Lida só por `src/tenant-sync.js` (push no admin, fetch no boot).
+- Schema:
+  ```sql
+  create table if not exists tenants (
+    id text primary key,
+    access_token text unique not null,
+    name text, segment text, plan text,
+    brand_color text, brand_soft text,
+    equipment_catalog jsonb,
+    modules jsonb,
+    stores jsonb,
+    setup_pin_hash text,
+    setup_pin_used_at timestamptz,
+    setup_pin_attempts integer default 0,
+    setup_pin_locked_until timestamptz,
+    admin_email text, admin_name text,
+    trial_ends_at timestamptz,
+    created_at timestamptz default now(),
+    updated_at timestamptz default now()
+  );
+  create unique index if not exists idx_tenants_token on tenants(access_token);
+  alter table tenants disable row level security;
+  ```
+
 Equipment catalog: salvar em qualquer device chama `pushEquipmentItem`;
 boot em qualquer outro device chama `syncEquipmentCatalog` e puxa updates.
 Cloud é source-of-truth: se remoto > 0, sobrescreve local. Se remoto vazio,
 cai no seed de `tenants-public.js`.
+
+## Fluxo admin → cliente operacional (v1.8.0+)
+
+Quando o admin cadastra um cliente em `/admin`:
+
+1. Gera setup PIN aleatório de 4 dígitos (PBKDF2 100k iter — `src/crypto.js`)
+2. Push do tenant na tabela `tenants` do Supabase (`src/tenant-sync.js`)
+3. `AccessTokenModal` mostra o PIN uma única vez no overlay coral —
+   admin precisa enviar por **canal separado** do link (WhatsApp/SMS)
+4. Cliente abre `?token=XYZ`:
+   - `main.jsx` busca tenant no Supabase via `fetchTenantByToken`
+   - Popula `nutriops.onboarding.tenants` local
+   - `pages.jsx` detecta tenant sem usersList povoado → renderiza `SetupPinScreen`
+5. Cliente digita setup PIN → rate-limited (3 tentativas → bloqueio 15 min,
+   persistido em local + remoto)
+6. Acerto → tela "Crie seu PIN definitivo" → valida não-fraco (`isWeakPin`)
+   → cria admin owner → marca `setup_pin_used_at` no cloud → sessão criada
+
+Wizard antigo (`OnboardingWizard`) ainda existe como fallback quando o
+cliente abre `?onboarding=1` ou quando o tenant não foi pré-criado pelo admin.
 
 ## GitHub Actions CI
 

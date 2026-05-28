@@ -5,6 +5,9 @@ import { readClients, writeClients, readAdminAuth, writeAdminAuth, clearAdminAut
 import { sendWelcomeEmail, sendAccessGrantedEmail } from './email';
 import { tenantsBase } from './tenants-public';
 import { resolveLimits as resolveLimitsCat, resolveTone as resolveToneCat } from './limits';
+import { hashPin, generateSetupPin } from './crypto';
+import { pushTenant, isTenantSyncEnabled } from './tenant-sync';
+import { SEGMENTS, DEFAULT_EQUIPMENT, DEFAULT_MODULES, buildEquipmentCatalog, segmentLabel, segmentLocalityType } from './segments';
 
 // Re-export storage helpers pra preservar a API que pages.jsx/trial.jsx
 // consumiam (com import from './admin'). Os imports leves agora podem ser
@@ -101,6 +104,7 @@ function ClientModal({ client, onSave, onClose }) {
   const [email, setEmail]         = useState(client?.email ?? '');
   const [phone, setPhone]         = useState(client?.phone ?? '');
   const [plan, setPlan]           = useState(client?.plan ?? 'trial');
+  const [segment, setSegment]     = useState(client?.segment ?? 'padaria');
   const [active, setActive]       = useState(client?.active ?? true);
   const [cnpj, setCnpj]           = useState(client?.cnpj ?? '');
   const [contact, setContact]     = useState(client?.contact ?? '');
@@ -113,36 +117,110 @@ function ClientModal({ client, onSave, onClose }) {
   const [sbUrl, setSbUrl]         = useState(client?.supabase?.url ?? '');
   const [sbKey, setSbKey]         = useState(client?.supabase?.anonKey ?? '');
   const [showSync, setShowSync]   = useState(Boolean(client?.supabase?.url));
+  // Setup PIN — visível só quando admin acabou de gerar (não persiste em plain
+  // após o modal fechar pra evitar exposição no painel).
+  const [generatedPin, setGeneratedPin] = useState(null);
+  const [regenerate, setRegenerate]     = useState(false);
+  const [busy, setBusy]                 = useState(false);
+  const [pushError, setPushError]       = useState('');
 
-  const selectedPlan = PLANS.find(p => p.id === plan);
   const trialEndsAt  = plan === 'trial' && !editing
     ? new Date(Date.now() + 14 * 86400000).toISOString()
     : client?.trialEndsAt;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim() || !email.trim()) return;
+    setBusy(true);
+    setPushError('');
+
+    const id            = client?.id ?? uid();
+    const accessToken   = client?.accessToken ?? `nt_${uid()}${uid()}`;
+    const isNew         = !editing;
+    const needsNewPin   = isNew || regenerate;
+
+    // Gera setup PIN só pra clientes novos ou quando admin pediu regeneração.
+    // Hash com PBKDF2 (~100ms) — admin não precisa esperar muito.
+    let setupPinPlain   = null;
+    let setupPinHash    = client?.setupPinHash ?? null;
+    if (needsNewPin) {
+      setupPinPlain = generateSetupPin(4);
+      try {
+        setupPinHash = await hashPin(setupPinPlain, id);
+      } catch (e) {
+        setPushError(`Falha ao gerar PIN: ${e.message}`);
+        setBusy(false);
+        return;
+      }
+    }
+
+    const tenantPayload = {
+      id,
+      accessToken,
+      name: name.trim(),
+      segment: segmentLabel(segment),
+      plan,
+      brandColor: client?.brandColor ?? '#cc785c',
+      brandSoft:  client?.brandSoft  ?? 'rgba(204,120,92,.10)',
+      equipmentCatalog: client?.equipmentCatalog
+        ?? buildEquipmentCatalog(DEFAULT_EQUIPMENT[segment] ?? DEFAULT_EQUIPMENT.outro),
+      modules: client?.modules ?? DEFAULT_MODULES,
+      stores: client?.stores ?? [{
+        id: `${id}-main`,
+        name: `${name.trim()} — Principal`,
+        location: 'Principal',
+      }],
+      setupPinHash: needsNewPin ? setupPinHash : undefined,
+      adminEmail: email.trim(),
+      adminName:  contact.trim() || null,
+      trialEndsAt,
+    };
+
+    // Push pro Supabase (opcional — se sync ligado).
+    // Se falhar não bloqueamos a criação local — o cliente pode tentar logar
+    // de outro device e o admin é notificado.
+    if (isTenantSyncEnabled()) {
+      const result = await pushTenant(tenantPayload);
+      if (!result.ok) {
+        setPushError(`Tenant não foi salvo no servidor (${result.reason}). Cliente pode não conseguir entrar de outros dispositivos.`);
+        // Continua salvando local — admin pode regenerar depois.
+      }
+    }
+
     onSave({
-      id: client?.id ?? uid(),
+      id,
       name: name.trim(), email: email.trim(), phone: phone.trim(),
-      plan, active, cnpj: cnpj.trim(), contact: contact.trim(),
+      plan, segment, active, cnpj: cnpj.trim(), contact: contact.trim(),
       notes: notes.trim(), billingDay: Number(billingDay),
       billingStatus, trialEndsAt,
       createdAt: client?.createdAt ?? new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      // Access token for client to use
-      accessToken: client?.accessToken ?? `nt_${uid()}${uid()}`,
-      // Supabase config — opcional. Quando preenchido, devices auto-configuram
-      // ao abrir o link com ?token=
+      accessToken,
+      setupPinHash,
+      setupPinGeneratedAt: needsNewPin ? new Date().toISOString() : client?.setupPinGeneratedAt,
+      brandColor: tenantPayload.brandColor,
+      brandSoft:  tenantPayload.brandSoft,
+      equipmentCatalog: tenantPayload.equipmentCatalog,
+      modules: tenantPayload.modules,
+      stores: tenantPayload.stores,
+      // Supabase dedicado — opcional pra Enterprise
       supabase: sbUrl.trim() && sbKey.trim()
         ? { url: sbUrl.trim(), anonKey: sbKey.trim() }
         : null,
     });
-    onClose();
+
+    setBusy(false);
+    if (setupPinPlain) {
+      // Não fecha o modal — admin precisa copiar o PIN antes
+      setGeneratedPin(setupPinPlain);
+      setRegenerate(false);
+    } else {
+      onClose();
+    }
   };
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200, padding:24 }}>
-      <div style={{ background:'white', borderRadius:16, padding:28, width:'100%', maxWidth:520, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 24px 64px rgba(0,0,0,.3)' }}>
+      <div style={{ position:'relative', background:'white', borderRadius:16, padding:28, width:'100%', maxWidth:520, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 24px 64px rgba(0,0,0,.3)' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
           <h2 style={{ fontSize:18, fontWeight:800 }}>{editing ? 'Editar cliente' : 'Novo cliente'}</h2>
           <button onClick={onClose} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:'#6b6760' }}>✕</button>
@@ -171,6 +249,12 @@ function ClientModal({ client, onSave, onClose }) {
           <label style={{ display:'flex', flexDirection:'column', gap:5, fontSize:12, fontWeight:600, color:'#6b6760' }}>
             Responsável pelo contrato
             <input value={contact} onChange={e=>setContact(e.target.value)} placeholder="Nome do responsável" style={inputStyle} />
+          </label>
+          <label style={{ display:'flex', flexDirection:'column', gap:5, fontSize:12, fontWeight:600, color:'#6b6760' }}>
+            Segmento {!editing && '(define equipamentos seed)'}
+            <select value={segment} onChange={e=>setSegment(e.target.value)} style={inputStyle}>
+              {SEGMENTS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
           </label>
           <div>
             <div style={{ fontSize:12, fontWeight:600, color:'#6b6760', marginBottom:8 }}>Plano</div>
@@ -211,6 +295,37 @@ function ClientModal({ client, onSave, onClose }) {
             Acesso ativo
           </label>
 
+          {/* PIN de configuração — só editing (no novo o PIN é gerado no Save) */}
+          {editing && (
+            <div style={{ padding:'10px 14px', background:'#faf9f5', border:'1px solid #e5ddd0', borderRadius:8 }}>
+              <div style={{ fontSize:11, fontWeight:700, letterSpacing:'.08em', textTransform:'uppercase', color:'#6b6760', marginBottom:6 }}>
+                PIN de configuração
+              </div>
+              {client?.setupPinHash ? (
+                <p style={{ fontSize:12, color:'#6b6760', margin:'0 0 8px', lineHeight:1.5 }}>
+                  {client?.setupPinGeneratedAt
+                    ? <>Último gerado em <strong>{fmtDT(client.setupPinGeneratedAt)}</strong>. </>
+                    : null}
+                  Regenere se o cliente esqueceu o PIN ou se quiser invalidar o anterior.
+                </p>
+              ) : (
+                <p style={{ fontSize:12, color:'#6b6760', margin:'0 0 8px', lineHeight:1.5 }}>
+                  Cliente ainda não tem PIN de configuração. Gere um agora pra ele conseguir entrar.
+                </p>
+              )}
+              <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, fontWeight:600, color:'#cc785c' }}>
+                <input type="checkbox" checked={regenerate} onChange={e=>setRegenerate(e.target.checked)} style={{ accentColor:'#cc785c' }} />
+                Gerar novo PIN de configuração ao salvar
+              </label>
+            </div>
+          )}
+
+          {pushError && (
+            <div style={{ padding:'10px 14px', background:'#fdf6e8', border:'1px solid #8a4e0033', borderRadius:8, fontSize:12, color:'#8a4e00' }}>
+              <strong>Atenção:</strong> {pushError}
+            </div>
+          )}
+
           {/* Sincronização opcional */}
           <div style={{ borderTop:'1px solid #e5ddd0', paddingTop:14, marginTop:4 }}>
             <button type="button" onClick={() => setShowSync(s => !s)}
@@ -244,10 +359,65 @@ function ClientModal({ client, onSave, onClose }) {
           </div>
         </div>
         <div style={{ display:'flex', gap:10, marginTop:20 }}>
-          <button onClick={onClose} style={{ flex:1, padding:'10px', borderRadius:8, border:'1px solid #d9d1c4', background:'white', cursor:'pointer', fontSize:14, fontWeight:600, fontFamily:'inherit' }}>Cancelar</button>
-          <button onClick={handleSave} disabled={!name.trim()||!email.trim()}
-            style={{ flex:2, padding:'10px', borderRadius:8, border:'none', background:name.trim()&&email.trim()?'#cc785c':'#d9d1c4', color:'white', cursor:name.trim()&&email.trim()?'pointer':'not-allowed', fontSize:14, fontWeight:700, fontFamily:'inherit' }}>
-            {editing ? 'Salvar alterações' : 'Criar cliente'}
+          <button onClick={onClose} disabled={busy} style={{ flex:1, padding:'10px', borderRadius:8, border:'1px solid #d9d1c4', background:'white', cursor:busy?'wait':'pointer', fontSize:14, fontWeight:600, fontFamily:'inherit', opacity:busy?0.6:1 }}>Cancelar</button>
+          <button onClick={handleSave} disabled={!name.trim()||!email.trim()||busy}
+            style={{ flex:2, padding:'10px', borderRadius:8, border:'none', background:(name.trim()&&email.trim()&&!busy)?'#cc785c':'#d9d1c4', color:'white', cursor:(name.trim()&&email.trim()&&!busy)?'pointer':'not-allowed', fontSize:14, fontWeight:700, fontFamily:'inherit' }}>
+            {busy ? 'Salvando…' : (editing ? 'Salvar alterações' : 'Criar cliente')}
+          </button>
+        </div>
+
+        {/* Overlay PIN gerado — bloqueia fechar até admin copiar */}
+        {generatedPin && (
+          <SetupPinReveal pin={generatedPin} onAck={() => { setGeneratedPin(null); onClose(); }} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SetupPinReveal({ pin, onAck }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(pin);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+  return (
+    <div style={{ position:'absolute', inset:0, background:'rgba(20,20,19,.85)', borderRadius:16, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+      <div style={{ background:'white', borderRadius:14, padding:'28px 32px', maxWidth:360, width:'100%', textAlign:'center', boxShadow:'0 12px 40px rgba(0,0,0,.4)' }}>
+        <div style={{ fontSize:10, fontWeight:700, letterSpacing:'.14em', textTransform:'uppercase', color:'#6b6760', marginBottom:8 }}>
+          PIN de configuração
+        </div>
+        <h3 style={{ fontFamily:'var(--serif, serif)', fontSize:20, fontWeight:400, margin:'0 0 10px', color:'#141413', letterSpacing:'-.02em' }}>
+          Copie agora — não será mostrado de novo
+        </h3>
+        <div style={{
+          margin:'18px 0',
+          padding:'16px 0',
+          fontFamily:'monospace',
+          fontSize:48,
+          letterSpacing:'.3em',
+          fontWeight:700,
+          color:'#cc785c',
+          background:'#faf9f5',
+          border:'1px dashed #d9d1c4',
+          borderRadius:10,
+        }}>
+          {pin}
+        </div>
+        <p style={{ fontSize:12, color:'#6b6760', lineHeight:1.5, margin:'0 0 18px' }}>
+          Envie esse PIN ao cliente por <strong>canal separado</strong> do link de acesso
+          (WhatsApp, SMS ou ligação — nunca pelo mesmo e-mail).
+          Ele expira após o 1º uso e bloqueia após 3 tentativas erradas.
+        </p>
+        <div style={{ display:'flex', gap:8 }}>
+          <button onClick={handleCopy} style={{ flex:1, padding:'10px', borderRadius:8, border:'1px solid #cc785c', background:'white', color:'#cc785c', cursor:'pointer', fontSize:13, fontWeight:700, fontFamily:'inherit' }}>
+            {copied ? '✓ Copiado' : 'Copiar PIN'}
+          </button>
+          <button onClick={onAck} style={{ flex:1, padding:'10px', borderRadius:8, border:'none', background:'#141413', color:'white', cursor:'pointer', fontSize:13, fontWeight:700, fontFamily:'inherit' }}>
+            Já copiei
           </button>
         </div>
       </div>
@@ -308,8 +478,29 @@ function AccessTokenModal({ client, onClose, onClientUpdate }) {
             <> Último envio: <strong>{new Date(client.welcomeEmailSentAt).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</strong>.</>
           )}
         </p>
-        <div style={{ background:'#faf9f5', border:'1px solid #d9d1c4', borderRadius:8, padding:'12px 14px', fontFamily:'monospace', fontSize:12, wordBreak:'break-all', marginBottom:16, color:'#141413' }}>
+        <div style={{ background:'#faf9f5', border:'1px solid #d9d1c4', borderRadius:8, padding:'12px 14px', fontFamily:'monospace', fontSize:12, wordBreak:'break-all', marginBottom:12, color:'#141413' }}>
           {url}
+        </div>
+
+        {/* Status do setup PIN */}
+        <div style={{
+          padding:'10px 14px', marginBottom:16, borderRadius:8,
+          background: client.setupPinHash ? '#eaf5ef' : '#fdf6e8',
+          border: `1px solid ${client.setupPinHash ? '#2d6e4a33' : '#8a4e0033'}`,
+          fontSize:12, color: client.setupPinHash ? '#2d6e4a' : '#8a4e00',
+        }}>
+          {client.setupPinHash ? (
+            <>
+              <strong>PIN de configuração ativo.</strong> Lembre de enviar o PIN ao cliente por
+              canal separado do link (WhatsApp/SMS). Se ele esqueceu, edite o cliente e marque
+              "Gerar novo PIN".
+            </>
+          ) : (
+            <>
+              <strong>Sem PIN de configuração.</strong> Edite o cliente e marque "Gerar novo PIN"
+              pra liberar o 1º acesso.
+            </>
+          )}
         </div>
 
         {/* Feedback do envio */}

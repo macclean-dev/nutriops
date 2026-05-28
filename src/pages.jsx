@@ -722,6 +722,7 @@ export { CONTROLS_KEYS, REPORTS_KEYS, TEAM_KEYS, isItemActive };
 
 function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenantChange, onStoreChange, activeStore, session, records, alertCount, actionCount, maintAlertCount = 0, onLogout, onSearch }) {
   const perms = getPermissions(session?.user?.role);
+  const [accountOpen, setAccountOpen] = useState(false);
 
   const validityAlertCount = useMemo(() => {
     try {
@@ -736,12 +737,26 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
   }, [activeTenant.id]);
 
   const SECTIONS = buildNavSections({ validityAlertCount, maintAlertCount, alertCount, actionCount });
+  // Conta vai pro dropdown do avatar — rail mostra só Operação, Qualidade, Gestão
+  const railSections = SECTIONS.filter(s => s.label !== 'Conta');
+
+  // Fechar dropdown ao clicar fora ou apertar ESC
+  useEffect(() => {
+    if (!accountOpen) return;
+    const onClick = (e) => { if (!e.target.closest('[data-account-menu]')) setAccountOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setAccountOpen(false); };
+    window.addEventListener('click', onClick);
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('click', onClick); window.removeEventListener('keydown', onKey); };
+  }, [accountOpen]);
+
+  const initial = (session?.user?.name ?? '?').trim().charAt(0).toUpperCase();
 
   return (
     <aside className="super-rail">
       {/* Brand */}
-      <div className="rail-brand">
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+      <div className="rail-brand" style={{ padding:'14px 16px 10px' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
           <BrandLockup size="lg" idPrefix="sid" />
           <DarkModeToggle />
         </div>
@@ -754,9 +769,41 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
         </button>
       </div>
 
+      {/* Avatar + dropdown — substitui card Sessão + seção Conta */}
+      <div data-account-menu style={{ position:'relative', padding:'8px 12px', borderBottom:'1px solid var(--rail-border)' }}>
+        <button onClick={() => setAccountOpen(o => !o)} aria-haspopup="menu" aria-expanded={accountOpen}
+          style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'6px 8px', border:'1px solid transparent', borderRadius:8, background: accountOpen ? 'var(--rail-hover)' : 'transparent', cursor:'pointer', fontFamily:'var(--font)', transition:'background var(--t)' }}>
+          <span style={{ width:28, height:28, borderRadius:'50%', background:activeTenant.brandColor, color:'#fff', display:'grid', placeItems:'center', fontSize:12, fontWeight:700, flexShrink:0 }}>{initial}</span>
+          <span style={{ flex:1, minWidth:0, textAlign:'left' }}>
+            <strong style={{ display:'block', fontSize:12, fontWeight:600, color:'var(--rail-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{session.user.name}</strong>
+            <span style={{ display:'block', fontSize:10, color:'var(--rail-muted)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{session.user.role} · {activeTenant.name}</span>
+          </span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color:'var(--rail-muted)', flexShrink:0, transform: accountOpen ? 'rotate(180deg)' : 'none', transition:'transform var(--t)' }}>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+        {accountOpen && (
+          <div role="menu" style={{ position:'absolute', top:'calc(100% - 2px)', left:12, right:12, background:'var(--rail-bg)', border:'1px solid var(--rail-border)', borderRadius:8, padding:4, zIndex:50, boxShadow:'0 8px 24px rgba(0,0,0,.32)' }}>
+            <button className="rail-menu-item" role="menuitem" onClick={() => { setAccountOpen(false); setActiveView('profile'); }}
+              style={{ display:'flex', alignItems:'center', gap:10, width:'100%' }}>
+              <NavIcon id="profile" /><span>Meu perfil</span>
+            </button>
+            <button className="rail-menu-item" role="menuitem" onClick={() => { setAccountOpen(false); setActiveView('settings'); }}
+              style={{ display:'flex', alignItems:'center', gap:10, width:'100%' }}>
+              <NavIcon id="settings" /><span>Configurações</span>
+            </button>
+            <div style={{ height:1, background:'var(--rail-border)', margin:'4px 0' }} />
+            <button className="rail-menu-item" role="menuitem" onClick={() => { setAccountOpen(false); onLogout(); }}
+              style={{ display:'flex', alignItems:'center', gap:10, width:'100%' }}>
+              <NavIcon id="logout" /><span>Sair</span>
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Multi-store selector */}
       {activeTenant.multiStore && activeTenant.stores?.length > 1 && (
-        <div style={{ padding:'0 12px 8px' }}>
+        <div style={{ padding:'8px 12px 0' }}>
           <div style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--rail-muted)', marginBottom:4 }}>Loja</div>
           {activeTenant.stores.map(store => {
             const isActive = (activeStore?.id ?? activeTenant.stores[0].id) === store.id;
@@ -770,21 +817,14 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
         </div>
       )}
 
-      {/* Session info */}
-      <div className="rail-card">
-        <span className="eyebrow">Sessão</span>
-        <strong>{session.user.name}</strong>
-        <span style={{ fontSize:11, color:'var(--rail-muted)', display:'block', marginTop:2 }}>{session.user.role} · {activeTenant.name}</span>
-      </div>
-
-      {/* Flat nav */}
+      {/* Flat nav — sem seção Conta */}
       <div className="rail-menu">
         <div className="rail-menu-list" style={{ padding:'8px 8px 4px' }}>
-          {SECTIONS.map((section, sIdx) => {
+          {railSections.map((section, sIdx) => {
             const visibleItems = section.items.filter(([key]) => canAccess(session?.user?.role, key));
             if (visibleItems.length === 0) return null;
             return (
-              <div key={section.label} style={{ marginTop: sIdx === 0 ? 0 : 10 }}>
+              <div key={section.label} style={{ marginTop: sIdx === 0 ? 0 : 8 }}>
                 <div className="rail-section-label">{section.label}</div>
                 <div style={{ display:'flex', flexDirection:'column', gap:1, marginTop:2 }}>
                   {visibleItems.map(([key, iconId, label, badge]) => (
@@ -811,14 +851,8 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
           })}
         </div>
 
-        {/* Footer */}
-        <div style={{ marginTop:'auto', borderTop:'1px solid var(--rail-border)', padding:'6px 8px' }}>
-          <button className="rail-menu-item" style={{ display:'flex', alignItems:'center', gap:10 }} onClick={onLogout}>
-            <NavIcon id="logout" />
-            <span>Sair</span>
-          </button>
-        </div>
-        <div style={{ padding:'8px 12px 12px', fontSize:9, color:'var(--rail-muted)', textAlign:'center', letterSpacing:'.12em', textTransform:'uppercase' }}>
+        {/* Footer — só versão (Sair migrou pro avatar) */}
+        <div style={{ marginTop:'auto', padding:'10px 12px 12px', fontSize:9, color:'var(--rail-muted)', textAlign:'center', letterSpacing:'.12em', textTransform:'uppercase', borderTop:'1px solid var(--rail-border)' }}>
           v{APP_VERSION} · Uniwares
         </div>
       </div>

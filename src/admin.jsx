@@ -583,6 +583,182 @@ async function fetchSupabase(table, query = '') {
   return res.json();
 }
 
+// ─── Alertas operacionais ──────────────────────────────────────────────────
+
+const SEVERITY_RANK = { danger: 0, warn: 1, info: 2 };
+
+// Match permissivo cliente↔tenant (mesmo critério do HealthView).
+function findClientForTenant(tenant, clients) {
+  const tName = tenant.name?.toLowerCase() ?? '';
+  return clients.find(c => {
+    const cName = c.name?.toLowerCase() ?? '';
+    return cName.includes(tName) || tName.includes(cName);
+  });
+}
+
+// Pura — sem useState/useMemo. Recebe métricas (do Supabase) + clientes
+// (do localStorage) e devolve a lista de alertas a mostrar.
+export function computeTenantAlerts(metricsByTenant, tenants, clients) {
+  const out = [];
+  const seen = new Set();
+
+  // Alertas por tenant (inatividade + conformidade)
+  for (const t of tenants) {
+    const m = metricsByTenant[t.id] ?? null;
+    const client = findClientForTenant(t, clients);
+    if (!m) continue;
+
+    if (m.lastActivity) {
+      const days = Math.floor((Date.now() - new Date(m.lastActivity).getTime()) / 86400000);
+      if (days >= 10) {
+        out.push({
+          id: `inactive-${t.id}`,
+          kind: 'inactive', severity: 'danger',
+          tenant: t, client,
+          label: `${t.name} sem registros há ${days} dias`,
+          hint: 'Risco real de cliente parar de usar. Ligar pro contato.',
+          action: client?.email ? { kind: 'email', target: client.email } : null,
+        });
+        seen.add(t.id);
+      } else if (days >= 5) {
+        out.push({
+          id: `inactive-${t.id}`,
+          kind: 'inactive', severity: 'warn',
+          tenant: t, client,
+          label: `${t.name} sem registros há ${days} dias`,
+          hint: 'Vale um check-in com o supervisor.',
+          action: client?.email ? { kind: 'email', target: client.email } : null,
+        });
+        seen.add(t.id);
+      }
+    }
+
+    if (m.conformity != null && m.conformity < 70 && !seen.has(t.id)) {
+      const isDanger = m.conformity < 50;
+      out.push({
+        id: `conf-${t.id}`,
+        kind: 'compliance',
+        severity: isDanger ? 'danger' : 'warn',
+        tenant: t, client,
+        label: `${t.name} com ${m.conformity}% de conformidade (últ. 7d)`,
+        hint: isDanger
+          ? 'Muito fora da faixa. Vale alertar a RT.'
+          : 'Conformidade baixa — observar tendência.',
+        action: null,
+      });
+    }
+  }
+
+  // Alertas por cliente (trial + pagamento)
+  for (const c of clients) {
+    if (!c.active) continue;
+
+    if (c.plan === 'trial' && c.trialEndsAt) {
+      const days = Math.ceil((new Date(c.trialEndsAt).getTime() - Date.now()) / 86400000);
+      if (days < 0) {
+        out.push({
+          id: `trial-exp-${c.id}`,
+          kind: 'trial-expired', severity: 'danger',
+          client: c,
+          label: `Trial de ${c.name} expirou há ${Math.abs(days)}d`,
+          hint: 'Cliente está com acesso bloqueado. Converta ou avise.',
+          action: { kind: 'edit-client', target: c.id },
+        });
+      } else if (days <= 3) {
+        out.push({
+          id: `trial-warn-${c.id}`,
+          kind: 'trial-warning', severity: 'warn',
+          client: c,
+          label: `Trial de ${c.name} expira em ${days}d`,
+          hint: 'Hora de propor o plano pago.',
+          action: { kind: 'edit-client', target: c.id },
+        });
+      }
+    }
+
+    if (c.billingStatus === 'overdue') {
+      out.push({
+        id: `overdue-${c.id}`,
+        kind: 'overdue', severity: 'danger',
+        client: c,
+        label: `${c.name} com pagamento atrasado`,
+        hint: 'Regularize antes que o acesso seja cortado.',
+        action: { kind: 'edit-client', target: c.id },
+      });
+    }
+  }
+
+  // Ordena: danger primeiro, depois warn; dentro do mesmo nível mantém ordem
+  return out.sort((a, b) => (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9));
+}
+
+function AlertsCard({ alerts, onAction }) {
+  if (!alerts.length) return null;
+  const dangerCount = alerts.filter(a => a.severity === 'danger').length;
+  const warnCount   = alerts.filter(a => a.severity === 'warn').length;
+
+  return (
+    <div style={{
+      background:'white', border:'1px solid #d9d1c4', borderRadius:12,
+      padding:'18px 22px', marginBottom:16,
+      borderLeft:`4px solid ${dangerCount > 0 ? '#c0392b' : '#8a4e00'}`,
+    }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:12 }}>
+        <div>
+          <div style={{ fontSize:10, fontWeight:700, letterSpacing:'.12em', textTransform:'uppercase', color:'#6b6760' }}>
+            Atenção operacional
+          </div>
+          <h3 style={{ fontFamily:'Times-Roman, serif', fontSize:22, fontWeight:400, margin:'2px 0 0', letterSpacing:'-.02em', color:'#141413' }}>
+            {alerts.length} alerta{alerts.length === 1 ? '' : 's'} {dangerCount > 0 && `· ${dangerCount} crítico${dangerCount === 1 ? '' : 's'}`}{warnCount > 0 && ` · ${warnCount} aviso${warnCount === 1 ? '' : 's'}`}
+          </h3>
+        </div>
+      </div>
+
+      <ul style={{ listStyle:'none', padding:0, margin:0, display:'flex', flexDirection:'column', gap:8 }}>
+        {alerts.map(a => {
+          const color = a.severity === 'danger' ? '#c0392b' : '#8a4e00';
+          const bg    = a.severity === 'danger' ? '#fdecea' : '#fdf6e8';
+          return (
+            <li key={a.id} style={{
+              display:'flex', alignItems:'flex-start', gap:12,
+              padding:'10px 14px', background:bg, borderRadius:8,
+              borderLeft:`3px solid ${color}`,
+            }}>
+              <span style={{
+                flexShrink:0, marginTop:2,
+                width:8, height:8, borderRadius:'50%', background:color,
+              }} />
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:13, fontWeight:600, color:'#141413' }}>{a.label}</div>
+                {a.hint && (
+                  <div style={{ fontSize:11, color:'#6b6760', marginTop:2 }}>{a.hint}</div>
+                )}
+              </div>
+              {a.action && (
+                <button
+                  onClick={() => onAction?.(a)}
+                  style={{
+                    flexShrink:0, padding:'5px 10px', borderRadius:6,
+                    border:`1px solid ${color}55`, background:'white',
+                    color, cursor:'pointer', fontSize:11, fontWeight:700,
+                    fontFamily:'inherit', whiteSpace:'nowrap',
+                    letterSpacing:'.04em', textTransform:'uppercase',
+                  }}
+                  title={a.action.kind === 'email' ? `Enviar e-mail pra ${a.action.target}` : 'Abrir cliente'}
+                >
+                  {a.action.kind === 'email' ? 'E-mail' :
+                   a.action.kind === 'edit-client' ? 'Abrir' :
+                   'Ação'}
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 function TenantHealthCard({ tenant, metrics, client }) {
   const toneColor = (t) => ({
     ok:'#2d6e4a', warn:'#8a4e00', danger:'#c0392b', neutral:'#9b9590',
@@ -683,7 +859,7 @@ function TenantHealthCard({ tenant, metrics, client }) {
   );
 }
 
-function HealthView({ clients }) {
+function HealthView({ clients, onAlertsChange, onEditClient }) {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
   const [records, setRecords] = useState([]);
@@ -743,6 +919,25 @@ function HealthView({ clients }) {
 
   const defaultMetrics = { recordsLast7d:0, activeUsers7d:0, lastActivity:null, conformity:null, nonCompliant:0 };
 
+  // Alertas operacionais — combina métricas do Supabase com config dos clientes
+  const alerts = useMemo(
+    () => computeTenantAlerts(metricsByTenant, tenantsBase, clients),
+    [metricsByTenant, clients],
+  );
+
+  // Notifica parent (AdminPanel) pra mostrar badge no tab
+  useEffect(() => { onAlertsChange?.(alerts); }, [alerts, onAlertsChange]);
+
+  const handleAlertAction = (alert) => {
+    if (alert.action?.kind === 'email' && alert.action.target) {
+      const subject = encodeURIComponent(`NutriOPS — sobre ${alert.tenant?.name ?? alert.client?.name}`);
+      const body = encodeURIComponent(`Oi! ${alert.label}.\n\n${alert.hint ?? ''}`);
+      window.location.href = `mailto:${alert.action.target}?subject=${subject}&body=${body}`;
+    } else if (alert.action?.kind === 'edit-client' && alert.client) {
+      onEditClient?.(alert.client);
+    }
+  };
+
   return (
     <div>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:16 }}>
@@ -759,6 +954,8 @@ function HealthView({ clients }) {
           {loading ? 'Atualizando…' : 'Atualizar'}
         </button>
       </div>
+
+      <AlertsCard alerts={alerts} onAction={handleAlertAction} />
 
       {error && (
         <div style={{ padding:'12px 16px', background:'#fdecea', border:'1px solid #c0392b', borderRadius:10, color:'#c0392b', fontSize:13, marginBottom:16 }}>
@@ -805,6 +1002,9 @@ export function AdminPanel({ onExit }) {
   const [filter, setFilter]           = useState('all');
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [tab, setTab]                 = useState('clients'); // 'clients' | 'health'
+  // Alertas elevados de HealthView pra que o tab Saúde mostre badge mesmo
+  // quando o admin tá no tab Clientes. HealthView atualiza via onAlertsChange.
+  const [healthAlerts, setHealthAlerts] = useState([]);
   const usageStats = useMemo(() => getAllUsageStats(), []);
 
   useEffect(() => { writeClients(clients); }, [clients]);
@@ -867,6 +1067,8 @@ export function AdminPanel({ onExit }) {
         }}>
           {[['clients','Clientes'],['health','Saúde dos tenants']].map(([key, label]) => {
             const isActive = tab === key;
+            const badgeCount = key === 'health' ? healthAlerts.length : 0;
+            const badgeHasDanger = key === 'health' && healthAlerts.some(a => a.severity === 'danger');
             return (
               <button key={key} onClick={() => setTab(key)}
                 style={{
@@ -877,14 +1079,34 @@ export function AdminPanel({ onExit }) {
                   color: isActive ? '#cc785c' : '#6b6760',
                   boxShadow: isActive ? '0 1px 3px rgba(20,20,19,.06)' : 'none',
                   transition:'all .15s',
+                  display:'flex', alignItems:'center', gap:8,
                 }}>
                 {label}
+                {badgeCount > 0 && (
+                  <span style={{
+                    minWidth:18, padding:'1px 6px', borderRadius:10,
+                    fontSize:10, fontWeight:700, lineHeight:1.4,
+                    background: badgeHasDanger ? '#c0392b' : '#8a4e00',
+                    color: 'white',
+                  }}>
+                    {badgeCount}
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
 
-        {tab === 'health' && <HealthView clients={clients} />}
+        {/* HealthView sempre montado — fica oculto quando não é o tab ativo
+            pra que o fetch + cálculo de alerts mantenham o badge da tab
+            sempre atualizado, mesmo se o admin nunca visitar "Saúde". */}
+        <div style={{ display: tab === 'health' ? 'block' : 'none' }}>
+          <HealthView
+            clients={clients}
+            onAlertsChange={setHealthAlerts}
+            onEditClient={(client) => { setTab('clients'); setModal(client); }}
+          />
+        </div>
 
         {tab === 'clients' && <>
         {/* KPIs */}

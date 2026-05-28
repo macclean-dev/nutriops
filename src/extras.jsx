@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { readFormRecords, readFormTemplates, catMeta, formatPeriodLabel, getPeriodKey, freqLabel } from './forms';
 import { readSessions } from './training';
 import { APP_VERSION } from './pages';
+import { buildCommands, matchCommands, readRecentCommandIds, pushRecentCommandId } from './commands';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -254,82 +255,275 @@ export function ProfileView({ session, onLogout }) {
 // 3. BUSCA GLOBAL
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function GlobalSearch({ records, allTenants, onNavigate, onClose }) {
+// ─────────────────────────────────────────────────────────────────────────────
+// GlobalSearch == Command Palette (Cmd+K)
+// Linear-style: comandos como héroi, busca em registros como modo secundário.
+//
+// Resultados ordenados em grupos:
+//   1. Recentes (top 3 do histórico)
+//   2. Navegação / Ações (filtrado por query)
+//   3. Resultados de busca (registros, templates, planilhas)
+//
+// Keyboard: ↑↓ navega, Enter executa, ESC fecha
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function GlobalSearch({
+  records, allTenants, activeTenant, session,
+  onNavigate, onClose, onLogout, onLaunchKiosk, onTenantChange,
+}) {
   const [query, setQuery] = useState('');
-  const inputRef = React.useRef(null);
+  const [cursor, setCursor] = useState(0);
+  const inputRef = useRef(null);
+  const listRef  = useRef(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => { setCursor(0); }, [query]);
 
-  const results = useMemo(() => {
+  // Catálogo de comandos disponíveis pra esse usuário
+  const commands = useMemo(
+    () => buildCommands(
+      { session, allTenants, activeTenant },
+      { onNavigate, onClose, onLogout, onLaunchKiosk, onTenantChange },
+    ),
+    [session, allTenants, activeTenant, onNavigate, onClose, onLogout, onLaunchKiosk, onTenantChange],
+  );
+
+  // Recentes — só relevante sem query
+  const recentItems = useMemo(() => {
+    if (query.trim()) return [];
+    const ids = readRecentCommandIds();
+    return ids.map(id => commands.find(c => c.id === id)).filter(Boolean).slice(0, 3);
+  }, [commands, query]);
+
+  // Comandos filtrados (ou todos se query vazia, excluindo recentes)
+  const filteredCommands = useMemo(() => {
+    const matched = matchCommands(query, commands);
+    if (!query.trim()) {
+      const recentIds = new Set(recentItems.map(r => r.id));
+      return matched.filter(c => !recentIds.has(c.id));
+    }
+    return matched;
+  }, [query, commands, recentItems]);
+
+  // Busca de registros (modo busca) — só com query >= 2 chars
+  const searchResults = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (q.length < 2) return [];
     const out = [];
 
-    // Temperature records
-    const tempMatches = records.filter(r => {
-      return [r.equipmentInput, r.equipment, r.tenantName, r.user, r.note, String(r.value)].join(' ').toLowerCase().includes(q);
-    }).slice(0, 5);
-    tempMatches.forEach(r => out.push({
-      type: 'temp', icon: '🌡️', title: `${r.equipmentInput||r.equipment} — ${r.value}°C`,
-      subtitle: `${r.tenantName} · ${fmtDT(r.createdAt)} · ${r.user}`,
-      action: () => { onNavigate('audit'); onClose(); },
-    }));
+    records.forEach(r => {
+      const blob = [r.equipmentInput, r.equipment, r.tenantName, r.user, r.note, String(r.value)].join(' ').toLowerCase();
+      if (blob.includes(q)) {
+        out.push({
+          id: `rec:${r.id}`,
+          kind: 'record',
+          label: `${r.equipmentInput || r.equipment} — ${r.value}°C`,
+          hint: `${r.tenantName} · ${fmtDT(r.createdAt)} · ${r.user}`,
+          run: () => { onNavigate('audit'); onClose(); },
+        });
+      }
+    });
 
-    // Forms
     allTenants.forEach(tenant => {
       const templates = readFormTemplates(tenant);
       const formRecs  = readFormRecords(tenant.id);
-      templates.filter(t => t.title.toLowerCase().includes(q)).slice(0,3).forEach(t => {
-        out.push({ type:'form', icon:'📋', title: t.title, subtitle: `${tenant.name} · ${freqLabel(t.frequency)}`, action: () => { onNavigate('forms'); onClose(); } });
+      templates.forEach(t => {
+        if (t.title.toLowerCase().includes(q)) {
+          out.push({
+            id: `tpl:${tenant.id}:${t.id}`,
+            kind: 'template',
+            label: t.title,
+            hint: `${tenant.name} · ${freqLabel(t.frequency)}`,
+            run: () => { onNavigate('forms'); onClose(); },
+          });
+        }
       });
-      formRecs.filter(r => r.formTitle?.toLowerCase().includes(q)).slice(0,2).forEach(r => {
-        out.push({ type:'form', icon:'📋', title: r.formTitle, subtitle: `${r.tenantName} · ${formatPeriodLabel(r.frequency, r.periodKey)} · ${r.user}`, action: () => { onNavigate('forms'); onClose(); } });
+      formRecs.forEach(r => {
+        if (r.formTitle?.toLowerCase().includes(q)) {
+          out.push({
+            id: `fr:${r.id}`,
+            kind: 'form-record',
+            label: r.formTitle,
+            hint: `${r.tenantName} · ${formatPeriodLabel(r.frequency, r.periodKey)} · ${r.user}`,
+            run: () => { onNavigate('forms'); onClose(); },
+          });
+        }
       });
     });
 
     return out.slice(0, 10);
-  }, [query, records, allTenants]);
+  }, [query, records, allTenants, onNavigate, onClose]);
+
+  // Lista achatada pro keyboard nav (recentes + comandos + busca)
+  const flatItems = useMemo(
+    () => [...recentItems, ...filteredCommands, ...searchResults],
+    [recentItems, filteredCommands, searchResults],
+  );
+
+  const runItem = (item) => {
+    if (!item) return;
+    pushRecentCommandId(item.id);
+    item.run();
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setCursor(c => Math.min(c + 1, Math.max(flatItems.length - 1, 0)));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setCursor(c => Math.max(c - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      runItem(flatItems[cursor]);
+    }
+  };
+
+  // Auto-scroll item ativo
+  useEffect(() => {
+    const el = listRef.current?.querySelector(`[data-cmd-idx="${cursor}"]`);
+    el?.scrollIntoView({ block: 'nearest' });
+  }, [cursor]);
+
+  let runningIdx = 0;
+  const renderItem = (item, sectionLabel) => {
+    const idx = runningIdx++;
+    const active = idx === cursor;
+    return (
+      <div
+        key={item.id}
+        data-cmd-idx={idx}
+        onClick={() => runItem(item)}
+        onMouseEnter={() => setCursor(idx)}
+        style={{
+          display:'flex', alignItems:'center', gap:12,
+          padding:'10px 16px', cursor:'pointer',
+          background: active ? 'var(--surface-muted, #f0ece4)' : 'transparent',
+          borderLeft: active ? '2px solid var(--primary, #cc785c)' : '2px solid transparent',
+        }}
+      >
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontSize:13, fontWeight:500, color:'var(--text, #141413)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+            {item.label}
+          </div>
+          {item.hint && (
+            <div style={{ fontSize:11, color:'var(--text-secondary, #6b6760)', marginTop:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+              {item.hint}
+            </div>
+          )}
+        </div>
+        {active && (
+          <kbd style={{ flexShrink:0, padding:'2px 6px', fontSize:10, color:'var(--text-secondary, #6b6760)', border:'1px solid var(--border, #d9d1c4)', borderRadius:4, fontFamily:'monospace' }}>↵</kbd>
+        )}
+      </div>
+    );
+  };
+
+  const SectionHeader = ({ children }) => (
+    <div style={{
+      padding:'10px 16px 4px', fontSize:10, fontWeight:700,
+      letterSpacing:'.12em', textTransform:'uppercase',
+      color:'var(--text-secondary, #6b6760)',
+    }}>{children}</div>
+  );
 
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:300, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'80px 24px 24px' }} onClick={onClose}>
-      <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:600, boxShadow:'0 24px 64px rgba(0,0,0,.2)', overflow:'hidden' }} onClick={e=>e.stopPropagation()}>
-        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px', borderBottom:'1px solid var(--border-subtle)' }}>
-          <span style={{ fontSize:18, color:'var(--text-secondary)' }}>🔍</span>
-          <input ref={inputRef} value={query} onChange={e=>setQuery(e.target.value)}
-            placeholder="Buscar equipamentos, planilhas, registros, colaboradores…"
-            style={{ flex:1, border:'none', outline:'none', fontSize:15, fontFamily:'inherit', background:'transparent' }}
-            onKeyDown={e=>{ if(e.key==='Escape') onClose(); }} />
-          <kbd style={{ padding:'2px 8px', borderRadius:6, border:'1px solid var(--border)', fontSize:11, color:'var(--text-secondary)', background:'var(--surface-muted)' }}>ESC</kbd>
+    <div
+      style={{ position:'fixed', inset:0, background:'rgba(20,20,19,.55)', zIndex:300, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'80px 24px 24px' }}
+      onClick={onClose}
+    >
+      <div
+        style={{ background:'var(--surface, white)', border:'1px solid var(--border, #d9d1c4)', borderRadius:14, width:'100%', maxWidth:600, boxShadow:'0 24px 64px rgba(20,20,19,.25)', overflow:'hidden', display:'flex', flexDirection:'column', maxHeight:'70vh' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Input */}
+        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px', borderBottom:'1px solid var(--border-subtle, #e5ddd0)' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color:'var(--text-secondary, #6b6760)' }}>
+            <circle cx="11" cy="11" r="7"/><path d="m21 21-3.5-3.5"/>
+          </svg>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Comando ou busca…  ex: ir relatórios, novo, freezer"
+            style={{ flex:1, border:'none', outline:'none', fontSize:15, fontFamily:'inherit', background:'transparent', color:'var(--text, #141413)' }}
+          />
+          <kbd style={{ padding:'2px 8px', borderRadius:6, border:'1px solid var(--border, #d9d1c4)', fontSize:10, color:'var(--text-secondary, #6b6760)', background:'var(--surface-muted, #f0ece4)', fontFamily:'monospace' }}>ESC</kbd>
         </div>
-        {query.length >= 2 && (
-          <div style={{ maxHeight:400, overflowY:'auto' }}>
-            {results.length === 0 ? (
-              <p style={{ padding:'24px 16px', color:'var(--text-secondary)', fontSize:13, textAlign:'center' }}>Nenhum resultado para "{query}"</p>
-            ) : results.map((r, i) => (
-              <div key={i} onClick={r.action} style={{ display:'flex', gap:12, padding:'12px 16px', cursor:'pointer', borderBottom:'1px solid var(--border-subtle)', transition:'background .1s' }}
-                onMouseEnter={e=>e.currentTarget.style.background='var(--surface-muted)'}
-                onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                <span style={{ fontSize:18, flexShrink:0 }}>{r.icon}</span>
-                <div>
-                  <div style={{ fontSize:13, fontWeight:600 }}>{r.title}</div>
-                  <div style={{ fontSize:11, color:'var(--text-secondary)', marginTop:2 }}>{r.subtitle}</div>
-                </div>
-              </div>
-            ))}
+
+        {/* Lista */}
+        <div ref={listRef} style={{ flex:1, overflowY:'auto', padding:'4px 0' }}>
+          {recentItems.length > 0 && (
+            <>
+              <SectionHeader>Recentes</SectionHeader>
+              {recentItems.map(c => renderItem(c, 'Recentes'))}
+            </>
+          )}
+
+          {filteredCommands.length > 0 && (() => {
+            // Agrupa por `group`
+            const groups = { navigation: [], action: [] };
+            for (const c of filteredCommands) (groups[c.group] ?? groups.navigation).push(c);
+            return (
+              <>
+                {groups.navigation.length > 0 && (
+                  <>
+                    <SectionHeader>Navegação</SectionHeader>
+                    {groups.navigation.map(c => renderItem(c, 'Navegação'))}
+                  </>
+                )}
+                {groups.action.length > 0 && (
+                  <>
+                    <SectionHeader>Ações</SectionHeader>
+                    {groups.action.map(c => renderItem(c, 'Ações'))}
+                  </>
+                )}
+              </>
+            );
+          })()}
+
+          {searchResults.length > 0 && (
+            <>
+              <SectionHeader>Resultados de busca</SectionHeader>
+              {searchResults.map(c => renderItem(c, 'Resultados'))}
+            </>
+          )}
+
+          {flatItems.length === 0 && (
+            <p style={{ padding:'24px 16px', color:'var(--text-secondary, #6b6760)', fontSize:13, textAlign:'center' }}>
+              {query.trim()
+                ? <>Nenhum comando ou resultado para "<strong>{query}</strong>"</>
+                : 'Sem comandos disponíveis.'}
+            </p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          display:'flex', justifyContent:'space-between', alignItems:'center', gap:12,
+          padding:'10px 16px', borderTop:'1px solid var(--border-subtle, #e5ddd0)',
+          fontSize:11, color:'var(--text-secondary, #6b6760)', background:'var(--surface-muted, #faf9f5)',
+        }}>
+          <div style={{ display:'flex', gap:16, alignItems:'center' }}>
+            <span><kbd style={kbdStyle}>↑</kbd> <kbd style={kbdStyle}>↓</kbd> navega</span>
+            <span><kbd style={kbdStyle}>↵</kbd> executa</span>
+            <span><kbd style={kbdStyle}>ESC</kbd> fecha</span>
           </div>
-        )}
-        {query.length < 2 && (
-          <div style={{ padding:'20px 16px', color:'var(--text-secondary)', fontSize:13 }}>
-            <p style={{ marginBottom:12, fontWeight:600 }}>Sugestões de busca:</p>
-            {['freezer', 'higiene pessoal', 'desvio', 'capacitação'].map(s => (
-              <span key={s} onClick={() => setQuery(s)} style={{ display:'inline-block', padding:'4px 12px', marginRight:8, marginBottom:8, borderRadius:20, border:'1px solid var(--border)', cursor:'pointer', fontSize:12 }}>{s}</span>
-            ))}
+          <div style={{ fontFamily:'monospace', letterSpacing:'.02em' }}>
+            {flatItems.length > 0 && `${cursor + 1} / ${flatItems.length}`}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
 }
+
+const kbdStyle = {
+  padding: '1px 6px', borderRadius: 4, border: '1px solid var(--border, #d9d1c4)',
+  background: 'var(--surface, white)', fontFamily: 'monospace', fontSize: 10,
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 4. CONTROLE DE HIGIENIZAÇÃO DAS MÃOS

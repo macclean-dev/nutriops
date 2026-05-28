@@ -3220,7 +3220,17 @@ export function App() {
     <div className="super-shell">
       {showSearch && (
         <Suspense fallback={null}>
-          <GlobalSearch records={records} allTenants={visibleTenants} onNavigate={setActiveView} onClose={() => setShowSearch(false)} />
+          <GlobalSearch
+            records={records}
+            allTenants={visibleTenants}
+            activeTenant={activeTenant}
+            session={session}
+            onNavigate={setActiveView}
+            onClose={() => setShowSearch(false)}
+            onLogout={handleLogout}
+            onLaunchKiosk={() => setShowKioskSetup(true)}
+            onTenantChange={handleTenantChange}
+          />
         </Suspense>
       )}
       {showKioskSetup && (

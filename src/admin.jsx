@@ -908,11 +908,122 @@ function bucketByDay(records, days = 30) {
   return [...buckets.entries()].map(([date, count]) => ({ date, count }));
 }
 
+// Drill-down de uso diário — abre ao clicar numa linha da tendência.
+// Mostra barras por dia (30d), stats agregadas e os últimos dias em lista.
+// Reusa o array `days` já computado pelo bucketByDay (zero fetch extra).
+function UsageDrilldownModal({ tenant, days, metrics, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const color = tenant.brandColor ?? '#cc785c';
+  const total = days.reduce((s, d) => s + d.count, 0);
+  const max = Math.max(1, ...days.map(d => d.count));
+  const activeDays = days.filter(d => d.count > 0).length;
+  const avg = activeDays > 0 ? (total / activeDays).toFixed(1) : '0';
+  const busiest = days.reduce((best, d) => d.count > (best?.count ?? -1) ? d : best, null);
+  const zeroDays = days.length - activeDays;
+
+  const fmtDay = (iso) => {
+    try { return new Date(iso + 'T12:00').toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' }); }
+    catch { return iso; }
+  };
+  const weekday = (iso) => {
+    try { return new Date(iso + 'T12:00').toLocaleDateString('pt-BR', { weekday:'short' }).replace('.',''); }
+    catch { return ''; }
+  };
+  const recent = [...days].slice(-7).reverse();
+
+  return (
+    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200, padding:24 }}>
+      <div onClick={e => e.stopPropagation()} style={{ position:'relative', background:'white', borderRadius:16, padding:28, width:'100%', maxWidth:620, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 24px 64px rgba(0,0,0,.3)' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:18 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <span style={{ width:10, height:10, borderRadius:'50%', background:color, flexShrink:0 }} />
+            <div>
+              <h2 style={{ fontFamily:'Times-Roman, serif', fontSize:22, fontWeight:400, margin:0, letterSpacing:'-.02em', color:'#141413' }}>{tenant.name}</h2>
+              <div style={{ fontSize:11, color:'#6b6760', letterSpacing:'.04em', textTransform:'uppercase' }}>Uso diário · últimos 30 dias</div>
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="Fechar" style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:'#6b6760', lineHeight:1 }}>✕</button>
+        </div>
+
+        {/* Stats agregadas */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:10, marginBottom:20 }}>
+          {[
+            { label:'Total 30d', value:total },
+            { label:'Média/dia ativo', value:avg },
+            { label:'Dias sem registro', value:zeroDays },
+            { label:'Pico', value:busiest?.count ?? 0, sub: busiest && busiest.count > 0 ? fmtDay(busiest.date) : null },
+          ].map(s => (
+            <div key={s.label} style={{ background:'#faf9f5', border:'1px solid #ece7dd', borderRadius:10, padding:'10px 12px' }}>
+              <div style={{ fontSize:20, fontWeight:600, fontFamily:'monospace', color:'#141413', lineHeight:1.1 }}>{s.value}</div>
+              <div style={{ fontSize:9, color:'#6b6760', letterSpacing:'.08em', textTransform:'uppercase', marginTop:2 }}>{s.label}</div>
+              {s.sub && <div style={{ fontSize:10, color:'#9b9590', marginTop:1 }}>{s.sub}</div>}
+            </div>
+          ))}
+        </div>
+
+        {/* Bar chart diário */}
+        <div style={{ display:'flex', alignItems:'flex-end', gap:2, height:120, padding:'0 2px', marginBottom:6 }}>
+          {days.map((d) => {
+            const h = max > 0 ? Math.round((d.count / max) * 100) : 0;
+            return (
+              <div key={d.date} title={`${fmtDay(d.date)} (${weekday(d.date)}): ${d.count} registro${d.count!==1?'s':''}`}
+                style={{ flex:1, display:'flex', flexDirection:'column', justifyContent:'flex-end', height:'100%', cursor:'default' }}>
+                <div style={{
+                  height:`${h}%`, minHeight: d.count > 0 ? 3 : 1,
+                  background: d.count > 0 ? color : '#ece7dd',
+                  borderRadius:'3px 3px 0 0', opacity: d.count > 0 ? 1 : .6,
+                  transition:'opacity .12s',
+                }} />
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display:'flex', justifyContent:'space-between', fontSize:9, color:'#9b9590', letterSpacing:'.04em', marginBottom:20 }}>
+          <span>{fmtDay(days[0]?.date)}</span>
+          <span>{fmtDay(days[Math.floor(days.length/2)]?.date)}</span>
+          <span>hoje</span>
+        </div>
+
+        {/* Últimos 7 dias em lista */}
+        <div style={{ fontSize:10, fontWeight:700, letterSpacing:'.10em', textTransform:'uppercase', color:'#6b6760', marginBottom:8 }}>Últimos 7 dias</div>
+        <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+          {recent.map(d => {
+            const pct = max > 0 ? (d.count / max) * 100 : 0;
+            return (
+              <div key={d.date} style={{ display:'grid', gridTemplateColumns:'70px 1fr 36px', alignItems:'center', gap:10, padding:'3px 0' }}>
+                <span style={{ fontSize:11, color:'#6b6760' }}>{fmtDay(d.date)} <span style={{ color:'#b8b1a6' }}>{weekday(d.date)}</span></span>
+                <div style={{ background:'#f0ece4', borderRadius:4, height:8, overflow:'hidden' }}>
+                  <div style={{ width:`${pct}%`, height:'100%', background:color, opacity: d.count>0?1:0, borderRadius:4 }} />
+                </div>
+                <span style={{ fontSize:12, fontWeight:600, fontFamily:'monospace', color: d.count>0?'#141413':'#b8b1a6', textAlign:'right' }}>{d.count}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {metrics && metrics.conformity != null && (
+          <div style={{ marginTop:18, paddingTop:14, borderTop:'1px solid #f0ece4', fontSize:12, color:'#6b6760' }}>
+            Conformidade recente (7d): <strong style={{ color:'#141413' }}>{metrics.conformity}%</strong>
+            {' · '}{metrics.activeUsers7d} usuário(s) ativo(s)
+            {metrics.nonCompliant > 0 && <> · <span style={{ color:'#c0392b' }}>{metrics.nonCompliant} fora da faixa</span></>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function HealthView({ clients, onAlertsChange, onEditClient }) {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
   const [records, setRecords] = useState([]);
   const [refreshAt, setRefreshAt] = useState(0);
+  const [drill, setDrill]     = useState(null); // { tenant, days, metrics }
 
   useEffect(() => {
     let cancelled = false;
@@ -1055,11 +1166,18 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
                 : '#6b6760';
 
               return (
-                <div key={t.id} style={{
-                  display:'grid', gridTemplateColumns:'minmax(160px, 1.2fr) auto 90px 70px',
-                  alignItems:'center', gap:16,
-                  padding:'8px 0', borderBottom:'1px solid #f0ece4',
-                }}>
+                <button key={t.id}
+                  onClick={() => setDrill({ tenant: t, days, metrics: metricsByTenant[t.id] })}
+                  title={`Ver uso diário de ${t.name}`}
+                  style={{
+                    display:'grid', gridTemplateColumns:'minmax(160px, 1.2fr) auto 90px 70px',
+                    alignItems:'center', gap:16, width:'100%', textAlign:'left',
+                    padding:'8px 6px', margin:'0 -6px', border:'none', background:'none',
+                    borderBottom:'1px solid #f0ece4', cursor:'pointer', borderRadius:6,
+                    fontFamily:'inherit', transition:'background .12s',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#faf9f5'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'none'}>
                   <div style={{ display:'flex', alignItems:'center', gap:10, minWidth:0 }}>
                     <span style={{
                       flexShrink:0, width:8, height:8, borderRadius:'50%',
@@ -1091,7 +1209,7 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
                       15d vs 15d
                     </div>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -1127,6 +1245,15 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
         em <strong>{Object.keys(historyByTenant).length}</strong> tenant(s) com atividade.
         Janela limitada a 5000 registros mais recentes.
       </div>
+
+      {drill && (
+        <UsageDrilldownModal
+          tenant={drill.tenant}
+          days={drill.days}
+          metrics={drill.metrics}
+          onClose={() => setDrill(null)}
+        />
+      )}
     </div>
   );
 }

@@ -140,7 +140,10 @@ export async function syncModule({ table, localKey, tenantId, toRow, fromRow, fi
   }
 }
 
-function mergeByKey(arr, key) {
+// Dedup por chave mantendo o item mais recente (updatedAt, senão createdAt).
+// Núcleo da resolução de conflito local↔remoto no sync — bug aqui = perda de
+// dado ou sobrescrita stale. Exportado pra ser testável.
+export function mergeByKey(arr, key) {
   const map = new Map();
   for (const item of arr) {
     const existing = map.get(item[key]);

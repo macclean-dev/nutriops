@@ -31,10 +31,13 @@ function generateAuditHTML(records, tenantName) {
 }
 
 function TempLineChart({ records, equipment, height = 180 }) {
+  const [hover, setHover] = useState(null); // índice do ponto sob o mouse
   const data = useMemo(() => records
     .filter((r) => (r.equipment || r.equipmentInput) === equipment && !isNaN(Number(r.value)))
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
     .slice(-30), [records, equipment]);
+  // Limpa o hover ao trocar de equipamento pra não mostrar ponto stale
+  useEffect(() => { setHover(null); }, [equipment]);
 
   if (data.length < 2) return (
     <div style={{ height, display: 'grid', placeItems: 'center', background: 'var(--surface-muted)', borderRadius: 'var(--r)', border: '1px solid var(--border-subtle)' }}>
@@ -70,7 +73,16 @@ function TempLineChart({ records, equipment, height = 180 }) {
         {pts.map((p, i) => {
           const tone = resolveTemperatureTone(p.r);
           const color = tone === 'ok' ? '#1a7f37' : tone === 'warn' ? '#9a6700' : '#cf222e';
-          return <circle key={i} cx={p.x} cy={p.y} r={3.5} fill={color} stroke="white" strokeWidth={1.5} />;
+          const active = hover === i;
+          return (
+            <g key={i}>
+              <circle cx={p.x} cy={p.y} r={active ? 5.5 : 3.5} fill={color} stroke="white" strokeWidth={1.5} style={{ transition: 'r .1s ease' }} />
+              {/* Área de captura invisível maior — facilita o hover num ponto de 3.5px */}
+              <circle cx={p.x} cy={p.y} r={14} fill="transparent" style={{ cursor: 'pointer' }}
+                onMouseEnter={() => setHover(i)}
+                onMouseLeave={() => setHover((h) => (h === i ? null : h))} />
+            </g>
+          );
         })}
         {[limits.min, (limits.min + limits.max) / 2, limits.max].map((v) => (
           <g key={v}>
@@ -85,6 +97,22 @@ function TempLineChart({ records, equipment, height = 180 }) {
             {new Date(data[i].createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
           </text>
         ))}
+        {/* Tooltip do ponto sob o mouse — renderizado por último pra ficar por cima */}
+        {hover != null && hover < pts.length && (() => {
+          const p = pts[hover];
+          const bw = 86, bh = 32;
+          const bx = Math.max(0, Math.min(cW - bw, p.x - bw / 2));   // clamp horizontal
+          const above = p.y - bh - 12 >= 0;
+          const by = above ? p.y - bh - 12 : p.y + 12;               // abaixo se não couber em cima
+          const fmt = new Date(p.r.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+          return (
+            <g style={{ pointerEvents: 'none' }}>
+              <rect x={bx} y={by} width={bw} height={bh} rx={6} fill="#1c1b19" opacity={0.96} />
+              <text x={bx + bw / 2} y={by + 14} textAnchor="middle" fontSize={12} fontWeight={700} fill="#fff" fontFamily="var(--mono, monospace)">{p.r.value}°C</text>
+              <text x={bx + bw / 2} y={by + 26} textAnchor="middle" fontSize={8} fill="#b8b1a6">{fmt}</text>
+            </g>
+          );
+        })()}
       </g>
     </svg>
   );

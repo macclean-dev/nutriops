@@ -405,7 +405,9 @@ function DarkModeToggle({ className = 'dark-mode-toggle', size = 16 }) {
 // ─── Nav Icons — SVG outline, 16×16, stroke 1.5 ──────────────────────────
 
 function NavIcon({ id, size = 16 }) {
-  const s = { width:size, height:size, viewBox:'0 0 24 24', fill:'none', stroke:'currentColor', strokeWidth:1.75, strokeLinecap:'round', strokeLinejoin:'round', flexShrink:0 };
+  // flexShrink vai em `style` (CSS), não como atributo do <svg> — senão o React
+  // avisa "does not recognize the flexShrink prop on a DOM element".
+  const s = { width:size, height:size, viewBox:'0 0 24 24', fill:'none', stroke:'currentColor', strokeWidth:1.75, strokeLinecap:'round', strokeLinejoin:'round', style:{ flexShrink:0 } };
   const icons = {
     search:      <svg {...s}><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
     sun:         <svg {...s}><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>,

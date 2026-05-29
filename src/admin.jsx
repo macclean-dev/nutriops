@@ -886,7 +886,7 @@ function HistoryChart({ days, color = '#cc785c', maxOverride = null }) {
 
 // Agrega registros do tenant em buckets diários nos últimos N dias.
 // Devolve array [{ date: 'YYYY-MM-DD', count: n }] ordenado cronologicamente.
-function bucketByDay(records, days = 30) {
+export function bucketByDay(records, days = 30) {
   const buckets = new Map();
   const today = new Date();
   today.setHours(0, 0, 0, 0);

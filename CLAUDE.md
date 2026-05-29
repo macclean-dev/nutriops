@@ -13,7 +13,7 @@ com 3 clientes (Swiss, Bäckerei, DBK Produção). Detalhes técnicos completos 
 - **Prod:** https://nutriops.uniwares.net
 - **Repo:** https://github.com/macclean-dev/nutriops.git
 - **Local:** `/Users/mac/Documents/NutriOPS/`
-- **Versão atual:** v1.8.0
+- **Versão atual:** v1.9.0
 
 ---
 
@@ -236,10 +236,33 @@ A partir daí, todo PR e push pra `main` roda build + 38 testes automaticamente.
 
 | Prioridade | Item |
 |------------|------|
-| 🔴 Alta | Senha do `/admin` (`nutriops@admin2026`) — trocar antes de escalar |
-| 🔴 Alta | Sync automático no boot + logs (problema da loja v1.5 com dados só locais) |
-| 🟡 Média | Versionar `CACHE` do service worker (hoje `nutriops-v1` hardcoded) |
-| 🟡 Média | Banner "modo local" quando Supabase desligado |
+| 🔴 Alta | Push do `.github/workflows/ci.yml` — PAT atual sem scope `workflow` |
+| 🟡 Média | Validar sync de Bäckerei + DBK (hard-refresh no device → toast atualiza → migrar locais) |
 | 🟡 Média | Supabase Auth real — hoje é PIN local; `auth.jsx` pronto mas não wired |
-| 🟢 Baixa | Code splitting (bundle JS em 594 KB) |
 | 🟢 Baixa | Migrar PINs `0000` pra reset obrigatório no 1º login |
+
+### Resolvidas (v1.9.0 — sessão 29/05)
+
+- ✅ **Sync automático no boot + logs** — health-check de write, banner "modo
+  local" agressivo, detector de 401, logs verbosos. Ver `HANDOFF_2026-05-29.md`.
+- ✅ **Banner "modo local"** — `LocalModeBanner` conta registros e escala cor.
+- ✅ **Versionar CACHE do SW** — `scripts/version-sw.js` injeta BUILD_ID por deploy.
+- ✅ **Code splitting** — bundle inicial 121 KB → 93 KB gzip (<100 KB). pages.jsx
+  quebrado em login/settings/reports-views/team-views.
+
+> ⚠️ Sobre a senha do `/admin`: o fallback `nutriops@admin2026` ainda existe no
+> código, mas `VITE_ADMIN_PASSWORD` deve estar setada no Vercel. Confirmar lá.
+
+## Sync — entenda antes de mexer (lições da v1.9.0)
+
+Bug crítico investigado em 29/05: dados das lojas não chegavam no Supabase.
+Causa = PWA preso em bundle antigo (sem env vars) + pushes que faziam no-op
+silencioso quando Supabase off. Regras que NÃO podem regredir:
+
+- **Todo push enfileira mesmo com Supabase off** (`repository.js`). Quando
+  habilitar depois, `syncQueue` empurra. Nunca voltar pro `if (!enabled) return`.
+- **Service worker força update** via toast + `controllerchange` (`main.jsx`).
+- **Auto-config sobrescreve** se URL/anonKey mudaram (`handleLogin` em pages.jsx).
+- **RLS está OFF** em todas as tabelas (auth é PIN local). Se ligar Supabase
+  Auth + RLS, reverter o `disable row level security` do `SUPABASE_SQL` e
+  escrever policies `auth.uid()` — senão volta o bug de push silencioso.

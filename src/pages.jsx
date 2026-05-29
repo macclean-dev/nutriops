@@ -2051,14 +2051,23 @@ export function App() {
     }
     const doSync = async (trigger = 'boot') => {
       if (!navigator.onLine) { console.info(`[NutriOPS] auto-sync skip (${trigger}) — offline`); return; }
-      // Health-check de write antes de tudo — se POST falha por RLS ou auth,
-      // o banner vermelho aparece e o user sabe que precisa intervir.
+      // Health-check de write — se POST falha por RLS ou auth, o banner
+      // vermelho aparece. Throttle pra 1x/dia (evita round trip + linha
+      // __healthcheck__ extra em todo boot), MAS roda sempre que há fila
+      // pendente, porque aí queremos saber se a escrita voltou a funcionar.
       if (trigger === 'boot') {
-        const probe = await supabaseRepository.testWrite();
-        if (!probe.ok) {
-          console.warn(`[NutriOPS] testWrite failed — ${probe.reason}`, probe);
-        } else {
-          console.info('[NutriOPS] testWrite ok — Supabase aceita escrita');
+        const HC_KEY = 'nutriops.healthcheck.last';
+        const lastHc = Number(localStorage.getItem(HC_KEY) || 0);
+        const queueLen = getOfflineQueue().length;
+        const stale = Date.now() - lastHc > 24 * 60 * 60 * 1000;
+        if (stale || queueLen > 0) {
+          const probe = await supabaseRepository.testWrite();
+          try { localStorage.setItem(HC_KEY, String(Date.now())); } catch {}
+          if (!probe.ok) {
+            console.warn(`[NutriOPS] testWrite failed — ${probe.reason}`, probe);
+          } else {
+            console.info('[NutriOPS] testWrite ok — Supabase aceita escrita');
+          }
         }
       }
       console.info(`[NutriOPS] auto-sync start (${trigger}) tenant=${session.tenantId}`);

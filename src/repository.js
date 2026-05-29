@@ -327,8 +327,9 @@ export const supabaseRepository = {
         }
         return { ok: false, reason: `http_${insertRes.status}`, status: insertRes.status, body };
       }
-      // DELETE — limpa o registro fake
-      await fetch(`${sbBase()}/temperature_records?id=eq.${fakeId}`, {
+      // DELETE por tenant_id — limpa o registro fake E qualquer stray de
+      // healthchecks anteriores cujo DELETE falhou (ex.: rede caiu no meio).
+      await fetch(`${sbBase()}/temperature_records?tenant_id=eq.__healthcheck__`, {
         method: 'DELETE', headers: sbHeaders(),
       });
       return { ok: true };

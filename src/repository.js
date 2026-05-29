@@ -78,6 +78,13 @@ function enqueue(table, operation, payload) {
   lw(OFFLINE_Q_KEY, next);
 }
 
+// Helper: loga erro de push e enfileira pra retry. Sem o log, falhas viram
+// invisíveis e o user nunca sabe que tem sync quebrado.
+function logFailAndEnqueue(table, operation, payload, err) {
+  console.warn(`[repo] push ${table} falhou (${err?.message ?? err}) — enfileirando pra retry`);
+  enqueue(table, operation, payload);
+}
+
 // ─── Sync status ────────────────────────────────────────────────────────────
 
 export function getSyncStatus()         { return ls(SYNC_STATUS_KEY, { lastSync: null, pending: 0 }); }
@@ -174,6 +181,14 @@ function tempFromRow(row) {
   };
 }
 
+// Cache-only write — não enfileira. Usado internamente pelo supabaseRepository
+// quando o POST ao remoto já passou, pra evitar duplicação na queue.
+function cacheTempLocal(record) {
+  const current = ls(RECORDS_KEY, []);
+  lw(RECORDS_KEY, [record, ...current].slice(0, 1000));
+  return record;
+}
+
 export const localRepository = {
   async list({ tenantId, days = 90 } = {}) {
     const records = ls(RECORDS_KEY, []);
@@ -186,8 +201,7 @@ export const localRepository = {
   },
   async create(input) {
     const record = { id: input.id ?? crypto.randomUUID(), createdAt: new Date().toISOString(), ...input };
-    const current = ls(RECORDS_KEY, []);
-    lw(RECORDS_KEY, [record, ...current].slice(0, 1000));
+    cacheTempLocal(record);
     // Enfileira mesmo sem Supabase habilitado — quando ativar depois, syncQueue
     // empurra tudo. Sem isso, temps gravadas em modo local somem da cloud.
     enqueue('temperature_records', 'upsert', tempToRow(record));
@@ -217,8 +231,8 @@ export const supabaseRepository = {
   },
   async create(input) {
     if (!navigator.onLine) {
+      // Caminho offline: localRepository.create já salva local + enfileira
       const local = await localRepository.create(input);
-      enqueue('temperature_records', 'upsert', tempToRow(local));
       return { ...local, _pending: true };
     }
     try {
@@ -227,11 +241,13 @@ export const supabaseRepository = {
         prefer: 'return=representation',
       });
       const record = tempFromRow(Array.isArray(row) ? row[0] : row);
-      await localRepository.create(record);
+      // POST funcionou — só cacheia local, NÃO enfileira (evita duplicação)
+      cacheTempLocal(record);
       return record;
-    } catch {
+    } catch (e) {
+      console.warn('[repo] supabaseRepository.create POST failed:', e?.message);
+      // Falhou: salva local + enfileira pro retry
       const local = await localRepository.create(input);
-      enqueue('temperature_records', 'upsert', tempToRow(local));
       return { ...local, _pending: true };
     }
   },
@@ -265,6 +281,53 @@ export const supabaseRepository = {
       if (res.status === 401 || res.status === 403)  return { ok: false, reason: 'auth_error' };
       return { ok: false, reason: `http_${res.status}` };
     } catch { return { ok: false, reason: 'network_error' }; }
+  },
+  // Health-check de escrita: insere um registro fake e deleta. Detecta RLS
+  // bloqueando insert mesmo com GET funcionando. Bug observado na Swiss:
+  // form_records sincronizava (RLS off) mas temperature_records não (RLS on
+  // ou outro motivo) — falha silenciosa porque catch só enfileirava.
+  async testWrite() {
+    const fakeId = 'healthcheck-' + crypto.randomUUID();
+    try {
+      // INSERT
+      const insertRes = await fetch(`${sbBase()}/temperature_records`, {
+        method: 'POST',
+        headers: { ...sbHeaders(), Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          id: fakeId,
+          tenant_id: '__healthcheck__',
+          tenant_name: '__healthcheck__',
+          equipment_input: 'healthcheck',
+          equipment_key: 'healthcheck',
+          measured_at: new Date().toISOString(),
+          value: 0, min_value: 0, max_value: 0,
+          user_name: 'system', user_role: 'healthcheck',
+          control_mode: 'healthcheck',
+          created_at: new Date().toISOString(),
+        }),
+      });
+      if (!insertRes.ok) {
+        if (insertRes.status === 401 || insertRes.status === 403) {
+          markSupabaseAuthError(insertRes.status, 'temperature_records (write)');
+          return { ok: false, reason: 'auth_error', status: insertRes.status };
+        }
+        if (insertRes.status === 404) return { ok: false, reason: 'table_missing' };
+        // 42501 = insufficient_privilege (RLS bloqueando)
+        const body = await insertRes.text();
+        if (body.includes('row-level security') || body.includes('42501')) {
+          markSupabaseAuthError(insertRes.status, 'temperature_records (RLS)');
+          return { ok: false, reason: 'rls_blocked', status: insertRes.status, body };
+        }
+        return { ok: false, reason: `http_${insertRes.status}`, body };
+      }
+      // DELETE — limpa o registro fake
+      await fetch(`${sbBase()}/temperature_records?id=eq.${fakeId}`, {
+        method: 'DELETE', headers: sbHeaders(),
+      });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, reason: 'network_error', error: e?.message };
+    }
   },
 };
 
@@ -315,7 +378,7 @@ export async function pushFormRecord(tenantId, record) {
   }
   try {
     await sbFetch('form_records', { method:'POST', body:formToRow(record), prefer:'resolution=merge-duplicates,return=minimal' });
-  } catch { enqueue('form_records', 'upsert', formToRow(record)); }
+  } catch (e) { logFailAndEnqueue('form_records', 'upsert', formToRow(record), e); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -363,7 +426,7 @@ export async function pushFormTemplate(tenantId, template) {
   }
   try {
     await sbFetch('form_templates', { method:'POST', body:tmplToRow(template, tenantId), prefer:'resolution=merge-duplicates,return=minimal' });
-  } catch { enqueue('form_templates', 'upsert', tmplToRow(template, tenantId)); }
+  } catch (e) { logFailAndEnqueue('form_templates', 'upsert', tmplToRow(template, tenantId), e); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -427,7 +490,7 @@ export async function pushEquipmentItem(tenantId, equipment) {
       body: eqToRow(equipment, tenantId),
       prefer: 'resolution=merge-duplicates,return=minimal',
     });
-  } catch { enqueue('equipment_catalog', 'upsert', eqToRow(equipment, tenantId)); }
+  } catch (e) { logFailAndEnqueue('equipment_catalog', 'upsert', eqToRow(equipment, tenantId), e); }
 }
 
 export async function pushAllEquipment(tenantId, catalog) {
@@ -488,7 +551,7 @@ export async function pushReceivingRecord(tenantId, record) {
   }
   try {
     await sbFetch('receiving_records', { method:'POST', body:recvToRow(record), prefer:'return=minimal' });
-  } catch { enqueue('receiving_records', 'insert', recvToRow(record)); }
+  } catch (e) { logFailAndEnqueue('receiving_records', 'insert', recvToRow(record), e); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -531,7 +594,7 @@ export async function pushProduct(tenantId, product) {
   }
   try {
     await sbFetch('products', { method:'POST', body:productToRow({ ...product, tenantId }), prefer:'resolution=merge-duplicates,return=minimal' });
-  } catch { enqueue('products', 'upsert', productToRow({ ...product, tenantId })); }
+  } catch (e) { logFailAndEnqueue('products', 'upsert', productToRow({ ...product, tenantId }), e); }
 }
 
 function stockToRow(l, tenantId) {
@@ -552,7 +615,7 @@ export async function pushStockLog(tenantId, log) {
   }
   try {
     await sbFetch('stock_logs', { method:'POST', body:stockToRow(log, tenantId), prefer:'return=minimal' });
-  } catch { enqueue('stock_logs', 'insert', stockToRow(log, tenantId)); }
+  } catch (e) { logFailAndEnqueue('stock_logs', 'insert', stockToRow(log, tenantId), e); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -580,7 +643,7 @@ export async function pushSpecialControl(type, tenantId, record) {
   }
   try {
     await sbFetch('special_controls', { method:'POST', body:controlToRow(type, record, tenantId), prefer:'return=minimal' });
-  } catch { enqueue('special_controls', 'insert', controlToRow(type, record, tenantId)); }
+  } catch (e) { logFailAndEnqueue('special_controls', 'insert', controlToRow(type, record, tenantId), e); }
 }
 
 export async function syncSpecialControls(type, tenantId) {
@@ -767,7 +830,19 @@ create table if not exists special_controls (
   created_at timestamptz default now()
 );
 create index if not exists idx_special_tenant on special_controls(tenant_id);
-create index if not exists idx_special_type   on special_controls(control_type);`;
+create index if not exists idx_special_type   on special_controls(control_type);
+
+-- 7. RLS desabilitada — auth é PIN local hoje, anon key tem acesso total.
+-- Quando migrar pra Supabase Auth + RLS por tenant, comentar essas linhas.
+-- Sem isso, devices em prod falham silenciosamente em pushes (bug Swiss).
+alter table temperature_records disable row level security;
+alter table form_records         disable row level security;
+alter table form_templates       disable row level security;
+alter table equipment_catalog    disable row level security;
+alter table receiving_records    disable row level security;
+alter table products             disable row level security;
+alter table stock_logs           disable row level security;
+alter table special_controls     disable row level security;`;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // USAGE TRACKING

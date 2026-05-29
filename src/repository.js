@@ -50,7 +50,13 @@ async function sbFetch(table, params = {}) {
   if (!res.ok) {
     // 401/403 = anon key inválida ou RLS bloqueando. Marca pra UI mostrar banner.
     if (res.status === 401 || res.status === 403) markSupabaseAuthError(res.status, table);
-    throw new Error(`SB ${method} ${table}: ${res.status}`);
+    // Lê body pra incluir a mensagem do Postgres (invalid uuid, NOT NULL,
+    // schema mismatch, etc) — crítico pra debug. Sem isso, status code
+    // sozinho não diz qual coluna ou constraint falhou.
+    let errBody = '';
+    try { errBody = await res.text(); } catch {}
+    if (errBody) console.warn(`[repo] ${method} ${table} ${res.status} body:`, errBody);
+    throw new Error(`SB ${method} ${table}: ${res.status}${errBody ? ' — ' + errBody.slice(0, 200) : ''}`);
   }
   // Sucesso → limpa flag se existia (key foi corrigida)
   if (getSupabaseAuthError()) clearSupabaseAuthError();
@@ -287,7 +293,9 @@ export const supabaseRepository = {
   // form_records sincronizava (RLS off) mas temperature_records não (RLS on
   // ou outro motivo) — falha silenciosa porque catch só enfileirava.
   async testWrite() {
-    const fakeId = 'healthcheck-' + crypto.randomUUID();
+    // ID precisa ser UUID válido (coluna é tipo uuid). Sem prefix.
+    // Identificamos como healthcheck via tenant_id='__healthcheck__' pra delete.
+    const fakeId = crypto.randomUUID();
     try {
       // INSERT
       const insertRes = await fetch(`${sbBase()}/temperature_records`, {
@@ -307,18 +315,17 @@ export const supabaseRepository = {
         }),
       });
       if (!insertRes.ok) {
+        const body = await insertRes.text().catch(() => '');
         if (insertRes.status === 401 || insertRes.status === 403) {
           markSupabaseAuthError(insertRes.status, 'temperature_records (write)');
-          return { ok: false, reason: 'auth_error', status: insertRes.status };
+          return { ok: false, reason: 'auth_error', status: insertRes.status, body };
         }
-        if (insertRes.status === 404) return { ok: false, reason: 'table_missing' };
-        // 42501 = insufficient_privilege (RLS bloqueando)
-        const body = await insertRes.text();
+        if (insertRes.status === 404) return { ok: false, reason: 'table_missing', body };
         if (body.includes('row-level security') || body.includes('42501')) {
           markSupabaseAuthError(insertRes.status, 'temperature_records (RLS)');
           return { ok: false, reason: 'rls_blocked', status: insertRes.status, body };
         }
-        return { ok: false, reason: `http_${insertRes.status}`, body };
+        return { ok: false, reason: `http_${insertRes.status}`, status: insertRes.status, body };
       }
       // DELETE — limpa o registro fake
       await fetch(`${sbBase()}/temperature_records?id=eq.${fakeId}`, {

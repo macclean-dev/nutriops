@@ -46,13 +46,15 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
   };
 
   const handleSave = () => {
-    saveSupabaseConfig({ url: url.trim(), anonKey: anonKey.trim(), enabled });
+    // source:'manual' protege essa config de ser sobrescrita pelo auto-config
+    // do tenant no login (handleLogin em pages.jsx) — caso de projeto dedicado.
+    saveSupabaseConfig({ url: url.trim(), anonKey: anonKey.trim(), enabled, source: 'manual' });
     window.location.reload();
   };
 
   const handleTest = async () => {
     setTesting(true); setTestResult(null);
-    saveSupabaseConfig({ url: url.trim(), anonKey: anonKey.trim(), enabled: true });
+    saveSupabaseConfig({ url: url.trim(), anonKey: anonKey.trim(), enabled: true, source: 'manual' });
     const result = await supabaseRepository.testConnection();
     setTestResult(result); setTesting(false);
   };

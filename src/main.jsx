@@ -14,6 +14,11 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
       .then(reg => {
+        // No 1º acesso não há controller — o clients.claim() do SW dispara
+        // controllerchange, mas NÃO queremos recarregar (causaria flash no
+        // primeiro load). Só recarrega em controllerchange quando já havia
+        // um SW controlando (= é update real, não install inicial).
+        const hadController = !!navigator.serviceWorker.controller;
         // Re-checa a cada 30min se há nova versão
         setInterval(() => reg.update(), 30 * 60 * 1000);
         // Quando o SW novo aparece em waiting, mostra UI pra recarregar.
@@ -51,8 +56,9 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
         let reloaded = false;
         navigator.serviceWorker.addEventListener('controllerchange', () => {
           if (reloaded) return;
+          // Sem controller anterior = primeiro install (claim). Não recarrega.
+          if (!hadController) return;
           reloaded = true;
-          // Pequeno delay pra evitar loop se 2 abas atualizam simultaneamente
           setTimeout(() => window.location.reload(), 100);
         });
       })

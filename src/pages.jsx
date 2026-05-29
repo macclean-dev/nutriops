@@ -4,7 +4,7 @@ import { readOnboardingTenants, writeOnboardingTenants } from './onboarding-stor
 import { readAdminAuth, writeAdminAuth, clearAdminAuth, readClients } from './admin-storage';
 import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
 import { trackUsage } from './repository';
-import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError } from './repository';
+import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, shouldAutoConfigSupabase } from './repository';
 import { getPermissions, canAccess } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
@@ -1883,11 +1883,8 @@ export function App() {
       const tenant = activeTenants.find(t => t.id === s.tenantId);
       if (tenant?.supabase?.url && tenant?.supabase?.anonKey) {
         const existing = JSON.parse(localStorage.getItem('nutriops.supabase.config') ?? 'null');
-        const urlMudou    = existing?.url     !== tenant.supabase.url;
-        const keyMudou    = existing?.anonKey !== tenant.supabase.anonKey;
-        const semConfig   = !existing;
-        const desabilitado = existing && !existing.enabled;
-        if (semConfig || desabilitado || urlMudou || keyMudou) {
+        const decision = shouldAutoConfigSupabase(existing, tenant.supabase);
+        if (decision.apply) {
           localStorage.setItem('nutriops.supabase.config', JSON.stringify({
             url: tenant.supabase.url,
             anonKey: tenant.supabase.anonKey,
@@ -1895,8 +1892,7 @@ export function App() {
             source: 'tenant',
             syncedAt: new Date().toISOString(),
           }));
-          const motivo = semConfig ? 'sem config' : desabilitado ? 'estava desabilitado' : urlMudou ? 'URL mudou' : 'anon key rotacionou';
-          console.info(`[NutriOPS] Supabase auto-configurado pelo tenant ${tenant.id} (${motivo})`);
+          console.info(`[NutriOPS] Supabase auto-configurado pelo tenant ${tenant.id} (${decision.reason})`);
         }
       }
     } catch (e) { console.warn('[NutriOPS] auto-config Supabase falhou:', e?.message); }

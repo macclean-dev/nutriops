@@ -17,6 +17,27 @@ export function getSupabaseConfig()         { return ls(SUPABASE_KEY, { url:'', 
 export function saveSupabaseConfig(config)  { lw(SUPABASE_KEY, config); }
 export function isSupabaseEnabled()         { const c = getSupabaseConfig(); return Boolean(c.enabled && c.url && c.anonKey); }
 
+// Decide se o auto-config do tenant (data.js/onboarding) deve sobrescrever a
+// config local de Supabase no login. Puro pra ser testável — a decisão roteia
+// dados de produção, então tem que estar coberta.
+// Regras:
+//  - config setada à mão (source:'manual') é PROTEGIDA (projeto dedicado).
+//  - aplica quando: sem config, desabilitada, ou URL/anonKey do tenant mudaram
+//    (cobre rotação da anon key seed compartilhada).
+export function shouldAutoConfigSupabase(existing, tenantSupabase) {
+  if (!tenantSupabase?.url || !tenantSupabase?.anonKey) return { apply: false, reason: 'tenant sem supabase' };
+  if (existing?.source === 'manual') return { apply: false, reason: 'config manual protegida' };
+  const semConfig    = !existing;
+  const desabilitado = !!existing && !existing.enabled;
+  const urlMudou     = existing?.url     !== tenantSupabase.url;
+  const keyMudou     = existing?.anonKey !== tenantSupabase.anonKey;
+  if (semConfig || desabilitado || urlMudou || keyMudou) {
+    const reason = semConfig ? 'sem config' : desabilitado ? 'estava desabilitado' : urlMudou ? 'URL mudou' : 'anon key rotacionou';
+    return { apply: true, reason };
+  }
+  return { apply: false, reason: 'já configurado' };
+}
+
 function sbHeaders() {
   const { anonKey } = getSupabaseConfig();
   return { apikey: anonKey, Authorization: `Bearer ${anonKey}`, 'Content-Type': 'application/json' };
@@ -332,6 +353,9 @@ export const supabaseRepository = {
       await fetch(`${sbBase()}/temperature_records?tenant_id=eq.__healthcheck__`, {
         method: 'DELETE', headers: sbHeaders(),
       });
+      // Escrita OK → limpa flag de auth error se existia (key foi corrigida).
+      // testWrite usa fetch cru, então não passa pelo clear do sbFetch.
+      if (getSupabaseAuthError()) clearSupabaseAuthError();
       return { ok: true };
     } catch (e) {
       return { ok: false, reason: 'network_error', error: e?.message };

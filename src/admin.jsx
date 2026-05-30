@@ -46,6 +46,9 @@ function clientStatus(client) {
 
 // Senha do painel admin. Em produção é injetada via Vercel env var
 // VITE_ADMIN_PASSWORD. Em dev cai no fallback abaixo (e loga aviso).
+// NB: o Vercel cacheia o chunk por content-hash e o cache de build NÃO
+// invalida quando uma env var muda — se a senha nova não pegar após setar
+// a var, redeploy SEM "Use existing Build Cache" (ou edite este arquivo).
 const ENV_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD;
 const FALLBACK_PASSWORD = 'nutriops@admin2026';
 const ADMIN_PASSWORD = ENV_PASSWORD || FALLBACK_PASSWORD;

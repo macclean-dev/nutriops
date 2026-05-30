@@ -44,11 +44,12 @@ function clientStatus(client) {
 
 // ─── ADMIN LOGIN ───────────────────────────────────────────────────────────
 
-// Senha do painel admin. Em produção é injetada via Vercel env var
-// VITE_ADMIN_PASSWORD. Em dev cai no fallback abaixo (e loga aviso).
-// NB: o Vercel cacheia o chunk por content-hash e o cache de build NÃO
-// invalida quando uma env var muda — se a senha nova não pegar após setar
-// a var, redeploy SEM "Use existing Build Cache" (ou edite este arquivo).
+// Senha do painel admin. Em produção SERIA injetada via Vercel env var
+// VITE_ADMIN_PASSWORD — mas em 30/05 a env não chegava no build do Vercel
+// (SB_* funcionam, essa não; investigação inconclusiva). Hoje cai no
+// fallback abaixo. Item PARQUEADO de propósito: a senha aqui é extraível
+// do bundle de qualquer forma — o fix real é o épico de Auth (role de
+// admin validada no servidor). Ver docs/AUTH_RLS_PLAN.md.
 const ENV_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD;
 const FALLBACK_PASSWORD = 'nutriops@admin2026';
 const ADMIN_PASSWORD = ENV_PASSWORD || FALLBACK_PASSWORD;

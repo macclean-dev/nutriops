@@ -250,10 +250,15 @@ A partir daí, todo PR e push pra `main` roda build + 38 testes automaticamente.
   quebrado em login/settings/reports-views/team-views.
 - ✅ **CI no GitHub Actions** — `.github/workflows/ci.yml` rodando build + 128
   testes em todo push/PR pra `main`.
-- ✅ **VITE_ADMIN_PASSWORD no Vercel** — fallback público `nutriops@admin2026`
-  aposentado (setada em Production + Preview).
 - ✅ **Tooltip no gráfico** — hover nos pontos mostra temperatura + data/hora.
 
+> ⚠️ **VITE_ADMIN_PASSWORD — PARQUEADO (não resolvido).** Tentamos setar no
+> Vercel em 30/05 mas a env **não chegava no build** (as `VITE_SB_*` chegam,
+> essa não; provado via hash do chunk; causa inconclusiva). O `/admin` ainda
+> usa o fallback `nutriops@admin2026`. Como a senha é `VITE_` (extraível do
+> bundle), o ganho seria marginal — o fix real é o épico de Auth (role de
+> admin server-side). Dobrado no `docs/AUTH_RLS_PLAN.md`.
+>
 > ⚠️ Anon key: **adiada de propósito**. Rotacionar não adianta enquanto RLS
 > estiver off (a chave é pública por design — vai no bundle). A proteção real
 > é o épico de Auth + RLS. Ver `docs/AUTH_RLS_PLAN.md`.

@@ -53,7 +53,7 @@ const ENV_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD;
 const FALLBACK_PASSWORD = 'nutriops@admin2026';
 const ADMIN_PASSWORD = ENV_PASSWORD || FALLBACK_PASSWORD;
 if (!ENV_PASSWORD && import.meta.env.PROD) {
-  console.warn('[NutriOPS] VITE_ADMIN_PASSWORD não setada no ambiente de produção. Usando fallback inseguro.');
+  console.warn('[NutriOPS] VITE_ADMIN_PASSWORD ausente no build de produção — /admin caiu no fallback público. Set a env var no Vercel (Production) e redeploy SEM "Use existing Build Cache".');
 }
 
 export function AdminLogin({ onLogin }) {

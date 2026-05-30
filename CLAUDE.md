@@ -236,22 +236,47 @@ A partir daí, todo PR e push pra `main` roda build + 38 testes automaticamente.
 
 | Prioridade | Item |
 |------------|------|
-| 🔴 Alta | Push do `.github/workflows/ci.yml` — PAT atual sem scope `workflow` |
-| 🟡 Média | Validar sync de Bäckerei + DBK (hard-refresh no device → toast atualiza → migrar locais) |
-| 🟡 Média | Supabase Auth real — hoje é PIN local; `auth.jsx` pronto mas não wired |
-| 🟢 Baixa | Migrar PINs `0000` pra reset obrigatório no 1º login |
+| 🟡 Média | Validar sync de Bäckerei + DBK (receita abaixo) — esperando acesso aos devices das lojas |
+| 🟢 Alta (épico) | Supabase Auth real + RLS — mata anon key exposta + RLS off + PIN local de uma vez. Plano em `docs/AUTH_RLS_PLAN.md` (3 decisões aguardando aprovação) |
+| 🟢 Baixa | Migrar PINs `0000`/`9999` pra reset obrigatório no 1º login (cai junto no épico de Auth) |
 
-### Resolvidas (v1.9.0 — sessão 29/05)
+### Resolvidas (v1.9.0 — sessão 29-30/05)
 
 - ✅ **Sync automático no boot + logs** — health-check de write, banner "modo
   local" agressivo, detector de 401, logs verbosos. Ver `HANDOFF_2026-05-29.md`.
 - ✅ **Banner "modo local"** — `LocalModeBanner` conta registros e escala cor.
 - ✅ **Versionar CACHE do SW** — `scripts/version-sw.js` injeta BUILD_ID por deploy.
-- ✅ **Code splitting** — bundle inicial 121 KB → 93 KB gzip (<100 KB). pages.jsx
+- ✅ **Code splitting** — bundle inicial 121 KB → 95 KB gzip (<100 KB). pages.jsx
   quebrado em login/settings/reports-views/team-views.
+- ✅ **CI no GitHub Actions** — `.github/workflows/ci.yml` rodando build + 128
+  testes em todo push/PR pra `main`.
+- ✅ **VITE_ADMIN_PASSWORD no Vercel** — fallback público `nutriops@admin2026`
+  aposentado (setada em Production + Preview).
+- ✅ **Tooltip no gráfico** — hover nos pontos mostra temperatura + data/hora.
 
-> ⚠️ Sobre a senha do `/admin`: o fallback `nutriops@admin2026` ainda existe no
-> código, mas `VITE_ADMIN_PASSWORD` deve estar setada no Vercel. Confirmar lá.
+> ⚠️ Anon key: **adiada de propósito**. Rotacionar não adianta enquanto RLS
+> estiver off (a chave é pública por design — vai no bundle). A proteção real
+> é o épico de Auth + RLS. Ver `docs/AUTH_RLS_PLAN.md`.
+
+### Receita — validar/destravar device de loja (sem precisar de mim)
+
+Quando um device de loja não estiver sincronizando (dados só locais):
+
+1. No device: feche o app por completo (ou Cmd+Shift+R no navegador)
+2. Reabra `nutriops.uniwares.net` → aparece o toast coral **"Nova versão
+   disponível"** → **Atualizar agora**
+3. Faça login normal
+4. F12 → Console, confirme as 3 linhas:
+   `[NutriOPS] boot — Supabase: ON …` · `testWrite ok` · `auto-sync done — N/9`
+5. Se aparecer banner amarelo "N registros aguardando" → **Configurações →
+   Migrar registros locais para Supabase**
+6. Confirme na nuvem (Supabase → SQL Editor):
+   ```sql
+   SELECT tenant_id, COUNT(*), MAX(created_at)
+   FROM temperature_records GROUP BY tenant_id ORDER BY tenant_id;
+   ```
+   As 3 lojas (`swiss`, `backerei`, `dbk-producao`) devem ter `MAX(created_at)`
+   recente.
 
 ## Sync — entenda antes de mexer (lições da v1.9.0)
 

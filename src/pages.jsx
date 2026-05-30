@@ -1802,6 +1802,27 @@ function TeamHub({ activeView, setActiveView, session, records, ...rest }) {
 // ROOT APP
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Liga o Supabase a partir do tenant (env vars no bundle / onboarding) se ainda
+// não estiver configurado. Roda no login E no boot — devices com sessão antiga
+// (anterior ao bundle com env vars) ligam o sync ao abrir, sem re-logar. Foi o
+// gap que deixou a Swiss em modo local com 91 registros parados. Idempotente:
+// shouldAutoConfigSupabase devolve apply:false se já configurado/manual.
+function maybeAutoConfigSupabase(tenantId, activeTenants) {
+  try {
+    const tenant = (activeTenants ?? []).find(t => t.id === tenantId);
+    if (!tenant?.supabase?.url || !tenant?.supabase?.anonKey) return false;
+    const existing = JSON.parse(localStorage.getItem('nutriops.supabase.config') ?? 'null');
+    const decision = shouldAutoConfigSupabase(existing, tenant.supabase);
+    if (!decision.apply) return false;
+    localStorage.setItem('nutriops.supabase.config', JSON.stringify({
+      url: tenant.supabase.url, anonKey: tenant.supabase.anonKey,
+      enabled: true, source: 'tenant', syncedAt: new Date().toISOString(),
+    }));
+    console.info(`[NutriOPS] Supabase auto-configurado pelo tenant ${tenant.id} (${decision.reason})`);
+    return true;
+  } catch (e) { console.warn('[NutriOPS] auto-config Supabase falhou:', e?.message); return false; }
+}
+
 export function App() {
   const repository = useMemo(() => getTemperatureRepository(), []);
   const [session, setSession]         = useState(() => readSession());
@@ -1812,28 +1833,9 @@ export function App() {
     // logSession é uma chamada one-shot — usa dynamic import pra não puxar
     // extras.jsx no boot (33KB+).
     import('./extras').then(m => m.logSession(s.tenantId, s.user)).catch(() => {});
-    // Auto-config Supabase a partir do tenant (data.js ou onboarding) — fallback
-    // pra dispositivos que não entraram via link ?token=
-    // IMPORTANTE: sobrescreve config existente se URL ou anon key mudaram —
-    // cobre rotação de anon key + mudança de projeto Supabase. Bug observado
-    // na Swiss: devices ficavam com config velha mesmo após Vercel atualizar.
-    try {
-      const tenant = activeTenants.find(t => t.id === s.tenantId);
-      if (tenant?.supabase?.url && tenant?.supabase?.anonKey) {
-        const existing = JSON.parse(localStorage.getItem('nutriops.supabase.config') ?? 'null');
-        const decision = shouldAutoConfigSupabase(existing, tenant.supabase);
-        if (decision.apply) {
-          localStorage.setItem('nutriops.supabase.config', JSON.stringify({
-            url: tenant.supabase.url,
-            anonKey: tenant.supabase.anonKey,
-            enabled: true,
-            source: 'tenant',
-            syncedAt: new Date().toISOString(),
-          }));
-          console.info(`[NutriOPS] Supabase auto-configurado pelo tenant ${tenant.id} (${decision.reason})`);
-        }
-      }
-    } catch (e) { console.warn('[NutriOPS] auto-config Supabase falhou:', e?.message); }
+    // Auto-config Supabase a partir do tenant (env vars / onboarding) — liga o
+    // sync pra devices que não entraram via link ?token=.
+    maybeAutoConfigSupabase(s.tenantId, activeTenants);
   }, [activeTenants]);
   const handleLogout = useCallback(() => { localStorage.removeItem(SESSION_KEY); setSession(null); }, []);
 
@@ -1979,8 +1981,13 @@ export function App() {
 
   // Auto-sync on login and when coming online
   useEffect(() => {
-    if (!session || !isSupabaseEnabled()) {
-      if (session) console.info('[NutriOPS] auto-sync skip — Supabase desativado neste dispositivo');
+    if (!session) return;
+    // Auto-config também no boot: device com sessão antiga (anterior ao bundle
+    // com env vars) liga o Supabase ao abrir, sem precisar re-logar. Roda ANTES
+    // do check abaixo pra que o sync prossiga já na primeira carga.
+    maybeAutoConfigSupabase(session.tenantId, activeTenants);
+    if (!isSupabaseEnabled()) {
+      console.info('[NutriOPS] auto-sync skip — Supabase desativado neste dispositivo');
       return;
     }
     const doSync = async (trigger = 'boot') => {

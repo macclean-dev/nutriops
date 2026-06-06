@@ -111,6 +111,8 @@ const readSession           = ()   => load(SESSION_KEY, null);
 
 // PIN overrides — extraídos pra ./pin (testáveis e reutilizáveis)
 import { getEffectivePin, hasPinOverride, writePinOverride, isWeakPin } from './pin';
+// Matching de nome de usuário — compartilhado com login.jsx (troca de empresa)
+import { findUserByName } from './user-match';
 
 // ─── Equipment utils ───────────────────────────────────────────────────────
 
@@ -211,7 +213,7 @@ function BottomNav({ activeView, setActiveView, session, alertCount, actionCount
 
 // ─── Mobile Drawer ─────────────────────────────────────────────────────────
 
-function MobileDrawer({ open, onClose, activeView, setActiveView, session, activeTenant, allTenants, onTenantChange, onLogout, alertCount, actionCount, maintAlertCount = 0 }) {
+function MobileDrawer({ open, onClose, activeView, setActiveView, session, activeTenant, allTenants, onTenantChange, onLogout, alertCount, actionCount, maintAlertCount = 0, switchableTenants = [], onRequestTenantSwitch }) {
   const validityAlertCount = useMemo(() => {
     try {
       const products = JSON.parse(localStorage.getItem(`nutriops.products.${activeTenant.id}`) ?? '[]');
@@ -238,7 +240,12 @@ function MobileDrawer({ open, onClose, activeView, setActiveView, session, activ
             <BrandLockup size="sm" idPrefix="drw" />
             <span style={{ fontSize:10, color:'var(--rail-muted)', letterSpacing:'.12em', textTransform:'uppercase' }}>v{APP_VERSION}</span>
           </div>
-          {allTenants.length > 1 && (
+          {switchableTenants.length > 1 ? (
+            <select value={activeTenant.id} onChange={e => { const id = e.target.value; onClose(); onRequestTenantSwitch?.(id); }}
+              style={{ width:'100%', background:'rgba(255,255,255,.05)', border:'1px solid var(--rail-border)', color:'var(--rail-text)', borderRadius:8, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13 }}>
+              {switchableTenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          ) : allTenants.length > 1 && (
             <select value={activeTenant.id} onChange={e => { onTenantChange(e.target.value); onClose(); }}
               style={{ width:'100%', background:'rgba(255,255,255,.05)', border:'1px solid var(--rail-border)', color:'var(--rail-text)', borderRadius:8, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13 }}>
               {allTenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -385,8 +392,9 @@ const resolveHubTab = (activeView, hubId, defaultSub, subIds) =>
   resolveHubTabBase(activeView, hubId, defaultSub, subIds, typeof localStorage !== 'undefined' ? localStorage : null);
 export { CONTROLS_KEYS, REPORTS_KEYS, TEAM_KEYS, isItemActive };
 
-function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenantChange, onStoreChange, activeStore, session, records, alertCount, actionCount, maintAlertCount = 0, onLogout, onSearch }) {
+function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenantChange, onStoreChange, activeStore, session, records, alertCount, actionCount, maintAlertCount = 0, onLogout, onSearch, switchableTenants = [], onRequestTenantSwitch }) {
   const perms = getPermissions(session?.user?.role);
+  const canSwitch = perms.canSwitchTenant && switchableTenants.length > 1;
   const [accountOpen, setAccountOpen] = useState(false);
 
   const validityAlertCount = useMemo(() => {
@@ -449,6 +457,13 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
         </button>
         {accountOpen && (
           <div role="menu" style={{ position:'absolute', top:'calc(100% - 2px)', left:12, right:12, background:'var(--rail-bg)', border:'1px solid var(--rail-border)', borderRadius:8, padding:4, zIndex:50, boxShadow:'0 8px 24px rgba(0,0,0,.32)' }}>
+            {canSwitch && (
+              <>
+                <CompanySwitcher tenants={switchableTenants} activeTenant={activeTenant}
+                  onRequestSwitch={(id) => { setAccountOpen(false); onRequestTenantSwitch?.(id); }} />
+                <div style={{ height:1, background:'var(--rail-border)', margin:'4px 0' }} />
+              </>
+            )}
             <button className="rail-menu-item" role="menuitem" onClick={() => { setAccountOpen(false); setActiveView('profile'); }}
               style={{ display:'flex', alignItems:'center', gap:10, width:'100%' }}>
               <NavIcon id="profile" /><span>Meu perfil</span>
@@ -545,6 +560,135 @@ function CompanyCards({ allTenants, activeTenant, onTenantChange, records }) {
               <div className="company-stat"><span>Conformidade</span><strong>{t.compliance}%</strong></div>
             </div>
           </article>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Tenant Switch (relogin) ───────────────────────────────────────────────
+// Trocar de empresa exige autenticar na empresa-alvo (decisão de produto):
+// nome + PIN do usuário naquela empresa. Admin global confirma com o PIN mestre.
+// Mantém o modelo de PIN por-tenant — ninguém opera numa empresa sem credencial lá.
+
+function TenantSwitchModal({ targetTenant, currentSession, onSuccess, onClose }) {
+  const isGlobalAdmin = currentSession?.user?.id === 'admin-global';
+  // Pré-preenche com o primeiro nome do usuário atual (atalho quando a mesma
+  // pessoa tem conta nas duas empresas — caso comum da RT/Supervisora da rede).
+  const suggestedName = isGlobalAdmin ? '' : String(currentSession?.user?.name ?? '').split(' ')[0].toLowerCase();
+  const [nameInput, setNameInput] = useState(suggestedName);
+  const [pin, setPin]   = useState('');
+  const [error, setError] = useState('');
+  const pinRef = useRef(null);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const submit = () => {
+    setError('');
+
+    // Admin global: confirma com o PIN mestre e mantém identidade global.
+    if (isGlobalAdmin) {
+      if (pin !== (globalAdmin.pin ?? '9999')) { setError('PIN incorreto.'); pinRef.current?.select(); return; }
+      onSuccess({ tenantId: targetTenant.id, user: { ...globalAdmin } });
+      return;
+    }
+
+    const raw = nameInput.trim();
+    if (!raw) { setError('Informe seu usuário.'); return; }
+    const users = readUsers(targetTenant).filter(u => u.status !== 'Inativo');
+    const user = findUserByName(users, raw);
+    if (!user) { setError(`Usuário "${raw}" não encontrado em ${targetTenant.name}.`); return; }
+
+    const effectivePin = getEffectivePin(targetTenant.id, user);
+    if (pin !== effectivePin) { setError('PIN incorreto.'); pinRef.current?.select(); return; }
+
+    onSuccess({
+      tenantId: targetTenant.id,
+      user: {
+        id: `${targetTenant.id}-${user.name}`,
+        name: user.name, role: user.role,
+        location: user.location ?? '', storeId: user.storeId ?? null,
+      },
+    });
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position:'fixed', inset:0, zIndex:1000,
+      background:'rgba(20,20,19,.55)', backdropFilter:'blur(4px)',
+      display:'flex', alignItems:'center', justifyContent:'center', padding:'24px',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background:'var(--surface)', borderRadius:'var(--r-xl)', width:'100%', maxWidth:380,
+        boxShadow:'var(--shadow-lg)', overflow:'hidden',
+      }}>
+        <div style={{ height:4, background:targetTenant.brandColor }} />
+        <div style={{ padding:'24px 26px 26px' }}>
+          <span className="eyebrow" style={{ color:targetTenant.brandColor }}>Trocar de empresa</span>
+          <h2 style={{ fontSize:21, fontWeight:700, letterSpacing:'-.03em', margin:'4px 0 6px', fontFamily:'var(--serif)' }}>
+            Entrar na {targetTenant.name}
+          </h2>
+          <p className="muted" style={{ fontSize:13, marginBottom:18 }}>
+            {isGlobalAdmin
+              ? 'Confirme o PIN de administrador global para focar nesta empresa.'
+              : `Autentique-se com seu usuário e PIN da ${targetTenant.name}.`}
+          </p>
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            {!isGlobalAdmin && (
+              <label>Usuário
+                <input value={nameInput} autoFocus
+                  onChange={e => { setNameInput(e.target.value); setError(''); }}
+                  onKeyDown={e => { if (e.key === 'Enter') pinRef.current?.focus(); }}
+                  placeholder="ex: fran" autoCapitalize="none" autoCorrect="off"
+                  style={{ fontFamily:'var(--mono)', fontSize:15 }} />
+              </label>
+            )}
+            <label>PIN
+              <input ref={pinRef} type="password" inputMode="numeric" maxLength={6} autoFocus={isGlobalAdmin}
+                value={pin} onChange={e => { setPin(e.target.value.replace(/\D/g,'')); setError(''); }}
+                onKeyDown={e => { if (e.key === 'Enter') submit(); }}
+                placeholder="••••" autoComplete="off"
+                style={{ letterSpacing:'0.3em', fontSize:20, textAlign:'center', fontFamily:'var(--mono)' }} />
+            </label>
+            {error && <div style={{ padding:'8px 12px', background:'var(--red-light)', border:'1px solid var(--red-border)', borderRadius:'var(--r)', color:'var(--red)', fontSize:13, fontWeight:600 }}>{error}</div>}
+            <button className="primary-action" style={{ width:'100%', marginTop:2 }} onClick={submit}>Entrar na empresa</button>
+            <button className="ghost-action" style={{ width:'100%' }} onClick={onClose}>Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Seletor de empresa — abre lista de empresas comutáveis. Usado no dropdown do
+// avatar (rail) e no drawer mobile. Clicar numa empresa diferente da atual
+// dispara onRequestSwitch (que abre o TenantSwitchModal).
+function CompanySwitcher({ tenants, activeTenant, onRequestSwitch }) {
+  if (!tenants || tenants.length <= 1) return null;
+  return (
+    <div style={{ padding:'4px 4px 6px' }}>
+      <div style={{ fontSize:9, fontWeight:700, textTransform:'uppercase', letterSpacing:'.08em', color:'var(--rail-muted)', padding:'4px 8px 2px' }}>Empresa</div>
+      {tenants.map(t => {
+        const isActive = t.id === activeTenant.id;
+        return (
+          <button key={t.id} role="menuitem"
+            onClick={() => { if (!isActive) onRequestSwitch(t.id); }}
+            className="rail-menu-item"
+            style={{ display:'flex', alignItems:'center', gap:10, width:'100%', cursor:isActive?'default':'pointer', opacity:isActive?1:.92 }}>
+            <span style={{ width:18, height:18, borderRadius:5, background:t.brandColor, color:'#fff', display:'grid', placeItems:'center', fontSize:10, fontWeight:700, flexShrink:0 }}>
+              {t.name.charAt(0)}
+            </span>
+            <span style={{ flex:1, textAlign:'left', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.name}</span>
+            {isActive && (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={activeTenant.brandColor} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink:0 }}>
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            )}
+          </button>
         );
       })}
     </div>
@@ -1912,6 +2056,33 @@ export function App() {
     setActiveStoreId(storeId);
   }, []);
 
+  // ─── Troca de empresa (relogin) ──────────────────────────────────────────
+  // Empresas que o usuário pode COMUTAR (distinto de multiTenant, que é ver
+  // dados agregados). Supervisor/RT/Admin podem trocar; Colaborador não.
+  const switchableTenants = useMemo(
+    () => (perms.canSwitchTenant ? tenants : []),
+    [perms.canSwitchTenant]
+  );
+  const [switchTarget, setSwitchTarget] = useState(null);
+
+  const requestTenantSwitch = useCallback((id) => {
+    if (id === activeTenantId) return;
+    // RT/Admin já têm acesso agregado autorizado → troca instantânea (sem atrito).
+    // Supervisora (sem multiTenant) → relogin com PIN da empresa-alvo.
+    if (perms.multiTenant) { handleTenantChange(id); return; }
+    const t = tenants.find(x => x.id === id);
+    if (t) setSwitchTarget(t);
+  }, [activeTenantId, perms.multiTenant, handleTenantChange]);
+
+  const handleSwitchSuccess = useCallback((newSession) => {
+    setSwitchTarget(null);
+    save(SESSION_KEY, newSession);
+    setActiveTenantId(newSession.tenantId);
+    setActiveStoreId(newSession.user?.storeId ?? null);
+    setActiveView('overview');
+    handleLogin(newSession); // setSession + logSession + auto-config Supabase
+  }, [handleLogin]);
+
   useEffect(() => {
     if (session?.tenantId && !perms.multiTenant) {
       setActiveTenantId(session.tenantId);
@@ -2145,11 +2316,17 @@ export function App() {
         </div>
       </header>
 
+      {switchTarget && (
+        <TenantSwitchModal targetTenant={switchTarget} currentSession={session}
+          onSuccess={handleSwitchSuccess} onClose={() => setSwitchTarget(null)} />
+      )}
+
       {/* Mobile drawer */}
       <MobileDrawer open={mobileDrawerOpen} onClose={() => setMobileDrawerOpen(false)}
         activeView={activeView} setActiveView={setActiveView}
         session={session} activeTenant={activeTenant} allTenants={visibleTenants}
         onTenantChange={handleTenantChange} onLogout={handleLogout}
+        switchableTenants={switchableTenants} onRequestTenantSwitch={requestTenantSwitch}
         alertCount={alertCount} actionCount={actionCount} maintAlertCount={maintAlertCount} />
 
       {/* Desktop rail */}
@@ -2157,6 +2334,7 @@ export function App() {
         session={session} records={records} alertCount={alertCount} actionCount={actionCount}
         maintAlertCount={maintAlertCount}
         onLogout={handleLogout} onSearch={() => setShowSearch(true)}
+        switchableTenants={switchableTenants} onRequestTenantSwitch={requestTenantSwitch}
         onStoreChange={handleStoreChange} activeStore={activeStore} />
       <main className="super-main">
         <LocalModeBanner session={session} activeTenant={activeTenant} setActiveView={setActiveView} />

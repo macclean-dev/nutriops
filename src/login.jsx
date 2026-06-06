@@ -3,6 +3,7 @@ import { globalAdmin } from './data';
 import { isSupabaseEnabled } from './repository';
 import { BrandLockup, APP_VERSION } from './brand';
 import { getEffectivePin, hasPinOverride, writePinOverride, isWeakPin } from './pin';
+import { findUserByName } from './user-match';
 
 const SESSION_KEY = 'nutriops.session';
 const usersKey = (id) => `nutriops.users.${id}`;
@@ -97,15 +98,7 @@ export function LoginScreen({ onLogin, activeTenants }) {
 
     for (const tenant of tenantsToSearch) {
       const users = readUsers(tenant).filter(u => u.status !== 'Inativo');
-      const normalize = s => s.toLowerCase()
-        .normalize('NFD').replace(/[̀-ͯ]/g, '')
-        .replace(/\s+/g, '.');
-      const flat = (s) => normalize(s).replace(/\./g, '');
-      const user = users.find(u => normalize(u.name) === username)
-                ?? users.find(u => normalize(u.name).split('.')[0] === username)
-                ?? users.find(u => normalize(u.name).startsWith(username))
-                ?? users.find(u => flat(u.name) === username)
-                ?? users.find(u => flat(u.name).startsWith(username));
+      const user = findUserByName(users, username);
       if (user) { foundUser = user; foundTenantId = tenant.id; break; }
     }
 

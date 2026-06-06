@@ -18,23 +18,25 @@ const ALL_VIEWS = [
 export const PERMISSIONS = {
   'Colaborador': {
     nav: ['overview','overview-v2','forms','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','profile'],
-    multiTenant: false, canExport: false, canValidate: false, canManageUsers: false, canManageConfig: false, canSeeReports: false,
+    multiTenant: false, canSwitchTenant: false, canExport: false, canValidate: false, canManageUsers: false, canManageConfig: false, canSeeReports: false,
   },
   'Supervisor': {
     nav: ['overview','overview-v2','forms','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','alerts','reportsHub','audit','equipment','maintenance','profile'],
-    multiTenant: false, canExport: true, canValidate: false, canManageUsers: false, canManageConfig: false, canSeeReports: true,
+    // multiTenant=false: vê só a própria empresa nos relatórios. canSwitchTenant=true:
+    // pode TROCAR de empresa via relogin (PIN da empresa-alvo). São coisas distintas.
+    multiTenant: false, canSwitchTenant: true, canExport: true, canValidate: false, canManageUsers: false, canManageConfig: false, canSeeReports: true,
   },
   'Nutricionista RT': {
     nav: ['overview','overview-v2','forms','pops','training','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','reportsHub','dashboard','charts','reports','monthly','audit','alerts','actions','rtpanel','team','users','sessions','equipment','maintenance','profile'],
-    multiTenant: true, canExport: true, canValidate: true, canManageUsers: false, canManageConfig: false, canSeeReports: true,
+    multiTenant: true, canSwitchTenant: true, canExport: true, canValidate: true, canManageUsers: false, canManageConfig: false, canSeeReports: true,
   },
   'Administrador': {
     nav: ALL_VIEWS,
-    multiTenant: true, canExport: true, canValidate: true, canManageUsers: true, canManageConfig: true, canSeeReports: true,
+    multiTenant: true, canSwitchTenant: true, canExport: true, canValidate: true, canManageUsers: true, canManageConfig: true, canSeeReports: true,
   },
   'Super-admin': {
     nav: ALL_VIEWS,
-    multiTenant: true, canExport: true, canValidate: true, canManageUsers: true, canManageConfig: true, canSeeReports: true,
+    multiTenant: true, canSwitchTenant: true, canExport: true, canValidate: true, canManageUsers: true, canManageConfig: true, canSeeReports: true,
   },
 };
 

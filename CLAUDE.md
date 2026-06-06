@@ -85,6 +85,12 @@ device. Resultado: qualquer aparelho que abrir o app já entra sincronizando.
 - `npm run dev` carrega sem erro de console
 - Validei a feature no browser (não só o build)
 
+### Versionamento (acordo com o dono — 05/06/2026)
+
+**Todo commit incrementa o patch do `APP_VERSION` em +1** (`src/brand.jsx`):
+`1.9.1` → `1.9.2` → `1.9.3` … Inclui commits de docs/chore. Bump junto com a
+mudança, no mesmo commit. A versão aparece no rodapé do rail e no login.
+
 ### Design (alinhado com Nexum / Claude design system)
 
 - **Sem emojis em ícones de UI** — usar `NavIcon` (SVG outline 16×16) ou outro SVG

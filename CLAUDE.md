@@ -242,9 +242,26 @@ A partir daí, todo PR e push pra `main` roda build + 38 testes automaticamente.
 
 | Prioridade | Item |
 |------------|------|
-| 🟡 Média | Validar sync de Bäckerei + DBK (receita abaixo) — esperando acesso aos devices das lojas |
-| 🟢 Alta (épico) | Supabase Auth real + RLS — mata anon key exposta + RLS off + PIN local de uma vez. Plano em `docs/AUTH_RLS_PLAN.md` (3 decisões aguardando aprovação) |
+| 🔴 Alta | **Conectar a DBK Produção** — única loja ainda zerada na nuvem (0 registros). Falta habilitar Supabase no device dela. Receita abaixo. |
+| 🟡 Média | **Bäckerei** — no ar (18 registros), mas o último é de 04/06. Verificar no device por que parou (pouca atividade ou sync travado). Check local×nuvem na receita. |
+| 🟢 Alta (épico) | Supabase Auth real + RLS — mata anon key exposta + RLS off + PIN local de uma vez. Plano em `docs/AUTH_RLS_PLAN.md`. **Decisões #1 (híbrido) e #2 (device-token) aprovadas; #3 sem staging (testa em prod). Épico pausado até fechar as lojas.** |
 | 🟢 Baixa | Migrar PINs `0000`/`9999` pra reset obrigatório no 1º login (cai junto no épico de Auth) |
+
+### Resolvidas (v1.9.1–1.9.5 — sessão 06/06)
+
+- ✅ **Seletor de empresa no header** (`d75f412`) — dropdown no avatar pra
+  Supervisor/RT/Admin. RT/Admin trocam instantâneo; Supervisora via relogin com
+  PIN da empresa-alvo (`TenantSwitchModal` + `CompanySwitcher` em pages.jsx;
+  flag `canSwitchTenant` em permissions.js; `user-match.js` compartilhado).
+- ✅ **Breadcrumb nos hubs** (`f6090bb`) — "Hub › Sub-view"; barra de tabs some
+  com 1 sub-view só (ex.: Supervisora em Relatórios).
+- ✅ **Polimento login + ⌘K** (`0f197db`) — "admin global" virou botão visível;
+  ⌘K alinhado ao novo modelo de troca de empresa.
+- ✅ **Swiss conectada** — device ligou Supabase, `testWrite ok`, fila 92→0,
+  77 registros de temperatura na nuvem (último de hoje). Sincroniza de ponta a
+  ponta. Check local×nuvem opcional pendente (sem urgência). Roteiro de campo:
+  `~/Documents/NutriOPS-roteiro-migracao-estacoes.pdf`.
+- ✅ **Convenção de versionamento** — cada commit bumpa o patch do `APP_VERSION`.
 
 ### Resolvidas (v1.9.0 — sessão 29-30/05)
 

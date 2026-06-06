@@ -253,11 +253,15 @@ export function LoginScreen({ onLogin, activeTenants }) {
               {error && <div style={{ padding:'8px 12px', background:'var(--red-light)', border:'1px solid var(--red-border)', borderRadius:'var(--r)', color:'var(--red)', fontSize:13, fontWeight:600 }}>{error}</div>}
               <button className="primary-action" style={{ marginTop:4 }} onClick={handlePinLogin}>Entrar</button>
             </div>
-            <div style={{ marginTop:16, paddingTop:14, borderTop:'1px solid var(--border-subtle)', textAlign:'center', display:'flex', flexDirection:'column', gap:6 }}>
-              {useSupabase && <button onClick={() => setMode('email')} style={{ background:'none', border:'none', fontSize:11, color:'var(--text-secondary)', cursor:'pointer', textDecoration:'underline' }}>Entrar com e-mail e senha</button>}
-              <button onClick={() => { setTenantId(t => t === '__admin__' ? (activeTenants[0]?.id ?? '') : '__admin__'); setPin(''); setError(''); setNameInput(''); }} style={{ background:'none', border:'none', fontSize:11, color:'var(--text-secondary)', cursor:'pointer', textDecoration:'underline' }}>
+            <div style={{ marginTop:16, paddingTop:14, borderTop:'1px solid var(--border-subtle)', display:'flex', flexDirection:'column', gap:10 }}>
+              <button className="ghost-action" style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}
+                onClick={() => { setTenantId(t => t === '__admin__' ? (activeTenants[0]?.id ?? '') : '__admin__'); setPin(''); setError(''); setNameInput(''); }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink:0 }}>
+                  <path d="M12 2 3 6v6c0 5 4 8 9 10 5-2 9-5 9-10V6z" />
+                </svg>
                 {isAdmin ? 'Entrar como colaborador da unidade' : 'Entrar como administrador global'}
               </button>
+              {useSupabase && <button onClick={() => setMode('email')} style={{ background:'none', border:'none', fontSize:11, color:'var(--text-secondary)', cursor:'pointer', textDecoration:'underline', textAlign:'center' }}>Entrar com e-mail e senha</button>}
             </div>
           </div>
         )}

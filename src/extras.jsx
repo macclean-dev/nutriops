@@ -270,6 +270,7 @@ export function ProfileView({ session, onLogout }) {
 export function GlobalSearch({
   records, allTenants, activeTenant, session,
   onNavigate, onClose, onLogout, onLaunchKiosk, onTenantChange,
+  switchableTenants, onRequestTenantSwitch,
 }) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
@@ -282,10 +283,10 @@ export function GlobalSearch({
   // Catálogo de comandos disponíveis pra esse usuário
   const commands = useMemo(
     () => buildCommands(
-      { session, allTenants, activeTenant },
-      { onNavigate, onClose, onLogout, onLaunchKiosk, onTenantChange },
+      { session, allTenants, activeTenant, switchableTenants },
+      { onNavigate, onClose, onLogout, onLaunchKiosk, onTenantChange, onRequestTenantSwitch },
     ),
-    [session, allTenants, activeTenant, onNavigate, onClose, onLogout, onLaunchKiosk, onTenantChange],
+    [session, allTenants, activeTenant, switchableTenants, onNavigate, onClose, onLogout, onLaunchKiosk, onTenantChange, onRequestTenantSwitch],
   );
 
   // Recentes — só relevante sem query

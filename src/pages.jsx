@@ -2303,6 +2303,8 @@ export function App() {
             onLogout={handleLogout}
             onLaunchKiosk={() => setShowKioskSetup(true)}
             onTenantChange={handleTenantChange}
+            switchableTenants={switchableTenants}
+            onRequestTenantSwitch={requestTenantSwitch}
           />
         </Suspense>
       )}

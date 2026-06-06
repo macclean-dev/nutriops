@@ -51,6 +51,24 @@ describe('commands', () => {
       expect(cmds.some(c => c.id === 'tenant:swiss')).toBe(false);
     });
 
+    it('inclui troca de tenant pra Supervisor via switchableTenants + onRequestTenantSwitch', () => {
+      const sup = {
+        ...ctx,
+        session: { user: { role: 'Supervisor' } },
+        allTenants: [{ id: 'swiss', name: 'Swiss' }], // só a própria (não-agregado)
+        switchableTenants: [
+          { id: 'swiss', name: 'Swiss' },
+          { id: 'backerei', name: 'Bäckerei' },
+        ],
+      };
+      let switched = null;
+      const cmds = buildCommands(sup, { ...callbacks, onRequestTenantSwitch: (id) => { switched = id; } });
+      const cmd = cmds.find(c => c.id === 'tenant:backerei');
+      expect(cmd).toBeTruthy();
+      cmd.run();
+      expect(switched).toBe('backerei'); // roteou pelo relogin, não pelo onTenantChange
+    });
+
     it('NÃO inclui troca de tenant pra Colaborador', () => {
       const collab = {
         ...ctx,

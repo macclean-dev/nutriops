@@ -3,7 +3,7 @@
 //
 // Filtragem é feita por matchCommands(query, commands) também aqui.
 
-import { canAccess } from './permissions';
+import { canAccess, getPermissions } from './permissions';
 
 const RECENT_KEY = 'nutriops.cmdk.recent';
 const RECENT_MAX = 6;
@@ -85,9 +85,15 @@ export function buildCommands(ctx, callbacks) {
     });
   }
 
-  // Trocar tenant (só pra perfis multi-tenant)
-  if (role && (role === 'Nutricionista RT' || role === 'Administrador' || role === 'Super-admin') && ctx.allTenants?.length > 1) {
-    for (const t of ctx.allTenants) {
+  // Trocar empresa — quem tem canSwitchTenant (Supervisor/RT/Admin).
+  // Usa a lista comutável completa (switchableTenants) quando disponível, com
+  // fallback pra allTenants. A troca roteia por onRequestTenantSwitch (que faz
+  // relogin pra Supervisora e troca instantânea pra RT/Admin); fallback no
+  // onTenantChange legado mantém compat com chamadas antigas.
+  const switchList = ctx.switchableTenants?.length ? ctx.switchableTenants : ctx.allTenants;
+  const switchFn = callbacks.onRequestTenantSwitch ?? callbacks.onTenantChange;
+  if (role && getPermissions(role).canSwitchTenant && switchList?.length > 1 && switchFn) {
+    for (const t of switchList) {
       if (t.id === ctx.activeTenant?.id) continue;
       cmds.push({
         id: `tenant:${t.id}`,
@@ -95,7 +101,7 @@ export function buildCommands(ctx, callbacks) {
         hint: 'Trocar empresa',
         keywords: `${t.name} ${t.segment ?? ''} tenant empresa`,
         group: 'action',
-        run: () => { callbacks.onTenantChange?.(t.id); callbacks.onClose?.(); },
+        run: () => { switchFn(t.id); callbacks.onClose?.(); },
       });
     }
   }

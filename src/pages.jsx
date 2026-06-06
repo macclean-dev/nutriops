@@ -1826,39 +1826,55 @@ function OfflineIndicator() {
 // HUB VIEWS — agrupam sub-views relacionadas em tabs (Nexum-style flat nav)
 // ═══════════════════════════════════════════════════════════════════════════
 
-function HubTabs({ tabs, current, onChange }) {
+function HubTabs({ tabs, current, onChange, hubLabel }) {
+  const currentTab = tabs.find(t => t.id === current);
   return (
-    <div style={{
-      display:'flex', gap:4, padding:4, marginBottom:16,
-      background:'var(--surface-muted)', border:'1px solid var(--border-subtle)',
-      borderRadius:'var(--r-lg)', overflowX:'auto',
-    }}>
-      {tabs.map(t => {
-        const isActive = current === t.id;
-        return (
-          <button key={t.id} onClick={() => onChange(t.id)}
-            style={{
-              display:'flex', alignItems:'center', gap:7, padding:'7px 12px',
-              borderRadius:'var(--r)', border:'none', cursor:'pointer',
-              fontFamily:'var(--font)', fontSize:13,
-              fontWeight: isActive ? 600 : 500,
-              background: isActive ? 'var(--surface)' : 'transparent',
-              color: isActive ? 'var(--primary)' : 'var(--text-secondary)',
-              boxShadow: isActive ? '0 1px 3px rgba(20,20,19,.06)' : 'none',
-              transition:'all .15s',
-              whiteSpace:'nowrap',
-            }}>
-            <NavIcon id={t.iconId} />
-            <span>{t.label}</span>
-            {t.badge > 0 && (
-              <span style={{
-                background:'var(--red)', color:'white', borderRadius:10,
-                fontSize:10, fontWeight:700, padding:'1px 6px', lineHeight:1.4,
-              }}>{t.badge}</span>
-            )}
-          </button>
-        );
-      })}
+    <div style={{ marginBottom:16 }}>
+      {/* Breadcrumb — orienta "onde estou": Hub › Sub-view atual */}
+      {hubLabel && (
+        <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:10, fontSize:12 }}>
+          <span style={{ color:'var(--text-secondary)', fontWeight:600 }}>{hubLabel}</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color:'var(--text-placeholder)', flexShrink:0 }}>
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+          <span style={{ color:'var(--text)', fontWeight:700 }}>{currentTab?.label ?? ''}</span>
+        </div>
+      )}
+      {/* Barra de tabs — só quando há 2+ sub-views; com 1 só, o breadcrumb basta */}
+      {tabs.length > 1 && (
+        <div style={{
+          display:'flex', gap:4, padding:4,
+          background:'var(--surface-muted)', border:'1px solid var(--border-subtle)',
+          borderRadius:'var(--r-lg)', overflowX:'auto',
+        }}>
+          {tabs.map(t => {
+            const isActive = current === t.id;
+            return (
+              <button key={t.id} onClick={() => onChange(t.id)}
+                style={{
+                  display:'flex', alignItems:'center', gap:7, padding:'7px 12px',
+                  borderRadius:'var(--r)', border:'none', cursor:'pointer',
+                  fontFamily:'var(--font)', fontSize:13,
+                  fontWeight: isActive ? 600 : 500,
+                  background: isActive ? 'var(--surface)' : 'transparent',
+                  color: isActive ? 'var(--primary)' : 'var(--text-secondary)',
+                  boxShadow: isActive ? '0 1px 3px rgba(20,20,19,.06)' : 'none',
+                  transition:'all .15s',
+                  whiteSpace:'nowrap',
+                }}>
+                <NavIcon id={t.iconId} />
+                <span>{t.label}</span>
+                {t.badge > 0 && (
+                  <span style={{
+                    background:'var(--red)', color:'white', borderRadius:10,
+                    fontSize:10, fontWeight:700, padding:'1px 6px', lineHeight:1.4,
+                  }}>{t.badge}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -1882,7 +1898,7 @@ function ControlsHub({ activeView, setActiveView, session, ...rest }) {
   if (!Active) return <NoPermission onBack={() => setActiveView('overview')} />;
   return (
     <>
-      <HubTabs tabs={visibleTabs} current={current} onChange={handleChange} />
+      <HubTabs tabs={visibleTabs} current={current} onChange={handleChange} hubLabel="Controles especiais" />
       <Active session={session} {...rest} />
     </>
   );
@@ -1907,7 +1923,7 @@ function ReportsHub({ activeView, setActiveView, session, allTenants, records, .
   if (!visibleTabs.length) return <NoPermission onBack={() => setActiveView('overview')} />;
   return (
     <>
-      <HubTabs tabs={visibleTabs} current={current} onChange={handleChange} />
+      <HubTabs tabs={visibleTabs} current={current} onChange={handleChange} hubLabel="Relatórios" />
       {current === 'dashboard' && <DashboardView {...shared} />}
       {current === 'charts'    && <ChartsView    {...shared} />}
       {current === 'reports'   && <ReportsView   allTenants={allTenants} records={records} />}
@@ -1934,7 +1950,7 @@ function TeamHub({ activeView, setActiveView, session, records, ...rest }) {
   if (!visibleTabs.length) return <NoPermission onBack={() => setActiveView('overview')} />;
   return (
     <>
-      <HubTabs tabs={visibleTabs} current={current} onChange={handleChange} />
+      <HubTabs tabs={visibleTabs} current={current} onChange={handleChange} hubLabel="Equipe" />
       {current === 'users'    && <UsersView {...shared} />}
       {current === 'turns'    && <TurnsView {...shared} />}
       {current === 'sessions' && <SessionHistoryView {...shared} />}

@@ -13,8 +13,15 @@
 - ✅ **#2 — Autorização de escrita do colaborador: 2A (device-token por
   tenant).** Reaproveita o fluxo `?token=`; troca a anon key compartilhada por
   um JWT escopado no `tenant_id`. Caminho pra 2C (Edge Function) depois.
-- ⏳ **#3 — Staging:** aguardando confirmação se há projeto Supabase de staging
-  ou se criamos um. **Destrava a Fase 0.**
+- ⚠️ **#3 — Staging: NÃO haverá staging.** Decisão do dono (05/06): testar as
+  policies no **próprio prod com RLS ainda OFF** (Fase 0 não liga nada — só cria
+  as policies). Margem de erro zero quando chegar a Fase 3 (ligar RLS): fazer
+  **tenant por tenant**, com `testWrite` + banner de 401 como rede de segurança,
+  e estar pronto pra `disable row level security` de rollback imediato.
+
+> **Ordem atual (05/06):** o épico Auth+RLS fica **pausado** — prioridade é
+> fechar a migração da **Swiss** (91 registros) quando houver acesso ao device.
+> Retomar daqui depois disso.
 
 ---
 

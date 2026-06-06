@@ -1,9 +1,20 @@
 # Plano — Supabase Auth real + RLS por tenant
 
-> **Status: RASCUNHO PRA APROVAÇÃO.** Não comecei a implementar nada disso —
-> é um épico grande que mexe em auth + segurança de dados de 3 clientes
-> pagando, então precisa da sua decisão antes. Escrito na sessão de 29/05
-> enquanto você estava em outro projeto.
+> **Status: DECISÕES #1 e #2 APROVADAS (05/06/2026).** O dono aprovou as duas
+> recomendações: modelo **híbrido (1A)** e **device-token por tenant (2A)**.
+> Falta só o dado da Decisão #3 (existe projeto Supabase de staging?). Nada
+> implementado ainda — épico grande, mexe em auth + dados de 3 clientes pagando.
+> Escrito na sessão de 29/05, decisões aprovadas na de 05/06.
+
+## Decisões aprovadas
+
+- ✅ **#1 — Modelo de identidade: A (híbrido).** Admin/RT/Supervisor com conta
+  real (e-mail/senha + JWT); colaborador segue PIN, escrita autorizada via #2.
+- ✅ **#2 — Autorização de escrita do colaborador: 2A (device-token por
+  tenant).** Reaproveita o fluxo `?token=`; troca a anon key compartilhada por
+  um JWT escopado no `tenant_id`. Caminho pra 2C (Edge Function) depois.
+- ⏳ **#3 — Staging:** aguardando confirmação se há projeto Supabase de staging
+  ou se criamos um. **Destrava a Fase 0.**
 
 ---
 

@@ -22,9 +22,13 @@ describe('findUserByName', () => {
     expect(findUserByName(USERS, 'mateus')?.name).toBe('Mateus');
   });
   it('acha por nome completo com ponto ou por primeiro nome', () => {
-    // fiel ao login original: nome completo casa com ponto, não com espaço
     expect(findUserByName(USERS, 'ana.paula')?.name).toBe('Ana Paula');
     expect(findUserByName(USERS, 'ana')?.name).toBe('Ana Paula');
+  });
+  it('acha por nome completo COM ESPAÇO (bug reportado 06/06)', () => {
+    expect(findUserByName(USERS, 'ana paula')?.name).toBe('Ana Paula');
+    expect(findUserByName(USERS, 'fran souza')?.name).toBe('Fran Souza');
+    expect(findUserByName(USERS, '  fran   souza  ')?.name).toBe('Fran Souza');
   });
   it('ignora @ e caixa', () => {
     expect(findUserByName(USERS, '@FRAN')?.name).toBe('Fran Souza');

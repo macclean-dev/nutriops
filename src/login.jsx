@@ -83,7 +83,13 @@ export function LoginScreen({ onLogin, activeTenants }) {
       'producao': 'dbk-producao',
     };
 
-    const resolvedHint = tenantHint ? (TENANT_ALIASES[tenantHint] ?? tenantHint) : null;
+    // Remove acento/trema do hint antes de resolver: "bäckerei" -> "backerei",
+    // senão @Bäckerei (como o cliente digita o nome da marca) não encontra o
+    // tenant cujo id é "backerei".
+    const normHint = tenantHint
+      ? tenantHint.normalize('NFD').replace(/[̀-ͯ]/g, '')
+      : null;
+    const resolvedHint = normHint ? (TENANT_ALIASES[normHint] ?? normHint) : null;
     const tenantsToSearch = resolvedHint
       ? activeTenants.filter(t => t.id === resolvedHint || t.id.includes(resolvedHint))
       : activeTenants.filter(t => t.id === tenantId);

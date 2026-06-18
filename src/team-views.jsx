@@ -138,9 +138,17 @@ export function UsersView({ activeTenant, allTenants, onTenantChange }) {
           </div>
           <div className="equipment-maintenance-list">
             {filtered.length === 0 ? <p className="muted" style={{ padding: '16px 20px' }}>Nenhum usuário encontrado.</p>
-              : filtered.map((u) => { const ri = users.indexOf(u); return (
+              : filtered.map((u) => { const ri = users.indexOf(u);
+                  // Handle de login: primeiro nome (sem acento) @ id do tenant.
+                  // É o que o cliente digita pra entrar — ex.: iuana@backerei.
+                  const handle = `${u.name.trim().split(/\s+/)[0].normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase()}@${activeTenant.id}`;
+                  return (
                 <div key={`${u.name}-${ri}`} className={`equipment-maintenance-row user-row ${editingIndex === ri ? 'editing' : ''}`}>
-                  <div><strong>{u.name}</strong><span>{u.role} · {u.location || 'Sem localização'}</span></div>
+                  <div>
+                    <strong>{u.name}</strong>
+                    <span>{u.role} · {u.location || 'Sem localização'}</span>
+                    <span style={{ fontFamily:'var(--mono)', fontSize:11, color:'var(--text-secondary)', display:'block', marginTop:2 }}>{handle}</span>
+                  </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span className={`badge ${u.status === 'Ativo' ? 'ok' : u.status === 'Pendente' ? 'warn' : 'neutral'}`}>{u.status}</span>
                     <div className="equipment-row-actions">

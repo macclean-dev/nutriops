@@ -12,13 +12,20 @@ export function normalizeName(s) {
 }
 
 export function findUserByName(users, rawUsername) {
-  const username = String(rawUsername ?? '').trim().toLowerCase().replace(/^@+/, '');
-  if (!username || !Array.isArray(users)) return null;
+  if (!Array.isArray(users)) return null;
+  // Normaliza a ENTRADA do mesmo jeito que o nome do usuário: minúsculas, sem
+  // acento, espaços viram ponto. Sem isso, "marcia menezes" (com espaço) não
+  // casava com "Marcia Menezes" — só "marcia" ou "marcia.menezes" funcionavam.
+  // Remove @ e pontos/espaços nas bordas.
+  const input = normalizeName(String(rawUsername ?? '').trim().replace(/^@+/, ''))
+    .replace(/^\.+|\.+$/g, '');
+  if (!input) return null;
+  const flatInput = input.replace(/\./g, '');
   const flat = (s) => normalizeName(s).replace(/\./g, '');
-  return users.find((u) => normalizeName(u.name) === username)
-      ?? users.find((u) => normalizeName(u.name).split('.')[0] === username)
-      ?? users.find((u) => normalizeName(u.name).startsWith(username))
-      ?? users.find((u) => flat(u.name) === username)
-      ?? users.find((u) => flat(u.name).startsWith(username))
+  return users.find((u) => normalizeName(u.name) === input)
+      ?? users.find((u) => normalizeName(u.name).split('.')[0] === input)
+      ?? users.find((u) => normalizeName(u.name).startsWith(input))
+      ?? users.find((u) => flat(u.name) === flatInput)
+      ?? users.find((u) => flat(u.name).startsWith(flatInput))
       ?? null;
 }

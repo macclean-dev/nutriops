@@ -770,6 +770,32 @@ export async function migrateAllToSupabase(tenants) {
   return { ok:true, pushed, failed };
 }
 
+// ─── Auto-backfill (auto-cura sem admin) ────────────────────────────────────
+// Conta registros locais de TODOS os módulos pra saber se há backlog antigo
+// (registros salvos antes do mecanismo de fila) que precisa subir.
+export function countAllLocalRecords(tenants) {
+  let n = 0;
+  try {
+    n += ls('nutriops.temperature.records', []).length;
+    for (const t of tenants ?? []) {
+      n += ls(`nutriops.forms.records.${t.id}`, []).length;
+      n += ls(`nutriops.receiving.${t.id}`, []).length;
+      n += ls(`nutriops.products.${t.id}`, []).length;
+      for (const type of ['oil','thaw','cool','thermal']) {
+        n += ls(`nutriops.${type}.${t.id}`, []).length;
+      }
+    }
+  } catch {}
+  return n;
+}
+
+// Decide se o backfill automático deve rodar no boot. Roda 1x por device:
+// precisa de Supabase ligado, online, ainda não feito, e haver dado local.
+// Pura e testável — a orquestração (chamar migrate + marcar done) fica em pages.jsx.
+export function shouldAutoBackfill({ enabled, online, alreadyDone, localCount }) {
+  return Boolean(enabled && online && !alreadyDone && localCount > 0);
+}
+
 // ─── SQL schema ────────────────────────────────────────────────────────────
 
 export const SUPABASE_SQL = `-- NutriOPS · Schema completo v2.0

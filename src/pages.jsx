@@ -4,7 +4,7 @@ import { readOnboardingTenants, writeOnboardingTenants } from './onboarding-stor
 import { readAdminAuth, writeAdminAuth, clearAdminAuth, readClients } from './admin-storage';
 import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
 import { trackUsage } from './repository';
-import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, shouldAutoConfigSupabase } from './repository';
+import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill } from './repository';
 import { getPermissions, canAccess } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
@@ -2202,6 +2202,34 @@ export function App() {
       try {
         const result = await syncAllModules(session.tenantId);
         console.info(`[NutriOPS] auto-sync done (${trigger}) — ${result.synced}/${result.total} módulos`);
+
+        // Auto-backfill (auto-cura sem admin): na 1ª conexão bem-sucedida do
+        // device, empurra o histórico local que não passou pela fila (registros
+        // antigos). Roda 1x por device — depois o push/fila normal cuida do dia
+        // a dia. Idempotente (merge-duplicates). Assim NINGUÉM precisa logar
+        // como admin nem ir até a máquina pra migrar.
+        if (trigger === 'boot') {
+          const BACKFILL_KEY = 'nutriops.autobackfill.v1';
+          const alreadyDone = localStorage.getItem(BACKFILL_KEY) === 'done';
+          const localCount = countAllLocalRecords(activeTenants);
+          if (shouldAutoBackfill({ enabled: isSupabaseEnabled(), online: navigator.onLine, alreadyDone, localCount })) {
+            console.info(`[NutriOPS] auto-backfill — ${localCount} registros locais, enviando…`);
+            try {
+              const mig = await migrateAllToSupabase(activeTenants);
+              if (mig.ok && mig.failed === 0) {
+                localStorage.setItem(BACKFILL_KEY, 'done');
+                console.info(`[NutriOPS] auto-backfill ok — ${mig.pushed} registros enviados`);
+              } else {
+                console.warn('[NutriOPS] auto-backfill incompleto — repete no próximo boot', mig);
+              }
+            } catch (e) {
+              console.warn('[NutriOPS] auto-backfill falhou:', e?.message ?? e);
+            }
+          } else if (!alreadyDone && localCount === 0) {
+            // Nada local pra subir → marca done pra não checar todo boot.
+            localStorage.setItem(BACKFILL_KEY, 'done');
+          }
+        }
       } catch (e) {
         console.warn(`[NutriOPS] auto-sync failed (${trigger}):`, e?.message ?? e);
       }

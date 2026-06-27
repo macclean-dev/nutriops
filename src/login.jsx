@@ -220,8 +220,14 @@ export function LoginScreen({ onLogin, activeTenants }) {
               <button className="primary-action attention" onClick={handleEmailLogin} disabled={loading||!email||!password}>{loading ? 'Entrando…' : 'Entrar'}</button>
               <button className="ghost-action" style={{ fontSize:12 }} onClick={() => setMode('reset')}>Esqueci minha senha</button>
             </div>
-            <div style={{ marginTop:16, paddingTop:14, borderTop:'1px solid var(--border-subtle)', textAlign:'center' }}>
+            <div style={{ marginTop:16, paddingTop:14, borderTop:'1px solid var(--border-subtle)', textAlign:'center', display:'flex', flexDirection:'column', gap:8 }}>
               <button onClick={() => setMode('pin')} style={{ background:'none', border:'none', fontSize:11, color:'var(--text-secondary)', cursor:'pointer', textDecoration:'underline' }}>Entrar com nome + PIN</button>
+              {/* TEMPORÁRIO (Parte 4 remove): acesso de emergência via PIN admin
+                  enquanto validamos o login por e-mail. Some quando o 9999 sair. */}
+              <button onClick={() => { setMode('pin'); setTenantId('__admin__'); setPin(''); setError(''); }}
+                style={{ background:'none', border:'none', fontSize:10, color:'var(--text-placeholder)', cursor:'pointer', textDecoration:'underline' }}>
+                Acesso de emergência (PIN admin)
+              </button>
             </div>
           </div>
         ) : (
@@ -260,14 +266,20 @@ export function LoginScreen({ onLogin, activeTenants }) {
               <button className="primary-action" style={{ marginTop:4 }} onClick={handlePinLogin}>Entrar</button>
             </div>
             <div style={{ marginTop:16, paddingTop:14, borderTop:'1px solid var(--border-subtle)', display:'flex', flexDirection:'column', gap:10 }}>
-              <button className="ghost-action" style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}
-                onClick={() => { setTenantId(t => t === '__admin__' ? (activeTenants[0]?.id ?? '') : '__admin__'); setPin(''); setError(''); setNameInput(''); }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink:0 }}>
-                  <path d="M12 2 3 6v6c0 5 4 8 9 10 5-2 9-5 9-10V6z" />
-                </svg>
-                {isAdmin ? 'Entrar como colaborador da unidade' : 'Entrar como administrador global'}
-              </button>
-              {useSupabase && <button onClick={() => setMode('email')} style={{ background:'none', border:'none', fontSize:11, color:'var(--text-secondary)', cursor:'pointer', textDecoration:'underline', textAlign:'center' }}>Entrar com e-mail e senha</button>}
+              {isAdmin ? (
+                <button onClick={() => { setTenantId(activeTenants[0]?.id ?? ''); setPin(''); setError(''); }}
+                  style={{ background:'none', border:'none', fontSize:11, color:'var(--text-secondary)', cursor:'pointer', textDecoration:'underline', textAlign:'center' }}>
+                  ← Voltar ao login da unidade
+                </button>
+              ) : (
+                <button className="ghost-action" style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}
+                  onClick={() => { setMode('email'); setPin(''); setError(''); setNameInput(''); }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink:0 }}>
+                    <path d="M12 2 3 6v6c0 5 4 8 9 10 5-2 9-5 9-10V6z" />
+                  </svg>
+                  Entrar como administrador
+                </button>
+              )}
             </div>
           </div>
         )}

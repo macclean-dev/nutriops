@@ -64,6 +64,13 @@ const tenants = readOnboardingTenants() ?? defaultTenants;
 const IS_DEMO  = !readOnboardingTenants(); // true when using default data
 export const APP_BUILD = '2026.05.19';
 
+// Liga o Supabase a partir das env do build já no carregamento do módulo —
+// assim o login por e-mail/senha (admin) aparece ANTES de logar, e os devices
+// conectam no 1º boot sem depender de uma sessão prévia. Idempotente
+// (shouldAutoConfigSupabase ignora se já configurado). maybeAutoConfigSupabase
+// é function declaration (hoisted), então é seguro chamar aqui.
+try { maybeAutoConfigSupabase(tenants[0]?.id, tenants); } catch {}
+
 // ─── Temperatura utils ─────────────────────────────────────────────────────
 
 // Wrapper que aceita o catálogo do tenant pra usar min/max cadastrado.

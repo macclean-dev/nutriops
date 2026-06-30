@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { tenants as defaultTenants, globalAdmin } from './data';
+import { tenants as defaultTenants } from './data';
 import { readOnboardingTenants, writeOnboardingTenants } from './onboarding-storage';
 import { readAdminAuth, writeAdminAuth, clearAdminAuth, readClients } from './admin-storage';
 import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
@@ -579,10 +579,9 @@ function CompanyCards({ allTenants, activeTenant, onTenantChange, records }) {
 // Mantém o modelo de PIN por-tenant — ninguém opera numa empresa sem credencial lá.
 
 function TenantSwitchModal({ targetTenant, currentSession, onSuccess, onClose }) {
-  const isGlobalAdmin = currentSession?.user?.id === 'admin-global';
   // Pré-preenche com o primeiro nome do usuário atual (atalho quando a mesma
   // pessoa tem conta nas duas empresas — caso comum da RT/Supervisora da rede).
-  const suggestedName = isGlobalAdmin ? '' : String(currentSession?.user?.name ?? '').split(' ')[0].toLowerCase();
+  const suggestedName = String(currentSession?.user?.name ?? '').split(' ')[0].toLowerCase();
   const [nameInput, setNameInput] = useState(suggestedName);
   const [pin, setPin]   = useState('');
   const [error, setError] = useState('');
@@ -596,14 +595,6 @@ function TenantSwitchModal({ targetTenant, currentSession, onSuccess, onClose })
 
   const submit = () => {
     setError('');
-
-    // Admin global: confirma com o PIN mestre e mantém identidade global.
-    if (isGlobalAdmin) {
-      if (pin !== (globalAdmin.pin ?? '9999')) { setError('PIN incorreto.'); pinRef.current?.select(); return; }
-      onSuccess({ tenantId: targetTenant.id, user: { ...globalAdmin } });
-      return;
-    }
-
     const raw = nameInput.trim();
     if (!raw) { setError('Informe seu usuário.'); return; }
     const users = readUsers(targetTenant).filter(u => u.status !== 'Inativo');
@@ -640,22 +631,18 @@ function TenantSwitchModal({ targetTenant, currentSession, onSuccess, onClose })
             Entrar na {targetTenant.name}
           </h2>
           <p className="muted" style={{ fontSize:13, marginBottom:18 }}>
-            {isGlobalAdmin
-              ? 'Confirme o PIN de administrador global para focar nesta empresa.'
-              : `Autentique-se com seu usuário e PIN da ${targetTenant.name}.`}
+            Autentique-se com seu usuário e PIN da {targetTenant.name}.
           </p>
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-            {!isGlobalAdmin && (
-              <label>Usuário
-                <input value={nameInput} autoFocus
-                  onChange={e => { setNameInput(e.target.value); setError(''); }}
-                  onKeyDown={e => { if (e.key === 'Enter') pinRef.current?.focus(); }}
-                  placeholder="ex: fran" autoCapitalize="none" autoCorrect="off"
-                  style={{ fontFamily:'var(--mono)', fontSize:15 }} />
-              </label>
-            )}
+            <label>Usuário
+              <input value={nameInput} autoFocus
+                onChange={e => { setNameInput(e.target.value); setError(''); }}
+                onKeyDown={e => { if (e.key === 'Enter') pinRef.current?.focus(); }}
+                placeholder="ex: fran" autoCapitalize="none" autoCorrect="off"
+                style={{ fontFamily:'var(--mono)', fontSize:15 }} />
+            </label>
             <label>PIN
-              <input ref={pinRef} type="password" inputMode="numeric" maxLength={6} autoFocus={isGlobalAdmin}
+              <input ref={pinRef} type="password" inputMode="numeric" maxLength={6}
                 value={pin} onChange={e => { setPin(e.target.value.replace(/\D/g,'')); setError(''); }}
                 onKeyDown={e => { if (e.key === 'Enter') submit(); }}
                 placeholder="••••" autoComplete="off"

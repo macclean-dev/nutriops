@@ -33,12 +33,24 @@ clientes pagando. O ROI dessa reescrita é negativo agora.
 
 ## Regras críticas
 
+### Login do admin global (v1.9.9+)
+
+> **O admin global NÃO usa mais PIN `9999`.** A partir da v1.9.9 ele autentica
+> com **e-mail + senha via Supabase Auth** (`auth.jsx` → `signIn`). O usuário
+> vive em `Authentication → Users` no Supabase, com `raw_user_meta_data`
+> `{"name":"Administrador","role":"Administrador","tenantId":null}`. Na tela de
+> login: botão **"Entrar como administrador"** → e-mail/senha. O `__admin__`/PIN
+> 9999 foi **removido** do `login.jsx`. (Colaborador segue com PIN no tablet.)
+> O `tenants-public.js` precisa das env `VITE_SB_*` no build pra o Supabase ligar
+> antes do login — já garantido em produção. Ver `docs/AUTH_RLS_PLAN.md`.
+
 ### `src/data.js` e PINs
 
 A partir do split (`src/tenants-public.js` + `src/data.js`), os defaults
-de PIN (`0000` colaboradores, `6270` Fran, `8771` Ana Paula, `9999` admin)
-ficam no `data.js` e **são commitáveis** — são apenas valores de fábrica
-sobrescritos pelo PIN reset obrigatório no 1º login.
+de PIN (`0000` colaboradores, `6270` Fran, `8771` Ana Paula) ficam no `data.js`
+e **são commitáveis** — são apenas valores de fábrica sobrescritos pelo PIN
+reset obrigatório no 1º login. (O `globalAdmin`/`9999` virou legado: a conta de
+admin global agora é Supabase Auth — ver acima.)
 
 **Não commitar:**
 

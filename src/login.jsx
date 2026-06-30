@@ -1,5 +1,4 @@
 import React, { useState, useRef } from 'react';
-import { globalAdmin } from './data';
 import { isSupabaseEnabled } from './repository';
 import { BrandLockup, APP_VERSION } from './brand';
 import { getEffectivePin, hasPinOverride, writePinOverride, isWeakPin } from './pin';
@@ -53,14 +52,6 @@ export function LoginScreen({ onLogin, activeTenants }) {
 
   const handlePinLogin = () => {
     setError('');
-    const isAdmin = tenantId === '__admin__';
-
-    if (isAdmin) {
-      if (pin !== (globalAdmin.pin ?? '9999')) { setError('PIN incorreto.'); return; }
-      const s = { tenantId: activeTenants[0]?.id, user: { ...globalAdmin } };
-      save(SESSION_KEY, s); onLogin(s); return;
-    }
-
     const raw = nameInput.trim().toLowerCase();
     if (!raw) { setError('Informe seu usuário.'); nameRef.current?.focus(); return; }
 
@@ -155,8 +146,6 @@ export function LoginScreen({ onLogin, activeTenants }) {
     }
   };
 
-  const isAdmin = tenantId === '__admin__';
-
   return (
     <div className="login-screen">
       <div className="login-card">
@@ -220,41 +209,26 @@ export function LoginScreen({ onLogin, activeTenants }) {
               <button className="primary-action attention" onClick={handleEmailLogin} disabled={loading||!email||!password}>{loading ? 'Entrando…' : 'Entrar'}</button>
               <button className="ghost-action" style={{ fontSize:12 }} onClick={() => setMode('reset')}>Esqueci minha senha</button>
             </div>
-            <div style={{ marginTop:16, paddingTop:14, borderTop:'1px solid var(--border-subtle)', textAlign:'center', display:'flex', flexDirection:'column', gap:8 }}>
+            <div style={{ marginTop:16, paddingTop:14, borderTop:'1px solid var(--border-subtle)', textAlign:'center' }}>
               <button onClick={() => setMode('pin')} style={{ background:'none', border:'none', fontSize:11, color:'var(--text-secondary)', cursor:'pointer', textDecoration:'underline' }}>Entrar com nome + PIN</button>
-              {/* TEMPORÁRIO (Parte 4 remove): acesso de emergência via PIN admin
-                  enquanto validamos o login por e-mail. Some quando o 9999 sair. */}
-              <button onClick={() => { setMode('pin'); setTenantId('__admin__'); setPin(''); setError(''); }}
-                style={{ background:'none', border:'none', fontSize:10, color:'var(--text-placeholder)', cursor:'pointer', textDecoration:'underline' }}>
-                Acesso de emergência (PIN admin)
-              </button>
             </div>
           </div>
         ) : (
           <div>
             <h1 style={{ fontSize:22, fontWeight:800, letterSpacing:'-.04em', marginBottom:6 }}>Entrar</h1>
-            <p className="muted" style={{ marginBottom:20 }}>
-              {isAdmin ? 'Administrador global.' : 'Digite seu usuário e PIN.'}
-            </p>
+            <p className="muted" style={{ marginBottom:20 }}>Digite seu usuário e PIN.</p>
             <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-              {!isAdmin && (
-                <label>Usuário
-                  <input ref={nameRef} value={nameInput}
-                    onChange={e=>{ setNameInput(e.target.value); setError(''); }}
-                    placeholder="ex: fran@backerei"
-                    onKeyDown={e=>{ if(e.key==='Enter'){e.preventDefault();pinRef.current?.focus();} }}
-                    autoComplete="username" autoCapitalize="none" autoCorrect="off"
-                    style={{ fontFamily:'var(--mono)', fontSize:15 }} />
-                  <span style={{ fontSize:11, color:'var(--text-secondary)', marginTop:4, display:'block' }}>
-                    formato: <strong>nome@empresa</strong> — ex: sila@backerei, mateus@dbk, anapaula@swiss
-                  </span>
-                </label>
-              )}
-              {isAdmin && (
-                <div style={{ padding:'12px 14px', background:'var(--blue-light)', border:'1px solid var(--blue-border)', borderRadius:'var(--r)', fontSize:13 }}>
-                  <strong>Administrador global</strong> — acesso a todas as empresas
-                </div>
-              )}
+              <label>Usuário
+                <input ref={nameRef} value={nameInput}
+                  onChange={e=>{ setNameInput(e.target.value); setError(''); }}
+                  placeholder="ex: fran@backerei"
+                  onKeyDown={e=>{ if(e.key==='Enter'){e.preventDefault();pinRef.current?.focus();} }}
+                  autoComplete="username" autoCapitalize="none" autoCorrect="off"
+                  style={{ fontFamily:'var(--mono)', fontSize:15 }} />
+                <span style={{ fontSize:11, color:'var(--text-secondary)', marginTop:4, display:'block' }}>
+                  formato: <strong>nome@empresa</strong> — ex: sila@backerei, mateus@dbk, anapaula@swiss
+                </span>
+              </label>
               <label>PIN
                 <input ref={pinRef} type="password" inputMode="numeric" maxLength={6}
                   value={pin} onChange={e=>{ setPin(e.target.value.replace(/\D/g,'')); setError(''); }}
@@ -266,20 +240,13 @@ export function LoginScreen({ onLogin, activeTenants }) {
               <button className="primary-action" style={{ marginTop:4 }} onClick={handlePinLogin}>Entrar</button>
             </div>
             <div style={{ marginTop:16, paddingTop:14, borderTop:'1px solid var(--border-subtle)', display:'flex', flexDirection:'column', gap:10 }}>
-              {isAdmin ? (
-                <button onClick={() => { setTenantId(activeTenants[0]?.id ?? ''); setPin(''); setError(''); }}
-                  style={{ background:'none', border:'none', fontSize:11, color:'var(--text-secondary)', cursor:'pointer', textDecoration:'underline', textAlign:'center' }}>
-                  ← Voltar ao login da unidade
-                </button>
-              ) : (
-                <button className="ghost-action" style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}
-                  onClick={() => { setMode('email'); setPin(''); setError(''); setNameInput(''); }}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink:0 }}>
-                    <path d="M12 2 3 6v6c0 5 4 8 9 10 5-2 9-5 9-10V6z" />
-                  </svg>
-                  Entrar como administrador
-                </button>
-              )}
+              <button className="ghost-action" style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}
+                onClick={() => { setMode('email'); setPin(''); setError(''); setNameInput(''); }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink:0 }}>
+                  <path d="M12 2 3 6v6c0 5 4 8 9 10 5-2 9-5 9-10V6z" />
+                </svg>
+                Entrar como administrador
+              </button>
             </div>
           </div>
         )}

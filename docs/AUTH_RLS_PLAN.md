@@ -19,9 +19,12 @@
   **tenant por tenant**, com `testWrite` + banner de 401 como rede de segurança,
   e estar pronto pra `disable row level security` de rollback imediato.
 
-> **Ordem atual (05/06):** o épico Auth+RLS fica **pausado** — prioridade é
-> fechar a migração da **Swiss** (91 registros) quando houver acesso ao device.
-> Retomar daqui depois disso.
+> **Atualização (06/06):** Fase 1 concluída — admin global loga com e-mail/senha
+> real (Supabase Auth), PIN `9999` removido (v1.9.8–1.9.10). **Fase 0 em
+> andamento**: policies RLS escritas em `SUPABASE_SQL` (repository.js), RLS
+> continua OFF (zero efeito ainda). Próximo: criar as 3 contas device
+> (`device-{swiss,backerei,dbk}@nutriops.internal`) e wirar o device-token no
+> sync (Fase 2) — aí sim ligar RLS de vez (Fase 3).
 
 ---
 

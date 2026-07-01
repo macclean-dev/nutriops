@@ -8,7 +8,7 @@ import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupa
 import { getPermissions, canAccess } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
-import { resolveLimits as resolveLimitsFromCatalog, heuristicLimits, suggestLimits } from './limits';
+import { resolveLimits as resolveLimitsFromCatalog, heuristicLimits, suggestLimits, dedupeCatalog } from './limits';
 
 // ─── Lazy view loading ────────────────────────────────────────────────────
 // Cada chunk só baixa quando o usuário navega pra view correspondente.
@@ -106,7 +106,7 @@ const DEFAULT_TURNS = [
   { id: 'noite', name: 'Noite',  start: '18:00', end: '23:59' },
 ];
 
-const readEquipmentCatalog  = (t)  => load(catalogKey(t.id),  t.equipmentCatalog ?? []);
+const readEquipmentCatalog  = (t)  => dedupeCatalog(load(catalogKey(t.id),  t.equipmentCatalog ?? []));
 const writeEquipmentCatalog = (id, v) => save(catalogKey(id), v);
 const readTurns             = (t)  => load(turnsKey(t.id),    DEFAULT_TURNS);
 const writeTurns            = (id, v) => save(turnsKey(id),   v);
@@ -139,6 +139,7 @@ function getEquipmentEntry(catalog = [], label = '') {
 // ─── Alert computation ─────────────────────────────────────────────────────
 
 function computeTurnAlerts(turns, records, equipCatalog, tenantId) {
+  equipCatalog = dedupeCatalog(equipCatalog); // catálogo pode chegar com dupe (nuvem) → alerta em dobro
   if (!turns?.length || !equipCatalog?.length) return [];
   const now = new Date(), todayStr = now.toDateString(), nowMin = now.getHours() * 60 + now.getMinutes();
   const alerts = [];
@@ -2043,10 +2044,12 @@ export function App() {
 
   // Equipment catalog — store-specific if multi-store
   const equipmentCatalog = useMemo(() => {
-    if (activeTenant.multiStore && activeStoreId && activeTenant.storeEquipment?.[activeStoreId]) {
-      return activeTenant.storeEquipment[activeStoreId];
-    }
-    return readEquipmentCatalog(activeTenant);
+    const raw = (activeTenant.multiStore && activeStoreId && activeTenant.storeEquipment?.[activeStoreId])
+      ? activeTenant.storeEquipment[activeStoreId]
+      : readEquipmentCatalog(activeTenant);
+    // Dedup por label — catálogo da nuvem às vezes vem com equipamento repetido
+    // (recadastro/caixa diferente), o que dobrava os alertas de turno. Ver Swiss.
+    return dedupeCatalog(raw);
   }, [activeTenant, activeStoreId]);
 
   const visibleTenants = useMemo(() => {

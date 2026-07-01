@@ -57,3 +57,22 @@ export function resolveTone(value, min, max) {
 export function suggestLimits(label = '') {
   return heuristicLimits(label);
 }
+
+// Remove equipamentos duplicados por label (case/espaço-insensitive), mantendo
+// a 1ª ocorrência. Catálogos vindos da nuvem às vezes têm o mesmo equipamento
+// 2x (ex.: recadastrado com caixa diferente) — bug observado na Swiss, onde
+// "ADEGA DE VINHOS" e "Balcão Refrigerado cozinha" apareciam 2x na lista de
+// pendências. Sem dedup, cada dupe gera um alerta de turno extra. Pura e
+// testável — aplicada onde o catálogo é resolvido (equipmentCatalog em pages).
+export function dedupeCatalog(catalog) {
+  if (!Array.isArray(catalog)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const item of catalog) {
+    const key = String(item?.label ?? '').trim().toLowerCase();
+    if (key && seen.has(key)) continue; // já vi esse label (não-vazio) — pula
+    if (key) seen.add(key);
+    out.push(item);
+  }
+  return out;
+}

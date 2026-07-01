@@ -5,7 +5,7 @@
 
 import React from 'react';
 
-export const APP_VERSION = '1.9.13';
+export const APP_VERSION = '1.9.14';
 
 // ─── Logomark: N calligráfico — diagonal coral, stems brancos ──────────────
 // Mesmo padrão visual do Nexum, mas com a diagonal coral como assinatura

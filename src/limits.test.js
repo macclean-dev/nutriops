@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { heuristicLimits, resolveLimits, resolveTone, suggestLimits } from './limits';
+import { heuristicLimits, resolveLimits, resolveTone, suggestLimits, dedupeCatalog } from './limits';
 
 describe('heuristicLimits', () => {
   it('freezer/congelado → -25/-18', () => {
@@ -105,5 +105,34 @@ describe('suggestLimits', () => {
   it('é a heurística pelo nome', () => {
     expect(suggestLimits('Freezer')).toEqual({ min: -25, max: -18 });
     expect(suggestLimits('Geladeira')).toEqual({ min: 0, max: 9 });
+  });
+});
+
+describe('dedupeCatalog — remove equipamento duplicado (bug Swiss)', () => {
+  it('colapsa labels iguais mantendo a 1ª ocorrência', () => {
+    const cat = [
+      { label: 'Freezer', location: 'Cozinha' },
+      { label: 'Refrigerador' },
+      { label: 'Freezer', location: 'Salão' }, // dupe exato
+    ];
+    const out = dedupeCatalog(cat);
+    expect(out).toHaveLength(2);
+    expect(out.map(e => e.label)).toEqual(['Freezer', 'Refrigerador']);
+    expect(out[0].location).toBe('Cozinha'); // manteve a 1ª
+  });
+  it('colapsa variações de caixa e espaço', () => {
+    const out = dedupeCatalog([
+      { label: 'ADEGA DE VINHOS' },
+      { label: '  adega de vinhos ' }, // mesma coisa (caixa+espaço)
+      { label: 'Balcão Refrigerado cozinha' },
+      { label: 'Balcão Refrigerado Cozinha' },
+    ]);
+    expect(out).toHaveLength(2);
+  });
+  it('preserva itens sem label e é robusto a entrada inválida', () => {
+    expect(dedupeCatalog(null)).toEqual([]);
+    expect(dedupeCatalog([])).toEqual([]);
+    const semLabel = [{ label: '' }, { location: 'x' }];
+    expect(dedupeCatalog(semLabel)).toHaveLength(2); // não colapsa vazios
   });
 });

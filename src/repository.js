@@ -11,6 +11,10 @@ const SYNC_STATUS_KEY = 'nutriops.sync.status';
 export const ls = (k, fb) => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : fb; } catch { return fb; } };
 export const lw = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
+// Device-auth (Fase 2 do épico RLS) — JWT escopado por tenant, usado no lugar
+// da anon key crua quando disponível. Ver ./device-auth.js.
+import { getDeviceAccessToken } from './device-auth';
+
 // ─── Supabase config ───────────────────────────────────────────────────────
 
 export function getSupabaseConfig()         { return ls(SUPABASE_KEY, { url:'', anonKey:'', enabled:false }); }
@@ -38,9 +42,17 @@ export function shouldAutoConfigSupabase(existing, tenantSupabase) {
   return { apply: false, reason: 'já configurado' };
 }
 
-function sbHeaders() {
+// tenantId opcional: quando presente, tenta usar o JWT do device daquele
+// tenant (Fase 2); sem tenantId, ou se o device-auth falhar por qualquer
+// motivo, cai pra anon key — comportamento idêntico ao de antes da Fase 2.
+async function sbHeaders(tenantId) {
   const { anonKey } = getSupabaseConfig();
-  return { apikey: anonKey, Authorization: `Bearer ${anonKey}`, 'Content-Type': 'application/json' };
+  let token = anonKey;
+  if (tenantId) {
+    const deviceToken = await getDeviceAccessToken(tenantId);
+    if (deviceToken) token = deviceToken;
+  }
+  return { apikey: anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 }
 function sbBase() { return `${getSupabaseConfig().url}/rest/v1`; }
 
@@ -61,11 +73,12 @@ function markSupabaseAuthError(status, table) {
   } catch {}
 }
 
-// Generic Supabase REST call
-async function sbFetch(table, params = {}) {
+// Generic Supabase REST call. tenantId (opcional) escolhe o JWT de device
+// certo em sbHeaders — ver comentário lá.
+async function sbFetch(table, params = {}, tenantId = null) {
   const { method='GET', filter='', body=null, prefer='' } = params;
   const url = `${sbBase()}/${table}${filter ? '?'+filter : ''}`;
-  const headers = { ...sbHeaders() };
+  const headers = { ...(await sbHeaders(tenantId)) };
   if (prefer) headers['Prefer'] = prefer;
   const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
   if (!res.ok) {
@@ -127,7 +140,7 @@ export async function syncModule({ table, localKey, tenantId, toRow, fromRow, fi
   console.debug(`[repo] syncModule(${table} tenant=${tenantId}) start`);
   try {
     const q = [`tenant_id=eq.${tenantId}`, 'order=created_at.desc', 'limit=1000', filter].filter(Boolean).join('&');
-    const rows = await sbFetch(table, { filter: q });
+    const rows = await sbFetch(table, { filter: q }, tenantId);
     const remoteRecords = rows.map(fromRow);
     const local = ls(localKey, []);
     const merged = mergeByKey([...local, ...remoteRecords], 'id');
@@ -252,7 +265,7 @@ export const supabaseRepository = {
       days > 0  ? `created_at=gte.${from}` : null,
       'order=created_at.desc', 'limit=1000',
     ].filter(Boolean).join('&');
-    const rows = await sbFetch('temperature_records', { filter });
+    const rows = await sbFetch('temperature_records', { filter }, tenantId);
     // Merge into local cache
     const local = ls(RECORDS_KEY, []);
     const merged = mergeByKey([...local, ...rows.map(tempFromRow)], 'id');
@@ -269,7 +282,7 @@ export const supabaseRepository = {
       const row = await sbFetch('temperature_records', {
         method: 'POST', body: tempToRow({ ...input, id: input.id ?? crypto.randomUUID() }),
         prefer: 'return=representation',
-      });
+      }, input.tenantId);
       const record = tempFromRow(Array.isArray(row) ? row[0] : row);
       // POST funcionou — só cacheia local, NÃO enfileira (evita duplicação)
       cacheTempLocal(record);
@@ -293,7 +306,9 @@ export const supabaseRepository = {
     for (const item of queue) {
       try {
         const { table, operation, payload } = item;
-        await sbFetch(table, { method:'POST', body:payload, prefer:'resolution=merge-duplicates,return=minimal' });
+        // tenant_id vem do próprio payload (já é a row snake_case) — a fila é
+        // global, itens de tenants diferentes podem estar misturados nela.
+        await sbFetch(table, { method:'POST', body:payload, prefer:'resolution=merge-duplicates,return=minimal' }, payload?.tenant_id);
         synced++;
       } catch { failed++; remaining.push(item); }
     }
@@ -305,7 +320,7 @@ export const supabaseRepository = {
   async exportCsv(records = []) { return localRepository.exportCsv(records); },
   async testConnection() {
     try {
-      const res = await fetch(`${sbBase()}/temperature_records?limit=1`, { headers: sbHeaders() });
+      const res = await fetch(`${sbBase()}/temperature_records?limit=1`, { headers: await sbHeaders() });
       if (res.ok)                                    return { ok: true };
       if (res.status === 404)                        return { ok: false, reason: 'table_missing' };
       if (res.status === 401 || res.status === 403)  return { ok: false, reason: 'auth_error' };
@@ -324,7 +339,7 @@ export const supabaseRepository = {
       // INSERT
       const insertRes = await fetch(`${sbBase()}/temperature_records`, {
         method: 'POST',
-        headers: { ...sbHeaders(), Prefer: 'return=minimal' },
+        headers: { ...(await sbHeaders()), Prefer: 'return=minimal' },
         body: JSON.stringify({
           id: fakeId,
           tenant_id: '__healthcheck__',
@@ -354,7 +369,7 @@ export const supabaseRepository = {
       // DELETE por tenant_id — limpa o registro fake E qualquer stray de
       // healthchecks anteriores cujo DELETE falhou (ex.: rede caiu no meio).
       await fetch(`${sbBase()}/temperature_records?tenant_id=eq.__healthcheck__`, {
-        method: 'DELETE', headers: sbHeaders(),
+        method: 'DELETE', headers: await sbHeaders(),
       });
       // Escrita OK → limpa flag de auth error se existia (key foi corrigida).
       // testWrite usa fetch cru, então não passa pelo clear do sbFetch.
@@ -412,7 +427,7 @@ export async function pushFormRecord(tenantId, record) {
     return;
   }
   try {
-    await sbFetch('form_records', { method:'POST', body:formToRow(record), prefer:'resolution=merge-duplicates,return=minimal' });
+    await sbFetch('form_records', { method:'POST', body:formToRow(record), prefer:'resolution=merge-duplicates,return=minimal' }, tenantId);
   } catch (e) { logFailAndEnqueue('form_records', 'upsert', formToRow(record), e); }
 }
 
@@ -460,7 +475,7 @@ export async function pushFormTemplate(tenantId, template) {
     return;
   }
   try {
-    await sbFetch('form_templates', { method:'POST', body:tmplToRow(template, tenantId), prefer:'resolution=merge-duplicates,return=minimal' });
+    await sbFetch('form_templates', { method:'POST', body:tmplToRow(template, tenantId), prefer:'resolution=merge-duplicates,return=minimal' }, tenantId);
   } catch (e) { logFailAndEnqueue('form_templates', 'upsert', tmplToRow(template, tenantId), e); }
 }
 
@@ -499,7 +514,7 @@ export async function syncEquipmentCatalog(tenantId) {
   console.debug(`[repo] syncEquipmentCatalog(tenant=${tenantId}) start`);
   try {
     const q = `tenant_id=eq.${tenantId}&order=label.asc&limit=500`;
-    const rows = await sbFetch('equipment_catalog', { filter: q });
+    const rows = await sbFetch('equipment_catalog', { filter: q }, tenantId);
     const remote = rows.map(eqFromRow);
     // Estratégia: cloud é a fonte de verdade. Substitui o local.
     // (Cadastro de equipamento é raro o suficiente pra não termos conflitos.)
@@ -524,7 +539,7 @@ export async function pushEquipmentItem(tenantId, equipment) {
       method: 'POST',
       body: eqToRow(equipment, tenantId),
       prefer: 'resolution=merge-duplicates,return=minimal',
-    });
+    }, tenantId);
   } catch (e) { logFailAndEnqueue('equipment_catalog', 'upsert', eqToRow(equipment, tenantId), e); }
 }
 
@@ -544,7 +559,7 @@ export async function deleteEquipmentItem(tenantId, label) {
     await sbFetch('equipment_catalog', {
       method: 'DELETE',
       filter: `tenant_id=eq.${tenantId}&label=eq.${encodeURIComponent(label)}`,
-    });
+    }, tenantId);
     return { ok: true };
   } catch (e) {
     return { ok: false, reason: e.message };
@@ -585,7 +600,7 @@ export async function pushReceivingRecord(tenantId, record) {
     return;
   }
   try {
-    await sbFetch('receiving_records', { method:'POST', body:recvToRow(record), prefer:'return=minimal' });
+    await sbFetch('receiving_records', { method:'POST', body:recvToRow(record), prefer:'return=minimal' }, tenantId);
   } catch (e) { logFailAndEnqueue('receiving_records', 'insert', recvToRow(record), e); }
 }
 
@@ -628,7 +643,7 @@ export async function pushProduct(tenantId, product) {
     return;
   }
   try {
-    await sbFetch('products', { method:'POST', body:productToRow({ ...product, tenantId }), prefer:'resolution=merge-duplicates,return=minimal' });
+    await sbFetch('products', { method:'POST', body:productToRow({ ...product, tenantId }), prefer:'resolution=merge-duplicates,return=minimal' }, tenantId);
   } catch (e) { logFailAndEnqueue('products', 'upsert', productToRow({ ...product, tenantId }), e); }
 }
 
@@ -649,7 +664,7 @@ export async function pushStockLog(tenantId, log) {
     return;
   }
   try {
-    await sbFetch('stock_logs', { method:'POST', body:stockToRow(log, tenantId), prefer:'return=minimal' });
+    await sbFetch('stock_logs', { method:'POST', body:stockToRow(log, tenantId), prefer:'return=minimal' }, tenantId);
   } catch (e) { logFailAndEnqueue('stock_logs', 'insert', stockToRow(log, tenantId), e); }
 }
 
@@ -677,7 +692,7 @@ export async function pushSpecialControl(type, tenantId, record) {
     return;
   }
   try {
-    await sbFetch('special_controls', { method:'POST', body:controlToRow(type, record, tenantId), prefer:'return=minimal' });
+    await sbFetch('special_controls', { method:'POST', body:controlToRow(type, record, tenantId), prefer:'return=minimal' }, tenantId);
   } catch (e) { logFailAndEnqueue('special_controls', 'insert', controlToRow(type, record, tenantId), e); }
 }
 
@@ -685,7 +700,7 @@ export async function syncSpecialControls(type, tenantId) {
   const localKey = `nutriops.${type}.${tenantId}`;
   if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false };
   try {
-    const rows = await sbFetch('special_controls', { filter:`tenant_id=eq.${tenantId}&control_type=eq.${type}&order=created_at.desc&limit=200` });
+    const rows = await sbFetch('special_controls', { filter:`tenant_id=eq.${tenantId}&control_type=eq.${type}&order=created_at.desc&limit=200` }, tenantId);
     const remote = rows.map(controlFromRow);
     const local  = ls(localKey, []);
     lw(localKey, mergeByKey([...local, ...remote], 'id').slice(0, 200));
@@ -736,32 +751,32 @@ export async function migrateAllToSupabase(tenants) {
     // Temperature
     const temps = ls('nutriops.temperature.records', []).filter(r => r.tenantId === id);
     for (const r of temps) {
-      try { await sbFetch('temperature_records', { method:'POST', body:tempToRow(r), prefer:'resolution=merge-duplicates,return=minimal' }); pushed++; } catch { failed++; }
+      try { await sbFetch('temperature_records', { method:'POST', body:tempToRow(r), prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
     }
 
     // Form records
     const forms = ls(`nutriops.forms.records.${id}`, []);
     for (const r of forms) {
-      try { await sbFetch('form_records', { method:'POST', body:formToRow(r), prefer:'resolution=merge-duplicates,return=minimal' }); pushed++; } catch { failed++; }
+      try { await sbFetch('form_records', { method:'POST', body:formToRow(r), prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
     }
 
     // Receiving
     const recv = ls(`nutriops.receiving.${id}`, []);
     for (const r of recv) {
-      try { await sbFetch('receiving_records', { method:'POST', body:recvToRow(r), prefer:'return=minimal' }); pushed++; } catch { failed++; }
+      try { await sbFetch('receiving_records', { method:'POST', body:recvToRow(r), prefer:'return=minimal' }, id); pushed++; } catch { failed++; }
     }
 
     // Products
     const prods = ls(`nutriops.products.${id}`, []);
     for (const p of prods) {
-      try { await sbFetch('products', { method:'POST', body:productToRow({ ...p, tenantId:id }), prefer:'resolution=merge-duplicates,return=minimal' }); pushed++; } catch { failed++; }
+      try { await sbFetch('products', { method:'POST', body:productToRow({ ...p, tenantId:id }), prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
     }
 
     // Special controls
     for (const type of ['oil','thaw','cool','thermal']) {
       const controls = ls(`nutriops.${type}.${id}`, []);
       for (const r of controls) {
-        try { await sbFetch('special_controls', { method:'POST', body:controlToRow(type, r, id), prefer:'return=minimal' }); pushed++; } catch { failed++; }
+        try { await sbFetch('special_controls', { method:'POST', body:controlToRow(type, r, id), prefer:'return=minimal' }, id); pushed++; } catch { failed++; }
       }
     }
   }

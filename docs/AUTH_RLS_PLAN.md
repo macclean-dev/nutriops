@@ -32,11 +32,29 @@
 > isolamento vem do `tenant_id` no metadata de cada conta, não da senha).
 > Guardadas fora do repo — não estão em nenhum arquivo committado.
 >
-> **Próximo — Fase 2 (código, sessão própria):** trocar a anon key crua pelo
-> JWT dessas contas device no caminho de escrita do `repository.js` (`sbFetch`,
-> `syncModule`, `pushModule`, etc.), com fallback pra anon key se o device-auth
-> falhar. Precisa de testes cuidadosos antes de tocar produção — é o primeiro
-> código desta fase que efetivamente muda o mecanismo de escrita.
+> **Atualização (01/07):** Fase 2 concluída. `src/device-auth.js` (novo) faz
+> login com a conta device do tenant e cacheia o JWT; `repository.js` passa a
+> tentar esse JWT em toda chamada de rede que tem `tenantId` no escopo (20
+> call-sites atualizados — `sbFetch`/`sbHeaders` aceitam `tenantId` opcional),
+> com fallback SEMPRE pra anon key se o device-auth falhar por qualquer motivo
+> (sem senha configurada, rede fora, credencial inválida). `pushModule`
+> (código morto, nunca chamado) e `testWrite`/`testConnection` (health-check
+> genérico, sem tenant real) ficam de fora de propósito — continuam na anon key.
+>
+> **Zero mudança de comportamento em produção hoje:** a env `VITE_DEVICE_PASSWORD`
+> ainda não existe no Vercel, então `getDeviceAccessToken` retorna `null` na
+> hora (sem tentar rede) e tudo cai pra anon key — bit-a-bit igual a antes
+> desta fase. Validado no browser nos dois caminhos (sem senha → null
+> instantâneo; com senha + URL fake → tenta rede de verdade, falha graciosamente
+> em ~1.2s, cai pra anon key). 147 testes.
+>
+> **Próximo — Fase 3 (sessão própria, com monitoramento):** adicionar
+> `VITE_DEVICE_PASSWORD` no Vercel (ativa o device-auth de verdade, mas RLS
+> ainda off — sem efeito funcional ainda), confirmar nos logs que os 3
+> tenants conseguem token, DEPOIS ligar RLS (`enable row level security`)
+> — e só então o isolamento passa a valer. Lembrar de atualizar `admin.jsx`
+> (usa anon key direto no painel `/admin`) antes de ligar RLS, senão o
+> HealthView quebra (risco já mapeado abaixo).
 
 ---
 

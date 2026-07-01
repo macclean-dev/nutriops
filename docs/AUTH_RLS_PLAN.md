@@ -20,11 +20,23 @@
   e estar pronto pra `disable row level security` de rollback imediato.
 
 > **Atualização (06/06):** Fase 1 concluída — admin global loga com e-mail/senha
-> real (Supabase Auth), PIN `9999` removido (v1.9.8–1.9.10). **Fase 0 em
-> andamento**: policies RLS escritas em `SUPABASE_SQL` (repository.js), RLS
-> continua OFF (zero efeito ainda). Próximo: criar as 3 contas device
-> (`device-{swiss,backerei,dbk}@nutriops.internal`) e wirar o device-token no
-> sync (Fase 2) — aí sim ligar RLS de vez (Fase 3).
+> real (Supabase Auth), PIN `9999` removido (v1.9.8–1.9.10). **Fase 0
+> concluída**: policies RLS escritas em `SUPABASE_SQL` (repository.js, RLS
+> continua OFF, zero efeito ainda) + as 3 contas device criadas e confirmadas
+> no Supabase Auth com metadata correto:
+> - `device-swiss@nutriops.internal` → `{"role":"device","tenant_id":"swiss"}`
+> - `device-backerei@nutriops.internal` → `{"role":"device","tenant_id":"backerei"}`
+> - `device-dbk@nutriops.internal` → `{"role":"device","tenant_id":"dbk-producao"}`
+>
+> Senhas das 3 contas: mesma senha (escolha do dono — aceitável porque o
+> isolamento vem do `tenant_id` no metadata de cada conta, não da senha).
+> Guardadas fora do repo — não estão em nenhum arquivo committado.
+>
+> **Próximo — Fase 2 (código, sessão própria):** trocar a anon key crua pelo
+> JWT dessas contas device no caminho de escrita do `repository.js` (`sbFetch`,
+> `syncModule`, `pushModule`, etc.), com fallback pra anon key se o device-auth
+> falhar. Precisa de testes cuidadosos antes de tocar produção — é o primeiro
+> código desta fase que efetivamente muda o mecanismo de escrita.
 
 ---
 

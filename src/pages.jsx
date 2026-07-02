@@ -968,7 +968,7 @@ function OverviewView({ activeTenant, allTenants, onTenantChange, session, equip
         <div style={{
           display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
           padding:'10px 14px', marginBottom:14,
-          background:'rgba(204,120,92,.08)', border:'1px solid rgba(204,120,92,.25)',
+          background:'rgba(0,163,92,.08)', border:'1px solid rgba(0,163,92,.25)',
           borderRadius:'var(--r-lg)',
         }}>
           <div style={{ display:'flex', flexDirection:'column', gap:2 }}>

@@ -5,23 +5,23 @@
 
 import React from 'react';
 
-export const APP_VERSION = '1.9.25';
+export const APP_VERSION = '1.9.26';
 
-// ─── Logomark: N calligráfico — diagonal coral, stems brancos ──────────────
-// Mesmo padrão visual do Nexum, mas com a diagonal coral como assinatura
-// do NutriOPS. Compartilha o vocabulário pra estabelecer a suite.
+// ─── Logomark: N calligráfico — diagonal verde, stems brancos ──────────────
+// Diagonal em verde MongoDB (#00ed64) como assinatura do NutriOPS.
+// Compartilha o vocabulário da suite.
 export function NutriMark({ size = 21, idPrefix = 'nut' }) {
   const d = `${idPrefix}-d`;
   const r = `${idPrefix}-r`;
   return (
     <svg width={size} height={size} viewBox="0 0 30 30" fill="none">
       <defs>
-        {/* Diagonal — traço coral (assinatura do NutriOPS) */}
+        {/* Diagonal — traço verde MongoDB (assinatura do NutriOPS) */}
         <linearGradient id={d} x1="7" y1="4" x2="23" y2="26" gradientUnits="userSpaceOnUse">
-          <stop offset="0%"   stopColor="#cc785c" stopOpacity="0.78"/>
-          <stop offset="100%" stopColor="#cc785c"/>
+          <stop offset="0%"   stopColor="#00ed64" stopOpacity="0.78"/>
+          <stop offset="100%" stopColor="#00ed64"/>
         </linearGradient>
-        {/* Right stem — sobe do coral em direção ao branco */}
+        {/* Right stem — sobe do verde em direção ao branco */}
         <linearGradient id={r} x1="23" y1="26" x2="23" y2="4" gradientUnits="userSpaceOnUse">
           <stop offset="0%"   stopColor="rgba(255,255,255,0.40)"/>
           <stop offset="38%"  stopColor="#ffffff"/>
@@ -30,9 +30,9 @@ export function NutriMark({ size = 21, idPrefix = 'nut' }) {
       </defs>
       {/* Left stem — branco sólido */}
       <line x1="7"  y1="4"  x2="7"  y2="26" stroke="#ffffff"       strokeWidth="4.5" strokeLinecap="round"/>
-      {/* Diagonal — coral calligráfico (mais fino) */}
+      {/* Diagonal — verde calligráfico (mais fino) */}
       <line x1="7"  y1="4"  x2="23" y2="26" stroke={`url(#${d})`} strokeWidth="3"   strokeLinecap="round"/>
-      {/* Right stem — gradiente coral→branco */}
+      {/* Right stem — gradiente verde→branco */}
       <line x1="23" y1="26" x2="23" y2="4"  stroke={`url(#${r})`} strokeWidth="4.5" strokeLinecap="round"/>
     </svg>
   );

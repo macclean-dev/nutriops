@@ -42,18 +42,18 @@ function Numpad({ value, onChange, onConfirm, label, hint, tone }) {
 
   const keys = [['7','8','9'],['4','5','6'],['1','2','3'],['-','0','.'],['⌫','','✓']];
   const bgTone = tone === 'ok' ? '#dafbe1' : tone === 'warn' ? '#fdf8e3' : tone === 'danger' ? '#ffebe9' : 'white';
-  const colorTone = tone === 'ok' ? '#2d6e4a' : tone === 'warn' ? '#8a4e00' : tone === 'danger' ? '#c0392b' : '#141413';
+  const colorTone = tone === 'ok' ? '#00a35c' : tone === 'warn' ? '#8a4e00' : tone === 'danger' ? '#c0392b' : '#001e2b';
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:12, alignItems:'center' }}>
       {/* Display */}
-      <div style={{ width:'100%', padding:'16px 20px', background: bgTone, border:`2px solid ${tone==='ok'?'#4ac26b':tone==='warn'?'#e3aa14':tone==='danger'?'#ff8182':'#d9d1c4'}`, borderRadius:16, textAlign:'center', transition:'all .2s' }}>
-        <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'#6b6760', marginBottom:4 }}>{label}</div>
+      <div style={{ width:'100%', padding:'16px 20px', background: bgTone, border:`2px solid ${tone==='ok'?'#4ac26b':tone==='warn'?'#e3aa14':tone==='danger'?'#ff8182':'#c1ccd6'}`, borderRadius:16, textAlign:'center', transition:'all .2s' }}>
+        <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'#5c6c7a', marginBottom:4 }}>{label}</div>
         <div style={{ fontSize:56, fontWeight:800, fontFamily:'monospace', color: colorTone, lineHeight:1, minHeight:64 }}>
-          {value || <span style={{ color:'#d9d1c4' }}>–</span>}
+          {value || <span style={{ color:'#c1ccd6' }}>–</span>}
           {value && <span style={{ fontSize:28, fontWeight:400 }}>°C</span>}
         </div>
-        {hint && <div style={{ fontSize:13, color:'#6b6760', marginTop:4 }}>{hint}</div>}
+        {hint && <div style={{ fontSize:13, color:'#5c6c7a', marginTop:4 }}>{hint}</div>}
       </div>
 
       {/* Keys */}
@@ -68,8 +68,8 @@ function Numpad({ value, onChange, onConfirm, label, hint, tone }) {
                 height: 68, borderRadius: 14, border: 'none', cursor: 'pointer',
                 fontSize: isConfirm ? 28 : isClear ? 22 : 28,
                 fontWeight: 700,
-                background: isConfirm ? '#2d6e4a' : isClear ? '#ffebe9' : 'white',
-                color: isConfirm ? 'white' : isClear ? '#c0392b' : '#141413',
+                background: isConfirm ? '#00a35c' : isClear ? '#ffebe9' : 'white',
+                color: isConfirm ? 'white' : isClear ? '#c0392b' : '#001e2b',
                 boxShadow: '0 2px 4px rgba(0,0,0,.08)',
                 transition: 'transform .1s, background .1s',
                 fontFamily: 'inherit',
@@ -93,14 +93,14 @@ function Numpad({ value, onChange, onConfirm, label, hint, tone }) {
 function EquipmentCard({ item, saved, active, onClick }) {
   const tone = saved ? 'ok' : active ? 'active' : 'idle';
   const bg    = tone==='ok' ? '#dafbe1' : tone==='active' ? 'rgba(29,78,137,.10)' : 'white';
-  const border= tone==='ok' ? '#4ac26b' : tone==='active' ? 'rgba(29,78,137,.4)' : '#d9d1c4';
-  const color = tone==='ok' ? '#2d6e4a' : tone==='active' ? '#1d4e89' : '#141413';
+  const border= tone==='ok' ? '#4ac26b' : tone==='active' ? 'rgba(29,78,137,.4)' : '#c1ccd6';
+  const color = tone==='ok' ? '#00a35c' : tone==='active' ? '#1d4e89' : '#001e2b';
 
   return (
     <button onClick={onClick} style={{ padding:'14px 16px', borderRadius:14, border:`2px solid ${border}`, background:bg, cursor:'pointer', textAlign:'left', transition:'all .15s', fontFamily:'inherit', position:'relative' }}>
       <div style={{ fontSize:15, fontWeight:700, color }}>{item.label}</div>
-      <div style={{ fontSize:11, color:'#6b6760', marginTop:2 }}>{item.location || 'Sem localização'}</div>
-      {saved && <span style={{ position:'absolute', top:8, right:10, fontSize:12, fontWeight:800, color:'#2d6e4a' }}>✓✓</span>}
+      <div style={{ fontSize:11, color:'#5c6c7a', marginTop:2 }}>{item.location || 'Sem localização'}</div>
+      {saved && <span style={{ position:'absolute', top:8, right:10, fontSize:12, fontWeight:800, color:'#00a35c' }}>✓✓</span>}
     </button>
   );
 }
@@ -113,7 +113,7 @@ function SuccessOverlay({ temperature, equipment, tone, onDismiss }) {
     return () => clearTimeout(t);
   }, [onDismiss]);
 
-  const bg    = tone==='ok' ? '#2d6e4a' : tone==='warn' ? '#8a4e00' : '#c0392b';
+  const bg    = tone==='ok' ? '#00a35c' : tone==='warn' ? '#8a4e00' : '#c0392b';
   const label = tone==='ok' ? 'Dentro da faixa' : tone==='warn' ? 'Desvio leve' : 'Fora da faixa';
   const icon  = tone==='ok' ? '✓' : '⚠';
 
@@ -182,23 +182,23 @@ export function KioskApp({ config, onExit }) {
   };
 
   return (
-    <div style={{ minHeight:'100vh', background:'#faf9f5', fontFamily:'-apple-system, "Segoe UI", system-ui, sans-serif', userSelect:'none' }}>
+    <div style={{ minHeight:'100vh', background:'#f9fbfa', fontFamily:'-apple-system, "Segoe UI", system-ui, sans-serif', userSelect:'none' }}>
       {successData && <SuccessOverlay {...successData} onDismiss={() => setSuccessData(null)} />}
 
       {/* Header */}
-      <div style={{ background:'#181715', padding:'14px 20px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+      <div style={{ background:'#001e2b', padding:'14px 20px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
         <div style={{ display:'flex', alignItems:'center', gap:14 }}>
           <BrandLockup size="sm" idPrefix="kiosk" showSub={false} />
-          <span style={{ fontSize:11, color:'#9b9590', letterSpacing:'.06em', textTransform:'uppercase' }}>
+          <span style={{ fontSize:11, color:'#a8b3bc', letterSpacing:'.06em', textTransform:'uppercase' }}>
             {config.tenantName} · {config.userName}
           </span>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:16 }}>
           <div style={{ textAlign:'right' }}>
-            <div style={{ fontSize:22, fontWeight:700, fontFamily:'monospace', color:'#f0ece4' }}>{currentTime}</div>
-            <div style={{ fontSize:10, color:'#9b9590' }}>{savedCount}/{catalog.length} registrados</div>
+            <div style={{ fontSize:22, fontWeight:700, fontFamily:'monospace', color:'#f4f7f6' }}>{currentTime}</div>
+            <div style={{ fontSize:10, color:'#a8b3bc' }}>{savedCount}/{catalog.length} registrados</div>
           </div>
-          <button onClick={handleExit} style={{ background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.12)', color:'#9b9590', borderRadius:8, padding:'6px 10px', cursor:'pointer', fontSize:11, fontFamily:'inherit' }}>
+          <button onClick={handleExit} style={{ background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.12)', color:'#a8b3bc', borderRadius:8, padding:'6px 10px', cursor:'pointer', fontSize:11, fontFamily:'inherit' }}>
             {exitAttempts === 0 ? 'Sair' : exitAttempts === 1 ? 'Confirmar?' : 'Sair agora'}
           </button>
         </div>
@@ -207,11 +207,11 @@ export function KioskApp({ config, onExit }) {
       {allSaved ? (
         /* All done screen */
         <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'calc(100vh - 57px)', gap:16, padding:24 }}>
-          <div style={{ fontSize:72, color:'#2d6e4a' }}>✓</div>
-          <h2 style={{ fontSize:28, fontWeight:800, letterSpacing:'-.03em', color:'#2d6e4a' }}>Todos os registros concluídos!</h2>
-          <p style={{ color:'#6b6760', fontSize:15 }}>Todos os {catalog.length} equipamentos foram registrados com sucesso.</p>
+          <div style={{ fontSize:72, color:'#00a35c' }}>✓</div>
+          <h2 style={{ fontSize:28, fontWeight:800, letterSpacing:'-.03em', color:'#00a35c' }}>Todos os registros concluídos!</h2>
+          <p style={{ color:'#5c6c7a', fontSize:15 }}>Todos os {catalog.length} equipamentos foram registrados com sucesso.</p>
           <button onClick={() => { setSavedValues({}); setActiveIdx(0); setValue(''); }}
-            style={{ marginTop:8, padding:'12px 28px', background:'#cc785c', color:'white', border:'none', borderRadius:12, fontSize:16, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+            style={{ marginTop:8, padding:'12px 28px', background:'#00684a', color:'white', border:'none', borderRadius:12, fontSize:16, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
             Iniciar novo registro
           </button>
         </div>
@@ -219,7 +219,7 @@ export function KioskApp({ config, onExit }) {
         <div style={{ display:'grid', gridTemplateColumns:'1fr 340px', gap:0, minHeight:'calc(100vh - 57px)' }}>
           {/* Left: Equipment list */}
           <div style={{ padding:20, borderRight:'1px solid #e2e8f0', overflowY:'auto' }}>
-            <div style={{ fontSize:12, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'#6b6760', marginBottom:12 }}>
+            <div style={{ fontSize:12, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'#5c6c7a', marginBottom:12 }}>
               Equipamentos — {config.tenantName}
             </div>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px,1fr))', gap:10 }}>
@@ -231,7 +231,7 @@ export function KioskApp({ config, onExit }) {
 
           {/* Right: Numpad */}
           <div style={{ padding:20, background:'#f8fafc' }}>
-            <div style={{ fontSize:12, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'#6b6760', marginBottom:12 }}>
+            <div style={{ fontSize:12, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'#5c6c7a', marginBottom:12 }}>
               Registrar temperatura
             </div>
             <Numpad
@@ -242,7 +242,7 @@ export function KioskApp({ config, onExit }) {
               hint={`Faixa: ${limits.min}°C a ${limits.max}°C${active?.location ? ` · ${active.location}` : ''}`}
               tone={tone}
             />
-            {saving && <div style={{ textAlign:'center', marginTop:12, fontSize:13, color:'#6b6760' }}>Salvando…</div>}
+            {saving && <div style={{ textAlign:'center', marginTop:12, fontSize:13, color:'#5c6c7a' }}>Salvando…</div>}
           </div>
         </div>
       )}
@@ -275,18 +275,18 @@ export function KioskSetup({ activeTenant, equipmentCatalog, session, onLaunch, 
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200, padding:24 }}>
       <div style={{ background:'white', borderRadius:16, padding:28, width:'100%', maxWidth:480, boxShadow:'0 24px 48px rgba(0,0,0,.2)' }}>
         <h2 style={{ fontSize:20, fontWeight:800, letterSpacing:'-.03em', marginBottom:6 }}>Modo Quiosque</h2>
-        <p style={{ fontSize:13, color:'#6b6760', marginBottom:20 }}>Interface simplificada para tablet na loja. Selecione os equipamentos a registrar.</p>
+        <p style={{ fontSize:13, color:'#5c6c7a', marginBottom:20 }}>Interface simplificada para tablet na loja. Selecione os equipamentos a registrar.</p>
 
         <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:20 }}>
           {equipmentCatalog.map(eq => {
             const sel = selectedEquips.includes(eq.label);
             return (
-              <div key={eq.label} onClick={() => toggle(eq.label)} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', borderRadius:10, border:`1.5px solid ${sel?'rgba(29,78,137,.4)':'#d9d1c4'}`, background:sel?'rgba(29,78,137,.10)':'white', cursor:'pointer' }}>
+              <div key={eq.label} onClick={() => toggle(eq.label)} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', borderRadius:10, border:`1.5px solid ${sel?'rgba(29,78,137,.4)':'#c1ccd6'}`, background:sel?'rgba(29,78,137,.10)':'white', cursor:'pointer' }}>
                 <div>
-                  <div style={{ fontSize:14, fontWeight:600, color: sel?'#1d4e89':'#141413' }}>{eq.label}</div>
-                  {eq.location && <div style={{ fontSize:11, color:'#6b6760' }}>{eq.location}</div>}
+                  <div style={{ fontSize:14, fontWeight:600, color: sel?'#1d4e89':'#001e2b' }}>{eq.label}</div>
+                  {eq.location && <div style={{ fontSize:11, color:'#5c6c7a' }}>{eq.location}</div>}
                 </div>
-                <span style={{ width:20, height:20, borderRadius:4, border:`2px solid ${sel?'#cc785c':'#d9d1c4'}`, background:sel?'#cc785c':'white', display:'grid', placeItems:'center', flexShrink:0 }}>
+                <span style={{ width:20, height:20, borderRadius:4, border:`2px solid ${sel?'#00684a':'#c1ccd6'}`, background:sel?'#00684a':'white', display:'grid', placeItems:'center', flexShrink:0 }}>
                   {sel && <span style={{ color:'white', fontSize:12, fontWeight:800 }}>✓</span>}
                 </span>
               </div>
@@ -295,8 +295,8 @@ export function KioskSetup({ activeTenant, equipmentCatalog, session, onLaunch, 
         </div>
 
         <div style={{ display:'flex', gap:10 }}>
-          <button onClick={onCancel} style={{ flex:1, padding:'10px', borderRadius:10, border:'1px solid #d9d1c4', background:'white', cursor:'pointer', fontSize:14, fontWeight:600, fontFamily:'inherit' }}>Cancelar</button>
-          <button onClick={launch} disabled={selectedEquips.length === 0} style={{ flex:2, padding:'10px', borderRadius:10, border:'none', background: selectedEquips.length===0?'#d9d1c4':'#cc785c', color:'white', cursor:selectedEquips.length===0?'not-allowed':'pointer', fontSize:14, fontWeight:700, fontFamily:'inherit' }}>
+          <button onClick={onCancel} style={{ flex:1, padding:'10px', borderRadius:10, border:'1px solid #c1ccd6', background:'white', cursor:'pointer', fontSize:14, fontWeight:600, fontFamily:'inherit' }}>Cancelar</button>
+          <button onClick={launch} disabled={selectedEquips.length === 0} style={{ flex:2, padding:'10px', borderRadius:10, border:'none', background: selectedEquips.length===0?'#c1ccd6':'#00684a', color:'white', cursor:selectedEquips.length===0?'not-allowed':'pointer', fontSize:14, fontWeight:700, fontFamily:'inherit' }}>
             🖥️ Lançar quiosque ({selectedEquips.length} equip.)
           </button>
         </div>
@@ -317,10 +317,10 @@ function FormKioskField({ field, value, onChange }) {
       <div style={{ display:'flex', gap:12 }}>
         {['C','NC'].map(opt => {
           const on = value === opt;
-          const [bg,color,border] = opt==='C' ? ['#dafbe1','#2d6e4a','#4ac26b'] : ['#ffebe9','#c0392b','#ff8182'];
+          const [bg,color,border] = opt==='C' ? ['#dafbe1','#00a35c','#4ac26b'] : ['#ffebe9','#c0392b','#ff8182'];
           return (
             <button key={opt} onClick={() => onChange(on?'':opt)}
-              style={{ flex:1, height:64, borderRadius:14, border:`2.5px solid ${on?border:'#d9d1c4'}`, background:on?bg:'white', color:on?color:'#94a3b8', fontWeight:800, fontSize:20, cursor:'pointer', transition:'all .12s', boxShadow:on?`0 0 0 3px ${border}44`:'none' }}>
+              style={{ flex:1, height:64, borderRadius:14, border:`2.5px solid ${on?border:'#c1ccd6'}`, background:on?bg:'white', color:on?color:'#94a3b8', fontWeight:800, fontSize:20, cursor:'pointer', transition:'all .12s', boxShadow:on?`0 0 0 3px ${border}44`:'none' }}>
               {opt}
             </button>
           );
@@ -334,17 +334,17 @@ function FormKioskField({ field, value, onChange }) {
       <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
         <div style={{ display:'flex', gap:12 }}>
           <button onClick={() => onChange({ ...value, detected:true })}
-            style={{ flex:1, height:60, borderRadius:14, border:`2.5px solid ${detected?'#ff8182':'#d9d1c4'}`, background:detected?'#ffebe9':'white', color:detected?'#c0392b':'#94a3b8', fontWeight:700, fontSize:16, cursor:'pointer' }}>
+            style={{ flex:1, height:60, borderRadius:14, border:`2.5px solid ${detected?'#ff8182':'#c1ccd6'}`, background:detected?'#ffebe9':'white', color:detected?'#c0392b':'#94a3b8', fontWeight:700, fontSize:16, cursor:'pointer' }}>
             ✕ Detectado
           </button>
           <button onClick={() => onChange({ ...value, detected:false })}
-            style={{ flex:1, height:60, borderRadius:14, border:`2.5px solid ${!detected?'#4ac26b':'#d9d1c4'}`, background:!detected?'#dafbe1':'white', color:!detected?'#2d6e4a':'#94a3b8', fontWeight:700, fontSize:16, cursor:'pointer' }}>
+            style={{ flex:1, height:60, borderRadius:14, border:`2.5px solid ${!detected?'#4ac26b':'#c1ccd6'}`, background:!detected?'#dafbe1':'white', color:!detected?'#00a35c':'#94a3b8', fontWeight:700, fontSize:16, cursor:'pointer' }}>
             ✓ Sem ocorrência
           </button>
         </div>
         {detected && (
           <input value={value?.location??''} onChange={e=>onChange({ ...value, location:e.target.value })}
-            placeholder="Local (ex.: D=Distribuição)" style={{ width:'100%', padding:'14px', borderRadius:10, border:'1.5px solid #d9d1c4', fontSize:16, fontFamily:'inherit' }} />
+            placeholder="Local (ex.: D=Distribuição)" style={{ width:'100%', padding:'14px', borderRadius:10, border:'1.5px solid #c1ccd6', fontSize:16, fontFamily:'inherit' }} />
         )}
       </div>
     );
@@ -353,16 +353,16 @@ function FormKioskField({ field, value, onChange }) {
     return (
       <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
         <input type="date" value={value?.date??''} onChange={e=>onChange({ ...value, date:e.target.value })}
-          style={{ flex:1, minWidth:140, padding:'14px', borderRadius:10, border:'1.5px solid #d9d1c4', fontSize:16, fontFamily:'inherit' }} />
+          style={{ flex:1, minWidth:140, padding:'14px', borderRadius:10, border:'1.5px solid #c1ccd6', fontSize:16, fontFamily:'inherit' }} />
         <input value={value?.sig??''} onChange={e=>onChange({ ...value, sig:e.target.value })}
-          placeholder="Responsável" style={{ flex:2, minWidth:180, padding:'14px', borderRadius:10, border:'1.5px solid #d9d1c4', fontSize:16, fontFamily:'inherit' }} />
+          placeholder="Responsável" style={{ flex:2, minWidth:180, padding:'14px', borderRadius:10, border:'1.5px solid #c1ccd6', fontSize:16, fontFamily:'inherit' }} />
       </div>
     );
   }
   if (field.type === 'text') {
     return (
       <textarea value={value??''} onChange={e=>onChange(e.target.value)}
-        placeholder="Observações…" style={{ width:'100%', padding:'14px', borderRadius:10, border:'1.5px solid #d9d1c4', fontSize:16, fontFamily:'inherit', minHeight:80, resize:'vertical' }} />
+        placeholder="Observações…" style={{ width:'100%', padding:'14px', borderRadius:10, border:'1.5px solid #c1ccd6', fontSize:16, fontFamily:'inherit', minHeight:80, resize:'vertical' }} />
     );
   }
   return null;
@@ -402,29 +402,29 @@ export function FormKioskApp({ template, tenantId, tenantName, userName, userRol
 
   if (done) return (
     <div style={{ minHeight:'100vh', background:'#dafbe1', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, fontFamily:'-apple-system,"Segoe UI",system-ui,sans-serif' }}>
-      <div style={{ fontSize:80, color:'#2d6e4a' }}>✓</div>
-      <h2 style={{ fontSize:28, fontWeight:800, color:'#2d6e4a' }}>Planilha confirmada!</h2>
+      <div style={{ fontSize:80, color:'#00a35c' }}>✓</div>
+      <h2 style={{ fontSize:28, fontWeight:800, color:'#00a35c' }}>Planilha confirmada!</h2>
       <p style={{ fontSize:16, color:'#065f46' }}>{template.title}</p>
-      <button onClick={onExit} style={{ marginTop:8, padding:'14px 32px', background:'#2d6e4a', color:'white', border:'none', borderRadius:14, fontSize:18, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+      <button onClick={onExit} style={{ marginTop:8, padding:'14px 32px', background:'#00a35c', color:'white', border:'none', borderRadius:14, fontSize:18, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
         Concluir
       </button>
     </div>
   );
 
   return (
-    <div style={{ minHeight:'100vh', background:'#faf9f5', fontFamily:'-apple-system,"Segoe UI",system-ui,sans-serif', userSelect:'none' }}>
+    <div style={{ minHeight:'100vh', background:'#f9fbfa', fontFamily:'-apple-system,"Segoe UI",system-ui,sans-serif', userSelect:'none' }}>
       {/* Header */}
-      <div style={{ background:'#181715', padding:'12px 20px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+      <div style={{ background:'#001e2b', padding:'12px 20px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
         <div>
-          <div style={{ fontSize:12, color:'#9b9590', marginBottom:2 }}>{tenantName} · {userName}</div>
-          <div style={{ fontSize:15, fontWeight:800, color:'#f0ece4' }}>{template.title}</div>
+          <div style={{ fontSize:12, color:'#a8b3bc', marginBottom:2 }}>{tenantName} · {userName}</div>
+          <div style={{ fontSize:15, fontWeight:800, color:'#f4f7f6' }}>{template.title}</div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:16 }}>
           <div style={{ textAlign:'right' }}>
-            <div style={{ fontSize:22, fontWeight:700, fontFamily:'monospace', color:'#f0ece4' }}>{currentTime}</div>
-            <div style={{ fontSize:10, color:'#9b9590' }}>{pct}% preenchido</div>
+            <div style={{ fontSize:22, fontWeight:700, fontFamily:'monospace', color:'#f4f7f6' }}>{currentTime}</div>
+            <div style={{ fontSize:10, color:'#a8b3bc' }}>{pct}% preenchido</div>
           </div>
-          <button onClick={handleExit} style={{ background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.12)', color:'#9b9590', borderRadius:8, padding:'6px 10px', cursor:'pointer', fontSize:11, fontFamily:'inherit' }}>
+          <button onClick={handleExit} style={{ background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.12)', color:'#a8b3bc', borderRadius:8, padding:'6px 10px', cursor:'pointer', fontSize:11, fontFamily:'inherit' }}>
             {exitAttempts === 0 ? 'Sair' : exitAttempts === 1 ? 'Tem certeza?' : 'Sair agora'}
           </button>
         </div>
@@ -450,8 +450,8 @@ export function FormKioskApp({ template, tenantId, tenantName, userName, userRol
       <div style={{ padding:'20px 16px', maxWidth:680, margin:'0 auto', display:'flex', flexDirection:'column', gap:20 }}>
         {section.fields.map(field => (
           <div key={field.id} style={{ background:'white', borderRadius:16, padding:20, boxShadow:'0 1px 3px rgba(0,0,0,.08)' }}>
-            <div style={{ fontSize:16, fontWeight:700, marginBottom:field.hint?6:14, color:'#141413' }}>{field.label}</div>
-            {field.hint && <div style={{ fontSize:13, color:'#6b6760', marginBottom:12 }}>{field.hint}</div>}
+            <div style={{ fontSize:16, fontWeight:700, marginBottom:field.hint?6:14, color:'#001e2b' }}>{field.label}</div>
+            {field.hint && <div style={{ fontSize:13, color:'#5c6c7a', marginBottom:12 }}>{field.hint}</div>}
             <FormKioskField field={field} value={responses[field.id]} onChange={v => setField(field.id, v)} />
           </div>
         ))}
@@ -460,7 +460,7 @@ export function FormKioskApp({ template, tenantId, tenantName, userName, userRol
       {/* Navigation footer */}
       <div style={{ position:'sticky', bottom:0, background:'white', borderTop:'1px solid #e2e8f0', padding:'12px 20px', display:'flex', justifyContent:'space-between', gap:12 }}>
         <button onClick={() => setSectionIdx(i => Math.max(0, i-1))} disabled={sectionIdx===0}
-          style={{ padding:'12px 24px', borderRadius:12, border:'1px solid #d9d1c4', background:'white', fontSize:15, fontWeight:600, cursor:sectionIdx===0?'not-allowed':'pointer', opacity:sectionIdx===0?0.4:1, fontFamily:'inherit', color:'#374151' }}>
+          style={{ padding:'12px 24px', borderRadius:12, border:'1px solid #c1ccd6', background:'white', fontSize:15, fontWeight:600, cursor:sectionIdx===0?'not-allowed':'pointer', opacity:sectionIdx===0?0.4:1, fontFamily:'inherit', color:'#374151' }}>
           ← Anterior
         </button>
         {sectionIdx < allSections.length - 1 ? (
@@ -470,7 +470,7 @@ export function FormKioskApp({ template, tenantId, tenantName, userName, userRol
           </button>
         ) : (
           <button onClick={handleSave} disabled={saving || pct === 0}
-            style={{ flex:1, padding:'12px 24px', borderRadius:12, border:'none', background:pct>0?'#2d6e4a':'#d9d1c4', color:'white', fontSize:16, fontWeight:700, cursor:pct>0?'pointer':'not-allowed', fontFamily:'inherit' }}>
+            style={{ flex:1, padding:'12px 24px', borderRadius:12, border:'none', background:pct>0?'#00a35c':'#c1ccd6', color:'white', fontSize:16, fontWeight:700, cursor:pct>0?'pointer':'not-allowed', fontFamily:'inherit' }}>
             {saving ? 'Salvando…' : `✓ Confirmar preenchimento (${pct}%)`}
           </button>
         )}

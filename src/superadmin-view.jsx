@@ -47,12 +47,38 @@ export function SuperAdminGate({ session, onExit, children }) {
   const already = (() => { try { return sessionStorage.getItem(MFA_FLAG) === flagVal; } catch { return false; } })();
   const [phase, setPhase]   = useState(already ? 'ok' : 'loading'); // loading|enroll|challenge|ok|error
   const [factorId, setFactorId] = useState(null);
-  const [qr, setQr]         = useState(null);   // svg string ou data-uri
+  const [qr, setQr]         = useState(null);   // svg string ou data-uri (do Supabase)
+  const [uri, setUri]       = useState(null);   // otpauth:// — fonte de verdade p/ gerar QR nítido
+  const [qrPng, setQrPng]   = useState(null);   // QR gerado no cliente a partir da uri (data-URL PNG)
   const [secret, setSecret] = useState(null);
+  const [copied, setCopied] = useState(false);
   const [code, setCode]     = useState('');
   const [error, setError]   = useState('');
   const [busy, setBusy]     = useState(false);
   const [mfaOff, setMfaOff] = useState(false); // MFA desabilitado no projeto → não faz loop no "tentar de novo"
+
+  // Gera o QR nós mesmos a partir do otpauth URI: bitmap nítido, preto/branco
+  // puro e quiet-zone garantida. O SVG cru do Supabase (via REST) vem a ~99px
+  // sem viewBox e borra no upscale, o que o Google Authenticator não lê. O
+  // secret/uri nunca saem do browser (geração 100% local).
+  useEffect(() => {
+    if (!uri) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const QR = (await import('qrcode')).default;
+        const url = await QR.toDataURL(uri, { width: 440, margin: 4, errorCorrectionLevel: 'M', color: { dark: '#000000', light: '#ffffff' } });
+        if (!cancelled) setQrPng(url);
+      } catch { /* cai no fallback do SVG cru / chave manual */ }
+    })();
+    return () => { cancelled = true; };
+  }, [uri]);
+
+  const groupSecret = (s) => String(s).replace(/(.{4})/g, '$1 ').trim();
+  const crispSvg    = (s) => String(s).replace('<svg', '<svg shape-rendering="crispEdges"');
+  const copyKey = async () => {
+    try { await navigator.clipboard.writeText(secret); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
+  };
 
   // Token sempre fresco (refresh se expirou) — evita lockout por 401.
   const freshToken = async () => {
@@ -81,6 +107,7 @@ export function SuperAdminGate({ session, onExit, children }) {
         if (cancelled) return;
         setFactorId(enrolled.id);
         setQr(enrolled?.totp?.qr_code ?? null);
+        setUri(enrolled?.totp?.uri ?? null);
         setSecret(enrolled?.totp?.secret ?? null);
         setPhase('enroll');
       } catch (e) {
@@ -135,18 +162,30 @@ export function SuperAdminGate({ session, onExit, children }) {
         {phase === 'enroll' && (
           <>
             <p className="muted" style={{ marginBottom:14 }}>Configure o 2FA uma vez: escaneie o QR no seu app autenticador (Google/Microsoft Authenticator, 1Password…) e digite o código gerado.</p>
-            {/* O SVG do QR do Supabase vem sem tamanho fixo — sem constrain ele
-                estoura o box e cai em cima da chave manual. A regra .sa-qr-svg
-                svg força 200x200 e o box cresce, empurrando o texto pra baixo. */}
-            <style>{`.sa-qr-svg svg{width:200px;height:200px;display:block}.sa-qr-svg img{width:200px;height:200px;display:block}`}</style>
-            <div className="sa-qr-svg" style={{ background:'#fff', borderRadius:'var(--r)', padding:12, marginBottom:12, display:'flex', justifyContent:'center' }}>
-              {qr
-                ? (String(qr).startsWith('data:')
-                    ? <img src={qr} alt="QR 2FA" />
-                    : <span dangerouslySetInnerHTML={{ __html: qr }} />)
-                : <span className="muted">QR indisponível</span>}
+            {/* QR gerado no cliente a partir do otpauth URI (nítido, quiet-zone,
+                preto/branco puro) — resolve o "Google Authenticator não lê".
+                Fallbacks em cascata: PNG gerado → SVG cru do Supabase (com
+                crispEdges) → só a chave manual. Fundo branco PURO (#fff), não a
+                var de canvas, pra não contaminar a quiet-zone. */}
+            <style>{`.sa-qr img{width:220px;height:220px;display:block}.sa-qr svg{width:220px;height:220px;display:block;shape-rendering:crispEdges}`}</style>
+            <div className="sa-qr" style={{ background:'#ffffff', borderRadius:'var(--r)', padding:16, marginBottom:12, display:'flex', justifyContent:'center' }}>
+              {qrPng
+                ? <img src={qrPng} alt="QR 2FA" width={220} height={220} />
+                : qr
+                  ? (String(qr).startsWith('data:')
+                      ? <img src={qr} alt="QR 2FA" />
+                      : <span dangerouslySetInnerHTML={{ __html: crispSvg(qr) }} />)
+                  : <span className="muted">QR indisponível</span>}
             </div>
-            {secret && <p style={{ fontSize:11, color:'var(--text-secondary)', textAlign:'center', marginBottom:12, wordBreak:'break-all' }}>Ou digite a chave manual: <strong style={{ fontFamily:'var(--mono)' }}>{secret}</strong></p>}
+            {secret && (
+              <div style={{ textAlign:'center', marginBottom:12 }}>
+                <p style={{ fontSize:11, color:'var(--text-secondary)', marginBottom:6 }}>Se a câmera não ler, adicione uma conta manual (TOTP · baseada em tempo) e cole a chave:</p>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, flexWrap:'wrap' }}>
+                  <strong style={{ fontFamily:'var(--mono)', fontSize:13, letterSpacing:'.06em' }}>{groupSecret(secret)}</strong>
+                  <button className="ghost-action" style={{ fontSize:11, padding:'3px 10px' }} onClick={copyKey}>{copied ? 'Copiado ✓' : 'Copiar chave'}</button>
+                </div>
+              </div>
+            )}
           </>
         )}
 

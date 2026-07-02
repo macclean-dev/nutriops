@@ -223,11 +223,11 @@ export function SetupPinScreen({ tenant, onComplete }) {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--bg, #faf9f5)', padding: 24 }}>
+    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--bg, #f9fbfa)', padding: 24 }}>
       <div style={{
         width: '100%', maxWidth: 440,
         background: 'var(--surface, white)',
-        border: '1px solid var(--border, #d9d1c4)',
+        border: '1px solid var(--border, #c1ccd6)',
         borderRadius: 20,
         padding: '36px 40px',
         boxShadow: '0 8px 32px rgba(20,20,19,.08)',
@@ -235,7 +235,7 @@ export function SetupPinScreen({ tenant, onComplete }) {
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
           <BrandLockup size="sm" idPrefix="setup" showSub={false} />
-          <span style={{ fontSize: 9, color: 'var(--text-secondary, #6b6760)', letterSpacing: '.14em', textTransform: 'uppercase' }}>
+          <span style={{ fontSize: 9, color: 'var(--text-secondary, #5c6c7a)', letterSpacing: '.14em', textTransform: 'uppercase' }}>
             v{APP_VERSION}
           </span>
         </div>
@@ -244,23 +244,23 @@ export function SetupPinScreen({ tenant, onComplete }) {
         <div style={{
           padding: '14px 16px', marginBottom: 24,
           borderRadius: 12,
-          background: tenant.brandSoft ?? 'rgba(204,120,92,.10)',
-          borderLeft: `3px solid ${tenant.brandColor ?? '#cc785c'}`,
+          background: tenant.brandSoft ?? 'rgba(0,163,92,.10)',
+          borderLeft: `3px solid ${tenant.brandColor ?? '#00684a'}`,
         }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--text-secondary, #6b6760)' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--text-secondary, #5c6c7a)' }}>
             {tenant.segment || 'Estabelecimento'}
           </div>
-          <div style={{ fontFamily: 'var(--serif, "Instrument Serif", serif)', fontSize: 22, color: 'var(--text, #141413)', letterSpacing: '-.02em', marginTop: 2 }}>
+          <div style={{ fontFamily: 'var(--serif, "Instrument Serif", serif)', fontSize: 22, color: 'var(--text, #001e2b)', letterSpacing: '-.02em', marginTop: 2 }}>
             {tenant.name}
           </div>
         </div>
 
         {stage === 'setup-pin' && (
           <div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text, #141413)', margin: '0 0 6px', letterSpacing: '-.02em' }}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text, #001e2b)', margin: '0 0 6px', letterSpacing: '-.02em' }}>
               Insira o PIN de configuração
             </h2>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary, #6b6760)', margin: '0 0 20px', lineHeight: 1.5 }}>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary, #5c6c7a)', margin: '0 0 20px', lineHeight: 1.5 }}>
               A equipe NutriOPS enviou um PIN de 4 dígitos por canal separado
               (WhatsApp, SMS ou ligação). Digite abaixo pra ativar sua conta.
             </p>
@@ -280,8 +280,8 @@ export function SetupPinScreen({ tenant, onComplete }) {
                 width: '100%', padding: '14px',
                 fontSize: 28, letterSpacing: '0.5em', textAlign: 'center',
                 fontFamily: 'var(--mono, monospace)',
-                background: 'var(--bg, #faf9f5)',
-                border: '1px solid var(--border, #d9d1c4)',
+                background: 'var(--bg, #f9fbfa)',
+                border: '1px solid var(--border, #c1ccd6)',
                 borderRadius: 12,
                 outline: 'none',
                 opacity: lockedUntil ? 0.5 : 1,
@@ -314,7 +314,7 @@ export function SetupPinScreen({ tenant, onComplete }) {
               disabled={busy || Boolean(lockedUntil) || pin.length !== 4}
               style={{
                 width: '100%', marginTop: 18, padding: '12px',
-                background: (busy || lockedUntil || pin.length !== 4) ? '#d9d1c4' : 'var(--primary, #cc785c)',
+                background: (busy || lockedUntil || pin.length !== 4) ? '#c1ccd6' : 'var(--primary, #00684a)',
                 color: 'white', border: 'none', borderRadius: 10,
                 fontSize: 15, fontWeight: 700,
                 cursor: (busy || lockedUntil || pin.length !== 4) ? 'not-allowed' : 'pointer',
@@ -324,24 +324,24 @@ export function SetupPinScreen({ tenant, onComplete }) {
               {busy ? 'Validando…' : 'Continuar'}
             </button>
 
-            <div style={{ marginTop: 18, fontSize: 12, color: 'var(--text-secondary, #6b6760)', textAlign: 'center' }}>
-              Não recebeu o PIN? <a href="mailto:contato@nutriops.com.br?subject=PIN de configuração NutriOPS" style={{ color: 'var(--primary, #cc785c)', fontWeight: 600 }}>Fale com a equipe</a>
+            <div style={{ marginTop: 18, fontSize: 12, color: 'var(--text-secondary, #5c6c7a)', textAlign: 'center' }}>
+              Não recebeu o PIN? <a href="mailto:contato@nutriops.com.br?subject=PIN de configuração NutriOPS" style={{ color: 'var(--primary, #00684a)', fontWeight: 600 }}>Fale com a equipe</a>
             </div>
           </div>
         )}
 
         {stage === 'create-pin' && (
           <div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text, #141413)', margin: '0 0 6px', letterSpacing: '-.02em' }}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text, #001e2b)', margin: '0 0 6px', letterSpacing: '-.02em' }}>
               Crie seu PIN definitivo
             </h2>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary, #6b6760)', margin: '0 0 20px', lineHeight: 1.5 }}>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary, #5c6c7a)', margin: '0 0 20px', lineHeight: 1.5 }}>
               Esse PIN passa a ser sua senha de acesso. Escolha 4 a 6 dígitos
               fáceis de lembrar mas difíceis de adivinhar.
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--text-secondary, #6b6760)' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--text-secondary, #5c6c7a)' }}>
                 Seu nome
                 <input
                   ref={pinRef}
@@ -350,13 +350,13 @@ export function SetupPinScreen({ tenant, onComplete }) {
                   placeholder="Nome completo"
                   style={{
                     padding: '10px 12px', borderRadius: 8,
-                    border: '1px solid var(--border, #d9d1c4)',
+                    border: '1px solid var(--border, #c1ccd6)',
                     background: 'var(--surface, white)', fontSize: 14, fontFamily: 'var(--font, inherit)',
                     outline: 'none',
                   }}
                 />
               </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--text-secondary, #6b6760)' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--text-secondary, #5c6c7a)' }}>
                 PIN (4 a 6 dígitos)
                 <input
                   type="password" inputMode="numeric" maxLength={6}
@@ -365,7 +365,7 @@ export function SetupPinScreen({ tenant, onComplete }) {
                   placeholder="••••"
                   style={{
                     padding: '12px', borderRadius: 8,
-                    border: '1px solid var(--border, #d9d1c4)',
+                    border: '1px solid var(--border, #c1ccd6)',
                     background: 'var(--surface, white)',
                     fontSize: 22, letterSpacing: '0.3em', textAlign: 'center',
                     fontFamily: 'var(--mono, monospace)',
@@ -373,7 +373,7 @@ export function SetupPinScreen({ tenant, onComplete }) {
                   }}
                 />
               </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--text-secondary, #6b6760)' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--text-secondary, #5c6c7a)' }}>
                 Confirmar PIN
                 <input
                   type="password" inputMode="numeric" maxLength={6}
@@ -383,7 +383,7 @@ export function SetupPinScreen({ tenant, onComplete }) {
                   placeholder="••••"
                   style={{
                     padding: '12px', borderRadius: 8,
-                    border: '1px solid var(--border, #d9d1c4)',
+                    border: '1px solid var(--border, #c1ccd6)',
                     background: 'var(--surface, white)',
                     fontSize: 22, letterSpacing: '0.3em', textAlign: 'center',
                     fontFamily: 'var(--mono, monospace)',
@@ -408,7 +408,7 @@ export function SetupPinScreen({ tenant, onComplete }) {
               disabled={busy}
               style={{
                 width: '100%', marginTop: 18, padding: '12px',
-                background: busy ? '#d9d1c4' : 'var(--primary, #cc785c)',
+                background: busy ? '#c1ccd6' : 'var(--primary, #00684a)',
                 color: 'white', border: 'none', borderRadius: 10,
                 fontSize: 15, fontWeight: 700,
                 cursor: busy ? 'wait' : 'pointer',
@@ -418,7 +418,7 @@ export function SetupPinScreen({ tenant, onComplete }) {
               {busy ? 'Configurando…' : 'Entrar no NutriOPS'}
             </button>
 
-            <div style={{ marginTop: 18, padding: '10px 14px', background: 'var(--bg, #faf9f5)', borderRadius: 8, fontSize: 11, color: 'var(--text-secondary, #6b6760)', lineHeight: 1.5 }}>
+            <div style={{ marginTop: 18, padding: '10px 14px', background: 'var(--bg, #f9fbfa)', borderRadius: 8, fontSize: 11, color: 'var(--text-secondary, #5c6c7a)', lineHeight: 1.5 }}>
               Você é o <strong>administrador</strong> dessa conta. Pode cadastrar
               colaboradores, supervisores e o RT em Equipe depois de entrar.
             </div>
@@ -431,25 +431,25 @@ export function SetupPinScreen({ tenant, onComplete }) {
 
 function SetupErrorScreen({ title, message, actionLabel, onAction }) {
   return (
-    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--bg, #faf9f5)', padding: 24 }}>
+    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--bg, #f9fbfa)', padding: 24 }}>
       <div style={{
         width: '100%', maxWidth: 420, textAlign: 'center',
         background: 'var(--surface, white)',
-        border: '1px solid var(--border, #d9d1c4)',
+        border: '1px solid var(--border, #c1ccd6)',
         borderRadius: 20, padding: '36px 40px',
       }}>
         <BrandLockup size="sm" idPrefix="setup-err" showSub={false} />
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text, #141413)', margin: '24px 0 8px', letterSpacing: '-.02em' }}>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text, #001e2b)', margin: '24px 0 8px', letterSpacing: '-.02em' }}>
           {title}
         </h2>
-        <p style={{ fontSize: 14, color: 'var(--text-secondary, #6b6760)', margin: '0 0 24px', lineHeight: 1.5 }}>
+        <p style={{ fontSize: 14, color: 'var(--text-secondary, #5c6c7a)', margin: '0 0 24px', lineHeight: 1.5 }}>
           {message}
         </p>
         <button
           onClick={onAction}
           style={{
             padding: '10px 24px',
-            background: 'var(--primary, #cc785c)', color: 'white',
+            background: 'var(--primary, #00684a)', color: 'white',
             border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700,
             cursor: 'pointer', fontFamily: 'var(--font, inherit)',
           }}

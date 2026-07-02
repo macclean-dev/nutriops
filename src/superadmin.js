@@ -19,8 +19,8 @@ const lw = (k, v)  => { try { localStorage.setItem(k, JSON.stringify(v)); } catc
 // do app não importar o chunk pesado do admin.jsx. (De-dup possível no futuro.)
 export const PLANS = [
   { id:'trial',      label:'Trial',      color:'#8a4e00', price:0,    maxUsers:5,  description:'14 dias gratuitos' },
-  { id:'loja',       label:'Loja',       color:'#cc785c', price:149,  maxUsers:15, description:'1 unidade — R$149/mês' },
-  { id:'rede',       label:'Rede',       color:'#2d6e4a', price:349,  maxUsers:999,description:'Até 3 unidades — R$349/mês' },
+  { id:'loja',       label:'Loja',       color:'#00684a', price:149,  maxUsers:15, description:'1 unidade — R$149/mês' },
+  { id:'rede',       label:'Rede',       color:'#00a35c', price:349,  maxUsers:999,description:'Até 3 unidades — R$349/mês' },
   { id:'enterprise', label:'Enterprise', color:'#7c3aed', price:null, maxUsers:999,description:'Sob consulta' },
 ];
 

@@ -6,41 +6,42 @@
   --serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
   --mono:  'JetBrains Mono', 'Fira Code', monospace;
 
-  /* Canvas — warm cream */
-  --bg:            #faf9f5;
+  /* Canvas — clean white/teal (MongoDB design system) */
+  --bg:            #f9fbfa;
   --surface:       #ffffff;
-  --surface-muted: #f0ece4;
-  --border:        #d9d1c4;
-  --border-subtle: #e5ddd0;
+  --surface-muted: #f4f7f6;
+  --border:        #c1ccd6;
+  --border-subtle: #e1e5e8;
 
-  /* Ink */
-  --text:             #141413;
-  --text-secondary:   #6b6760;
-  --text-placeholder: #9b9590;
+  /* Ink — deep navy-teal */
+  --text:             #001e2b;
+  --text-secondary:   #5c6c7a;
+  --text-placeholder: #a8b3bc;
 
-  /* Rail — warm dark (mesma cor do Nexum) */
-  --rail-bg:          #181715;
-  --rail-border:      rgba(255,255,255,.07);
-  --rail-text:        #e8e4dd;
-  --rail-muted:       #9b9590;
-  --rail-active-bg:   rgba(204,120,92,.14);
-  --rail-active-text: #e8946f;
-  --rail-hover:       rgba(255,255,255,.05);
+  /* Rail — Green Dark sólido com letras brancas (preferência do dono) */
+  --rail-bg:          #00684a;
+  --rail-border:      rgba(255,255,255,.14);
+  --rail-text:        rgba(255,255,255,.86);
+  --rail-muted:       rgba(255,255,255,.55);
+  --rail-active-bg:   rgba(255,255,255,.16);
+  --rail-active-text: #ffffff;
+  --rail-hover:       rgba(255,255,255,.09);
   --rail-width:       220px;
 
-  /* Brand — coral primary */
-  --primary:    #cc785c;
-  --primary-2:  #a0614a;
+  /* Brand — MongoDB green (primary sólido = green-dark p/ texto branco; acento = green vivo) */
+  --primary:    #00684a;
+  --primary-2:  #00543b;
+  --accent:     #00ed64;
 
-  /* Semantic — tuned to warm palette */
+  /* Semantic — vermelho/âmbar/azul mantidos como sinais de status */
   --blue:          #1d4e89;
   --blue-light:    rgba(29,78,137,.10);
   --blue-border:   rgba(29,78,137,.4);
   --blue-emphasis: #2a6cb0;
 
-  --green:        #2d6e4a;
-  --green-light:  rgba(45,110,74,.10);
-  --green-border: rgba(45,110,74,.4);
+  --green:        #00a35c;
+  --green-light:  rgba(0,163,92,.12);
+  --green-border: rgba(0,163,92,.4);
 
   --amber:        #8a4e00;
   --amber-light:  rgba(138,78,0,.10);
@@ -54,8 +55,8 @@
   --r-lg: 10px;
   --r-xl: 14px;
 
-  --shadow:    0 1px 10px rgba(20,20,19,.06);
-  --shadow-lg: 0 4px 20px rgba(20,20,19,.11);
+  --shadow:    0 1px 10px rgba(0,30,43,.06);
+  --shadow-lg: 0 4px 20px rgba(0,30,43,.10);
   --t: .15s ease;
 }
 
@@ -157,7 +158,7 @@ label {
 .brand-mark {
   width: 34px; height: 34px;
   border-radius: 10px;
-  background: #0f0e0c;
+  background: #001e2b;
   border: 1px solid rgba(255,255,255,.13);
   display: grid; place-items: center;
   color: #fff;
@@ -203,7 +204,7 @@ label {
 .rail-company strong { display: block; font-size: 13px; font-weight: 600; color: var(--rail-text); margin-bottom: 1px; }
 .rail-company span { font-size: 11px; display: block; }
 .rail-company:hover { background: var(--rail-hover); }
-.rail-company.active { background: var(--rail-active-bg); border-left-color: var(--rail-active-text); }
+.rail-company.active { background: var(--rail-active-bg); border-left-color: var(--accent); }
 .rail-company.active strong { color: var(--rail-active-text); }
 .rail-company.active { color: var(--rail-active-text); }
 
@@ -235,7 +236,7 @@ label {
   font-family: var(--font);
 }
 .rail-menu-item:hover { color: var(--rail-text); background: var(--rail-hover); }
-.rail-menu-item.active { color: var(--rail-active-text); background: var(--rail-active-bg); font-weight: 600; }
+.rail-menu-item.active { color: var(--rail-active-text); background: var(--rail-active-bg); font-weight: 600; box-shadow: inset 2px 0 0 var(--accent); }
 .rail-menu-note { font-size: 10px; color: var(--rail-muted); padding: 4px 10px 8px; }
 
 /* ===== BADGES & EYEBROW ===== */
@@ -297,7 +298,7 @@ label {
 .primary-action.attention {
   background: var(--green);
   border-color: transparent;
-  box-shadow: 0 0 0 3px rgba(45,110,74,.15), 0 1px 0 rgba(0,0,0,.08);
+  box-shadow: 0 0 0 3px rgba(0,163,92,.15), 0 1px 0 rgba(0,0,0,.08);
 }
 .secondary-action { background: var(--surface); color: var(--text); }
 .secondary-action:hover { background: var(--surface-muted); border-color: var(--blue-border); }
@@ -1104,24 +1105,24 @@ label {
    ============================================================ */
 
 [data-theme="dark"] {
-  --bg:            #181715;
-  --surface:       #211f1c;
-  --surface-muted: #2a2724;
-  --border:        rgba(255,255,255,.08);
-  --border-subtle: rgba(255,255,255,.04);
+  --bg:            #001e2b;
+  --surface:       #04303f;
+  --surface-muted: #06394a;
+  --border:        rgba(255,255,255,.09);
+  --border-subtle: rgba(255,255,255,.05);
 
-  --text:             #f0ece4;
-  --text-secondary:   #c5c0ba;
-  --text-placeholder: #9b9590;
+  --text:             #eef3f5;
+  --text-secondary:   #a8b3bc;
+  --text-placeholder: #7c8c9a;
 
   --blue:          #5a8fc5;
   --blue-light:    rgba(90,143,197,.15);
   --blue-border:   rgba(90,143,197,.4);
   --blue-emphasis: #7eb1e6;
 
-  --green:         #5fa57e;
-  --green-light:   rgba(95,165,126,.15);
-  --green-border:  rgba(95,165,126,.4);
+  --green:         #34d17f;
+  --green-light:   rgba(52,209,127,.15);
+  --green-border:  rgba(52,209,127,.4);
 
   --amber:         #d4a04a;
   --amber-light:   rgba(212,160,74,.15);

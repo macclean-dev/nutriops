@@ -196,7 +196,7 @@ export function ProfileView({ session, onLogout }) {
           <div className="card-head"><div><span className="eyebrow">Dados</span><h2>Informações da conta</h2></div></div>
           <div style={{ padding:'16px 20px', display:'flex', flexDirection:'column', gap:12 }}>
             <div style={{ display:'flex', alignItems:'center', gap:16, padding:'16px', background:'var(--surface-muted)', borderRadius:'var(--r)', border:'1px solid var(--border-subtle)' }}>
-              <div style={{ width:56, height:56, borderRadius:'50%', background:'var(--primary,#cc785c)', display:'grid', placeItems:'center', fontSize:22, fontWeight:800, color:'white', flexShrink:0 }}>
+              <div style={{ width:56, height:56, borderRadius:'50%', background:'var(--primary,#00684a)', display:'grid', placeItems:'center', fontSize:22, fontWeight:800, color:'white', flexShrink:0 }}>
                 {session?.user?.name?.charAt(0) ?? '?'}
               </div>
               <div>
@@ -400,22 +400,22 @@ export function GlobalSearch({
         style={{
           display:'flex', alignItems:'center', gap:12,
           padding:'10px 16px', cursor:'pointer',
-          background: active ? 'var(--surface-muted, #f0ece4)' : 'transparent',
-          borderLeft: active ? '2px solid var(--primary, #cc785c)' : '2px solid transparent',
+          background: active ? 'var(--surface-muted, #f4f7f6)' : 'transparent',
+          borderLeft: active ? '2px solid var(--primary, #00684a)' : '2px solid transparent',
         }}
       >
         <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontSize:13, fontWeight:500, color:'var(--text, #141413)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+          <div style={{ fontSize:13, fontWeight:500, color:'var(--text, #001e2b)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
             {item.label}
           </div>
           {item.hint && (
-            <div style={{ fontSize:11, color:'var(--text-secondary, #6b6760)', marginTop:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+            <div style={{ fontSize:11, color:'var(--text-secondary, #5c6c7a)', marginTop:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
               {item.hint}
             </div>
           )}
         </div>
         {active && (
-          <kbd style={{ flexShrink:0, padding:'2px 6px', fontSize:10, color:'var(--text-secondary, #6b6760)', border:'1px solid var(--border, #d9d1c4)', borderRadius:4, fontFamily:'monospace' }}>↵</kbd>
+          <kbd style={{ flexShrink:0, padding:'2px 6px', fontSize:10, color:'var(--text-secondary, #5c6c7a)', border:'1px solid var(--border, #c1ccd6)', borderRadius:4, fontFamily:'monospace' }}>↵</kbd>
         )}
       </div>
     );
@@ -425,7 +425,7 @@ export function GlobalSearch({
     <div style={{
       padding:'10px 16px 4px', fontSize:10, fontWeight:700,
       letterSpacing:'.12em', textTransform:'uppercase',
-      color:'var(--text-secondary, #6b6760)',
+      color:'var(--text-secondary, #5c6c7a)',
     }}>{children}</div>
   );
 
@@ -435,12 +435,12 @@ export function GlobalSearch({
       onClick={onClose}
     >
       <div
-        style={{ background:'var(--surface, white)', border:'1px solid var(--border, #d9d1c4)', borderRadius:14, width:'100%', maxWidth:600, boxShadow:'0 24px 64px rgba(20,20,19,.25)', overflow:'hidden', display:'flex', flexDirection:'column', maxHeight:'70vh' }}
+        style={{ background:'var(--surface, white)', border:'1px solid var(--border, #c1ccd6)', borderRadius:14, width:'100%', maxWidth:600, boxShadow:'0 24px 64px rgba(20,20,19,.25)', overflow:'hidden', display:'flex', flexDirection:'column', maxHeight:'70vh' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Input */}
-        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px', borderBottom:'1px solid var(--border-subtle, #e5ddd0)' }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color:'var(--text-secondary, #6b6760)' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px', borderBottom:'1px solid var(--border-subtle, #e1e5e8)' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color:'var(--text-secondary, #5c6c7a)' }}>
             <circle cx="11" cy="11" r="7"/><path d="m21 21-3.5-3.5"/>
           </svg>
           <input
@@ -449,9 +449,9 @@ export function GlobalSearch({
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Comando ou busca…  ex: ir relatórios, novo, freezer"
-            style={{ flex:1, border:'none', outline:'none', fontSize:15, fontFamily:'inherit', background:'transparent', color:'var(--text, #141413)' }}
+            style={{ flex:1, border:'none', outline:'none', fontSize:15, fontFamily:'inherit', background:'transparent', color:'var(--text, #001e2b)' }}
           />
-          <kbd style={{ padding:'2px 8px', borderRadius:6, border:'1px solid var(--border, #d9d1c4)', fontSize:10, color:'var(--text-secondary, #6b6760)', background:'var(--surface-muted, #f0ece4)', fontFamily:'monospace' }}>ESC</kbd>
+          <kbd style={{ padding:'2px 8px', borderRadius:6, border:'1px solid var(--border, #c1ccd6)', fontSize:10, color:'var(--text-secondary, #5c6c7a)', background:'var(--surface-muted, #f4f7f6)', fontFamily:'monospace' }}>ESC</kbd>
         </div>
 
         {/* Lista */}
@@ -493,7 +493,7 @@ export function GlobalSearch({
           )}
 
           {flatItems.length === 0 && (
-            <p style={{ padding:'24px 16px', color:'var(--text-secondary, #6b6760)', fontSize:13, textAlign:'center' }}>
+            <p style={{ padding:'24px 16px', color:'var(--text-secondary, #5c6c7a)', fontSize:13, textAlign:'center' }}>
               {query.trim()
                 ? <>Nenhum comando ou resultado para "<strong>{query}</strong>"</>
                 : 'Sem comandos disponíveis.'}
@@ -504,8 +504,8 @@ export function GlobalSearch({
         {/* Footer */}
         <div style={{
           display:'flex', justifyContent:'space-between', alignItems:'center', gap:12,
-          padding:'10px 16px', borderTop:'1px solid var(--border-subtle, #e5ddd0)',
-          fontSize:11, color:'var(--text-secondary, #6b6760)', background:'var(--surface-muted, #faf9f5)',
+          padding:'10px 16px', borderTop:'1px solid var(--border-subtle, #e1e5e8)',
+          fontSize:11, color:'var(--text-secondary, #5c6c7a)', background:'var(--surface-muted, #f9fbfa)',
         }}>
           <div style={{ display:'flex', gap:16, alignItems:'center' }}>
             <span><kbd style={kbdStyle}>↑</kbd> <kbd style={kbdStyle}>↓</kbd> navega</span>
@@ -522,7 +522,7 @@ export function GlobalSearch({
 }
 
 const kbdStyle = {
-  padding: '1px 6px', borderRadius: 4, border: '1px solid var(--border, #d9d1c4)',
+  padding: '1px 6px', borderRadius: 4, border: '1px solid var(--border, #c1ccd6)',
   background: 'var(--surface, white)', fontFamily: 'monospace', fontSize: 10,
 };
 
@@ -609,8 +609,8 @@ export function HandwashView({ activeTenant, allTenants, onTenantChange, session
               <div style={{ display:'flex', gap:8 }}>
                 {[['conforme','✓ Conforme'],['nao_conforme','✗ Não conforme']].map(([val,lbl]) => {
                   const on = result===val;
-                  const [bg,color,border] = val==='conforme'?['#dafbe1','#2d6e4a','#4ac26b']:['#ffebe9','#c0392b','#ff8182'];
-                  return <button key={val} onClick={()=>setResult(on?'':val)} style={{ flex:1, padding:'10px', borderRadius:8, border:`1.5px solid ${on?border:'#d9d1c4'}`, background:on?bg:'white', color:on?color:'#6b6760', fontWeight:on?700:500, fontSize:13, cursor:'pointer', fontFamily:'inherit' }}>{lbl}</button>;
+                  const [bg,color,border] = val==='conforme'?['#dafbe1','#00a35c','#4ac26b']:['#ffebe9','#c0392b','#ff8182'];
+                  return <button key={val} onClick={()=>setResult(on?'':val)} style={{ flex:1, padding:'10px', borderRadius:8, border:`1.5px solid ${on?border:'#c1ccd6'}`, background:on?bg:'white', color:on?color:'#5c6c7a', fontWeight:on?700:500, fontSize:13, cursor:'pointer', fontFamily:'inherit' }}>{lbl}</button>;
                 })}
               </div>
             </div>
@@ -687,7 +687,7 @@ export function MonthlyExportView({ allTenants, records, session }) {
       <td><strong>${r.equipmentInput||r.equipment||'—'}</strong></td>
       <td style="font-family:monospace;font-weight:700">${r.value}°C</td>
       <td>${r.min??'?'}–${r.max??'?'}°C</td>
-      <td style="color:${(()=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx?'#2d6e4a':v>=mn-3&&v<=mx+3?'#8a4e00':'#c0392b';})()};font-weight:700">${(()=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx?'Conforme':v>=mn-3&&v<=mx+3?'Desvio':'Fora da faixa';})()}</td>
+      <td style="color:${(()=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx?'#00a35c':v>=mn-3&&v<=mx+3?'#8a4e00':'#c0392b';})()};font-weight:700">${(()=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx?'Conforme':v>=mn-3&&v<=mx+3?'Desvio':'Fora da faixa';})()}</td>
       <td>${r.user||'—'}</td>
       <td>${r.note||'—'}</td>
     </tr>`).join('');
@@ -706,27 +706,27 @@ export function MonthlyExportView({ allTenants, records, session }) {
     const win = window.open('', '_blank');
     win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
     <title>Relatório Mensal — ${monthLabel}</title>
-    <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:10px;color:#141413;padding:20px}
-    h1{font-size:16px;font-weight:800;margin-bottom:4px}h2{font-size:12px;font-weight:700;margin:16px 0 6px;color:#cc785c;padding-bottom:4px;border-bottom:1px solid #d9d1c4}
-    .meta{color:#6b6760;font-size:9px;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #d9d1c4}
-    .kpi-row{display:flex;gap:12px;margin-bottom:16px}.kpi{flex:1;padding:10px;background:#faf9f5;border:1px solid #d9d1c4;border-radius:6px}
-    .kpi span{font-size:8px;color:#6b6760;text-transform:uppercase;display:block;margin-bottom:3px}.kpi strong{font-size:18px;font-weight:800;font-family:monospace}
-    table{width:100%;border-collapse:collapse;margin-bottom:8px}th{background:#faf9f5;padding:5px 6px;text-align:left;font-size:8px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #d9d1c4;color:#6b6760}
+    <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:10px;color:#001e2b;padding:20px}
+    h1{font-size:16px;font-weight:800;margin-bottom:4px}h2{font-size:12px;font-weight:700;margin:16px 0 6px;color:#00684a;padding-bottom:4px;border-bottom:1px solid #c1ccd6}
+    .meta{color:#5c6c7a;font-size:9px;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #c1ccd6}
+    .kpi-row{display:flex;gap:12px;margin-bottom:16px}.kpi{flex:1;padding:10px;background:#f9fbfa;border:1px solid #c1ccd6;border-radius:6px}
+    .kpi span{font-size:8px;color:#5c6c7a;text-transform:uppercase;display:block;margin-bottom:3px}.kpi strong{font-size:18px;font-weight:800;font-family:monospace}
+    table{width:100%;border-collapse:collapse;margin-bottom:8px}th{background:#f9fbfa;padding:5px 6px;text-align:left;font-size:8px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #c1ccd6;color:#5c6c7a}
     td{padding:5px 6px;border-bottom:1px solid #eaeef2;font-size:9px}
-    .sig{display:flex;gap:40px;margin-top:32px}.sig-line{flex:1;border-top:1px solid #374151;padding-top:4px;font-size:9px;color:#6b6760;text-align:center}
-    .footer{margin-top:16px;padding-top:8px;border-top:1px solid #d9d1c4;font-size:8px;color:#9198a1;display:flex;justify-content:space-between}
+    .sig{display:flex;gap:40px;margin-top:32px}.sig-line{flex:1;border-top:1px solid #374151;padding-top:4px;font-size:9px;color:#5c6c7a;text-align:center}
+    .footer{margin-top:16px;padding-top:8px;border-top:1px solid #c1ccd6;font-size:8px;color:#9198a1;display:flex;justify-content:space-between}
     @page{size:A4;margin:12mm}</style></head><body>
     <h1>Relatório Mensal de Conformidade Sanitária</h1>
     <div class="meta">${tenantFilter === 'all' ? 'Todas as empresas' : allTenants.find(t=>t.id===tenantFilter)?.name} · ${monthLabel} · Gerado por ${session?.user?.name||'—'} em ${date} · RDC 216/2004</div>
     <div class="kpi-row">
       <div class="kpi"><span>Total de registros</span><strong>${monthRecords.length}</strong></div>
-      <div class="kpi"><span>Conformes</span><strong style="color:#2d6e4a">${monthRecords.filter(r=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx;}).length}</strong></div>
+      <div class="kpi"><span>Conformes</span><strong style="color:#00a35c">${monthRecords.filter(r=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx;}).length}</strong></div>
       <div class="kpi"><span>Desvios</span><strong style="color:#8a4e00">${monthRecords.filter(r=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn-3&&v<mn||v>mx&&v<=mx+3;}).length}</strong></div>
       <div class="kpi"><span>Críticos</span><strong style="color:#c0392b">${monthRecords.filter(r=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v<mn-3||v>mx+3;}).length}</strong></div>
       <div class="kpi"><span>Conformidade</span><strong>${monthRecords.length>0?Math.round((monthRecords.filter(r=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx;}).length/monthRecords.length)*100):0}%</strong></div>
     </div>
     <h2>1. Registros de Temperatura</h2>
-    ${monthRecords.length===0?'<p style="color:#6b6760">Nenhum registro no período.</p>':`<table><thead><tr><th>Data</th><th>Hora</th><th>Empresa</th><th>Equipamento</th><th>Temp.</th><th>Faixa</th><th>Status</th><th>Responsável</th><th>Obs.</th></tr></thead><tbody>${tempRows}</tbody></table>`}
+    ${monthRecords.length===0?'<p style="color:#5c6c7a">Nenhum registro no período.</p>':`<table><thead><tr><th>Data</th><th>Hora</th><th>Empresa</th><th>Equipamento</th><th>Temp.</th><th>Faixa</th><th>Status</th><th>Responsável</th><th>Obs.</th></tr></thead><tbody>${tempRows}</tbody></table>`}
     <h2>2. Planilhas de Controle BPF</h2>
     <table><thead><tr><th>Empresa</th><th>Planilha</th><th>Frequência</th><th>Preenchimentos</th><th>Validados RT</th></tr></thead><tbody>${bpfRows||'<tr><td colspan="5">Sem dados.</td></tr>'}</tbody></table>
     <div class="sig">

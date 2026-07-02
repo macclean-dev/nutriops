@@ -37,7 +37,7 @@ const DEFAULT_EQUIPMENT = {
 };
 
 const BRAND_COLORS = [
-  '#cc785c','#2d6e4a','#b91c1c','#d4a017','#7c3aed','#0891b2','#be185d','#ea580c',
+  '#00684a','#00a35c','#b91c1c','#d4a017','#7c3aed','#0891b2','#be185d','#ea580c',
 ];
 
 // ─── Step indicators ───────────────────────────────────────────────────────

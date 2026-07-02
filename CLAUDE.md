@@ -103,12 +103,24 @@ device. Resultado: qualquer aparelho que abrir o app já entra sincronizando.
 `1.9.1` → `1.9.2` → `1.9.3` … Inclui commits de docs/chore. Bump junto com a
 mudança, no mesmo commit. A versão aparece no rodapé do rail e no login.
 
-### Design (alinhado com Nexum / Claude design system)
+### Design (paleta MongoDB — verde/teal, própria, NÃO mais coral/Nexum)
+
+> **v1.9.26+ trocou a paleta coral/creme (idêntica ao Nexum) pela do MongoDB
+> design system** (`DesignNewColours.md`). Só as CORES mudaram — navegação,
+> layout, fontes e espaçamentos ficaram iguais. Tudo é dirigido por variáveis
+> CSS em `src/styles.css` (`:root` + `[data-theme="dark"]`).
 
 - **Sem emojis em ícones de UI** — usar `NavIcon` (SVG outline 16×16) ou outro SVG
-- **Sem gradientes genéricos** — primária é coral sólido (`--primary`)
+- **Sem gradientes genéricos** — primária é **verde sólido** (`--primary` = `#00684a`)
 - **Tipografia:** `Instrument Sans` (UI) + `Instrument Serif` (wordmark)
-- **Paleta:** creme `#faf9f5` canvas / ink `#141413` / coral `#cc785c` / warm dark rail `#181715`
+- **Paleta:** off-white `#f9fbfa` canvas / ink navy-teal `#001e2b` / verde primary `#00684a`
+  (fill com texto branco) / **verde vivo `#00ed64`** (`--accent`, só como acento:
+  nav ativo, focus, diagonal do logo) / **rail Green Dark `#00684a` com letras
+  brancas** (preferência do dono — não é teal). Vermelho/âmbar/azul ficam como
+  sinais de status funcionais, não são "marca".
+- **Regra do verde:** `#00684a` (green-dark) é o único verde que aceita texto
+  branco em cima; use `#00ed64` (vivo) só como acento/detalhe, nunca como fundo
+  de texto (fica ilegível). É como o MongoDB usa: com parcimônia.
 - **Brand primitives:** `src/brand.jsx` exporta `NutriMark`, `BrandLockup`, `APP_VERSION`
 
 ### Adicionar novo módulo/view
@@ -258,6 +270,7 @@ A partir daí, todo PR e push pra `main` roda build + 38 testes automaticamente.
 | 🟢 Alta (épico) | **Auth+RLS — Fase 3 (ligar RLS).** Fases 0/1/2 feitas (admin com email/senha, device-token no sync, policies escritas). Falta: setar `VITE_DEVICE_PASSWORD` no Vercel, corrigir bloqueadores (testWrite + admin.jsx usam anon key → quebram sob RLS) e ligar RLS tabela-por-tabela. **Runbook completo em `docs/AUTH_RLS_PLAN.md`.** Não fazer sem monitoramento. |
 | 🔴 Alta | **Conectar a DBK Produção** — única loja ainda zerada na nuvem. Auto-connect + auto-backfill já resolvem no próximo boot online do device dela. |
 | 🟡 Média | **Bäckerei** — no ar (18 registros), último de 04/06. Verificar no device (check local×nuvem na receita). |
+| 🟡 Média | **"Modo local" tem que ser online por padrão** — o banner "os dados ficam só neste dispositivo · Configure a sincronização em Configurações" não deve aparecer pro cliente: o app já auto-conecta no Supabase no boot (env `VITE_SB_*` no build de prod → banner suprimido por `buildHasSupabase` no `LocalModeBanner`). Em DEV local (sem env) ele ainda aparece — esperado. **A fazer:** garantir que em qualquer device de prod o default seja online sempre (revisar copy/gating do banner pra não assustar o cliente; considerar remover o CTA "Configurar agora" quando `buildHasSupabase`). |
 | 🟢 Baixa | Limpar a linha duplicada no `equipment_catalog` da Swiss na nuvem (o código já dedupa defensivamente — v1.9.14 — mas o dado sujo continua lá). |
 
 ### Resolvidas (v1.9.6–1.9.15 — sessão 01/07)

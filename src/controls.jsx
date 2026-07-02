@@ -29,14 +29,14 @@ export { useBrowserNotifications } from './notifications';
 // ═══════════════════════════════════════════════════════════════════════════
 
 const POP_CATEGORIES = [
-  { id: 'higiene',      label: 'Higiene pessoal e ambiental', color: '#cc785c' },
+  { id: 'higiene',      label: 'Higiene pessoal e ambiental', color: '#00684a' },
   { id: 'temperatura',  label: 'Controle de temperatura',     color: '#c0392b' },
   { id: 'manipulacao',  label: 'Manipulação de alimentos',    color: '#9a3412' },
   { id: 'limpeza',      label: 'Limpeza e desinfecção',       color: '#065f46' },
   { id: 'recepcao',     label: 'Recebimento de mercadorias',  color: '#6b21a8' },
   { id: 'pragas',       label: 'Controle de pragas',          color: '#92400e' },
   { id: 'equipamentos', label: 'Equipamentos',                color: '#374151' },
-  { id: 'outros',       label: 'Outros',                      color: '#6b6760' },
+  { id: 'outros',       label: 'Outros',                      color: '#5c6c7a' },
 ];
 
 export function POPsView({ activeTenant, allTenants, onTenantChange, session }) {
@@ -86,10 +86,10 @@ export function POPsView({ activeTenant, allTenants, onTenantChange, session }) 
     const win = window.open('', '_blank');
     win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
     <title>POP — ${pop.title}</title>
-    <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#141413;padding:24px}
-    h1{font-size:16px;font-weight:800;margin-bottom:4px}.meta{color:#6b6760;font-size:9px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #d9d1c4}
-    h2{font-size:12px;font-weight:700;margin:14px 0 6px;color:#cc785c}ol{padding-left:18px}li{margin-bottom:6px;font-size:11px;line-height:1.5}
-    .footer{margin-top:20px;padding-top:10px;border-top:1px solid #d9d1c4;font-size:9px;color:#9198a1;display:flex;justify-content:space-between}
+    <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#001e2b;padding:24px}
+    h1{font-size:16px;font-weight:800;margin-bottom:4px}.meta{color:#5c6c7a;font-size:9px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #c1ccd6}
+    h2{font-size:12px;font-weight:700;margin:14px 0 6px;color:#00684a}ol{padding-left:18px}li{margin-bottom:6px;font-size:11px;line-height:1.5}
+    .footer{margin-top:20px;padding-top:10px;border-top:1px solid #c1ccd6;font-size:9px;color:#9198a1;display:flex;justify-content:space-between}
     .sig{border-top:1px solid #374151;width:200px;margin-top:40px;padding-top:4px;font-size:9px}
     @page{size:A4;margin:14mm}</style></head><body>
     <h1>POP — ${pop.title}</h1>
@@ -284,8 +284,8 @@ export function OilControlView({ activeTenant, allTenants, onTenantChange, sessi
 
   const CNCBtn = ({ label, value, current, onChange }) => {
     const on = current === value;
-    const [bg,color,border] = value==='C' ? ['#dafbe1','#2d6e4a','#4ac26b'] : value==='NC' ? ['#ffebe9','#c0392b','#ff8182'] : ['#faf9f5','#6b6760','#d9d1c4'];
-    return <button onClick={() => onChange(on?'':value)} style={{ padding:'5px 14px', borderRadius:6, border:`1.5px solid ${on?border:'#d9d1c4'}`, background:on?bg:'white', color:on?color:'#6b6760', fontWeight:on?700:500, fontSize:12, cursor:'pointer' }}>{label}</button>;
+    const [bg,color,border] = value==='C' ? ['#dafbe1','#00a35c','#4ac26b'] : value==='NC' ? ['#ffebe9','#c0392b','#ff8182'] : ['#f9fbfa','#5c6c7a','#c1ccd6'];
+    return <button onClick={() => onChange(on?'':value)} style={{ padding:'5px 14px', borderRadius:6, border:`1.5px solid ${on?border:'#c1ccd6'}`, background:on?bg:'white', color:on?color:'#5c6c7a', fontWeight:on?700:500, fontSize:12, cursor:'pointer' }}>{label}</button>;
   };
 
   return (
@@ -315,8 +315,8 @@ export function OilControlView({ activeTenant, allTenants, onTenantChange, sessi
               <div style={{ display:'flex', gap:8 }}>
                 {[['aprovado','✓ Aprovado'],['reprovado','✗ Trocar óleo'],['observacao','⚠ Em observação']].map(([val,lbl]) => {
                   const on = resultado===val;
-                  const [bg,color,border] = val==='aprovado'?['#dafbe1','#2d6e4a','#4ac26b']:val==='reprovado'?['#ffebe9','#c0392b','#ff8182']:['#fdf8e3','#8a4e00','#e3aa14'];
-                  return <button key={val} onClick={() => setResultado(on?'':val)} style={{ flex:1, padding:'8px 6px', borderRadius:8, border:`1.5px solid ${on?border:'#d9d1c4'}`, background:on?bg:'white', color:on?color:'#6b6760', fontWeight:on?700:500, fontSize:12, cursor:'pointer', textAlign:'center' }}>{lbl}</button>;
+                  const [bg,color,border] = val==='aprovado'?['#dafbe1','#00a35c','#4ac26b']:val==='reprovado'?['#ffebe9','#c0392b','#ff8182']:['#fdf8e3','#8a4e00','#e3aa14'];
+                  return <button key={val} onClick={() => setResultado(on?'':val)} style={{ flex:1, padding:'8px 6px', borderRadius:8, border:`1.5px solid ${on?border:'#c1ccd6'}`, background:on?bg:'white', color:on?color:'#5c6c7a', fontWeight:on?700:500, fontSize:12, cursor:'pointer', textAlign:'center' }}>{lbl}</button>;
                 })}
               </div>
             </div>
@@ -423,8 +423,8 @@ export function ThawControlView({ activeTenant, allTenants, onTenantChange, sess
               <div style={{ display:'flex', gap:8 }}>
                 {[['conforme','✓ Conforme'],['nao_conforme','✗ Não conforme'],['descartado','⊗ Descartado']].map(([val,lbl]) => {
                   const on = resultado===val;
-                  const [bg,color,border] = val==='conforme'?['#dafbe1','#2d6e4a','#4ac26b']:val==='descartado'?['#ffebe9','#c0392b','#ff8182']:['#fdf8e3','#8a4e00','#e3aa14'];
-                  return <button key={val} onClick={() => setResultado(on?'':val)} style={{ flex:1, padding:'8px 6px', borderRadius:8, border:`1.5px solid ${on?border:'#d9d1c4'}`, background:on?bg:'white', color:on?color:'#6b6760', fontWeight:on?700:500, fontSize:12, cursor:'pointer', textAlign:'center' }}>{lbl}</button>;
+                  const [bg,color,border] = val==='conforme'?['#dafbe1','#00a35c','#4ac26b']:val==='descartado'?['#ffebe9','#c0392b','#ff8182']:['#fdf8e3','#8a4e00','#e3aa14'];
+                  return <button key={val} onClick={() => setResultado(on?'':val)} style={{ flex:1, padding:'8px 6px', borderRadius:8, border:`1.5px solid ${on?border:'#c1ccd6'}`, background:on?bg:'white', color:on?color:'#5c6c7a', fontWeight:on?700:500, fontSize:12, cursor:'pointer', textAlign:'center' }}>{lbl}</button>;
                 })}
               </div>
             </div>
@@ -547,8 +547,8 @@ export function CoolingControlView({ activeTenant, allTenants, onTenantChange, s
               <div style={{ display:'flex', gap:8 }}>
                 {[['conforme','✓ Conforme'],['nao_conforme','✗ Não conforme'],['descartado','⊗ Descartado']].map(([val,lbl]) => {
                   const on = resultado===val;
-                  const [bg,color,border] = val==='conforme'?['#dafbe1','#2d6e4a','#4ac26b']:val==='descartado'?['#ffebe9','#c0392b','#ff8182']:['#fdf8e3','#8a4e00','#e3aa14'];
-                  return <button key={val} onClick={() => setResultado(on?'':val)} style={{ flex:1, padding:'8px 6px', borderRadius:8, border:`1.5px solid ${on?border:'#d9d1c4'}`, background:on?bg:'white', color:on?color:'#6b6760', fontWeight:on?700:500, fontSize:12, cursor:'pointer', textAlign:'center' }}>{lbl}</button>;
+                  const [bg,color,border] = val==='conforme'?['#dafbe1','#00a35c','#4ac26b']:val==='descartado'?['#ffebe9','#c0392b','#ff8182']:['#fdf8e3','#8a4e00','#e3aa14'];
+                  return <button key={val} onClick={() => setResultado(on?'':val)} style={{ flex:1, padding:'8px 6px', borderRadius:8, border:`1.5px solid ${on?border:'#c1ccd6'}`, background:on?bg:'white', color:on?color:'#5c6c7a', fontWeight:on?700:500, fontSize:12, cursor:'pointer', textAlign:'center' }}>{lbl}</button>;
                 })}
               </div>
             </div>
@@ -679,8 +679,8 @@ export function ThermalControlView({ activeTenant, allTenants, onTenantChange, s
               <div style={{ display:'flex', gap:8 }}>
                 {[['conforme','✓ Conforme'],['nao_conforme','✗ Não conforme'],['descartado','⊗ Descartado']].map(([val,lbl]) => {
                   const on = resultado===val;
-                  const [bg,color,border] = val==='conforme'?['#dafbe1','#2d6e4a','#4ac26b']:val==='descartado'?['#ffebe9','#c0392b','#ff8182']:['#fdf8e3','#8a4e00','#e3aa14'];
-                  return <button key={val} onClick={() => setResultado(on?'':val)} style={{ flex:1, padding:'8px 6px', borderRadius:8, border:`1.5px solid ${on?border:'#d9d1c4'}`, background:on?bg:'white', color:on?color:'#6b6760', fontWeight:on?700:500, fontSize:12, cursor:'pointer', textAlign:'center' }}>{lbl}</button>;
+                  const [bg,color,border] = val==='conforme'?['#dafbe1','#00a35c','#4ac26b']:val==='descartado'?['#ffebe9','#c0392b','#ff8182']:['#fdf8e3','#8a4e00','#e3aa14'];
+                  return <button key={val} onClick={() => setResultado(on?'':val)} style={{ flex:1, padding:'8px 6px', borderRadius:8, border:`1.5px solid ${on?border:'#c1ccd6'}`, background:on?bg:'white', color:on?color:'#5c6c7a', fontWeight:on?700:500, fontSize:12, cursor:'pointer', textAlign:'center' }}>{lbl}</button>;
                 })}
               </div>
             </div>
@@ -740,23 +740,23 @@ export function printTodayReport(activeTenant, records) {
     <td>${new Date(r.createdAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</td>
     <td><strong>${r.equipmentInput||r.equipment||'—'}</strong>${r.equipmentLocation?`<br><small>${r.equipmentLocation}</small>`:''}</td>
     <td style="font-family:monospace;font-size:14px;font-weight:700">${r.value}°C</td>
-    <td style="font-size:9px;color:#6b6760">${r.min??'?'}–${r.max??'?'}°C</td>
+    <td style="font-size:9px;color:#5c6c7a">${r.min??'?'}–${r.max??'?'}°C</td>
     <td>${toneLabel(r)}</td>
     <td style="font-size:9px">${r.user||'—'}</td>
-    <td style="font-size:9px;color:#6b6760">${r.note||'—'}</td>
+    <td style="font-size:9px;color:#5c6c7a">${r.note||'—'}</td>
   </tr>`).join('');
 
   const win = window.open('', '_blank');
   win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
   <title>Registros do Dia — ${activeTenant.name}</title>
-  <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#141413;padding:20px}
-  .company-header{display:flex;justify-content:space-between;padding:8px 12px;background:#faf9f5;border:1px solid #d9d1c4;border-radius:4px;margin-bottom:12px}
-  .company-name{font-size:13px;font-weight:800}.company-detail{font-size:9px;color:#6b6760}
-  h1{font-size:16px;font-weight:800;margin-bottom:4px}.meta{color:#6b6760;font-size:9px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #d9d1c4}
-  table{width:100%;border-collapse:collapse}th{background:#faf9f5;padding:5px 7px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #d9d1c4;color:#6b6760}
-  td{padding:6px 7px;border-bottom:1px solid #eaeef2;vertical-align:top}tr:last-child td{border-bottom:none}small{font-size:8px;color:#6b6760}
-  .sig{display:flex;gap:40px;margin-top:32px}.sig-line{flex:1;border-top:1px solid #374151;padding-top:4px;font-size:9px;color:#6b6760;text-align:center}
-  .footer{margin-top:16px;padding-top:8px;border-top:1px solid #d9d1c4;font-size:8px;color:#9198a1;display:flex;justify-content:space-between}
+  <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#001e2b;padding:20px}
+  .company-header{display:flex;justify-content:space-between;padding:8px 12px;background:#f9fbfa;border:1px solid #c1ccd6;border-radius:4px;margin-bottom:12px}
+  .company-name{font-size:13px;font-weight:800}.company-detail{font-size:9px;color:#5c6c7a}
+  h1{font-size:16px;font-weight:800;margin-bottom:4px}.meta{color:#5c6c7a;font-size:9px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #c1ccd6}
+  table{width:100%;border-collapse:collapse}th{background:#f9fbfa;padding:5px 7px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #c1ccd6;color:#5c6c7a}
+  td{padding:6px 7px;border-bottom:1px solid #eaeef2;vertical-align:top}tr:last-child td{border-bottom:none}small{font-size:8px;color:#5c6c7a}
+  .sig{display:flex;gap:40px;margin-top:32px}.sig-line{flex:1;border-top:1px solid #374151;padding-top:4px;font-size:9px;color:#5c6c7a;text-align:center}
+  .footer{margin-top:16px;padding-top:8px;border-top:1px solid #c1ccd6;font-size:8px;color:#9198a1;display:flex;justify-content:space-between}
   @page{size:A4;margin:12mm}</style></head><body>
   <div class="company-header">
     <div>
@@ -764,12 +764,12 @@ export function printTodayReport(activeTenant, records) {
       ${p.cnpj ? `<div class="company-detail">CNPJ: ${p.cnpj}</div>` : ''}
       ${p.endereco ? `<div class="company-detail">${p.endereco}</div>` : ''}
     </div>
-    ${p.atividade ? `<div style="font-size:10px;font-weight:700;color:#cc785c">${p.atividade}</div>` : ''}
+    ${p.atividade ? `<div style="font-size:10px;font-weight:700;color:#00684a">${p.atividade}</div>` : ''}
   </div>
   <h1>Registros do Dia — ${activeTenant.name}</h1>
   <p class="meta">${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})} · ${todayRecords.length} registros · Gerado às ${date}</p>
   ${todayRecords.length === 0
-    ? '<p style="color:#6b6760;padding:20px 0">Nenhum registro encontrado para hoje.</p>'
+    ? '<p style="color:#5c6c7a;padding:20px 0">Nenhum registro encontrado para hoje.</p>'
     : `<table><thead><tr><th>Hora</th><th>Equipamento</th><th>Temp.</th><th>Faixa</th><th>Status</th><th>Responsável</th><th>Observação</th></tr></thead><tbody>${rows}</tbody></table>`}
   <div class="sig">
     <div class="sig-line">Responsável pela operação · Data: ___/___/______</div>

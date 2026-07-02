@@ -99,7 +99,7 @@ export function TrialExpiredScreen({ client }) {
     <div style={{
       minHeight: '100vh', display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      background: 'linear-gradient(180deg,#181715,#141413)',
+      background: 'linear-gradient(180deg,#001e2b,#001e2b)',
       padding: 24, textAlign: 'center', fontFamily: '-apple-system,"Segoe UI",system-ui,sans-serif',
     }}>
       {/* Brand */}
@@ -109,7 +109,7 @@ export function TrialExpiredScreen({ client }) {
 
       <div style={{ maxWidth: 460 }}>
         <div style={{ fontSize: 64, marginBottom: 16 }}>⏰</div>
-        <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-.04em', color: '#f0ece4', marginBottom: 12, lineHeight: 1.2 }}>
+        <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-.04em', color: '#f4f7f6', marginBottom: 12, lineHeight: 1.2 }}>
           Seu trial de 14 dias encerrou
         </h1>
         <p style={{ fontSize: 16, color: '#c5c0ba', marginBottom: 32, lineHeight: 1.6 }}>
@@ -119,8 +119,8 @@ export function TrialExpiredScreen({ client }) {
         {/* Plans */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 28 }}>
           {[
-            { label: 'Loja', price: 149, desc: '1 unidade · até 15 colaboradores', color: '#cc785c' },
-            { label: 'Rede', price: 349, desc: 'Até 3 unidades · ilimitado', color: '#2d6e4a', featured: true },
+            { label: 'Loja', price: 149, desc: '1 unidade · até 15 colaboradores', color: '#00684a' },
+            { label: 'Rede', price: 349, desc: 'Até 3 unidades · ilimitado', color: '#00a35c', featured: true },
           ].map(plan => (
             <div key={plan.label} style={{
               padding: '18px 16px', borderRadius: 14,
@@ -133,7 +133,7 @@ export function TrialExpiredScreen({ client }) {
                   Mais popular
                 </div>
               )}
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#f0ece4', marginBottom: 4 }}>{plan.label}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#f4f7f6', marginBottom: 4 }}>{plan.label}</div>
               <div style={{ fontSize: 24, fontWeight: 800, fontFamily: 'monospace', color: plan.color, marginBottom: 4 }}>R${plan.price}<span style={{ fontSize: 13, fontWeight: 500, color: '#c5c0ba' }}>/mês</span></div>
               <div style={{ fontSize: 12, color: '#c5c0ba' }}>{plan.desc}</div>
             </div>
@@ -143,7 +143,7 @@ export function TrialExpiredScreen({ client }) {
         <a href="mailto:contato@nutriops.com.br?subject=Quero assinar o NutriOPS&body=Olá! Meu trial expirou e gostaria de assinar o plano."
           style={{
             display: 'inline-block', width: '100%', padding: '14px',
-            background: 'var(--primary,#cc785c)', color: 'white',
+            background: 'var(--primary,#00684a)', color: 'white',
             borderRadius: 12, textDecoration: 'none', fontSize: 16, fontWeight: 700,
             marginBottom: 12, boxSizing: 'border-box',
           }}>

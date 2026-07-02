@@ -109,7 +109,7 @@ function TempLineChart({ records, equipment, height = 180 }) {
             <g style={{ pointerEvents: 'none' }}>
               <rect x={bx} y={by} width={bw} height={bh} rx={6} fill="#1c1b19" opacity={0.96} />
               <text x={bx + bw / 2} y={by + 14} textAnchor="middle" fontSize={12} fontWeight={700} fill="#fff" fontFamily="var(--mono, monospace)">{p.r.value}°C</text>
-              <text x={bx + bw / 2} y={by + 26} textAnchor="middle" fontSize={8} fill="#b8b1a6">{fmt}</text>
+              <text x={bx + bw / 2} y={by + 26} textAnchor="middle" fontSize={8} fill="#a8b3bc">{fmt}</text>
             </g>
           );
         })()}

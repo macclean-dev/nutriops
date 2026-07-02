@@ -51,7 +51,7 @@ const f = (label, type='cnc', hint=null) => ({ id:uid(), label, type, hint });
 // ─── Category metadata ─────────────────────────────────────────────────────
 
 const CAT = {
-  higiene_pessoal: { label:'Higiene Pessoal',  color:'#cc785c', bg:'rgba(29,78,137,.10)' },
+  higiene_pessoal: { label:'Higiene Pessoal',  color:'#00684a', bg:'rgba(29,78,137,.10)' },
   vetores_pragas:  { label:'Vetores e Pragas', color:'#9a3412', bg:'#fff7ed' },
   dedetizacao:     { label:'Dedetização',      color:'#6b21a8', bg:'#faf5ff' },
   faxina:          { label:'Faxina',           color:'#065f46', bg:'#ecfdf5' },
@@ -104,13 +104,13 @@ export function generateFormPDF(template, record, tenant) {
   const renderValue = (field, val) => {
     if (!val && val !== false) return '<span style="color:#9198a1">—</span>';
     if (field.type==='cnc') return val==='C'
-      ? '<span style="color:#2d6e4a;font-weight:700">✓ CONFORME</span>'
+      ? '<span style="color:#00a35c;font-weight:700">✓ CONFORME</span>'
       : val==='NC' ? '<span style="color:#c0392b;font-weight:700">✗ NÃO CONFORME</span>'
       : '<span style="color:#9198a1">—</span>';
     if (field.type==='presence') {
       if (typeof val==='object') return val.detected
         ? `<span style="color:#c0392b;font-weight:700">DETECTADO</span>${val.location ? ` — ${val.location}` : ''}`
-        : '<span style="color:#2d6e4a;font-weight:700">SEM OCORRÊNCIA</span>';
+        : '<span style="color:#00a35c;font-weight:700">SEM OCORRÊNCIA</span>';
       return String(val);
     }
     if (field.type==='date_sig' && typeof val==='object')
@@ -151,29 +151,29 @@ export function generateFormPDF(template, record, tenant) {
   <title>${template.title} — ${period}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Arial,sans-serif;font-size:11px;color:#141413;padding:24px}
-    .company-header{display:flex;justify-content:space-between;align-items:flex-start;padding:10px 14px;background:#faf9f5;border:1px solid #d9d1c4;border-radius:6px;margin-bottom:14px}
-    .company-name{font-size:14px;font-weight:800;color:#141413;margin-bottom:3px}
-    .company-detail{font-size:10px;color:#6b6760;margin-top:1px}
-    .activity-badge{padding:4px 10px;background:rgba(29,78,137,.10);color:#cc785c;border:1px solid rgba(29,78,137,.4);border-radius:12px;font-size:10px;font-weight:700;white-space:nowrap;align-self:center}
-    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid #d9d1c4}
+    body{font-family:Arial,sans-serif;font-size:11px;color:#001e2b;padding:24px}
+    .company-header{display:flex;justify-content:space-between;align-items:flex-start;padding:10px 14px;background:#f9fbfa;border:1px solid #c1ccd6;border-radius:6px;margin-bottom:14px}
+    .company-name{font-size:14px;font-weight:800;color:#001e2b;margin-bottom:3px}
+    .company-detail{font-size:10px;color:#5c6c7a;margin-top:1px}
+    .activity-badge{padding:4px 10px;background:rgba(29,78,137,.10);color:#00684a;border:1px solid rgba(29,78,137,.4);border-radius:12px;font-size:10px;font-weight:700;white-space:nowrap;align-self:center}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid #c1ccd6}
     .header-left h1{font-size:15px;font-weight:800;margin-bottom:4px}
-    .header-left .period{font-size:11px;color:#6b6760}
+    .header-left .period{font-size:11px;color:#5c6c7a}
     .meta-table{border-collapse:collapse;width:100%;margin-bottom:14px}
-    .meta-table td{padding:4px 8px;border:1px solid #d9d1c4;font-size:10px}
-    .meta-table td:first-child{font-weight:700;background:#faf9f5;width:140px}
+    .meta-table td{padding:4px 8px;border:1px solid #c1ccd6;font-size:10px}
+    .meta-table td:first-child{font-weight:700;background:#f9fbfa;width:140px}
     .cat-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:${meta.bg};color:${meta.color};border:1px solid ${meta.color}44}
-    .sec-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b6760;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid #eaeef2}
+    .sec-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#5c6c7a;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid #eaeef2}
     .fields-table{width:100%;border-collapse:collapse;margin-bottom:8px}
     .fields-table td{padding:7px 10px;border:1px solid #eaeef2;vertical-align:top}
     .field-label{width:55%;font-weight:600;background:#fafafa}
-    .field-hint{font-size:9px;color:#6b6760;font-weight:400;margin-top:2px}
+    .field-hint{font-size:9px;color:#5c6c7a;font-weight:400;margin-top:2px}
     .field-value{font-size:11px}
     .validation-stamp{margin-top:20px;padding:12px 16px;background:#dafbe1;border:2px solid #4ac26b;border-radius:6px}
-    .stamp-header{font-size:12px;font-weight:800;color:#2d6e4a;margin-bottom:4px}
+    .stamp-header{font-size:12px;font-weight:800;color:#00a35c;margin-bottom:4px}
     .stamp-note{font-style:italic;margin-top:6px;color:#065f46}
-    .sign-block{margin-top:28px;padding-top:16px;border-top:1px solid #d9d1c4;text-align:center;color:#6b6760;font-size:10px}
-    .sign-line{width:280px;border-bottom:1px solid #6b6760;margin:0 auto 6px}
+    .sign-block{margin-top:28px;padding-top:16px;border-top:1px solid #c1ccd6;text-align:center;color:#5c6c7a;font-size:10px}
+    .sign-line{width:280px;border-bottom:1px solid #5c6c7a;margin:0 auto 6px}
     .footer{margin-top:20px;padding-top:10px;border-top:1px solid #eaeef2;font-size:9px;color:#9198a1;display:flex;justify-content:space-between}
     @page{size:A4;margin:16mm}
   </style></head><body>
@@ -402,10 +402,10 @@ function CNCButton({ value, onChange }) {
     <div style={{ display:'flex', gap:6 }}>
       {['C','NC',''].map((opt) => {
         const on = value===opt;
-        const [bg,color,border] = opt==='C' ? ['#dafbe1','#2d6e4a','#4ac26b'] : opt==='NC' ? ['#ffebe9','#c0392b','#ff8182'] : ['#faf9f5','#6b6760','#d9d1c4'];
+        const [bg,color,border] = opt==='C' ? ['#dafbe1','#00a35c','#4ac26b'] : opt==='NC' ? ['#ffebe9','#c0392b','#ff8182'] : ['#f9fbfa','#5c6c7a','#c1ccd6'];
         return (
           <button key={opt||'x'} onClick={() => onChange(on?'':opt)}
-            style={{ padding:'5px 14px', borderRadius:6, border:`1.5px solid ${on?border:'#d9d1c4'}`, background:on?bg:'white', color:on?color:'#6b6760', fontWeight:on?700:500, fontSize:12, cursor:'pointer', transition:'all .12s' }}>
+            style={{ padding:'5px 14px', borderRadius:6, border:`1.5px solid ${on?border:'#c1ccd6'}`, background:on?bg:'white', color:on?color:'#5c6c7a', fontWeight:on?700:500, fontSize:12, cursor:'pointer', transition:'all .12s' }}>
             {opt||'—'}
           </button>
         );
@@ -419,12 +419,12 @@ function PresenceField({ value={}, onChange }) {
   return (
     <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
       <button onClick={() => onChange({ ...value, detected:!detected })}
-        style={{ padding:'5px 14px', borderRadius:6, border:`1.5px solid ${detected?'#ff8182':'#4ac26b'}`, background:detected?'#ffebe9':'#dafbe1', color:detected?'#c0392b':'#2d6e4a', fontWeight:700, fontSize:12, cursor:'pointer' }}>
+        style={{ padding:'5px 14px', borderRadius:6, border:`1.5px solid ${detected?'#ff8182':'#4ac26b'}`, background:detected?'#ffebe9':'#dafbe1', color:detected?'#c0392b':'#00a35c', fontWeight:700, fontSize:12, cursor:'pointer' }}>
         {detected ? 'Detectado' : 'Sem ocorrência'}
       </button>
       {detected && (
         <input value={value?.location??''} onChange={(e) => onChange({ ...value, location:e.target.value })}
-          placeholder="Local" style={{ width:130, padding:'5px 8px', borderRadius:6, border:'1px solid #d9d1c4', fontSize:12, fontFamily:'inherit' }} />
+          placeholder="Local" style={{ width:130, padding:'5px 8px', borderRadius:6, border:'1px solid #c1ccd6', fontSize:12, fontFamily:'inherit' }} />
       )}
     </div>
   );
@@ -434,9 +434,9 @@ function DateSigField({ value={}, onChange }) {
   return (
     <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
       <input type="date" value={value?.date??''} onChange={(e) => onChange({ ...value, date:e.target.value })}
-        style={{ padding:'5px 8px', borderRadius:6, border:'1px solid #d9d1c4', fontSize:12, fontFamily:'inherit' }} />
+        style={{ padding:'5px 8px', borderRadius:6, border:'1px solid #c1ccd6', fontSize:12, fontFamily:'inherit' }} />
       <input value={value?.sig??''} onChange={(e) => onChange({ ...value, sig:e.target.value })}
-        placeholder="Responsável" style={{ flex:1, minWidth:120, padding:'5px 8px', borderRadius:6, border:'1px solid #d9d1c4', fontSize:12, fontFamily:'inherit' }} />
+        placeholder="Responsável" style={{ flex:1, minWidth:120, padding:'5px 8px', borderRadius:6, border:'1px solid #c1ccd6', fontSize:12, fontFamily:'inherit' }} />
     </div>
   );
 }
@@ -789,7 +789,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
                           win.document.close(); setTimeout(() => win.print(), 400);
                         }}>↓ PDF</button>
                       )}
-                      <button className="secondary-action" style={{ fontSize:11, padding:'5px 10px', background:'#181715', color:'white', borderColor:'transparent' }}
+                      <button className="secondary-action" style={{ fontSize:11, padding:'5px 10px', background:'#001e2b', color:'white', borderColor:'transparent' }}
                         onClick={() => { const pk2=getPeriodKey(tpl.frequency,today); setKioskForm({ template:tpl, record:getRecord(tpl,pk2), periodKey:pk2 }); }}>
                         📱 Tablet
                       </button>

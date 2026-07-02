@@ -30,8 +30,8 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
           const t = document.createElement('div');
           t.id = 'nutriops-sw-update';
           t.setAttribute('role', 'alert');
-          t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#cc785c;color:#fff;padding:12px 18px;border-radius:12px;font-family:system-ui,sans-serif;font-size:14px;box-shadow:0 12px 32px rgba(0,0,0,.32);display:flex;gap:14px;align-items:center;z-index:9999;max-width:90vw';
-          t.innerHTML = '<span>Nova versão disponível</span><button id="nutriops-sw-reload" style="background:#fff;color:#cc785c;border:none;padding:6px 14px;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;font-size:13px">Atualizar agora</button><button id="nutriops-sw-later" aria-label="Dispensar" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.4);padding:6px 10px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:12px">Depois</button>';
+          t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#00684a;color:#fff;padding:12px 18px;border-radius:12px;font-family:system-ui,sans-serif;font-size:14px;box-shadow:0 12px 32px rgba(0,0,0,.32);display:flex;gap:14px;align-items:center;z-index:9999;max-width:90vw';
+          t.innerHTML = '<span>Nova versão disponível</span><button id="nutriops-sw-reload" style="background:#fff;color:#00684a;border:none;padding:6px 14px;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;font-size:13px">Atualizar agora</button><button id="nutriops-sw-later" aria-label="Dispensar" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.4);padding:6px 10px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:12px">Depois</button>';
           document.body.appendChild(t);
           document.getElementById('nutriops-sw-reload').onclick = () => {
             reg.waiting?.postMessage('SKIP_WAITING');
@@ -79,8 +79,8 @@ function buildTenantFromClient(client) {
     name: client.name,
     segment: client.segment,
     plan: client.plan,
-    brandColor: client.brandColor ?? '#cc785c',
-    brandSoft:  client.brandSoft  ?? 'rgba(204,120,92,.10)',
+    brandColor: client.brandColor ?? '#00684a',
+    brandSoft:  client.brandSoft  ?? 'rgba(0,163,92,.10)',
     equipmentCatalog: client.equipmentCatalog ?? [],
     modules: client.modules ?? [],
     stores: client.stores ?? [],
@@ -193,7 +193,7 @@ function Root() {
 
   if (isAdmin) {
     const adminFallback = (
-      <div style={{ minHeight:'100vh', display:'grid', placeItems:'center', background:'#181715', color:'#9b9590', fontFamily:'system-ui, sans-serif' }}>
+      <div style={{ minHeight:'100vh', display:'grid', placeItems:'center', background:'#001e2b', color:'#a8b3bc', fontFamily:'system-ui, sans-serif' }}>
         Carregando painel admin…
       </div>
     );
@@ -211,7 +211,7 @@ function Root() {
 
   if (!tokenResolved) {
     return (
-      <div style={{ minHeight:'100vh', display:'grid', placeItems:'center', background:'#faf9f5', color:'#6b6760', fontFamily:'system-ui, sans-serif', fontSize:14 }}>
+      <div style={{ minHeight:'100vh', display:'grid', placeItems:'center', background:'#f9fbfa', color:'#5c6c7a', fontFamily:'system-ui, sans-serif', fontSize:14 }}>
         Carregando seu acesso…
       </div>
     );

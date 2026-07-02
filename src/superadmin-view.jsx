@@ -143,7 +143,12 @@ export function SuperAdminGate({ session, onExit, children }) {
       try { sessionStorage.setItem(MFA_FLAG, flagVal); } catch {}
       setPhase('ok');
     } catch (e) {
-      setError(e?.message ?? 'Código inválido');
+      const raw = String(e?.message ?? '');
+      const invalid = /invalid.*totp|totp.*invalid|c[óo]digo inv[áa]lido|invalid code/i.test(raw);
+      setError(invalid
+        ? 'Código inválido. Verifique: (1) use a conta que você ACABOU de adicionar — apague entradas antigas de "NutriOPS"/"Super Admin" no app; (2) sincronize o relógio (Google Authenticator → ⋮ → Configurações → Correção de horário → Sincronizar agora); (3) digite um código novo antes de expirar.'
+        : (raw || 'Código inválido'));
+      setCode('');
     }
     setBusy(false);
   };

@@ -11,6 +11,15 @@ export function normalizeName(s) {
     .replace(/\s+/g, '.');
 }
 
+// Handle de login exibido/derivado: primeiro nome (sem acento) + @ + id da
+// empresa. É o que o colaborador digita pra entrar. Usado na lista de usuários
+// e no preview do formulário de cadastro. Retorna '' se não der pra derivar.
+export function loginHandle(name, tenantId) {
+  const first = String(name ?? '').trim().split(/\s+/)[0] || '';
+  const norm = first.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  return norm && tenantId ? `${norm}@${tenantId}` : '';
+}
+
 export function findUserByName(users, rawUsername) {
   if (!Array.isArray(users)) return null;
   // Normaliza a ENTRADA do mesmo jeito que o nome do usuário: minúsculas, sem

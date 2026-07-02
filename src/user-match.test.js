@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findUserByName, normalizeName } from './user-match';
+import { findUserByName, normalizeName, loginHandle } from './user-match';
 import { getPermissions } from './permissions';
 
 const USERS = [
@@ -51,5 +51,21 @@ describe('canSwitchTenant — quem troca de empresa', () => {
   it('Supervisor troca mas NÃO vê dados agregados (multiTenant continua false)', () => {
     expect(getPermissions('Supervisor').multiTenant).toBe(false);
     expect(getPermissions('Nutricionista RT').multiTenant).toBe(true);
+  });
+});
+
+describe('loginHandle — o que o usuário digita pra logar', () => {
+  it('primeiro nome (sem acento) + @ + id da empresa', () => {
+    expect(loginHandle('Iuana Silva', 'backerei')).toBe('iuana@backerei');
+    expect(loginHandle('Ana Paula Saraiva', 'backerei')).toBe('ana@backerei');
+    expect(loginHandle('Mateus', 'dbk-producao')).toBe('mateus@dbk-producao');
+  });
+  it('tira acento do primeiro nome', () => {
+    expect(loginHandle('Antônio Sérgio', 'swiss')).toBe('antonio@swiss');
+  });
+  it("retorna '' pra nome ou tenant vazios", () => {
+    expect(loginHandle('', 'swiss')).toBe('');
+    expect(loginHandle('Ana', '')).toBe('');
+    expect(loginHandle('   ', 'swiss')).toBe('');
   });
 });

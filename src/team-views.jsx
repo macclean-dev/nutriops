@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { loginHandle } from './user-match';
 
 const catalogKey = (id) => `nutriops.equipment.catalog.${id}`;
 const turnsKey   = (id) => `nutriops.turns.${id}`;
@@ -117,7 +118,13 @@ export function UsersView({ activeTenant, allTenants, onTenantChange }) {
           <div className="card-head"><div><span className="eyebrow">{editingIndex === null ? 'Novo' : 'Editando'}</span><h2>{editingIndex === null ? 'Cadastrar usuário' : users[editingIndex]?.name}</h2></div><span className="badge neutral">{users.length}</span></div>
           <div className="capture-fields">
             <label>Empresa<select value={activeTenant.id} onChange={(e) => onTenantChange(e.target.value)}>{allTenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
-            <label>Nome completo<input value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder="Nome do usuário" /></label>
+            <label>Nome completo<input value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder="Nome do usuário" />
+              {loginHandle(nameInput, activeTenant.id) && (
+                <span style={{ fontSize:12, color:'var(--text-secondary)', marginTop:4, display:'block' }}>
+                  Vai logar como: <strong style={{ fontFamily:'var(--mono)', color:'var(--primary)' }}>{loginHandle(nameInput, activeTenant.id)}</strong> + PIN
+                </span>
+              )}
+            </label>
             <label>Perfil<select value={roleInput} onChange={(e) => setRoleInput(e.target.value)}>{roles.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
             <label>Localização / unidade<input value={locationInput} onChange={(e) => setLocationInput(e.target.value)} placeholder="Ex.: Loja 1, Produção" /></label>
             <label>Status<select value={statusInput} onChange={(e) => setStatusInput(e.target.value)}><option value="Ativo">Ativo</option><option value="Inativo">Inativo</option><option value="Pendente">Pendente</option></select></label>
@@ -139,9 +146,9 @@ export function UsersView({ activeTenant, allTenants, onTenantChange }) {
           <div className="equipment-maintenance-list">
             {filtered.length === 0 ? <p className="muted" style={{ padding: '16px 20px' }}>Nenhum usuário encontrado.</p>
               : filtered.map((u) => { const ri = users.indexOf(u);
-                  // Handle de login: primeiro nome (sem acento) @ id do tenant.
-                  // É o que o cliente digita pra entrar — ex.: iuana@backerei.
-                  const handle = `${u.name.trim().split(/\s+/)[0].normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase()}@${activeTenant.id}`;
+                  // Handle de login (primeiro nome sem acento @ id do tenant) —
+                  // é o que o cliente digita pra entrar. Ex.: iuana@backerei.
+                  const handle = loginHandle(u.name, activeTenant.id);
                   return (
                 <div key={`${u.name}-${ri}`} className={`equipment-maintenance-row user-row ${editingIndex === ri ? 'editing' : ''}`}>
                   <div>

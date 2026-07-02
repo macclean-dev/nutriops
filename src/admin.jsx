@@ -72,7 +72,7 @@ export function AdminLogin({ onLogin }) {
   };
 
   return (
-    <div style={{ minHeight:'100vh', display:'grid', placeItems:'center', background:'#001e2b', padding:24 }}>
+    <div style={{ minHeight:'100vh', display:'grid', placeItems:'center', background:'#00543b', padding:24 }}>
       <div style={{ width:'100%', maxWidth:380, background:'#04303f', border:'1px solid rgba(255,255,255,.07)', borderRadius:16, padding:'36px 40px' }}>
         <div style={{ marginBottom:28 }}>
           <BrandLockup size="lg" idPrefix="admlogin" showSub={false} />
@@ -420,7 +420,7 @@ function SetupPinReveal({ pin, onAck }) {
           <button onClick={handleCopy} style={{ flex:1, padding:'10px', borderRadius:8, border:'1px solid #00684a', background:'white', color:'#00684a', cursor:'pointer', fontSize:13, fontWeight:700, fontFamily:'inherit' }}>
             {copied ? '✓ Copiado' : 'Copiar PIN'}
           </button>
-          <button onClick={onAck} style={{ flex:1, padding:'10px', borderRadius:8, border:'none', background:'#001e2b', color:'white', cursor:'pointer', fontSize:13, fontWeight:700, fontFamily:'inherit' }}>
+          <button onClick={onAck} style={{ flex:1, padding:'10px', borderRadius:8, border:'none', background:'#00684a', color:'white', cursor:'pointer', fontSize:13, fontWeight:700, fontFamily:'inherit' }}>
             Já copiei
           </button>
         </div>
@@ -1317,11 +1317,11 @@ export function AdminPanel({ onExit }) {
   return (
     <div style={{ minHeight:'100vh', background:'var(--bg,#f9fbfa)', fontFamily:'var(--font,"Instrument Sans",system-ui,sans-serif)' }}>
       {/* Header */}
-      <div style={{ background:'#001e2b', padding:'0 24px', borderBottom:'1px solid rgba(255,255,255,.07)' }}>
+      <div style={{ background:'#00543b', padding:'0 24px', borderBottom:'1px solid rgba(255,255,255,.10)' }}>
         <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'space-between', height:64 }}>
           <div style={{ display:'flex', alignItems:'center', gap:12 }}>
             <BrandLockup size="sm" idPrefix="admhdr" showSub={false} />
-            <span style={{ padding:'2px 10px', background:'rgba(0,163,92,.18)', border:'1px solid rgba(0,163,92,.4)', borderRadius:20, fontSize:10, fontWeight:600, color:'#00a35c', letterSpacing:'.12em', textTransform:'uppercase' }}>Admin</span>
+            <span style={{ padding:'2px 10px', background:'rgba(0,237,100,.14)', border:'1px solid rgba(0,237,100,.35)', borderRadius:20, fontSize:10, fontWeight:600, color:'#00ed64', letterSpacing:'.12em', textTransform:'uppercase' }}>Admin</span>
           </div>
           <button onClick={onExit} style={{ background:'rgba(255,255,255,.05)', border:'1px solid rgba(255,255,255,.1)', color:'#a8b3bc', borderRadius:8, padding:'6px 14px', cursor:'pointer', fontSize:13, fontFamily:'inherit' }}>
             Sair do painel

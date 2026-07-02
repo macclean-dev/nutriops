@@ -1723,12 +1723,15 @@ function LocalModeBanner({ session, activeTenant, setActiveView }) {
   useEffect(() => { setLocalCount(countLocalRecords(activeTenant?.id)); }, [activeTenant?.id]);
 
   const isDismissed = dismissedUntil > Date.now();
-  // Cloud-first: se o build tem Supabase (env → tenant.supabase), o app conecta
-  // sozinho desde o 1º acesso — não faz sentido nagar "configure em
-  // Configurações". Só mostra o banner em build SEM env (dev local). Problemas
-  // reais de conexão (401/RLS) têm o SupabaseAuthErrorBanner à parte.
+  // Cloud-first / online por padrão: qualquer build de PROD é feito com o env
+  // VITE_SB_URL → o app auto-conecta no boot (maybeAutoConfigSupabase). Nesse
+  // caso NUNCA mostramos "Modo local — configure": online é o default e o
+  // eventual estado local é transitório (o auto-backfill sobe sozinho). O banner
+  // só sobra pro DEV local (build sem env). Erros reais de conexão (401/RLS) têm
+  // o SupabaseAuthErrorBanner à parte.
+  const buildEnvHasSupabase = Boolean(import.meta.env.VITE_SB_URL);
   const buildHasSupabase = Boolean(activeTenant?.supabase?.url);
-  if (enabled || isDismissed || buildHasSupabase) return null;
+  if (enabled || isDismissed || buildHasSupabase || buildEnvHasSupabase) return null;
 
   const role = session?.user?.role;
   const canConfigure = role === 'Administrador' || role === 'Super-admin' || role === 'Nutricionista RT';

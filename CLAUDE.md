@@ -254,10 +254,27 @@ A partir daí, todo PR e push pra `main` roda build + 38 testes automaticamente.
 
 | Prioridade | Item |
 |------------|------|
-| 🔴 Alta | **Conectar a DBK Produção** — única loja ainda zerada na nuvem (0 registros). Falta habilitar Supabase no device dela. Receita abaixo. |
-| 🟡 Média | **Bäckerei** — no ar (18 registros), mas o último é de 04/06. Verificar no device por que parou (pouca atividade ou sync travado). Check local×nuvem na receita. |
-| 🟢 Alta (épico) | Supabase Auth real + RLS — mata anon key exposta + RLS off + PIN local de uma vez. Plano em `docs/AUTH_RLS_PLAN.md`. **Decisões #1 (híbrido) e #2 (device-token) aprovadas; #3 sem staging (testa em prod). Épico pausado até fechar as lojas.** |
-| 🟢 Baixa | Migrar PINs `0000`/`9999` pra reset obrigatório no 1º login (cai junto no épico de Auth) |
+| 🔴 Alta | **Deploy do Vercel travado** — limite do Hobby estourado (Fluid CPU + Fast Origin Transfer, puxado pelo Nexum). Pushes chegam no GitHub mas o Vercel não builda (produção parou na v1.9.11; commits v1.9.12→1.9.15 acumulados). Destravar: migrar Nexum pro Cloudflare Pages, upgrade Pro, ou esperar reset do ciclo. |
+| 🟢 Alta (épico) | **Auth+RLS — Fase 3 (ligar RLS).** Fases 0/1/2 feitas (admin com email/senha, device-token no sync, policies escritas). Falta: setar `VITE_DEVICE_PASSWORD` no Vercel, corrigir bloqueadores (testWrite + admin.jsx usam anon key → quebram sob RLS) e ligar RLS tabela-por-tabela. **Runbook completo em `docs/AUTH_RLS_PLAN.md`.** Não fazer sem monitoramento. |
+| 🔴 Alta | **Conectar a DBK Produção** — única loja ainda zerada na nuvem. Auto-connect + auto-backfill já resolvem no próximo boot online do device dela. |
+| 🟡 Média | **Bäckerei** — no ar (18 registros), último de 04/06. Verificar no device (check local×nuvem na receita). |
+| 🟢 Baixa | Limpar a linha duplicada no `equipment_catalog` da Swiss na nuvem (o código já dedupa defensivamente — v1.9.14 — mas o dado sujo continua lá). |
+
+### Resolvidas (v1.9.6–1.9.15 — sessão 01/07)
+
+- ✅ **Login endurecido** — admin global saiu do PIN `9999` pra e-mail/senha via
+  Supabase Auth (`6e79b1d`→`4ebeef6`); backdoor removido. Colaborador segue PIN.
+- ✅ **Auto-connect + auto-backfill do Supabase** (`1908d08`) — devices ligam o
+  Supabase e sobem histórico sozinhos no boot; env `VITE_SB_*` no build do Vercel.
+- ✅ **Épico Auth+RLS Fases 0/1/2** — 3 contas device no Supabase Auth,
+  `device-auth.js` (JWT por tenant com fallback pra anon key), 8 policies escritas
+  (RLS ainda OFF). Revisão adversarial (22 agentes) confirmou zero regressão hoje.
+- ✅ **Bugs de cadastro/login** (`e977275`) — nome com espaço, `@Bäckerei` com
+  trema, handle na lista de usuários.
+- ✅ **Dedup do catálogo de equipamentos** (`19f16e3`) — mata alerta de turno em
+  dobro (`dedupeCatalog` em limits.js).
+- ✅ **Infra Vercel limpa** — projeto duplicado deletado, `nutriops-dev`
+  renomeado pra `nutriops` (produção).
 
 ### Resolvidas (v1.9.1–1.9.5 — sessão 06/06)
 

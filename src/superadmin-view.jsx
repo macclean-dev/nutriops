@@ -7,8 +7,14 @@ import {
 
 // Super Admin — área DENTRO do app (rail), pro admin global gerir todos os
 // tenants: mudar plano, suspender/ativar, logar como (impersonate) + audit.
-// ⚠️ Client-side (MVP): plano propaga via pushTenant; suspensão é local até o
-// épico Auth+RLS. Seeds (swiss/backerei/dbk) são internos — plano read-only.
+//
+// ⚠️⚠️ SEGURANÇA — LEIA: este gate é DEFESA EM PROFUNDIDADE, NÃO uma barreira.
+// isGlobalAdmin + a flag de 2FA são client-side e FORJÁVEIS (dá pra setar
+// nutriops.session/sessionStorage no devtools e entrar). A proteção REAL —
+// autorização server-side por role/AAL2 + RLS — é o épico docs/AUTH_RLS_PLAN.md.
+// Enquanto RLS estiver OFF, a anon key lê qualquer tenant, então NÃO trate o
+// Super Admin como fronteira de segurança. Client-side (MVP): plano propaga via
+// pushTenant; suspensão é local. Seeds (swiss/backerei/dbk) = plano read-only.
 
 function fmtDT(iso) {
   try { return new Date(iso).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }); }
@@ -26,8 +32,19 @@ const AUDIT_LABELS = {
 // TOTP ainda, faz o enroll (mostra QR); se houver, pede o código do app.
 const MFA_FLAG = 'nutriops.superadmin.mfa';
 
+// Mensagem amigável quando o projeto Supabase está com MFA/TOTP desabilitado
+// (padrão em projeto novo) — evita mostrar erro cru do GoTrue.
+function friendlyMfaError(msg) {
+  if (/mfa|not enabled|disabled|unsupported|factor_type|otp/i.test(String(msg ?? ''))) {
+    return 'MFA (TOTP) parece desabilitado no projeto Supabase. Habilite em Authentication → Providers → MFA e recarregue.';
+  }
+  return msg || 'Erro no 2FA';
+}
+
 export function SuperAdminGate({ session, onExit, children }) {
-  const already = (() => { try { return sessionStorage.getItem(MFA_FLAG) === '1'; } catch { return false; } })();
+  // Flag por-usuário (não um '1' global): outro admin/relogin re-dispara o 2FA.
+  const flagVal = session?.user?.id ?? session?.user?.email ?? '1';
+  const already = (() => { try { return sessionStorage.getItem(MFA_FLAG) === flagVal; } catch { return false; } })();
   const [phase, setPhase]   = useState(already ? 'ok' : 'loading'); // loading|enroll|challenge|ok|error
   const [factorId, setFactorId] = useState(null);
   const [qr, setQr]         = useState(null);   // svg string ou data-uri
@@ -35,22 +52,31 @@ export function SuperAdminGate({ session, onExit, children }) {
   const [code, setCode]     = useState('');
   const [error, setError]   = useState('');
   const [busy, setBusy]     = useState(false);
+  const [mfaOff, setMfaOff] = useState(false); // MFA desabilitado no projeto → não faz loop no "tentar de novo"
 
-  const token = session?.accessToken;
+  // Token sempre fresco (refresh se expirou) — evita lockout por 401.
+  const freshToken = async () => {
+    const auth = await import('./auth');
+    const t = await auth.getValidAccessToken();
+    if (!t) throw new Error('Sessão sem token do Supabase Auth. Entre como administrador com e-mail e senha e tente de novo.');
+    return t;
+  };
 
   useEffect(() => {
     if (phase !== 'loading') return;
     let cancelled = false;
     (async () => {
       try {
-        if (!token) throw new Error('Sessão sem token do Supabase Auth. Entre como administrador com e-mail e senha e tente de novo.');
         const auth = await import('./auth');
+        const token = await freshToken();
         const factors = await auth.mfaListFactors(token);
         const verified = factors.find(f => f.factor_type === 'totp' && f.status === 'verified');
         if (cancelled) return;
         if (verified) { setFactorId(verified.id); setPhase('challenge'); return; }
-        // Sem fator verificado → enroll. (Se sobrou um unverified, o Supabase
-        // permite reusar; aqui criamos um novo por simplicidade.)
+        // Sem fator verificado → limpa qualquer 'unverified' órfão (senão o
+        // friendly_name 'Super Admin' colide no re-enroll) e cria um novo.
+        const stale = factors.find(f => f.factor_type === 'totp' && f.status !== 'verified');
+        if (stale) await auth.mfaUnenroll(token, stale.id);
         const enrolled = await auth.mfaEnroll(token, 'Super Admin');
         if (cancelled) return;
         setFactorId(enrolled.id);
@@ -58,19 +84,25 @@ export function SuperAdminGate({ session, onExit, children }) {
         setSecret(enrolled?.totp?.secret ?? null);
         setPhase('enroll');
       } catch (e) {
-        if (!cancelled) { setError(e?.message ?? 'Erro ao iniciar 2FA'); setPhase('error'); }
+        if (cancelled) return;
+        const raw = e?.message ?? 'Erro ao iniciar 2FA';
+        const off = /mfa|not enabled|disabled|unsupported|factor_type|otp/i.test(raw);
+        setMfaOff(off);
+        setError(friendlyMfaError(raw));
+        setPhase('error');
       }
     })();
     return () => { cancelled = true; };
-  }, [phase, token]);
+  }, [phase, flagVal]);
 
   const submit = async () => {
     setError(''); setBusy(true);
     try {
       const auth = await import('./auth');
+      const token = await freshToken();
       const ch = await auth.mfaChallenge(token, factorId);
       await auth.mfaVerify(token, factorId, ch.id, code.trim());
-      try { sessionStorage.setItem(MFA_FLAG, '1'); } catch {}
+      try { sessionStorage.setItem(MFA_FLAG, flagVal); } catch {}
       setPhase('ok');
     } catch (e) {
       setError(e?.message ?? 'Código inválido');
@@ -92,7 +124,9 @@ export function SuperAdminGate({ session, onExit, children }) {
           <>
             <div className="submission danger" style={{ marginTop:12 }}>{error}</div>
             <div style={{ display:'flex', gap:8, marginTop:16 }}>
-              <button className="secondary-action" onClick={() => { setError(''); setPhase('loading'); }}>Tentar de novo</button>
+              {/* Se o MFA está desabilitado no projeto, "tentar de novo" só
+                  repetiria o mesmo erro — some o botão nesse caso. */}
+              {!mfaOff && <button className="secondary-action" onClick={() => { setError(''); setPhase('loading'); }}>Tentar de novo</button>}
               {onExit && <button className="ghost-action" onClick={onExit}>Sair</button>}
             </div>
           </>
@@ -184,7 +218,7 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
     const next = setClientActive(clients, tenant.id, !tenant.active);
     persistClients(next);
     logAction({ type: tenant.active ? 'suspend' : 'activate', tenantId: tenant.id, tenantName: tenant.name });
-    setMsg({ tone: tenant.active?'warn':'ok', text:`${tenant.name} ${tenant.active?'suspenso':'reativado'}.` });
+    setMsg({ tone: tenant.active?'warn':'ok', text:`${tenant.name} ${tenant.active?'suspenso':'reativado'} (aplica via ?token= neste projeto; enforcement server-side entra com o Auth+RLS).` });
   };
 
   const planTone = (t) => t.plan === 'trial' ? 'warn' : t.active ? 'ok' : 'neutral';

@@ -140,6 +140,25 @@ function mfaToken(accessToken) {
   return t;
 }
 
+// Devolve um access token válido, dando refresh se o atual expirou (~1h). Sem
+// isso, o gate do Super Admin travava com 401 mesmo tendo refreshToken válido.
+export async function getValidAccessToken() {
+  const s = readAuthSession();
+  if (!s?.accessToken) return null;
+  if (isSessionValid(s)) return s.accessToken;
+  const refreshed = await refreshSession();
+  return refreshed?.accessToken ?? null;
+}
+
+// Remove um fator MFA (usado pra limpar fatores 'unverified' órfãos antes de um
+// novo enroll — evita o conflito de friendly_name que travava o setup).
+export async function mfaUnenroll(accessToken, factorId) {
+  const token = mfaToken(accessToken);
+  try {
+    await fetch(`${sbAuthBase()}/factors/${factorId}`, { method: 'DELETE', headers: authBearer(token) });
+  } catch { /* best-effort */ }
+}
+
 // Lista os fatores MFA do usuário (via /auth/v1/user → factors).
 export async function mfaListFactors(accessToken) {
   const token = mfaToken(accessToken);

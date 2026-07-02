@@ -310,3 +310,28 @@ uma é derivável do tenant_id (público no bundle), se essa senha vazar, expõe
 3 lojas. Mitigação futura (sem mudar código): trocar por senhas distintas e
 adicionar `VITE_DEVICE_PASSWORD_SWISS` / `_BACKEREI` / `_DBK_PRODUCAO` no Vercel
 — device-auth.js já lê a env específica por tenant com fallback pra compartilhada.
+
+---
+
+## Revisão adversarial do Super Admin (02/07) — o que ficou pendente
+
+Revisão multi-agente (29 agentes) do épico Super Admin. Corrigidos na hora
+(v1.9.24): logout limpa impersonation.origin + auth.session + flag MFA; flag
+2FA por-usuário; refresh de token no gate (evita lockout 401); limpa fator TOTP
+órfão antes de re-enroll; erro amigável quando MFA está off no projeto.
+
+**Fica pro épico Auth+RLS (NÃO resolvido — é limitação de arquitetura):**
+- 🔴 **O gate do Super Admin é client-side e forjável.** `isGlobalAdmin` lê o
+  `nutriops.session` (blob não-assinado do localStorage) e a flag de 2FA é um
+  booleano em sessionStorage — ambos setáveis no devtools. Com RLS OFF, a anon
+  key lê/escreve qualquer tenant. Ou seja: o Super Admin NÃO é fronteira de
+  segurança hoje; é conveniência de UI. A proteção real precisa de:
+  role/AAL2 no JWT + RLS server-side (as policies já estão escritas, seção 8).
+- 🟠 **Suspensão/plano não são enforced server-side.** `active` vive só no
+  localStorage do admin; o `tenants` do Supabase nem tem coluna `active`. Um
+  device que hidrata via `?token=` não vê a suspensão. Fix real: coluna
+  `active` no `tenants` + push no toggle + gate no boot (main.jsx) — self-contido,
+  dá pra fazer sem RLS, mas fica no bojo do épico.
+- 🟠 **2FA TOFU:** o gate auto-enrolla um fator na 1ª vez, então quem tem a
+  senha do admin binda o próprio autenticador. Mitigar com enroll out-of-band
+  (provisionar o fator na criação da conta), quando o épico endurecer o admin.

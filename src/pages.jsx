@@ -2024,7 +2024,17 @@ export function App() {
     // sync pra devices que não entraram via link ?token=.
     maybeAutoConfigSupabase(s.tenantId, activeTenants);
   }, [activeTenants]);
-  const handleLogout = useCallback(() => { localStorage.removeItem(SESSION_KEY); setSession(null); }, []);
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem(SESSION_KEY);
+    // Limpa TUDO que tem credencial/estado sensível — senão, num tablet
+    // compartilhado, o token do admin (na sessão de impersonação e na auth
+    // session do Supabase) ficaria em texto claro após "Sair", e o 2FA do
+    // Super Admin seria pulado pela próxima sessão na mesma aba.
+    try { localStorage.removeItem('nutriops.impersonation.origin'); } catch {}
+    try { sessionStorage.removeItem('nutriops.superadmin.mfa'); } catch {}
+    import('./auth').then(m => m.signOut()).catch(() => {}); // limpa nutriops.auth.session + logout no Supabase
+    setSession(null);
+  }, []);
 
   // Show onboarding wizard for genuinely new users (no session, no onboarding data, not on demo)
   // Show onboarding only when accessed via token (new client link)

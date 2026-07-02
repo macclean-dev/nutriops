@@ -41,14 +41,15 @@ function friendlyMfaError(msg) {
   return msg || 'Erro no 2FA';
 }
 
-// Monta o otpauth:// a partir do secret quando o GoTrue não devolve totp.uri no
-// REST — assim o QR nítido é sempre gerável (não depende do campo uri existir).
-// Usa os defaults do GoTrue (SHA1/6/30), os mesmos que a chave manual usa.
+// Monta o otpauth:// a partir do secret com o issuer "NutriOPS.uniwares.net" —
+// assim a conta aparece com nome CLARO no autenticador (a uri crua do GoTrue usa
+// o host do Supabase como identificação, some no meio de outras entradas). Usa os
+// defaults do GoTrue (SHA1/6/30), os mesmos da chave manual que já funcionou.
+const OTP_ISSUER = 'NutriOPS.uniwares.net';
 function buildOtpauthUri(secret, account) {
-  const issuer = 'NutriOPS';
   const acct = account || 'admin';
-  const p = new URLSearchParams({ secret, issuer, algorithm: 'SHA1', digits: '6', period: '30' });
-  return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(acct)}?${p.toString()}`;
+  const p = new URLSearchParams({ secret, issuer: OTP_ISSUER, algorithm: 'SHA1', digits: '6', period: '30' });
+  return `otpauth://totp/${encodeURIComponent(OTP_ISSUER)}:${encodeURIComponent(acct)}?${p.toString()}`;
 }
 
 export function SuperAdminGate({ session, onExit, children }) {
@@ -72,7 +73,9 @@ export function SuperAdminGate({ session, onExit, children }) {
   // sem viewBox e borra no upscale, o que o Google Authenticator não lê. O
   // secret/uri nunca saem do browser (geração 100% local).
   useEffect(() => {
-    const otpauth = uri || (secret ? buildOtpauthUri(secret, session?.user?.email) : null);
+    // Preferimos NOSSA uri (issuer "NutriOPS.uniwares.net", nome claro no app);
+    // só caímos na uri crua do GoTrue se, por algum motivo, não vier o secret.
+    const otpauth = (secret ? buildOtpauthUri(secret, session?.user?.email) : null) || uri;
     if (!otpauth) return;
     let cancelled = false;
     (async () => {
@@ -195,7 +198,7 @@ export function SuperAdminGate({ session, onExit, children }) {
             </div>
             {secret && (
               <div style={{ textAlign:'center', marginBottom:12 }}>
-                <p style={{ fontSize:11, color:'var(--text-secondary)', marginBottom:6 }}>Se a câmera não ler, adicione uma conta manual (TOTP · baseada em tempo) e cole a chave:</p>
+                <p style={{ fontSize:11, color:'var(--text-secondary)', marginBottom:6 }}>Se a câmera não ler, adicione uma conta manual (nome: <strong>NutriOPS</strong> · tipo TOTP/baseada em tempo) e cole a chave:</p>
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, flexWrap:'wrap' }}>
                   <strong style={{ fontFamily:'var(--mono)', fontSize:13, letterSpacing:'.06em' }}>{groupSecret(secret)}</strong>
                   <button className="ghost-action" style={{ fontSize:11, padding:'3px 10px' }} onClick={copyKey}>{copied ? 'Copiado ✓' : 'Copiar chave'}</button>

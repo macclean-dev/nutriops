@@ -41,6 +41,16 @@ function friendlyMfaError(msg) {
   return msg || 'Erro no 2FA';
 }
 
+// Monta o otpauth:// a partir do secret quando o GoTrue não devolve totp.uri no
+// REST — assim o QR nítido é sempre gerável (não depende do campo uri existir).
+// Usa os defaults do GoTrue (SHA1/6/30), os mesmos que a chave manual usa.
+function buildOtpauthUri(secret, account) {
+  const issuer = 'NutriOPS';
+  const acct = account || 'admin';
+  const p = new URLSearchParams({ secret, issuer, algorithm: 'SHA1', digits: '6', period: '30' });
+  return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(acct)}?${p.toString()}`;
+}
+
 export function SuperAdminGate({ session, onExit, children }) {
   // Flag por-usuário (não um '1' global): outro admin/relogin re-dispara o 2FA.
   const flagVal = session?.user?.id ?? session?.user?.email ?? '1';
@@ -62,17 +72,18 @@ export function SuperAdminGate({ session, onExit, children }) {
   // sem viewBox e borra no upscale, o que o Google Authenticator não lê. O
   // secret/uri nunca saem do browser (geração 100% local).
   useEffect(() => {
-    if (!uri) return;
+    const otpauth = uri || (secret ? buildOtpauthUri(secret, session?.user?.email) : null);
+    if (!otpauth) return;
     let cancelled = false;
     (async () => {
       try {
         const QR = (await import('qrcode')).default;
-        const url = await QR.toDataURL(uri, { width: 440, margin: 4, errorCorrectionLevel: 'M', color: { dark: '#000000', light: '#ffffff' } });
+        const url = await QR.toDataURL(otpauth, { width: 440, margin: 4, errorCorrectionLevel: 'M', color: { dark: '#000000', light: '#ffffff' } });
         if (!cancelled) setQrPng(url);
       } catch { /* cai no fallback do SVG cru / chave manual */ }
     })();
     return () => { cancelled = true; };
-  }, [uri]);
+  }, [uri, secret, session]);
 
   const groupSecret = (s) => String(s).replace(/(.{4})/g, '$1 ').trim();
   const crispSvg    = (s) => String(s).replace('<svg', '<svg shape-rendering="crispEdges"');

@@ -115,7 +115,7 @@ mudança, no mesmo commit. A versão aparece no rodapé do rail e no login.
 - **Tipografia:** `Instrument Sans` (UI) + `Instrument Serif` (wordmark)
 - **Paleta:** off-white `#f9fbfa` canvas / ink navy-teal `#001e2b` / verde primary `#00684a`
   (fill com texto branco) / **verde vivo `#00ed64`** (`--accent`, só como acento:
-  nav ativo, focus, diagonal do logo) / **rail Green Dark `#00684a` com letras
+  nav ativo, focus, diagonal do logo) / **rail Green Dark `#00543b` com letras
   brancas** (preferência do dono — não é teal). Vermelho/âmbar/azul ficam como
   sinais de status funcionais, não são "marca".
 - **Regra do verde:** `#00684a` (green-dark) é o único verde que aceita texto

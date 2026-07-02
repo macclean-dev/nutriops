@@ -2097,6 +2097,53 @@ export function App() {
     handleLogin(newSession); // setSession + logSession + auto-config Supabase
   }, [handleLogin]);
 
+  // ─── Impersonation ("logar como") — Super Admin entra num tenant ──────────
+  const IMPERSONATE_ORIGIN_KEY = 'nutriops.impersonation.origin';
+  const handleImpersonate = useCallback((tenant) => {
+    if (!isGlobalAdmin(session)) return;
+    import('./superadmin').then(m => m.appendAudit({
+      type: 'impersonate_start', tenantId: tenant.id, tenantName: tenant.name,
+      actor: session?.user?.name ?? session?.user?.email ?? 'admin',
+    })).catch(() => {});
+    // Guarda a sessão original do admin global pra poder VOLTAR.
+    save(IMPERSONATE_ORIGIN_KEY, session);
+    const imp = {
+      tenantId: tenant.id,
+      _impersonating: true,
+      _impersonatedName: tenant.name,
+      user: {
+        id: `${tenant.id}-superadmin`,
+        name: session?.user?.name ?? 'Super Admin',
+        role: 'Administrador',
+        location: 'Impersonação (Super Admin)',
+        storeId: null,
+      },
+    };
+    save(SESSION_KEY, imp);
+    setActiveTenantId(tenant.id);
+    setActiveStoreId(null);
+    setActiveView('overview');
+    handleLogin(imp);
+  }, [session, handleLogin]);
+
+  const handleExitImpersonation = useCallback(() => {
+    const origin = load(IMPERSONATE_ORIGIN_KEY, null);
+    import('./superadmin').then(m => m.appendAudit({
+      type: 'impersonate_end', tenantId: session?.tenantId, tenantName: session?._impersonatedName,
+      actor: origin?.user?.name ?? 'admin',
+    })).catch(() => {});
+    try { localStorage.removeItem(IMPERSONATE_ORIGIN_KEY); } catch {}
+    if (origin) {
+      save(SESSION_KEY, origin);
+      setActiveTenantId(origin.tenantId ?? tenants[0].id);
+      setActiveStoreId(null);
+      setActiveView('superadmin');
+      handleLogin(origin);
+    } else {
+      handleLogout();
+    }
+  }, [session, handleLogin, handleLogout]);
+
   useEffect(() => {
     if (session?.tenantId && !perms.multiTenant) {
       setActiveTenantId(session.tenantId);
@@ -2381,6 +2428,16 @@ export function App() {
         switchableTenants={switchableTenants} onRequestTenantSwitch={requestTenantSwitch}
         onStoreChange={handleStoreChange} activeStore={activeStore} />
       <main className="super-main">
+        {session?._impersonating && (
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap', padding:'10px 16px', marginBottom:12, borderRadius:'var(--r-lg)', background:'var(--rail-bg)', color:'var(--rail-text)' }}>
+            <span style={{ fontSize:13 }}>
+              <strong>⚠️ Modo impersonação</strong> · você está vendo <strong>{session._impersonatedName ?? activeTenant.name}</strong> como Super Admin
+            </span>
+            <button onClick={handleExitImpersonation} style={{ padding:'6px 14px', border:'1px solid rgba(255,255,255,.25)', borderRadius:8, background:'transparent', color:'var(--rail-text)', fontFamily:'var(--font)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+              ← Voltar ao Super Admin
+            </button>
+          </div>
+        )}
         <LocalModeBanner session={session} activeTenant={activeTenant} setActiveView={setActiveView} />
         <SupabaseAuthErrorBanner session={session} setActiveView={setActiveView} />
         <Suspense fallback={<ViewLoading />}>
@@ -2419,7 +2476,7 @@ export function App() {
           {activeView === 'settings'    && <SettingsView session={session} activeTenant={activeTenant} activeTenants={activeTenants} tenants={tenants} />}
           {/* Super Admin — só admin global (plataforma) */}
           {activeView === 'superadmin'  && (isGlobalAdmin(session)
-            ? <SuperAdminView session={session} seedTenants={tenants} onExit={() => setActiveView('overview')} />
+            ? <SuperAdminView session={session} seedTenants={tenants} onImpersonate={handleImpersonate} onExit={() => setActiveView('overview')} />
             : <NoPermission onBack={() => setActiveView('overview')} />)}
           {/* Fallback for any route the user doesn't have access to */}
           {![

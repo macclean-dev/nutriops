@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { dedupeCatalog } from './limits';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -8,6 +9,9 @@ const ss = (k, v)  => { try { localStorage.setItem(k, JSON.stringify(v)); } catc
 
 export const readEquipments     = (id) => sl(sk('equip_assets', id), []);
 export const writeEquipments    = (id, v) => ss(sk('equip_assets', id), v);
+// Catálogo de temperatura (mesmo que a tela "Equipamentos" usa). A Manutenção
+// mescla ele na lista pra você não recadastrar tudo — ver mergedEquipments.
+export const readCatalog        = (t) => dedupeCatalog(sl(sk('equipment.catalog', t.id), t.equipmentCatalog ?? []));
 export const readMaintenanceLogs = (id) => sl(sk('maint_logs', id), []);
 export const writeMaintenanceLogs = (id, v) => ss(sk('maint_logs', id), v.slice(0, 500));
 export const readWorkOrders     = (id) => sl(sk('work_orders', id), []);
@@ -128,6 +132,7 @@ const EQUIPMENT_STATUS = ['Operacional', 'Em manutenção', 'Inativo', 'Aguardan
 
 export function MaintenanceView({ activeTenant, allTenants, onTenantChange, session }) {
   const [equipments, setEquipments]   = useState(() => readEquipments(activeTenant.id));
+  const [catalog, setCatalog]         = useState(() => readCatalog(activeTenant));
   const [logs, setLogs]               = useState(() => readMaintenanceLogs(activeTenant.id));
   const [orders, setOrders]           = useState(() => readWorkOrders(activeTenant.id));
   const [tab, setTab]                 = useState('dashboard');
@@ -137,13 +142,26 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
 
   const isManager = ['Supervisor','Nutricionista RT','Administrador','Super-admin'].includes(session?.user?.role);
 
-  useEffect(() => { setEquipments(readEquipments(activeTenant.id)); setLogs(readMaintenanceLogs(activeTenant.id)); setOrders(readWorkOrders(activeTenant.id)); setTab('dashboard'); }, [activeTenant.id]);
+  useEffect(() => { setEquipments(readEquipments(activeTenant.id)); setCatalog(readCatalog(activeTenant)); setLogs(readMaintenanceLogs(activeTenant.id)); setOrders(readWorkOrders(activeTenant.id)); setTab('dashboard'); }, [activeTenant.id]);
   useEffect(() => { writeEquipments(activeTenant.id, equipments); }, [activeTenant.id, equipments]);
   useEffect(() => { writeMaintenanceLogs(activeTenant.id, logs); }, [activeTenant.id, logs]);
   useEffect(() => { writeWorkOrders(activeTenant.id, orders); }, [activeTenant.id, orders]);
 
+  // Mescla os ativos de manutenção com o catálogo de temperatura: mostra os
+  // equipamentos já cadastrados (Freezer, Refrigerador…) sem duplicar por nome.
+  // Itens só-do-catálogo entram como "virtuais" (id cat-<label>, sem plano) e
+  // viram ativo real quando você edita/salva. Ver onSave do EquipmentModal.
+  const mergedEquipments = useMemo(() => {
+    const norm = (s) => String(s ?? '').trim().toLowerCase();
+    const assetNames = new Set(equipments.map((e) => norm(e.name)));
+    const catalogOnly = catalog
+      .filter((c) => c.label && !assetNames.has(norm(c.label)))
+      .map((c) => ({ id: `cat-${c.label}`, name: c.label, location: c.location ?? '', status: 'Operacional', maintenancePlans: [], _fromCatalog: true }));
+    return [...equipments, ...catalogOnly];
+  }, [equipments, catalog]);
+
   // Compute next due dates from maintenance plans
-  const equipmentsWithDue = useMemo(() => equipments.map(eq => {
+  const equipmentsWithDue = useMemo(() => mergedEquipments.map(eq => {
     const plans = (eq.maintenancePlans ?? []).map(plan => {
       // Find last log for this plan
       const lastLog = logs
@@ -157,7 +175,7 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
     });
     const urgentPlan = plans.sort((a,b) => (a.days??999) - (b.days??999))[0];
     return { ...eq, plans, urgentPlan };
-  }), [equipments, logs]);
+  }), [mergedEquipments, logs]);
 
   // KPIs
   const overdue  = equipmentsWithDue.filter(e => e.plans.some(p => p.tone === 'expired' || p.tone === 'danger')).length;
@@ -169,7 +187,7 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
   const renderDashboard = () => (
     <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
       <div className="audit-stats">
-        <div className="audit-stat"><span>Equipamentos</span><strong>{equipments.length}</strong></div>
+        <div className="audit-stat"><span>Equipamentos</span><strong>{mergedEquipments.length}</strong></div>
         <div className={`audit-stat ${overdue>0?'danger':'ok'}`}><span>Atrasados / críticos</span><strong>{overdue}</strong></div>
         <div className={`audit-stat ${due30>0?'warn':'ok'}`}><span>Vencem em 30 dias</span><strong>{due30}</strong></div>
         <div className={`audit-stat ${openOrders>0?'warn':'ok'}`}><span>OS abertas</span><strong>{openOrders}</strong></div>
@@ -248,7 +266,7 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
               <div key={o.id} className="equipment-maintenance-row">
                 <div>
                   <strong>{o.title}</strong>
-                  <span>{equipments.find(e=>e.id===o.equipmentId)?.name ?? '—'} · {o.type}</span>
+                  <span>{mergedEquipments.find(e=>e.id===o.equipmentId)?.name ?? '—'} · {o.type}</span>
                   <span style={{ fontSize:11, color:'var(--text-secondary)' }}>Aberta em {fmtDate(o.createdAt)} · {o.requestedBy}</span>
                 </div>
                 <div style={{ display:'flex', gap:6, flexDirection:'column', alignItems:'flex-end' }}>
@@ -261,7 +279,7 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
         </article>
       )}
 
-      {equipments.length === 0 && (
+      {mergedEquipments.length === 0 && (
         <article className="management-card">
           <div style={{ padding:'40px 24px', textAlign:'center' }}>
             <p style={{ fontSize:32, marginBottom:12 }}>🔧</p>
@@ -298,6 +316,7 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
                   <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:4 }}>
                     <h2 style={{ fontSize:16 }}>{eq.name}</h2>
                     <span className={`badge ${eq.status==='Operacional'?'ok':eq.status==='Em manutenção'?'warn':'neutral'}`} style={{ fontSize:10 }}>{eq.status}</span>
+                    {eq._fromCatalog && <span className="badge neutral" style={{ fontSize:10 }} title="Veio do catálogo de temperatura. Edite pra criar um plano de manutenção.">do catálogo · sem plano</span>}
                   </div>
                   <div style={{ fontSize:12, color:'var(--text-secondary)', display:'flex', gap:12 }}>
                     {eq.location && <span>📍 {eq.location}</span>}
@@ -356,7 +375,7 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
       {orders.length === 0
         ? <article className="management-card"><p className="muted" style={{ padding:'24px' }}>Nenhuma ordem de serviço.</p></article>
         : orders.map(o => {
-          const eq = equipments.find(e=>e.id===o.equipmentId);
+          const eq = mergedEquipments.find(e=>e.id===o.equipmentId);
           const statusColor = { pendente:'warn', 'em_andamento':'blue', concluida:'ok', cancelada:'neutral' }[o.status] ?? 'neutral';
           return (
             <article key={o.id} className="management-card">
@@ -402,7 +421,7 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
         {logs.length === 0
           ? <p className="muted" style={{ padding:'24px' }}>Nenhum registro ainda.</p>
           : logs.map(l => {
-            const eq = equipments.find(e=>e.id===l.equipmentId);
+            const eq = mergedEquipments.find(e=>e.id===l.equipmentId);
             const mt = MAINTENANCE_TYPES.find(t=>t.id===l.type);
             return (
               <div key={l.id} className="equipment-maintenance-row" style={{ borderLeft:`3px solid ${mt?.color}44` }}>
@@ -435,7 +454,7 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
           <button className="secondary-action" onClick={() => { setEditOrder({}); setTab('orders'); }}>
             📋 + Nova OS
           </button>
-          <button className="secondary-action" onClick={() => printMaintenanceReport(activeTenant, equipments, logs, orders)}>
+          <button className="secondary-action" onClick={() => printMaintenanceReport(activeTenant, mergedEquipments, logs, orders)}>
             🖨️ Exportar PDF
           </button>
           <select value={activeTenant.id} onChange={e=>onTenantChange(e.target.value)} style={{ width:'auto' }}>
@@ -481,7 +500,7 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
       {editEquip !== null && (
         <EquipmentModal
           equipment={editEquip.id ? editEquip : null}
-          onSave={(eq) => { setEquipments(prev => editEquip.id ? prev.map(e=>e.id===eq.id?eq:e) : [...prev, eq]); setEditEquip(null); }}
+          onSave={(eq) => { setEquipments(prev => prev.some(e=>e.id===eq.id) ? prev.map(e=>e.id===eq.id?eq:e) : [...prev, eq]); setEditEquip(null); }}
           onDelete={(id) => { setEquipments(prev => prev.filter(e=>e.id!==id)); setEditEquip(null); }}
           onClose={() => setEditEquip(null)}
         />
@@ -588,7 +607,7 @@ function EquipmentModal({ equipment, onSave, onDelete, onClose }) {
           <label style={{ display:'flex', flexDirection:'column', gap:5, fontSize:12, fontWeight:600, color:'var(--text-secondary)' }}>Observações<textarea value={notes} onChange={e=>setNotes(e.target.value)} style={{ minHeight:48 }} /></label>
         </div>
         <div style={{ display:'flex', gap:10, marginTop:20 }}>
-          {equipment && <button onClick={() => { if(window.confirm('Remover equipamento?')) onDelete(equipment.id); }} style={{ padding:'10px', borderRadius:8, border:'none', background:'var(--red-light)', color:'var(--red)', cursor:'pointer', fontSize:13, fontWeight:600, fontFamily:'var(--font)' }}>Remover</button>}
+          {equipment && !equipment._fromCatalog && <button onClick={() => { if(window.confirm('Remover equipamento?')) onDelete(equipment.id); }} style={{ padding:'10px', borderRadius:8, border:'none', background:'var(--red-light)', color:'var(--red)', cursor:'pointer', fontSize:13, fontWeight:600, fontFamily:'var(--font)' }}>Remover</button>}
           <button onClick={onClose} style={{ flex:1, padding:'10px', borderRadius:8, border:'1px solid var(--border)', background:'var(--surface)', cursor:'pointer', fontSize:14, fontWeight:600, fontFamily:'var(--font)' }}>Cancelar</button>
           <button onClick={handleSave} disabled={!name.trim()} style={{ flex:2, padding:'10px', borderRadius:8, border:'none', background:name.trim()?'var(--blue)':'var(--border)', color:'white', cursor:name.trim()?'pointer':'not-allowed', fontSize:14, fontWeight:700, fontFamily:'var(--font)' }}>
             {equipment ? 'Salvar' : 'Cadastrar equipamento'}

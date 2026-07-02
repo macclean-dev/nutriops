@@ -5,7 +5,7 @@ import { readAdminAuth, writeAdminAuth, clearAdminAuth, readClients } from './ad
 import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
 import { trackUsage } from './repository';
 import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill } from './repository';
-import { getPermissions, canAccess } from './permissions';
+import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
 import { resolveLimits as resolveLimitsFromCatalog, heuristicLimits, suggestLimits, dedupeCatalog } from './limits';
@@ -43,6 +43,7 @@ const SetupPinScreen       = lazyView(() => import('./setup-tenant'), 'SetupPinS
 const EquipmentDetailModal = lazyView(() => import('./equipment-detail'), 'EquipmentDetailModal');
 const LoginScreen          = lazyView(() => import('./login'), 'LoginScreen');
 const SettingsView         = lazyView(() => import('./settings'), 'SettingsView');
+const SuperAdminView       = lazyView(() => import('./superadmin-view'), 'SuperAdminView');
 const DashboardView        = lazyView(() => import('./reports-views'), 'DashboardView');
 const ChartsView           = lazyView(() => import('./reports-views'), 'ChartsView');
 const AuditView            = lazyView(() => import('./reports-views'), 'AuditView');
@@ -234,7 +235,7 @@ function MobileDrawer({ open, onClose, activeView, setActiveView, session, activ
     } catch { return 0; }
   }, [activeTenant?.id]);
 
-  const SECTIONS = buildNavSections({ validityAlertCount, maintAlertCount, alertCount, actionCount });
+  const SECTIONS = buildNavSections({ validityAlertCount, maintAlertCount, alertCount, actionCount, isGlobalAdmin: isGlobalAdmin(session) });
   const navigate = (key) => { setActiveView(key); onClose(); };
 
   if (!open) return null;
@@ -417,7 +418,7 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
     } catch { return 0; }
   }, [activeTenant.id]);
 
-  const SECTIONS = buildNavSections({ validityAlertCount, maintAlertCount, alertCount, actionCount });
+  const SECTIONS = buildNavSections({ validityAlertCount, maintAlertCount, alertCount, actionCount, isGlobalAdmin: isGlobalAdmin(session) });
   // Conta vai pro dropdown do avatar — rail mostra só Operação, Qualidade, Gestão
   const railSections = SECTIONS.filter(s => s.label !== 'Conta');
 
@@ -2416,11 +2417,15 @@ export function App() {
           {activeView === 'profile'     && <ProfileView session={session} onLogout={handleLogout} />}
           {activeView === 'maintenance' && <MaintenanceView {...sharedProps} session={session} />}
           {activeView === 'settings'    && <SettingsView session={session} activeTenant={activeTenant} activeTenants={activeTenants} tenants={tenants} />}
+          {/* Super Admin — só admin global (plataforma) */}
+          {activeView === 'superadmin'  && (isGlobalAdmin(session)
+            ? <SuperAdminView session={session} seedTenants={tenants} onExit={() => setActiveView('overview')} />
+            : <NoPermission onBack={() => setActiveView('overview')} />)}
           {/* Fallback for any route the user doesn't have access to */}
           {![
             'overview','overview-v2','forms','pops','training','receiving','validity',
             ...CONTROLS_KEYS, ...REPORTS_KEYS, ...TEAM_KEYS,
-            'alerts','actions','rtpanel','equipment','profile','maintenance','settings',
+            'alerts','actions','rtpanel','equipment','profile','maintenance','settings','superadmin',
           ].includes(activeView) && <NoPermission onBack={() => setActiveView('overview')} />}
         </Suspense>
       </main>

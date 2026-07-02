@@ -18,7 +18,7 @@ export function isItemActive(itemKey, activeView) {
 // Items: [key, iconId, label, badge?]
 export function buildNavSections({
   validityAlertCount = 0, maintAlertCount = 0,
-  alertCount = 0, actionCount = 0,
+  alertCount = 0, actionCount = 0, isGlobalAdmin = false,
 } = {}) {
   return [
     {
@@ -57,6 +57,13 @@ export function buildNavSections({
         ['settings', 'settings', 'Configurações'],
       ],
     },
+    // Só pro admin global (NutriOPS) — gerência de toda a plataforma.
+    ...(isGlobalAdmin ? [{
+      label: 'Plataforma',
+      items: [
+        ['superadmin', 'rtpanel', 'Super Admin'],
+      ],
+    }] : []),
   ];
 }
 

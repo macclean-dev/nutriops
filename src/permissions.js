@@ -13,6 +13,8 @@ const ALL_VIEWS = [
   // Hub: equipe
   'team', 'users','turns','sessions',
   'equipment','maintenance','profile','settings',
+  // Plataforma (só admin global — o rail ainda filtra por isGlobalAdmin)
+  'superadmin',
 ];
 
 export const PERMISSIONS = {
@@ -42,3 +44,10 @@ export const PERMISSIONS = {
 
 export function getPermissions(role) { return PERMISSIONS[role] ?? PERMISSIONS['Colaborador']; }
 export function canAccess(role, view) { const p = getPermissions(role); return p.nav.includes(view); }
+
+// Admin GLOBAL da NutriOPS (não um admin de um tenant): loga via Supabase Auth
+// com tenantId nulo. Só ele vê a área "Super Admin" (plataforma). Um
+// Administrador amarrado a um tenant (tenantId setado) NÃO é global.
+export function isGlobalAdmin(session) {
+  return !session?.tenantId && ['Administrador', 'Super-admin'].includes(session?.user?.role);
+}

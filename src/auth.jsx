@@ -124,6 +124,71 @@ export function isSessionValid(session) {
   return true;
 }
 
+// ─── MFA / TOTP (2FA do Super Admin) ────────────────────────────────────────
+// Fluxo GoTrue: enroll (gera QR/secret) → challenge → verify (código do app).
+// Todas as chamadas precisam do access token do admin (Bearer). Nunca lançam
+// sem contexto — o gate trata os erros.
+
+function authBearer(accessToken) {
+  const { anonKey } = getSupabaseConfig();
+  return { apikey: anonKey, 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` };
+}
+
+function mfaToken(accessToken) {
+  const t = accessToken ?? readAuthSession()?.accessToken;
+  if (!t) throw new Error('Sessão do admin sem token — faça login com e-mail/senha primeiro.');
+  return t;
+}
+
+// Lista os fatores MFA do usuário (via /auth/v1/user → factors).
+export async function mfaListFactors(accessToken) {
+  const token = mfaToken(accessToken);
+  const res = await fetch(`${sbAuthBase()}/user`, { headers: authBearer(token) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.msg ?? data.error_description ?? 'Erro ao listar fatores');
+  return data?.factors ?? [];
+}
+
+// Enroll um fator TOTP novo → devolve { id, totp:{ qr_code, secret, uri } }.
+export async function mfaEnroll(accessToken, friendlyName = 'Super Admin') {
+  const token = mfaToken(accessToken);
+  const res = await fetch(`${sbAuthBase()}/factors`, {
+    method: 'POST', headers: authBearer(token),
+    body: JSON.stringify({ factor_type: 'totp', friendly_name: friendlyName }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.msg ?? data.error_description ?? 'Erro ao criar fator');
+  return data;
+}
+
+// Cria um challenge pra um fator → devolve { id }.
+export async function mfaChallenge(accessToken, factorId) {
+  const token = mfaToken(accessToken);
+  const res = await fetch(`${sbAuthBase()}/factors/${factorId}/challenge`, {
+    method: 'POST', headers: authBearer(token),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.msg ?? data.error_description ?? 'Erro no challenge');
+  return data;
+}
+
+// Verifica o código do app pra um challenge → eleva a sessão pra AAL2.
+// Persiste a sessão nova (com o access token AAL2) pra os próximos requests.
+export async function mfaVerify(accessToken, factorId, challengeId, code) {
+  const token = mfaToken(accessToken);
+  const res = await fetch(`${sbAuthBase()}/factors/${factorId}/verify`, {
+    method: 'POST', headers: authBearer(token),
+    body: JSON.stringify({ challenge_id: challengeId, code }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.msg ?? data.error_description ?? 'Código inválido');
+  if (data.access_token) {
+    const session = buildSession(data.user ?? readAuthSession()?.user ?? {}, data.access_token, data.refresh_token);
+    saveAuthSession(session);
+  }
+  return data;
+}
+
 // ─── Invite user (admin creates accounts for collaborators) ──────────────
 
 export async function inviteUser({ email, name, role, tenantId, tenantName }) {

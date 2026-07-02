@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { readClients, writeClients } from './admin-storage';
 import {
   PLANS, planLabel, mergeTenants, setClientPlan, setClientActive,
@@ -20,6 +20,119 @@ const AUDIT_LABELS = {
   impersonate_start: 'Logou como', impersonate_end: 'Saiu do tenant',
   access: 'Acessou Super Admin',
 };
+
+// ─── Gate 2FA (TOTP) — protege a entrada no Super Admin ─────────────────────
+// Roda uma vez por sessão do navegador (sessionStorage). Se não houver fator
+// TOTP ainda, faz o enroll (mostra QR); se houver, pede o código do app.
+const MFA_FLAG = 'nutriops.superadmin.mfa';
+
+export function SuperAdminGate({ session, onExit, children }) {
+  const already = (() => { try { return sessionStorage.getItem(MFA_FLAG) === '1'; } catch { return false; } })();
+  const [phase, setPhase]   = useState(already ? 'ok' : 'loading'); // loading|enroll|challenge|ok|error
+  const [factorId, setFactorId] = useState(null);
+  const [qr, setQr]         = useState(null);   // svg string ou data-uri
+  const [secret, setSecret] = useState(null);
+  const [code, setCode]     = useState('');
+  const [error, setError]   = useState('');
+  const [busy, setBusy]     = useState(false);
+
+  const token = session?.accessToken;
+
+  useEffect(() => {
+    if (phase !== 'loading') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!token) throw new Error('Sessão sem token do Supabase Auth. Entre como administrador com e-mail e senha e tente de novo.');
+        const auth = await import('./auth');
+        const factors = await auth.mfaListFactors(token);
+        const verified = factors.find(f => f.factor_type === 'totp' && f.status === 'verified');
+        if (cancelled) return;
+        if (verified) { setFactorId(verified.id); setPhase('challenge'); return; }
+        // Sem fator verificado → enroll. (Se sobrou um unverified, o Supabase
+        // permite reusar; aqui criamos um novo por simplicidade.)
+        const enrolled = await auth.mfaEnroll(token, 'Super Admin');
+        if (cancelled) return;
+        setFactorId(enrolled.id);
+        setQr(enrolled?.totp?.qr_code ?? null);
+        setSecret(enrolled?.totp?.secret ?? null);
+        setPhase('enroll');
+      } catch (e) {
+        if (!cancelled) { setError(e?.message ?? 'Erro ao iniciar 2FA'); setPhase('error'); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [phase, token]);
+
+  const submit = async () => {
+    setError(''); setBusy(true);
+    try {
+      const auth = await import('./auth');
+      const ch = await auth.mfaChallenge(token, factorId);
+      await auth.mfaVerify(token, factorId, ch.id, code.trim());
+      try { sessionStorage.setItem(MFA_FLAG, '1'); } catch {}
+      setPhase('ok');
+    } catch (e) {
+      setError(e?.message ?? 'Código inválido');
+    }
+    setBusy(false);
+  };
+
+  if (phase === 'ok') return children;
+
+  return (
+    <section className="management-page">
+      <div style={{ maxWidth:420, margin:'40px auto', background:'var(--surface)', border:'1px solid var(--border-subtle)', borderRadius:'var(--r-xl)', padding:'28px 26px', boxShadow:'var(--shadow-lg)' }}>
+        <span className="eyebrow" style={{ color:'var(--primary)' }}>Verificação em 2 fatores</span>
+        <h1 style={{ fontSize:22, fontWeight:700, letterSpacing:'-.03em', margin:'4px 0 6px', fontFamily:'var(--serif)' }}>Acesso Super Admin</h1>
+
+        {phase === 'loading' && <p className="muted">Verificando 2FA…</p>}
+
+        {phase === 'error' && (
+          <>
+            <div className="submission danger" style={{ marginTop:12 }}>{error}</div>
+            <div style={{ display:'flex', gap:8, marginTop:16 }}>
+              <button className="secondary-action" onClick={() => { setError(''); setPhase('loading'); }}>Tentar de novo</button>
+              {onExit && <button className="ghost-action" onClick={onExit}>Sair</button>}
+            </div>
+          </>
+        )}
+
+        {phase === 'enroll' && (
+          <>
+            <p className="muted" style={{ marginBottom:14 }}>Configure o 2FA uma vez: escaneie o QR no seu app autenticador (Google/Microsoft Authenticator, 1Password…) e digite o código gerado.</p>
+            <div style={{ display:'grid', placeItems:'center', background:'#fff', borderRadius:'var(--r)', padding:12, marginBottom:12 }}>
+              {qr
+                ? (String(qr).startsWith('data:')
+                    ? <img src={qr} alt="QR 2FA" style={{ width:180, height:180 }} />
+                    : <span style={{ width:180, height:180, display:'block' }} dangerouslySetInnerHTML={{ __html: qr }} />)
+                : <span className="muted">QR indisponível</span>}
+            </div>
+            {secret && <p style={{ fontSize:11, color:'var(--text-secondary)', textAlign:'center', marginBottom:12 }}>Ou digite a chave manual: <strong style={{ fontFamily:'var(--mono)' }}>{secret}</strong></p>}
+          </>
+        )}
+
+        {phase === 'challenge' && (
+          <p className="muted" style={{ marginBottom:14 }}>Digite o código de 6 dígitos do seu app autenticador.</p>
+        )}
+
+        {(phase === 'enroll' || phase === 'challenge') && (
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            <input value={code} onChange={e => { setCode(e.target.value.replace(/\D/g,'').slice(0,6)); setError(''); }}
+              inputMode="numeric" maxLength={6} placeholder="000000" autoFocus
+              onKeyDown={e => { if (e.key==='Enter' && code.length===6) submit(); }}
+              style={{ letterSpacing:'0.4em', fontSize:24, textAlign:'center', fontFamily:'var(--mono)' }} />
+            {error && <div className="submission danger">{error}</div>}
+            <button className="primary-action" style={{ width:'100%' }} disabled={busy || code.length !== 6} onClick={submit}>
+              {busy ? 'Verificando…' : 'Verificar e entrar'}
+            </button>
+            {onExit && <button className="ghost-action" style={{ width:'100%' }} onClick={onExit}>Cancelar</button>}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
 
 export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExit }) {
   const [clients, setClients] = useState(() => readClients());

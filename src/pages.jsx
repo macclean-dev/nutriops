@@ -44,6 +44,7 @@ const EquipmentDetailModal = lazyView(() => import('./equipment-detail'), 'Equip
 const LoginScreen          = lazyView(() => import('./login'), 'LoginScreen');
 const SettingsView         = lazyView(() => import('./settings'), 'SettingsView');
 const SuperAdminView       = lazyView(() => import('./superadmin-view'), 'SuperAdminView');
+const SuperAdminGate       = lazyView(() => import('./superadmin-view'), 'SuperAdminGate');
 const DashboardView        = lazyView(() => import('./reports-views'), 'DashboardView');
 const ChartsView           = lazyView(() => import('./reports-views'), 'ChartsView');
 const AuditView            = lazyView(() => import('./reports-views'), 'AuditView');
@@ -2476,7 +2477,9 @@ export function App() {
           {activeView === 'settings'    && <SettingsView session={session} activeTenant={activeTenant} activeTenants={activeTenants} tenants={tenants} />}
           {/* Super Admin — só admin global (plataforma) */}
           {activeView === 'superadmin'  && (isGlobalAdmin(session)
-            ? <SuperAdminView session={session} seedTenants={tenants} onImpersonate={handleImpersonate} onExit={() => setActiveView('overview')} />
+            ? <SuperAdminGate session={session} onExit={() => setActiveView('overview')}>
+                <SuperAdminView session={session} seedTenants={tenants} onImpersonate={handleImpersonate} onExit={() => setActiveView('overview')} />
+              </SuperAdminGate>
             : <NoPermission onBack={() => setActiveView('overview')} />)}
           {/* Fallback for any route the user doesn't have access to */}
           {![

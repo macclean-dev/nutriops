@@ -135,14 +135,18 @@ export function SuperAdminGate({ session, onExit, children }) {
         {phase === 'enroll' && (
           <>
             <p className="muted" style={{ marginBottom:14 }}>Configure o 2FA uma vez: escaneie o QR no seu app autenticador (Google/Microsoft Authenticator, 1Password…) e digite o código gerado.</p>
-            <div style={{ display:'grid', placeItems:'center', background:'#fff', borderRadius:'var(--r)', padding:12, marginBottom:12 }}>
+            {/* O SVG do QR do Supabase vem sem tamanho fixo — sem constrain ele
+                estoura o box e cai em cima da chave manual. A regra .sa-qr-svg
+                svg força 200x200 e o box cresce, empurrando o texto pra baixo. */}
+            <style>{`.sa-qr-svg svg{width:200px;height:200px;display:block}.sa-qr-svg img{width:200px;height:200px;display:block}`}</style>
+            <div className="sa-qr-svg" style={{ background:'#fff', borderRadius:'var(--r)', padding:12, marginBottom:12, display:'flex', justifyContent:'center' }}>
               {qr
                 ? (String(qr).startsWith('data:')
-                    ? <img src={qr} alt="QR 2FA" style={{ width:180, height:180 }} />
-                    : <span style={{ width:180, height:180, display:'block' }} dangerouslySetInnerHTML={{ __html: qr }} />)
+                    ? <img src={qr} alt="QR 2FA" />
+                    : <span dangerouslySetInnerHTML={{ __html: qr }} />)
                 : <span className="muted">QR indisponível</span>}
             </div>
-            {secret && <p style={{ fontSize:11, color:'var(--text-secondary)', textAlign:'center', marginBottom:12 }}>Ou digite a chave manual: <strong style={{ fontFamily:'var(--mono)' }}>{secret}</strong></p>}
+            {secret && <p style={{ fontSize:11, color:'var(--text-secondary)', textAlign:'center', marginBottom:12, wordBreak:'break-all' }}>Ou digite a chave manual: <strong style={{ fontFamily:'var(--mono)' }}>{secret}</strong></p>}
           </>
         )}
 

@@ -13,7 +13,7 @@ export const lw = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); 
 
 // Device-auth (Fase 2 do épico RLS) — JWT escopado por tenant, usado no lugar
 // da anon key crua quando disponível. Ver ./device-auth.js.
-import { getDeviceAccessToken } from './device-auth';
+import { getDeviceAccessToken, invalidateDeviceToken } from './device-auth';
 
 // ─── Supabase config ───────────────────────────────────────────────────────
 
@@ -83,7 +83,13 @@ async function sbFetch(table, params = {}, tenantId = null) {
   const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
   if (!res.ok) {
     // 401/403 = anon key inválida ou RLS bloqueando. Marca pra UI mostrar banner.
-    if (res.status === 401 || res.status === 403) markSupabaseAuthError(res.status, table);
+    if (res.status === 401 || res.status === 403) {
+      markSupabaseAuthError(res.status, table);
+      // Se havia tenant, o JWT do device pode ter sido rejeitado (revogado/
+      // rotacionado) — invalida o cache pra forçar novo login no próximo request,
+      // em vez de repetir o mesmo token ruim até ele expirar (~1h).
+      if (tenantId) invalidateDeviceToken(tenantId);
+    }
     // Lê body pra incluir a mensagem do Postgres (invalid uuid, NOT NULL,
     // schema mismatch, etc) — crítico pra debug. Sem isso, status code
     // sozinho não diz qual coluna ou constraint falhou.
@@ -920,6 +926,12 @@ alter table receiving_records    disable row level security;
 alter table products             disable row level security;
 alter table stock_logs           disable row level security;
 alter table special_controls     disable row level security;
+
+-- 7b. Tabela 'tenants' (espelho do /admin, lida por tenant-sync.js no boot via
+-- anon key pro fluxo ?token=). PROPOSITALMENTE fora das 8 policies e RLS OFF —
+-- é lida antes de qualquer login/JWT existir. NÃO ligar RLS nela sem repensar o
+-- onboarding por link, senão o ?token= quebra.
+alter table tenants disable row level security;
 
 -- 8. Policies RLS por tenant — PREPARADAS mas SEM EFEITO (RLS off acima).
 -- Fase 0 do épico Auth+RLS (docs/AUTH_RLS_PLAN.md): escreve e testa as

@@ -224,3 +224,89 @@ Total: ~3 sessões de trabalho + acompanhamento em produção. Não é um
    crio um?
 
 Com essas 3 respostas eu consigo começar a Fase 0 com segurança.
+
+---
+
+## RUNBOOK — Fase 3 (ligar RLS de verdade) · rascunho 01/07
+
+> Escrito na sessão de 01/07 enquanto o deploy estava travado no limite do
+> Vercel. **NÃO executar sem o dono presente + janela de monitoramento.** RLS
+> mexe no acesso a dados de 3 clientes pagando. Rollback é 1 comando (ver fim).
+
+### Pré-requisitos (antes de tocar em RLS)
+
+1. **`VITE_DEVICE_PASSWORD` no Vercel** (Production) = a senha das 3 contas
+   device. Sem isso, `getDeviceAccessToken` retorna null → tudo cai pra anon
+   key → sob RLS, TUDO é bloqueado. Adicionar a env + redeploy é o passo que
+   "liga" o device-auth (mas ainda sem efeito funcional enquanto RLS off).
+2. **Confirmar nos logs** (F12 no device, com a env já no build) que os 3
+   tenants pegam token: procurar `[device-auth] token obtido pro tenant swiss`
+   (e backerei, dbk-producao). Se algum falhar → conta/senha/metadata errados.
+
+### Revisão adversarial (01/07) — 22 agentes, 10 achados confirmados
+
+Rodei uma revisão multi-agente do device-auth + Fase 2 antes de virar produção.
+Resultado tranquilizador: **TODOS os 10 achados são "on-rls-enable"** — nenhum é
+regressão do estado atual (RLS off + sem `VITE_DEVICE_PASSWORD` = zero mudança
+hoje, confirmado por todos os reviewers). Já corrigido nesta sessão (efeito zero
+hoje, robustez pra Fase 3):
+- ✅ device-auth invalida o token no 401/403 (não fica preso ~1h) + desliga na
+  hora se a senha sumir da env (`invalidateDeviceToken` + check de senha).
+- ✅ `tenants` documentada no SUPABASE_SQL (RLS off proposital).
+
+Nota extra da revisão: a cláusula de bypass do admin nas policies
+(`role in Administrador/Super-admin`) hoje é **código morto** — nenhum caminho
+de sync manda o JWT do admin (admin/RT sincronizam via device token do tenant).
+Ou se remove a cláusula, ou se wira o JWT do admin no /admin (ver abaixo).
+
+### Bloqueadores conhecidos — CORRIGIR ANTES de `enable row level security`
+
+Estes usam anon key crua (sem JWT de tenant) e seriam BLOQUEADOS sob RLS:
+
+- **`testWrite` / `testConnection` (repository.js):** o health-check insere/lê
+  `temperature_records` (tenant_id `__healthcheck__`) com anon key. Sob RLS →
+  bloqueado → banner de auth_error/rls_blocked em TODO boot, mesmo com writes
+  reais (device token) funcionando. **Falso alarme assustador.**
+  Fix: ou usar um device token no testWrite, ou pular o testWrite quando RLS
+  estiver on, ou dar exceção de policy pro tenant `__healthcheck__`.
+- **`admin.jsx` HealthView (linha ~1040):** `fetchSupabase('temperature_records',
+  'limit=5000')` lê TODOS os tenants com anon key, sem filtro. Sob RLS → 0 linhas
+  → painel /admin vazio. Fix: usar o JWT do admin logado (auth.jsx, role
+  Administrador → bypass na policy) no lugar da anon key, com fallback.
+- **Conferir a tabela `tenants`** (tenant-sync.js): NÃO está nas 8 policies e
+  segue com `disable row level security` (CLAUDE.md). Confirmar que continua off
+  (o boot faz `fetchTenantByToken` com anon key). Se um dia ligar RLS nela,
+  quebra o fluxo `?token=`.
+
+### Sequência de rollout (tenant por tenant)
+
+1. Corrigir os bloqueadores acima + deploy + verificar device tokens nos logs.
+2. Rodar o SQL das policies (já está em SUPABASE_SQL) — idempotente.
+3. **Ligar RLS numa tabela de UM tenant primeiro?** Não dá granularidade por
+   tenant no `enable row level security` (é por tabela, afeta todos os tenants
+   daquela tabela). Então: ligar RLS **numa tabela só** primeiro (ex.:
+   `special_controls`, a de menor volume/risco), monitorar 24h, e só então as
+   outras 7. Assim o raio de explosão de um erro de policy é 1 tabela, não 8.
+   Comando: `alter table special_controls enable row level security;`
+4. Monitorar: banner de 401/rls_blocked na app + `testWrite` (já corrigido) +
+   contagem de linhas subindo normal (SQL de conferência).
+5. Repetir tabela por tabela até as 8.
+6. Fase 4: atualizar o SUPABASE_SQL trocando os `disable` por `enable` como
+   novo default, atualizar a regra do CLAUDE.md ("RLS está OFF").
+
+### Rollback imediato (se algo travar)
+
+```sql
+-- por tabela, na hora:
+alter table <tabela> disable row level security;
+```
+Volta ao estado atual (anon key acessa tudo) instantaneamente. O device-auth
+continua tentando o JWT mas cai pra anon key — sem quebra.
+
+### Risco residual aceito (senha compartilhada)
+
+As 3 contas device usam a MESMA senha (escolha do dono). Como o e-mail de cada
+uma é derivável do tenant_id (público no bundle), se essa senha vazar, expõe as
+3 lojas. Mitigação futura (sem mudar código): trocar por senhas distintas e
+adicionar `VITE_DEVICE_PASSWORD_SWISS` / `_BACKEREI` / `_DBK_PRODUCAO` no Vercel
+— device-auth.js já lê a env específica por tenant com fallback pra compartilhada.

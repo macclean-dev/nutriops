@@ -75,10 +75,22 @@ async function passwordSignIn(tenantId) {
   };
 }
 
+// Invalida o token em cache — força novo login no próximo getDeviceAccessToken.
+// Chamado pelo repository.js quando o servidor rejeita o JWT (401/403): sem
+// isso, um token revogado/rotacionado ficava preso no cache até expirar (~1h),
+// repetindo o mesmo 401 em loop nas escritas.
+export function invalidateDeviceToken(tenantId) {
+  try { localStorage.removeItem(STORAGE_PREFIX + tenantId); } catch {}
+}
+
 // Obtém um access token válido pro device do tenant, ou null se qualquer
 // coisa falhar. Nunca lança — quem chama trata null caindo pra anon key.
 export async function getDeviceAccessToken(tenantId) {
   if (!tenantId) return null;
+  // Se a senha do device sumiu (env removida/rotacionada), não usa cache velho:
+  // limpa e desliga o device-auth na hora (cai pra anon key). Também é o caminho
+  // do cenário atual — sem VITE_DEVICE_PASSWORD, retorna null sem tocar a rede.
+  if (!devicePassword(tenantId)) { invalidateDeviceToken(tenantId); return null; }
   try {
     const cached = readCache(tenantId);
     if (isTokenValid(cached)) return cached.accessToken;

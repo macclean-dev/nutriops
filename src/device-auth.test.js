@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isTokenValid, deviceEmail } from './device-auth';
+import { isTokenValid, deviceEmail, invalidateDeviceToken } from './device-auth';
 
 describe('deviceEmail', () => {
   it('deriva o e-mail do device a partir do tenant_id', () => {
@@ -24,5 +24,18 @@ describe('isTokenValid — cache do JWT de device', () => {
     expect(isTokenValid(null, NOW)).toBe(false);
     expect(isTokenValid({ expiresAt: NOW + 3600_000 }, NOW)).toBe(false);
     expect(isTokenValid({ accessToken: 'x' }, NOW)).toBe(false);
+  });
+});
+
+describe('invalidateDeviceToken — limpa token rejeitado', () => {
+  it('remove o cache do tenant (força novo login no próximo getDeviceAccessToken)', () => {
+    const key = 'nutriops.device.auth.swiss';
+    localStorage.setItem(key, JSON.stringify({ accessToken: 'x', expiresAt: Date.now() + 3600_000 }));
+    expect(localStorage.getItem(key)).not.toBeNull();
+    invalidateDeviceToken('swiss');
+    expect(localStorage.getItem(key)).toBeNull();
+  });
+  it('não quebra se não havia cache', () => {
+    expect(() => invalidateDeviceToken('inexistente')).not.toThrow();
   });
 });

@@ -138,6 +138,7 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
   const [clients, setClients] = useState(() => readClients());
   const [audit, setAudit]     = useState(() => readAudit());
   const [msg, setMsg]         = useState(null);
+  const [search, setSearch]   = useState('');
 
   const actor = session?.user?.name ?? session?.user?.email ?? 'admin';
   const tenants = useMemo(() => mergeTenants(clients, seedTenants), [clients, seedTenants]);
@@ -215,39 +216,57 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
 
       {msg && <div className={`submission ${msg.tone}`} style={{ marginBottom:12 }}>{msg.text}</div>}
 
-      {/* Tenants */}
+      {/* Tenants — tabela (estilo Nexum) */}
       <article className="management-card" style={{ marginBottom:16 }}>
-        <div className="card-head"><div><span className="eyebrow">Tenants</span><h2>Empresas cadastradas</h2></div><span className="badge neutral">{tenants.length}</span></div>
-        <div className="equipment-maintenance-list">
-          {tenants.length === 0
-            ? <p className="muted" style={{ padding:'20px' }}>Nenhum tenant.</p>
-            : tenants.map(t => (
-              <div key={t.id} className="equipment-maintenance-row" style={{ alignItems:'center' }}>
-                <div>
-                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <strong>{t.name}</strong>
+        <div className="card-head">
+          <div><span className="eyebrow">Tenants</span><h2>{tenants.length} empresas cadastradas</h2></div>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nome…"
+            style={{ width:220, maxWidth:'40vw', fontSize:13, padding:'6px 10px' }} />
+        </div>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
+            <thead>
+              <tr style={{ textAlign:'left', color:'var(--text-secondary)', fontSize:11, textTransform:'uppercase', letterSpacing:'.06em' }}>
+                <th style={{ padding:'8px 12px' }}>Tenant</th>
+                <th style={{ padding:'8px 12px' }}>Plano</th>
+                <th style={{ padding:'8px 12px' }}>Status</th>
+                <th style={{ padding:'8px 12px' }}>Criado</th>
+                <th style={{ padding:'8px 12px', textAlign:'right' }}>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tenants.filter(t => !search.trim() || t.name.toLowerCase().includes(search.trim().toLowerCase())).map(t => (
+                <tr key={t.id} style={{ borderTop:'1px solid var(--border-subtle)', background: t.active ? 'transparent' : 'var(--red-light)' }}>
+                  <td style={{ padding:'10px 12px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      <strong>{t.name}</strong>
+                      {t.source==='seed' && <span className="badge neutral" style={{ fontSize:9 }} title="Tenant interno (seed) — plano read-only">interno</span>}
+                    </div>
+                    <span style={{ fontSize:11, color:'var(--text-secondary)' }}>{t.segment || '—'} · {t.id}</span>
+                  </td>
+                  <td style={{ padding:'10px 12px' }}>
+                    {t.source==='client'
+                      ? <select value={t.plan} onChange={e => changePlan(t, e.target.value)} style={{ width:'auto', fontSize:12, padding:'3px 6px' }}>
+                          {PLANS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                        </select>
+                      : <span className={`badge ${planTone(t)}`} style={{ fontSize:11 }}>{planLabel(t.plan)}</span>}
+                  </td>
+                  <td style={{ padding:'10px 12px' }}>
                     <span className={`badge ${t.active?'ok':'neutral'}`} style={{ fontSize:10 }}>{t.active?'Ativo':'Suspenso'}</span>
-                    {t.source==='seed' && <span className="badge neutral" style={{ fontSize:10 }} title="Tenant interno (seed) — plano read-only">interno</span>}
-                  </div>
-                  <span style={{ fontSize:12, color:'var(--text-secondary)' }}>{t.segment || '—'} · {t.id}</span>
-                </div>
-                <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', justifyContent:'flex-end' }}>
-                  {t.source==='client' ? (
-                    <select value={t.plan} onChange={e => changePlan(t, e.target.value)} style={{ width:'auto', fontSize:12, padding:'4px 8px' }}>
-                      {PLANS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-                    </select>
-                  ) : (
-                    <span className={`badge ${planTone(t)}`} style={{ fontSize:11 }}>{planLabel(t.plan)}</span>
-                  )}
-                  <button className="ghost-action" style={{ fontSize:11 }} onClick={() => toggleActive(t)}>
-                    {t.active ? 'Suspender' : 'Ativar'}
-                  </button>
-                  <button className="secondary-action" style={{ fontSize:11 }} onClick={() => onImpersonate?.(t)}>
-                    Logar como
-                  </button>
-                </div>
-              </div>
-            ))}
+                  </td>
+                  <td style={{ padding:'10px 12px', color:'var(--text-secondary)', fontFamily:'var(--mono)', fontSize:12 }}>
+                    {t.createdAt ? new Date(t.createdAt).toLocaleDateString('pt-BR') : '—'}
+                  </td>
+                  <td style={{ padding:'10px 12px' }}>
+                    <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
+                      <button className="secondary-action" style={{ fontSize:11, padding:'4px 10px' }} onClick={() => onImpersonate?.(t)}>Entrar como</button>
+                      <button className="ghost-action" style={{ fontSize:11, padding:'4px 10px' }} onClick={() => toggleActive(t)}>{t.active ? 'Suspender' : 'Reativar'}</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </article>
 

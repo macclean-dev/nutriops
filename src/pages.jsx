@@ -102,6 +102,24 @@ const SESSION_KEY   = 'nutriops.session';
 const load = (key, fallback) => { try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : fallback; } catch { return fallback; } };
 const save = (key, val)      => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} };
 
+// ─── Dismiss de alertas de turno ("dar ciência") ─────────────────────────────
+// Map { alertId: 'dow mon dd yyyy' }. Um alerta fica dispensado só HOJE — no
+// dia seguinte, se ainda estiver pendente, reaparece. Poda entradas antigas.
+const dismissedAlertsKey = (tenantId) => `nutriops.alerts.dismissed.${tenantId}`;
+function readDismissedAlertIds(tenantId) {
+  const today = new Date().toDateString();
+  const map = load(dismissedAlertsKey(tenantId), {});
+  return new Set(Object.keys(map).filter(id => map[id] === today));
+}
+function dismissAlertId(tenantId, id) {
+  const today = new Date().toDateString();
+  const map = load(dismissedAlertsKey(tenantId), {});
+  // poda entradas de dias anteriores + marca esta como dispensada hoje
+  const pruned = {}; for (const k of Object.keys(map)) if (map[k] === today) pruned[k] = today;
+  pruned[id] = today;
+  save(dismissedAlertsKey(tenantId), pruned);
+}
+
 const DEFAULT_TURNS = [
   { id: 'manha', name: 'Manhã',  start: '06:00', end: '11:59' },
   { id: 'tarde', name: 'Tarde',  start: '12:00', end: '17:59' },
@@ -161,7 +179,9 @@ function computeTurnAlerts(turns, records, equipCatalog, tenantId) {
       if (!hasRecord) alerts.push({ id: `${turn.id}-${eq.label}`, turn: turn.name, equipment: eq.label, level: isActive ? 'warn' : 'danger', message: isActive ? `Pendente no turno ${turn.name}` : `Sem registro no turno ${turn.name} (encerrado)` });
     }
   }
-  return alerts;
+  // Remove os que o usuário já deu ciência HOJE (some da lista E do badge).
+  const dismissed = readDismissedAlertIds(tenantId);
+  return dismissed.size ? alerts.filter(a => !dismissed.has(a.id)) : alerts;
 }
 
 // ─── PDF generator ─────────────────────────────────────────────────────────
@@ -1158,9 +1178,11 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
 
 // ─── Alerts View ───────────────────────────────────────────────────────────
 
-function AlertsView({ activeTenant, allTenants, onTenantChange, records }) {
+function AlertsView({ activeTenant, allTenants, onTenantChange, records, onAlertsChanged }) {
+  const [, setTick] = useState(0); // re-render local ao dar ciência
   const turns = readTurns(activeTenant), catalog = readEquipmentCatalog(activeTenant);
   const alerts = computeTurnAlerts(turns, records, catalog, activeTenant.id);
+  const giveAck = (id) => { dismissAlertId(activeTenant.id, id); setTick(t => t + 1); onAlertsChanged?.(); };
   const today = records.filter((r) => r.tenantId === activeTenant.id && new Date(r.createdAt).toDateString() === new Date().toDateString());
   const outOfRange = today.filter((r) => resolveTemperatureTone(r) !== 'ok');
   return (
@@ -1176,7 +1198,10 @@ function AlertsView({ activeTenant, allTenants, onTenantChange, records }) {
             : alerts.map((a) => (
               <div key={a.id} className="equipment-maintenance-row">
                 <div><strong>{a.equipment}</strong><span>Turno: {a.turn}</span><span>{a.message}</span></div>
-                <span className={`badge ${a.level}`}>{a.level === 'warn' ? 'Pendente' : 'Atrasado'}</span>
+                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <span className={`badge ${a.level}`}>{a.level === 'warn' ? 'Pendente' : 'Atrasado'}</span>
+                  <button className="ghost-action" style={{ fontSize:11 }} title="Dar ciência — some hoje, reaparece amanhã se seguir pendente" onClick={() => giveAck(a.id)}>Dar ciência</button>
+                </div>
               </div>
             ))}
         </div>
@@ -1698,7 +1723,12 @@ function LocalModeBanner({ session, activeTenant, setActiveView }) {
   useEffect(() => { setLocalCount(countLocalRecords(activeTenant?.id)); }, [activeTenant?.id]);
 
   const isDismissed = dismissedUntil > Date.now();
-  if (enabled || isDismissed) return null;
+  // Cloud-first: se o build tem Supabase (env → tenant.supabase), o app conecta
+  // sozinho desde o 1º acesso — não faz sentido nagar "configure em
+  // Configurações". Só mostra o banner em build SEM env (dev local). Problemas
+  // reais de conexão (401/RLS) têm o SupabaseAuthErrorBanner à parte.
+  const buildHasSupabase = Boolean(activeTenant?.supabase?.url);
+  if (enabled || isDismissed || buildHasSupabase) return null;
 
   const role = session?.user?.role;
   const canConfigure = role === 'Administrador' || role === 'Super-admin' || role === 'Nutricionista RT';
@@ -2163,7 +2193,8 @@ export function App() {
   useEffect(() => { refreshRecords(); }, [refreshRecords]);
 
   const turns       = readTurns(activeTenant);
-  const alertCount  = useMemo(() => computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id).length, [records, activeTenant.id, equipmentCatalog]);
+  const [alertsTick, setAlertsTick] = useState(0); // bump ao dar ciência → recomputa badge/lista
+  const alertCount  = useMemo(() => computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id).length, [records, activeTenant.id, equipmentCatalog, alertsTick]);
   const maintAlertCount = useMemo(() => {
     const equips = JSON.parse(localStorage.getItem(`nutriops.equip_assets.${activeTenant.id}`) ?? '[]');
     const logs   = JSON.parse(localStorage.getItem(`nutriops.maint_logs.${activeTenant.id}`) ?? '[]');
@@ -2461,7 +2492,7 @@ export function App() {
               allTenants={visibleTenants} records={records} session={session} {...sharedProps} />
           )}
 
-          {activeView === 'alerts'     && <AlertsView {...sharedProps} records={records} />}
+          {activeView === 'alerts'     && <AlertsView {...sharedProps} records={records} onAlertsChanged={() => setAlertsTick(t => t + 1)} />}
           {activeView === 'actions'    && <CorrectiveActionsView {...sharedProps} records={records} />}
           {activeView === 'rtpanel'    && <RTPanelView allTenants={visibleTenants} records={records} session={session} />}
 

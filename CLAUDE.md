@@ -231,6 +231,12 @@ cai no seed de `tenants-public.js`.
 
 ## Fluxo admin → cliente operacional (v1.8.0+)
 
+> **v1.9.33:** o **Super Admin** (dentro do app, atrás do login + 2FA) agora tem
+> um botão **"+ Novo cliente"** que reusa o `ClientModal` + `AccessTokenModal`
+> do `/admin` (mesma máquina abaixo) — cadastra empresa, gera token + setup PIN
+> e mostra o link, sem precisar do painel `/admin` separado. Os componentes são
+> exportados de `admin.jsx` e consumidos por `superadmin-view.jsx`.
+
 Quando o admin cadastra um cliente em `/admin`:
 
 1. Gera setup PIN aleatório de 4 dígitos (PBKDF2 100k iter — `src/crypto.js`)

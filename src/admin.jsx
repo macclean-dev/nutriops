@@ -102,7 +102,7 @@ export function AdminLogin({ onLogin }) {
 
 // ─── CLIENT FORM MODAL ─────────────────────────────────────────────────────
 
-function ClientModal({ client, onSave, onClose }) {
+export function ClientModal({ client, onSave, onClose }) {
   const editing = Boolean(client?.id);
   const [name, setName]           = useState(client?.name ?? '');
   const [email, setEmail]         = useState(client?.email ?? '');
@@ -433,7 +433,7 @@ const inputStyle = { padding:'8px 10px', borderRadius:8, border:'1px solid #c1cc
 
 // ─── ACCESS TOKEN MODAL ────────────────────────────────────────────────────
 
-function AccessTokenModal({ client, onClose, onClientUpdate }) {
+export function AccessTokenModal({ client, onClose, onClientUpdate }) {
   const [copied, setCopied] = useState(false);
   const [emailState, setEmailState] = useState('idle'); // idle | sending | sent | error
   const [emailMsg, setEmailMsg] = useState('');

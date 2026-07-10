@@ -4,6 +4,9 @@ import {
   PLANS, planLabel, mergeTenants, setClientPlan, setClientActive,
   appendAudit, readAudit,
 } from './superadmin';
+// Reusa o form de cadastro + o modal do link do painel /admin (mesma máquina de
+// gerar token + setup PIN + push pro Supabase) — sem duplicar a lógica.
+import { ClientModal, AccessTokenModal } from './admin';
 
 // Super Admin — área DENTRO do app (rail), pro admin global gerir todos os
 // tenants: mudar plano, suspender/ativar, logar como (impersonate) + audit.
@@ -24,7 +27,7 @@ function fmtDT(iso) {
 const AUDIT_LABELS = {
   plan_change: 'Mudou plano', suspend: 'Suspendeu', activate: 'Ativou',
   impersonate_start: 'Logou como', impersonate_end: 'Saiu do tenant',
-  access: 'Acessou Super Admin',
+  access: 'Acessou Super Admin', create: 'Cadastrou empresa',
 };
 
 // ─── Gate 2FA (TOTP) — protege a entrada no Super Admin ─────────────────────
@@ -235,6 +238,9 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
   const [audit, setAudit]     = useState(() => readAudit());
   const [msg, setMsg]         = useState(null);
   const [search, setSearch]   = useState('');
+  const [newClientOpen, setNewClientOpen] = useState(false); // form "Novo cliente"
+  const [tokenModal, setTokenModal]       = useState(null);  // modal do link ?token=
+  const [createdClient, setCreatedClient] = useState(null);  // cliente recém-criado → abre o link ao fechar o form
 
   const actor = session?.user?.name ?? session?.user?.email ?? 'admin';
   const tenants = useMemo(() => mergeTenants(clients, seedTenants), [clients, seedTenants]);
@@ -254,6 +260,25 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
   const persistClients = (next) => {
     setClients(next);
     writeClients(next);
+  };
+
+  // Cadastro de novo cliente — reusa o ClientModal do /admin (gera token + setup
+  // PIN + push pro Supabase). Aqui só persiste + audita e, ao fechar o form,
+  // abre o modal com o link ?token= pra enviar ao cliente.
+  const saveClient = (client) => {
+    const next = clients.find(c => c.id === client.id)
+      ? clients.map(c => c.id === client.id ? client : c)
+      : [...clients, client];
+    persistClients(next);
+  };
+  const saveNewClient = (client) => {
+    saveClient(client);
+    logAction({ type: 'create', tenantId: client.id, tenantName: client.name });
+    setCreatedClient(client);
+  };
+  const closeNewClient = () => {
+    setNewClientOpen(false);
+    if (createdClient) { setTokenModal(createdClient); setCreatedClient(null); }
   };
 
   const bestEffortPush = async (tenantId) => {
@@ -299,7 +324,10 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
           <h1>Super Admin</h1>
           <p className="muted">Visão consolidada dos tenants — planos, suspensão e "logar como".</p>
         </div>
-        {onExit && <div className="page-actions"><button className="ghost-action" onClick={onExit}>← Sair</button></div>}
+        <div className="page-actions">
+          <button className="primary-action" onClick={() => setNewClientOpen(true)}>+ Novo cliente</button>
+          {onExit && <button className="ghost-action" onClick={onExit}>← Sair</button>}
+        </div>
       </div>
 
       {/* KPIs */}
@@ -388,6 +416,18 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
             ))}
         </div>
       </article>
+
+      {/* Novo cliente — reusa o form + o modal do link do /admin */}
+      {newClientOpen && (
+        <ClientModal client={null} onSave={saveNewClient} onClose={closeNewClient} />
+      )}
+      {tokenModal && (
+        <AccessTokenModal
+          client={tokenModal}
+          onClose={() => setTokenModal(null)}
+          onClientUpdate={(updated) => { saveClient(updated); setTokenModal(updated); }}
+        />
+      )}
     </section>
   );
 }

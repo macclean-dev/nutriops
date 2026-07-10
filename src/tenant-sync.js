@@ -2,24 +2,24 @@
 // pra que o cliente possa abrir o link `?token=` em qualquer device e baixar
 // o tenant pré-configurado pelo admin.
 //
-// Schema esperado:
-//   tenants (
-//     id text primary key,
-//     access_token text unique not null,
-//     name text, segment text, plan text,
-//     brand_color text, brand_soft text,
-//     equipment_catalog jsonb,
-//     modules jsonb,
-//     stores jsonb,
-//     setup_pin_hash text,                    -- PBKDF2 do PIN de setup (4 dígitos)
-//     setup_pin_used_at timestamptz,          -- null = ainda não consumido
-//     setup_pin_attempts integer default 0,   -- tentativas erradas no rate limit
-//     setup_pin_locked_until timestamptz,     -- bloqueio temporário após N falhas
-//     admin_email text, admin_name text,
-//     trial_ends_at timestamptz,
-//     created_at timestamptz default now(),
-//     updated_at timestamptz default now()
-//   );
+// ⚠️ SEGURANÇA (v1.9.31+): a `tenants` guarda access_token + setup_pin_hash +
+// e-mail do admin. Com a anon key no bundle e RLS OFF, um `GET tenants?select=*`
+// baixava TODOS os access_tokens (→ abrir qualquer loja) — a joia da coroa.
+// Fix: o acesso anon passa por FUNÇÕES RPC `security definer` (get_tenant_by_token,
+// upsert_tenant, mark_setup_consumed, bump_setup_attempts) e a tabela ganha RLS
+// deny-all. A anon NÃO toca mais a tabela direto, e o access_token nunca é
+// devolvido (o cliente já tem o token na URL). SQL em docs/security-tenants-lockdown.sql.
+//
+// Rollout sem janela de quebra: cada função tenta a RPC e, se a função ainda não
+// existe no banco (404 — antes de rodar o SQL Parte 1), cai no método REST antigo.
+// Depois da Parte 2 (RLS on) a RPC sempre existe → o fallback nunca dispara.
+//
+// Schema esperado (docs/security-tenants-lockdown.sql tem o completo):
+//   tenants ( id text pk, access_token text unique, name, segment, plan,
+//             brand_color, brand_soft, equipment_catalog jsonb, modules jsonb,
+//             stores jsonb, setup_pin_hash text, setup_pin_used_at timestamptz,
+//             setup_pin_attempts int, setup_pin_locked_until timestamptz,
+//             admin_email, admin_name, trial_ends_at, created_at, updated_at );
 
 const SB_URL = import.meta.env.VITE_SB_URL || '';
 const SB_KEY = import.meta.env.VITE_SB_ANON_KEY || '';
@@ -42,41 +42,46 @@ export function isTenantSyncEnabled() {
   return Boolean(SB_URL && SB_KEY);
 }
 
-// Upsert tenant — chamado quando admin cria/edita cliente no /admin.
-// O tenant é a representação operacional (metadata + setup pin hash).
-// Não inclui PINs em plain nem o admin owner — esses ficam só no device do
-// cliente após o setup.
+// Chama uma função RPC. Devolve o Response cru pra quem chama decidir fallback.
+async function sbRpc(fn, args) {
+  return fetch(`${sbBase()}/rpc/${fn}`, {
+    method: 'POST',
+    headers: sbHeaders(),
+    body: JSON.stringify(args ?? {}),
+  });
+}
+
+// 404 = função não existe ainda (antes de rodar o SQL Parte 1) → fallback seguro
+// pro método REST antigo. Qualquer outro status é erro real (não mascarar).
+function rpcMissing(res) {
+  return res.status === 404;
+}
+
+// Upsert tenant — chamado quando admin cria/edita cliente no /admin (e quando o
+// Super Admin muda o plano). Vai pela RPC upsert_tenant; fallback REST direto.
 export async function pushTenant(tenant) {
   if (!isTenantSyncEnabled()) {
     console.debug('[tenant-sync] push skip — Supabase env vars ausentes');
     return { ok: false, reason: 'no-supabase' };
   }
-  const row = {
-    id: tenant.id,
-    access_token: tenant.accessToken,
-    name: tenant.name,
-    segment: tenant.segment,
-    plan: tenant.plan,
-    brand_color: tenant.brandColor,
-    brand_soft: tenant.brandSoft,
-    equipment_catalog: tenant.equipmentCatalog ?? [],
-    modules: tenant.modules ?? [],
-    stores: tenant.stores ?? [],
-    setup_pin_hash: tenant.setupPinHash,
-    admin_email: tenant.adminEmail ?? null,
-    admin_name: tenant.adminName ?? null,
-    trial_ends_at: tenant.trialEndsAt ?? null,
-    updated_at: new Date().toISOString(),
-  };
-  // Em edições subsequentes não sobrescrevemos o hash nem o estado de
-  // consumo do setup pin — só os metadados.
-  if (!tenant.setupPinHash) delete row.setup_pin_hash;
   try {
-    const res = await fetch(`${sbBase()}/tenants`, {
-      method: 'POST',
-      headers: sbHeaders('resolution=merge-duplicates,return=minimal'),
-      body: JSON.stringify(row),
+    const res = await sbRpc('upsert_tenant', {
+      p_id: tenant.id,
+      p_access_token: tenant.accessToken,
+      p_name: tenant.name ?? null,
+      p_segment: tenant.segment ?? null,
+      p_plan: tenant.plan ?? null,
+      p_brand_color: tenant.brandColor ?? null,
+      p_brand_soft: tenant.brandSoft ?? null,
+      p_equipment_catalog: tenant.equipmentCatalog ?? [],
+      p_modules: tenant.modules ?? [],
+      p_stores: tenant.stores ?? [],
+      p_setup_pin_hash: tenant.setupPinHash ?? null, // null = não sobrescreve (a RPC faz coalesce)
+      p_admin_email: tenant.adminEmail ?? null,
+      p_admin_name: tenant.adminName ?? null,
+      p_trial_ends_at: tenant.trialEndsAt ?? null,
     });
+    if (rpcMissing(res)) return pushTenantDirect(tenant);
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
       throw new Error(`${res.status} ${txt}`);
@@ -89,19 +94,20 @@ export async function pushTenant(tenant) {
 }
 
 // Busca um tenant pelo access_token — chamado por main.jsx quando o cliente
-// abre `?token=`.
+// abre `?token=`. Via RPC get_tenant_by_token (NÃO devolve o access_token — o
+// cliente já o tem na URL). Fallback REST direto se a RPC ainda não existe.
 export async function fetchTenantByToken(token) {
   if (!isTenantSyncEnabled()) return { ok: false, reason: 'no-supabase' };
   if (!token) return { ok: false, reason: 'no-token' };
   try {
-    const res = await fetch(
-      `${sbBase()}/tenants?access_token=eq.${encodeURIComponent(token)}&limit=1`,
-      { headers: sbHeaders() },
-    );
+    const res = await sbRpc('get_tenant_by_token', { p_token: token });
+    if (rpcMissing(res)) return fetchTenantByTokenDirect(token);
     if (!res.ok) throw new Error(`${res.status}`);
     const rows = await res.json();
-    if (!rows.length) return { ok: false, reason: 'not-found' };
-    return { ok: true, tenant: rowToTenant(rows[0]), raw: rows[0] };
+    if (!rows || !rows.length) return { ok: false, reason: 'not-found' };
+    // Reata o access_token (a RPC não devolve por segurança) — o cliente já o tem.
+    const row = { ...rows[0], access_token: token };
+    return { ok: true, tenant: rowToTenant(row), raw: row };
   } catch (e) {
     console.warn('[tenant-sync] fetch failed:', e.message);
     return { ok: false, reason: e.message };
@@ -133,23 +139,12 @@ function rowToTenant(row) {
 }
 
 // Marca o setup PIN como consumido. Chamado após o cliente acertar o PIN e
-// criar o PIN definitivo. Idempotente — se já foi consumido, devolve ok.
+// criar o PIN definitivo. Idempotente. Via RPC mark_setup_consumed; fallback REST.
 export async function markSetupConsumed(tenantId) {
   if (!isTenantSyncEnabled()) return { ok: false, reason: 'no-supabase' };
   try {
-    const res = await fetch(
-      `${sbBase()}/tenants?id=eq.${encodeURIComponent(tenantId)}`,
-      {
-        method: 'PATCH',
-        headers: sbHeaders('return=minimal'),
-        body: JSON.stringify({
-          setup_pin_used_at: new Date().toISOString(),
-          setup_pin_attempts: 0,
-          setup_pin_locked_until: null,
-          updated_at: new Date().toISOString(),
-        }),
-      },
-    );
+    const res = await sbRpc('mark_setup_consumed', { p_tenant_id: tenantId });
+    if (rpcMissing(res)) return markSetupConsumedDirect(tenantId);
     if (!res.ok) throw new Error(`${res.status}`);
     return { ok: true };
   } catch (e) {
@@ -158,46 +153,118 @@ export async function markSetupConsumed(tenantId) {
   }
 }
 
-// Incrementa contador de tentativas erradas. Devolve novo estado (incluindo
-// lockedUntil quando aplicar). Server-side é mais seguro que só localStorage.
+// Incrementa contador de tentativas erradas do setup PIN (server-side, mais
+// seguro que só localStorage). Via RPC bump_setup_attempts; fallback REST.
 export async function bumpSetupAttempts(tenantId, { maxBeforeLock = 3, lockMinutes = 15 } = {}) {
   if (!isTenantSyncEnabled()) return { ok: false, reason: 'no-supabase' };
   try {
-    // Lê o estado atual
-    const fetchRes = await fetch(
-      `${sbBase()}/tenants?id=eq.${encodeURIComponent(tenantId)}&select=setup_pin_attempts,setup_pin_locked_until&limit=1`,
-      { headers: sbHeaders() },
-    );
-    if (!fetchRes.ok) throw new Error(`fetch ${fetchRes.status}`);
-    const rows = await fetchRes.json();
-    if (!rows.length) return { ok: false, reason: 'not-found' };
-
-    const prevAttempts = rows[0].setup_pin_attempts ?? 0;
-    const nextAttempts = prevAttempts + 1;
-    const shouldLock = nextAttempts >= maxBeforeLock;
-    const lockedUntil = shouldLock
-      ? new Date(Date.now() + lockMinutes * 60_000).toISOString()
-      : rows[0].setup_pin_locked_until ?? null;
-
-    const patch = {
-      setup_pin_attempts: nextAttempts,
-      setup_pin_locked_until: lockedUntil,
-      updated_at: new Date().toISOString(),
-    };
-
-    const patchRes = await fetch(
-      `${sbBase()}/tenants?id=eq.${encodeURIComponent(tenantId)}`,
-      {
-        method: 'PATCH',
-        headers: sbHeaders('return=minimal'),
-        body: JSON.stringify(patch),
-      },
-    );
-    if (!patchRes.ok) throw new Error(`patch ${patchRes.status}`);
-
-    return { ok: true, attempts: nextAttempts, lockedUntil };
+    const res = await sbRpc('bump_setup_attempts', {
+      p_tenant_id: tenantId, p_max: maxBeforeLock, p_lock_minutes: lockMinutes,
+    });
+    if (rpcMissing(res)) return bumpSetupAttemptsDirect(tenantId, { maxBeforeLock, lockMinutes });
+    if (!res.ok) throw new Error(`${res.status}`);
+    const rows = await res.json();
+    const r = (rows && rows[0]) || {};
+    if (r.attempts == null) return { ok: false, reason: 'not-found' };
+    return { ok: true, attempts: r.attempts, lockedUntil: r.locked_until ?? null };
   } catch (e) {
     console.warn('[tenant-sync] bumpSetupAttempts failed:', e.message);
     return { ok: false, reason: e.message };
   }
+}
+
+// ─── Fallbacks REST diretos (usados só enquanto as RPCs não existem no banco,
+// i.e. antes de rodar o SQL Parte 1). Depois da Parte 2 (RLS on) a tabela fica
+// deny-all e estes caminhos param de ser alcançados — a RPC sempre existe. ──────
+
+async function pushTenantDirect(tenant) {
+  const row = {
+    id: tenant.id,
+    access_token: tenant.accessToken,
+    name: tenant.name,
+    segment: tenant.segment,
+    plan: tenant.plan,
+    brand_color: tenant.brandColor,
+    brand_soft: tenant.brandSoft,
+    equipment_catalog: tenant.equipmentCatalog ?? [],
+    modules: tenant.modules ?? [],
+    stores: tenant.stores ?? [],
+    setup_pin_hash: tenant.setupPinHash,
+    admin_email: tenant.adminEmail ?? null,
+    admin_name: tenant.adminName ?? null,
+    trial_ends_at: tenant.trialEndsAt ?? null,
+    updated_at: new Date().toISOString(),
+  };
+  if (!tenant.setupPinHash) delete row.setup_pin_hash;
+  const res = await fetch(`${sbBase()}/tenants`, {
+    method: 'POST',
+    headers: sbHeaders('resolution=merge-duplicates,return=minimal'),
+    body: JSON.stringify(row),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`${res.status} ${txt}`);
+  }
+  return { ok: true };
+}
+
+async function fetchTenantByTokenDirect(token) {
+  const res = await fetch(
+    `${sbBase()}/tenants?access_token=eq.${encodeURIComponent(token)}&limit=1`,
+    { headers: sbHeaders() },
+  );
+  if (!res.ok) throw new Error(`${res.status}`);
+  const rows = await res.json();
+  if (!rows.length) return { ok: false, reason: 'not-found' };
+  return { ok: true, tenant: rowToTenant(rows[0]), raw: rows[0] };
+}
+
+async function markSetupConsumedDirect(tenantId) {
+  const res = await fetch(
+    `${sbBase()}/tenants?id=eq.${encodeURIComponent(tenantId)}`,
+    {
+      method: 'PATCH',
+      headers: sbHeaders('return=minimal'),
+      body: JSON.stringify({
+        setup_pin_used_at: new Date().toISOString(),
+        setup_pin_attempts: 0,
+        setup_pin_locked_until: null,
+        updated_at: new Date().toISOString(),
+      }),
+    },
+  );
+  if (!res.ok) throw new Error(`${res.status}`);
+  return { ok: true };
+}
+
+async function bumpSetupAttemptsDirect(tenantId, { maxBeforeLock = 3, lockMinutes = 15 } = {}) {
+  const fetchRes = await fetch(
+    `${sbBase()}/tenants?id=eq.${encodeURIComponent(tenantId)}&select=setup_pin_attempts,setup_pin_locked_until&limit=1`,
+    { headers: sbHeaders() },
+  );
+  if (!fetchRes.ok) throw new Error(`fetch ${fetchRes.status}`);
+  const rows = await fetchRes.json();
+  if (!rows.length) return { ok: false, reason: 'not-found' };
+
+  const prevAttempts = rows[0].setup_pin_attempts ?? 0;
+  const nextAttempts = prevAttempts + 1;
+  const shouldLock = nextAttempts >= maxBeforeLock;
+  const lockedUntil = shouldLock
+    ? new Date(Date.now() + lockMinutes * 60_000).toISOString()
+    : rows[0].setup_pin_locked_until ?? null;
+
+  const patchRes = await fetch(
+    `${sbBase()}/tenants?id=eq.${encodeURIComponent(tenantId)}`,
+    {
+      method: 'PATCH',
+      headers: sbHeaders('return=minimal'),
+      body: JSON.stringify({
+        setup_pin_attempts: nextAttempts,
+        setup_pin_locked_until: lockedUntil,
+        updated_at: new Date().toISOString(),
+      }),
+    },
+  );
+  if (!patchRes.ok) throw new Error(`patch ${patchRes.status}`);
+  return { ok: true, attempts: nextAttempts, lockedUntil };
 }

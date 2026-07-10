@@ -927,11 +927,12 @@ alter table products             disable row level security;
 alter table stock_logs           disable row level security;
 alter table special_controls     disable row level security;
 
--- 7b. Tabela 'tenants' (espelho do /admin, lida por tenant-sync.js no boot via
--- anon key pro fluxo ?token=). PROPOSITALMENTE fora das 8 policies e RLS OFF —
--- é lida antes de qualquer login/JWT existir. NÃO ligar RLS nela sem repensar o
--- onboarding por link, senão o ?token= quebra.
-alter table tenants disable row level security;
+-- 7b. Tabela 'tenants' (espelho do /admin). ATENÇÃO: o acesso anon a ela foi
+-- migrado pra funções RPC security-definer + RLS deny-all — ver
+-- docs/security-tenants-lockdown.sql (fecha o alerta do Advisor de access_token/
+-- setup_pin_hash expostos). NÃO deixar mais RLS off aqui: o disable abaixo é
+-- legado; a fonte de verdade agora é o arquivo de lockdown.
+-- alter table tenants disable row level security;  -- (revogado pelo lockdown)
 
 -- 8. Policies RLS por tenant — PREPARADAS mas SEM EFEITO (RLS off acima).
 -- Fase 0 do épico Auth+RLS (docs/AUTH_RLS_PLAN.md): escreve e testa as

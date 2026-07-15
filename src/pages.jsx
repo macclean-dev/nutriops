@@ -2068,6 +2068,11 @@ export function App() {
   };
 
   const perms = getPermissions(session?.user?.role);
+  // Isolamento: só o admin GLOBAL (sem tenantId) vê/carrega/troca TODAS as
+  // empresas. Um usuário preso a um tenant (admin de cliente OU equipe de loja)
+  // vê só a própria — senão um Administrador de cliente enxergava as lojas-seed
+  // embutidas no build (vazamento cross-tenant client-side).
+  const seesAllTenants = isGlobalAdmin(session);
 
   const [activeTenantId, setActiveTenantId] = useState(() => session?.tenantId ?? tenants[0].id);
   const [activeStoreId, setActiveStoreId]   = useState(() => session?.storeId ?? null);
@@ -2098,17 +2103,17 @@ export function App() {
   }, [activeTenant, activeStoreId]);
 
   const visibleTenants = useMemo(() => {
-    if (perms.multiTenant) return tenants;
+    if (seesAllTenants) return tenants;
     const own = activeTenants.filter((t) => t.id === session?.tenantId);
     return own.length > 0 ? own : [activeTenant];
-  }, [perms.multiTenant, session?.tenantId, activeTenant]);
+  }, [seesAllTenants, session?.tenantId, activeTenant, activeTenants]);
 
   const handleTenantChange = useCallback((id) => {
-    if (!perms.multiTenant) return;
+    if (!seesAllTenants) return;
     setActiveTenantId(id);
     const t = activeTenants.find(x => x.id === id);
     setActiveStoreId(t?.stores?.[0]?.id ?? null);
-  }, [perms.multiTenant]);
+  }, [seesAllTenants]);
 
   const handleStoreChange = useCallback((storeId) => {
     setActiveStoreId(storeId);
@@ -2118,8 +2123,8 @@ export function App() {
   // Empresas que o usuário pode COMUTAR (distinto de multiTenant, que é ver
   // dados agregados). Supervisor/RT/Admin podem trocar; Colaborador não.
   const switchableTenants = useMemo(
-    () => (perms.canSwitchTenant ? tenants : []),
-    [perms.canSwitchTenant]
+    () => (seesAllTenants ? tenants : []),
+    [seesAllTenants]
   );
   const [switchTarget, setSwitchTarget] = useState(null);
 
@@ -2127,10 +2132,10 @@ export function App() {
     if (id === activeTenantId) return;
     // RT/Admin já têm acesso agregado autorizado → troca instantânea (sem atrito).
     // Supervisora (sem multiTenant) → relogin com PIN da empresa-alvo.
-    if (perms.multiTenant) { handleTenantChange(id); return; }
+    if (seesAllTenants) { handleTenantChange(id); return; }
     const t = tenants.find(x => x.id === id);
     if (t) setSwitchTarget(t);
-  }, [activeTenantId, perms.multiTenant, handleTenantChange]);
+  }, [activeTenantId, seesAllTenants, handleTenantChange]);
 
   const handleSwitchSuccess = useCallback((newSession) => {
     setSwitchTarget(null);
@@ -2189,19 +2194,19 @@ export function App() {
   }, [session, handleLogin, handleLogout]);
 
   useEffect(() => {
-    if (session?.tenantId && !perms.multiTenant) {
+    if (session?.tenantId && !seesAllTenants) {
       setActiveTenantId(session.tenantId);
       // Lock collaborator to their store
       if (session?.user?.storeId) setActiveStoreId(session.user.storeId);
     }
-  }, [session?.tenantId, session?.user?.storeId, perms.multiTenant]);
+  }, [session?.tenantId, session?.user?.storeId, seesAllTenants]);
 
   const refreshRecords = useCallback(async () => {
     // Load records for all companies (RT/Admin) or just own company
-    const tenantsToLoad = perms.multiTenant ? tenants : [activeTenant];
+    const tenantsToLoad = seesAllTenants ? tenants : [activeTenant];
     const all = await Promise.all(tenantsToLoad.map(async (t) => { const items = await repository.list({ tenantId: t.id, days: 90 }); return items.map((r) => ({ ...r, tenantName: r.tenantName ?? t.name })); }));
     setRecords(all.flat().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
-  }, [repository, perms.multiTenant, activeTenant]);
+  }, [repository, seesAllTenants, activeTenant]);
 
   useEffect(() => { refreshRecords(); }, [refreshRecords]);
 

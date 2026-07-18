@@ -45,6 +45,18 @@ update auth.users
        || jsonb_build_object('role', 'device', 'tenant_id', 'dbk-producao')
  where email = 'device-dbk@nutriops.internal';
 
+-- Admin GLOBAL: app_metadata.role='admin' (o RPC de health do /admin gate por
+-- isso — não-forjável). Targeta a(s) conta(s) admin global. CONFIRME antes com o
+-- SELECT abaixo pra não marcar a conta errada:
+--   select email, raw_user_meta_data->>'role' as role, raw_user_meta_data->>'tenantId' as tenant
+--   from auth.users where email not like 'device-%@nutriops.internal';
+update auth.users
+   set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb)
+       || jsonb_build_object('role', 'admin')
+ where coalesce(raw_user_meta_data->>'role','') in ('Administrador','Super-admin')
+   and coalesce(raw_user_meta_data->>'tenantId','') = ''
+   and email not like 'device-%@nutriops.internal';
+
 -- Conferência (deve listar as 3 com tenant_id certo):
 --   select email, raw_app_meta_data->>'role' as role, raw_app_meta_data->>'tenant_id' as tenant
 --   from auth.users where email like 'device-%@nutriops.internal';
@@ -121,6 +133,33 @@ drop policy if exists tenant_isolation on public.special_controls;
 create policy tenant_isolation on public.special_controls for all
   using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
   with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PARTE B2 — RPC de health do /admin (cross-tenant, gated por admin JWT).
+-- Sob RLS, o admin NÃO tem bypass nas policies (removido de propósito), então o
+-- painel /admin lê os registros recentes de TODOS os tenants por este RPC
+-- security-definer, que só responde a quem tem app_metadata.role='admin'. Sem
+-- isso, o HealthView voltaria 0 linhas. Idempotente.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+drop function if exists public.admin_recent_temperature_records(timestamptz);
+create function public.admin_recent_temperature_records(p_since timestamptz)
+returns setof public.temperature_records
+language sql
+security definer
+set search_path = ''
+as $$
+  select *
+    from public.temperature_records
+   where created_at >= p_since
+     and coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'admin'
+   order by created_at desc
+   limit 5000;
+$$;
+
+-- Só usuários logados podem chamar; o WHERE acima restringe a admins de verdade.
+grant execute on function public.admin_recent_temperature_records(timestamptz) to authenticated;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────

@@ -75,7 +75,7 @@ produção, configura em Vercel → Project → Settings → Environment Variabl
 
 | Variável | Onde é usada | Default |
 |----------|--------------|---------|
-| `VITE_ADMIN_PASSWORD` | Senha do `/admin` | `nutriops@admin2026` (fallback, com warning no console) |
+| `VITE_ADMIN_PASSWORD` | Senha do `/admin` **só em DEV** (build sem env do Supabase). Em PROD o `/admin` migrou pra **Supabase Auth** (v1.9.37): login com o e-mail/senha do admin global → JWT → gate `isGlobalAdmin`. Fecha o backdoor. | `nutriops@admin2026` (fallback dev) |
 | `VITE_SB_URL` | URL do projeto Supabase compartilhado pelos tenants seed | vazio (modo local por device) |
 | `VITE_SB_ANON_KEY` | Anon key pública desse projeto Supabase | vazio (modo local por device) |
 

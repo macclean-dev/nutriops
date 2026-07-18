@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { getAllUsageStats } from './repository';
+import { getAllUsageStats, saveSupabaseConfig, isSupabaseEnabled } from './repository';
+import { isGlobalAdmin } from './permissions';
 import { BrandLockup, APP_VERSION } from './brand';
 import { readClients, writeClients, readAdminAuth, writeAdminAuth, clearAdminAuth } from './admin-storage';
 import { sendWelcomeEmail, sendAccessGrantedEmail } from './email';
@@ -57,19 +58,57 @@ if (!ENV_PASSWORD && import.meta.env.PROD) {
   console.warn('[NutriOPS] VITE_ADMIN_PASSWORD ausente no build — /admin usando fallback público. Configure a env var no Vercel (Production).');
 }
 
-export function AdminLogin({ onLogin }) {
-  const [pw, setPw]     = useState('');
-  const [error, setError] = useState('');
+// Build de PROD (com env do Supabase) → login real via Supabase Auth, só admin
+// global entra (fecha o backdoor da VITE_ADMIN_PASSWORD). Build sem env (dev
+// local) → fallback de senha, pra não travar o desenvolvimento.
+const BUILD_HAS_SUPABASE = Boolean(import.meta.env.VITE_SB_URL && import.meta.env.VITE_SB_ANON_KEY);
 
-  const handle = () => {
+export function AdminLogin({ onLogin }) {
+  const [email, setEmail] = useState('');
+  const [pw, setPw]       = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy]   = useState(false);
+
+  const handle = async () => {
+    setError('');
+    if (BUILD_HAS_SUPABASE) {
+      setBusy(true);
+      try {
+        // O /admin pode ser aberto num browser que nunca usou o app →
+        // getSupabaseConfig vazio. Semeia a config do env de build antes do login.
+        if (!isSupabaseEnabled()) {
+          saveSupabaseConfig({
+            url: import.meta.env.VITE_SB_URL, anonKey: import.meta.env.VITE_SB_ANON_KEY,
+            enabled: true, source: 'tenant', syncedAt: new Date().toISOString(),
+          });
+        }
+        const auth = await import('./auth');
+        const session = await auth.signIn({ email: email.trim(), password: pw });
+        // Só o admin GLOBAL (sem tenantId) entra no painel — não um admin de loja.
+        if (!isGlobalAdmin(session)) {
+          await auth.signOut();
+          setError('Esta conta não tem permissão de admin global.');
+          setBusy(false);
+          return;
+        }
+        writeAdminAuth({ loggedIn: true, at: new Date().toISOString(), email: session?.user?.email ?? null });
+        onLogin();
+      } catch (e) {
+        setError(e?.message ?? 'Falha no login.');
+      }
+      setBusy(false);
+      return;
+    }
+    // DEV (sem Supabase no build) — fallback de senha
     if (pw === ADMIN_PASSWORD) {
-      const auth = { loggedIn:true, at:new Date().toISOString() };
-      writeAdminAuth(auth);
+      writeAdminAuth({ loggedIn: true, at: new Date().toISOString() });
       onLogin();
     } else {
       setError('Senha incorreta.');
     }
   };
+
+  const inputStyle = { background:'rgba(255,255,255,.05)', border:'1px solid rgba(255,255,255,.1)', borderRadius:8, color:'#f4f7f6', padding:'9px 12px', fontFamily:'inherit', fontSize:14, outline:'none' };
 
   return (
     <div style={{ minHeight:'100vh', display:'grid', placeItems:'center', background:'#00543b', padding:24 }}>
@@ -81,18 +120,28 @@ export function AdminLogin({ onLogin }) {
           </div>
         </div>
         <h2 style={{ fontSize:20, fontWeight:700, color:'#f4f7f6', marginBottom:6, fontFamily:'var(--serif)' }}>Painel administrativo</h2>
-        <p style={{ fontSize:13, color:'#a8b3bc', marginBottom:24 }}>Acesso restrito à equipe NutriOPS.</p>
+        <p style={{ fontSize:13, color:'#a8b3bc', marginBottom:24 }}>
+          {BUILD_HAS_SUPABASE ? 'Entre com a conta de administrador global (e-mail e senha).' : 'Acesso restrito à equipe NutriOPS.'}
+        </p>
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+          {BUILD_HAS_SUPABASE && (
+            <label style={{ fontSize:12, fontWeight:600, color:'#a8b3bc', display:'flex', flexDirection:'column', gap:5 }}>
+              E-mail
+              <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+                onKeyDown={e=>{ if(e.key==='Enter') handle(); }} placeholder="admin@nutriops" autoFocus
+                style={inputStyle} />
+            </label>
+          )}
           <label style={{ fontSize:12, fontWeight:600, color:'#a8b3bc', display:'flex', flexDirection:'column', gap:5 }}>
-            Senha de acesso
+            {BUILD_HAS_SUPABASE ? 'Senha' : 'Senha de acesso'}
             <input type="password" value={pw} onChange={e=>setPw(e.target.value)}
               onKeyDown={e=>{ if(e.key==='Enter') handle(); }}
               placeholder="••••••••"
-              style={{ background:'rgba(255,255,255,.05)', border:'1px solid rgba(255,255,255,.1)', borderRadius:8, color:'#f4f7f6', padding:'9px 12px', fontFamily:'inherit', fontSize:14, outline:'none' }} />
+              style={inputStyle} />
           </label>
           {error && <div style={{ color:'#e85d52', fontSize:13 }}>{error}</div>}
-          <button onClick={handle} style={{ padding:'10px', background:'var(--primary,#00684a)', color:'white', border:'none', borderRadius:8, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
-            Entrar
+          <button onClick={handle} disabled={busy} style={{ padding:'10px', background:'var(--primary,#00684a)', color:'white', border:'none', borderRadius:8, fontSize:14, fontWeight:600, cursor: busy?'wait':'pointer', opacity: busy?0.7:1, fontFamily:'inherit' }}>
+            {busy ? 'Entrando…' : 'Entrar'}
           </button>
         </div>
       </div>
@@ -587,6 +636,32 @@ async function fetchSupabase(table, query = '') {
   return res.json();
 }
 
+// HealthView cross-tenant sob RLS: o admin NÃO tem bypass nas policies, então lê
+// os registros recentes de todos os tenants por um RPC security-definer (gated
+// por app_metadata.role='admin'), usando o JWT do admin logado. Fallback pro
+// fetch direto (anon) enquanto o RPC não existe / RLS off — rollout sem quebra.
+async function fetchAdminRecentTemps(sinceIso) {
+  try {
+    const { getValidAccessToken } = await import('./auth');
+    const token = await getValidAccessToken();
+    if (token) {
+      const res = await fetch(`${SB_URL.replace(/\/$/, '')}/rest/v1/rpc/admin_recent_temperature_records`, {
+        method: 'POST',
+        headers: { apikey: SB_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_since: sinceIso }),
+      });
+      if (res.status !== 404) { // 404 = RPC ainda não criado → cai no fallback
+        if (!res.ok) throw new Error(`${res.status} ${await res.text().catch(() => '')}`);
+        return res.json();
+      }
+    }
+  } catch (e) {
+    console.debug('[admin] RPC health indisponível, tentando fetch direto:', e?.message ?? e);
+  }
+  // Fallback: fetch direto (anon) — só funciona com RLS off
+  return fetchSupabase('temperature_records', `created_at=gte.${sinceIso}&order=created_at.desc&limit=5000`);
+}
+
 // ─── Alertas operacionais ──────────────────────────────────────────────────
 
 const SEVERITY_RANK = { danger: 0, warn: 1, info: 2 };
@@ -1037,8 +1112,7 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
         // Pull últimos 30 dias pra alimentar tanto métricas 7d quanto sparkline 30d.
         // Limit 5000 cobre 3 tenants com até ~50 leituras/dia.
         const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
-        const data = await fetchSupabase('temperature_records',
-          `created_at=gte.${thirtyDaysAgo}&order=created_at.desc&limit=5000`);
+        const data = await fetchAdminRecentTemps(thirtyDaysAgo);
         if (!cancelled) setRecords(data);
       } catch (e) {
         if (!cancelled) setError(e.message);

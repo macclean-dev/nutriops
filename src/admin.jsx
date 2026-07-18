@@ -1355,6 +1355,21 @@ export function AdminPanel({ onExit }) {
 
   useEffect(() => { writeClients(clients); }, [clients]);
 
+  // Hidrata a lista da fonte da verdade (Supabase) no load — clientes criados
+  // noutro device passam a aparecer aqui. Dev-safe: sem token/RPC → mantém local.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { fetchAllTenantsFromCloud, mergeCloudTenants } = await import('./tenant-sync');
+        const cloud = await fetchAllTenantsFromCloud();
+        if (cancelled || !cloud.length) return;
+        setClients(prev => mergeCloudTenants(prev, cloud));
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const saveClient = (client) => {
     setClients(prev => prev.find(c=>c.id===client.id)
       ? prev.map(c=>c.id===client.id?client:c)

@@ -262,6 +262,21 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
     writeClients(next);
   };
 
+  // Hidrata a lista da fonte da verdade (Supabase) no load — vê clientes criados
+  // em qualquer device. Dev-safe: sem token/RPC → mantém local.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { fetchAllTenantsFromCloud, mergeCloudTenants } = await import('./tenant-sync');
+        const cloud = await fetchAllTenantsFromCloud();
+        if (cancelled || !cloud.length) return;
+        persistClients(mergeCloudTenants(readClients(), cloud));
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   // Cadastro de novo cliente — reusa o ClientModal do /admin (gera token + setup
   // PIN + push pro Supabase). Aqui só persiste + audita e, ao fechar o form,
   // abre o modal com o link ?token= pra enviar ao cliente.

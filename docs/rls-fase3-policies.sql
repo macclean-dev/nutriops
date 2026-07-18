@@ -161,6 +161,24 @@ $$;
 -- Só usuários logados podem chamar; o WHERE acima restringe a admins de verdade.
 grant execute on function public.admin_recent_temperature_records(timestamptz) to authenticated;
 
+-- admin_list_tenants: lista TODOS os tenants pro painel /admin e Super Admin
+-- (fonte da verdade = Supabase, não o localStorage por-device). Gated por
+-- app_metadata.role='admin'. Devolve o access_token/hash pro admin (dono) montar
+-- o link + ver estado do setup. Idempotente.
+drop function if exists public.admin_list_tenants();
+create function public.admin_list_tenants()
+returns setof public.tenants
+language sql
+security definer
+set search_path = ''
+as $$
+  select *
+    from public.tenants
+   where coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'admin'
+   order by created_at desc nulls last;
+$$;
+grant execute on function public.admin_list_tenants() to authenticated;
+
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- PARTE C — LIGAR RLS. ⚠️ PERIGOSA. UMA TABELA POR VEZ, monitorando 24h entre

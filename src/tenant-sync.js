@@ -173,6 +173,86 @@ export async function bumpSetupAttempts(tenantId, { maxBeforeLock = 3, lockMinut
   }
 }
 
+// ─── Lista de tenants do Supabase (fonte da verdade pro painel admin) ────────
+// O /admin e o Super Admin listavam clientes só do localStorage (por-device) →
+// um cliente criado noutro aparelho não aparecia. Aqui a lista vem do banco via
+// RPC admin_list_tenants (gated por app_metadata.role='admin', com o JWT do
+// admin). Dev-safe: sem token / RPC ausente / erro → devolve [] e o caller
+// mantém a lista local (não derruba o painel).
+export async function fetchAllTenantsFromCloud() {
+  if (!isTenantSyncEnabled()) return [];
+  try {
+    const { getValidAccessToken } = await import('./auth');
+    const token = await getValidAccessToken();
+    if (!token) return [];
+    const res = await fetch(`${sbBase()}/rpc/admin_list_tenants`, {
+      method: 'POST',
+      headers: { apikey: SB_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    if (!res.ok) return []; // 404 (RPC ausente) / 401 / etc → mantém local
+    const rows = await res.json();
+    return Array.isArray(rows) ? rows : [];
+  } catch { return []; }
+}
+
+function cloudRowToClient(row) {
+  return {
+    id: row.id,
+    name: row.name ?? '',
+    email: row.admin_email ?? '',
+    contact: row.admin_name ?? '',
+    plan: row.plan ?? 'trial',
+    segment: row.segment ?? '',
+    active: row.active ?? true, // `tenants` ainda não tem coluna active → default true (gap conhecido)
+    accessToken: row.access_token,
+    setupPinHash: row.setup_pin_hash ?? null,
+    setupPinUsedAt: row.setup_pin_used_at ?? null,
+    brandColor: row.brand_color ?? null,
+    brandSoft: row.brand_soft ?? null,
+    equipmentCatalog: row.equipment_catalog ?? [],
+    modules: row.modules ?? [],
+    stores: row.stores ?? [],
+    trialEndsAt: row.trial_ends_at ?? null,
+    createdAt: row.created_at ?? new Date().toISOString(),
+    updatedAt: row.updated_at ?? null,
+    _fromCloud: true,
+  };
+}
+
+// Merge: Supabase = fonte da verdade dos campos sincronizados; o local mantém os
+// campos que só existem no painel (phone/cnpj/notes/billing). Tenants da nuvem
+// que não existem local (criados noutro device) são ADICIONADOS. NÃO remove
+// locais ausentes na nuvem (evita perda de rascunho).
+export function mergeCloudTenants(localClients = [], cloudRows = []) {
+  const byId = new Map((localClients ?? []).map(c => [c.id, c]));
+  for (const row of (cloudRows ?? [])) {
+    if (!row?.id) continue;
+    const existing = byId.get(row.id);
+    if (existing) {
+      byId.set(row.id, {
+        ...existing,
+        name:             row.name ?? existing.name,
+        plan:             row.plan ?? existing.plan,
+        segment:          row.segment ?? existing.segment,
+        accessToken:      row.access_token ?? existing.accessToken,
+        setupPinHash:     row.setup_pin_hash ?? existing.setupPinHash,
+        setupPinUsedAt:   row.setup_pin_used_at ?? existing.setupPinUsedAt,
+        brandColor:       row.brand_color ?? existing.brandColor,
+        brandSoft:        row.brand_soft ?? existing.brandSoft,
+        equipmentCatalog: row.equipment_catalog ?? existing.equipmentCatalog,
+        modules:          row.modules ?? existing.modules,
+        stores:           row.stores ?? existing.stores,
+        trialEndsAt:      row.trial_ends_at ?? existing.trialEndsAt,
+        updatedAt:        row.updated_at ?? existing.updatedAt,
+      });
+    } else {
+      byId.set(row.id, cloudRowToClient(row));
+    }
+  }
+  return [...byId.values()];
+}
+
 // ─── Fallbacks REST diretos (usados só enquanto as RPCs não existem no banco,
 // i.e. antes de rodar o SQL Parte 1). Depois da Parte 2 (RLS on) a tabela fica
 // deny-all e estes caminhos param de ser alcançados — a RPC sempre existe. ──────

@@ -239,6 +239,7 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
   const [msg, setMsg]         = useState(null);
   const [search, setSearch]   = useState('');
   const [newClientOpen, setNewClientOpen] = useState(false); // form "Novo cliente"
+  const [editClient, setEditClient]       = useState(null);  // form "Editar" (inclui regerar PIN)
   const [tokenModal, setTokenModal]       = useState(null);  // modal do link ?token=
   const [createdClient, setCreatedClient] = useState(null);  // cliente recém-criado → abre o link ao fechar o form
 
@@ -295,6 +296,11 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
     setNewClientOpen(false);
     if (createdClient) { setTokenModal(createdClient); setCreatedClient(null); }
   };
+
+  // Editar cliente (inclui "Gerar novo PIN") + ver o link — reusa os mesmos
+  // modais do /admin. Pega o registro cru do client (com token/hash) pelo id.
+  const openEdit = (id) => { const c = (clients ?? []).find(x => x.id === id); if (c) setEditClient(c); };
+  const openLink = (id) => { const c = (clients ?? []).find(x => x.id === id); if (c) setTokenModal(c); };
 
   const bestEffortPush = async (tenantId) => {
     // Propaga plano pro Supabase (metadata). Best-effort — não bloqueia a UI.
@@ -397,8 +403,10 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
                     {t.createdAt ? new Date(t.createdAt).toLocaleDateString('pt-BR') : '—'}
                   </td>
                   <td style={{ padding:'10px 12px' }}>
-                    <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
+                    <div style={{ display:'flex', gap:6, justifyContent:'flex-end', flexWrap:'wrap' }}>
                       <button className="secondary-action" style={{ fontSize:11, padding:'4px 10px' }} onClick={() => onImpersonate?.(t)}>Entrar como</button>
+                      {t.source==='client' && <button className="ghost-action" style={{ fontSize:11, padding:'4px 10px' }} onClick={() => openEdit(t.id)}>Editar</button>}
+                      {t.source==='client' && <button className="ghost-action" style={{ fontSize:11, padding:'4px 10px' }} onClick={() => openLink(t.id)}>Link</button>}
                       <button className="ghost-action" style={{ fontSize:11, padding:'4px 10px' }} onClick={() => toggleActive(t)}>{t.active ? 'Suspender' : 'Reativar'}</button>
                     </div>
                   </td>
@@ -432,9 +440,13 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
         </div>
       </article>
 
-      {/* Novo cliente — reusa o form + o modal do link do /admin */}
+      {/* Novo cliente / Editar (inclui regerar PIN) — reusa o form do /admin.
+          O ClientModal já faz o push pro Supabase no save/regenerate. */}
       {newClientOpen && (
         <ClientModal client={null} onSave={saveNewClient} onClose={closeNewClient} />
+      )}
+      {editClient && (
+        <ClientModal client={editClient} onSave={saveClient} onClose={() => setEditClient(null)} />
       )}
       {tokenModal && (
         <AccessTokenModal

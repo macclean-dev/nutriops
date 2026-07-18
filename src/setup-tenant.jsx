@@ -327,6 +327,17 @@ export function SetupPinScreen({ tenant, onComplete }) {
             <div style={{ marginTop: 18, fontSize: 12, color: 'var(--text-secondary, #5c6c7a)', textAlign: 'center' }}>
               Não recebeu o PIN? <a href="mailto:contato@nutriops.com.br?subject=PIN de configuração NutriOPS" style={{ color: 'var(--primary, #00684a)', fontWeight: 600 }}>Fale com a equipe</a>
             </div>
+            {/* Escape: um device que abriu o link ?token= de um cliente fica preso
+                nessa tela. Isto limpa o contexto do token e volta pro login. */}
+            <div style={{ marginTop: 8, textAlign: 'center' }}>
+              <button type="button" onClick={() => {
+                ['nutriops.access.token', 'nutriops.access.clientId', 'nutriops.access.clientName', 'nutriops.onboarding.tenants']
+                  .forEach(k => { try { localStorage.removeItem(k); } catch {} });
+                window.location.href = '/';
+              }} style={{ background: 'none', border: 'none', color: 'var(--text-secondary, #5c6c7a)', fontSize: 12, textDecoration: 'underline', cursor: 'pointer', fontFamily: 'inherit' }}>
+                Não é você? Entrar com outra conta
+              </button>
+            </div>
           </div>
         )}
 

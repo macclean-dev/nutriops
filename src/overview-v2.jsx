@@ -822,10 +822,7 @@ export function OverviewV2(props) {
   const Dashboard = role === 'Colaborador' ? ColaboradorDashboard
                    : role === 'Nutricionista RT' ? RTDashboard
                    : SupervisorDashboard;
-  return (
-    <>
-      <BetaBar onBack={props.onBack} />
-      <Dashboard {...props} />
-    </>
-  );
+  // v2 é a Visão Geral padrão (não é mais beta) — sem a BetaBar promocional.
+  // props.onBack ainda existe (leva à v1 legada) caso queira reintroduzir um escape.
+  return <Dashboard {...props} />;
 }

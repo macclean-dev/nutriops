@@ -2493,9 +2493,12 @@ export function App() {
         <Suspense fallback={<ViewLoading />}>
           {/* Wrapper de entrada: remonta a cada troca de view (key) e replaya
               o fade-up. overview-v2 fica de fora — tem coreografia própria. */}
-          <div key={activeView} className={activeView === 'overview-v2' ? undefined : 'dash-in'}>
-          {activeView === 'overview'   && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} trialStatus={trialStatus} onTryV2={() => setActiveView('overview-v2')} />}
-          {activeView === 'overview-v2' && <OverviewV2 {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onLaunchKiosk={() => setShowKioskSetup(true)} onNavigate={setActiveView} onBack={() => setActiveView('overview')} />}
+          <div key={activeView} className={activeView === 'overview' ? undefined : 'dash-in'}>
+          {/* v2 é o padrão: 'overview' (default + todos os redirects/logout/exit) renderiza
+              a nova Visão Geral, que tem coreografia própria (fica fora do wrapper de fade-up).
+              A v1 fica dormente em 'overview-v2' pra rollback. */}
+          {activeView === 'overview'   && <OverviewV2 {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onLaunchKiosk={() => setShowKioskSetup(true)} onNavigate={setActiveView} onBack={() => setActiveView('overview-v2')} />}
+          {activeView === 'overview-v2' && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} trialStatus={trialStatus} onTryV2={() => setActiveView('overview')} />}
           {activeView === 'forms'      && <FormsView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
           {activeView === 'pops'       && <POPsView {...sharedProps} session={session} />}
           {activeView === 'training'   && <TrainingView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}

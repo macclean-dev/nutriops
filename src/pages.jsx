@@ -2491,6 +2491,9 @@ export function App() {
         <LocalModeBanner session={session} activeTenant={activeTenant} setActiveView={setActiveView} />
         <SupabaseAuthErrorBanner session={session} setActiveView={setActiveView} />
         <Suspense fallback={<ViewLoading />}>
+          {/* Wrapper de entrada: remonta a cada troca de view (key) e replaya
+              o fade-up. overview-v2 fica de fora — tem coreografia própria. */}
+          <div key={activeView} className={activeView === 'overview-v2' ? undefined : 'dash-in'}>
           {activeView === 'overview'   && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} trialStatus={trialStatus} onTryV2={() => setActiveView('overview-v2')} />}
           {activeView === 'overview-v2' && <OverviewV2 {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onLaunchKiosk={() => setShowKioskSetup(true)} onNavigate={setActiveView} onBack={() => setActiveView('overview')} />}
           {activeView === 'forms'      && <FormsView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
@@ -2536,6 +2539,7 @@ export function App() {
             ...CONTROLS_KEYS, ...REPORTS_KEYS, ...TEAM_KEYS,
             'alerts','actions','rtpanel','equipment','profile','maintenance','settings','superadmin',
           ].includes(activeView) && <NoPermission onBack={() => setActiveView('overview')} />}
+          </div>
         </Suspense>
       </main>
       <OfflineIndicator />

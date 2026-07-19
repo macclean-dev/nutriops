@@ -148,7 +148,7 @@ export function LoginScreen({ onLogin, activeTenants }) {
 
   return (
     <div className="login-screen">
-      <div className="login-card">
+      <div className="login-card dash-in">
         <div style={{ marginBottom:28 }}>
           <BrandLockup size="lg" theme="light" idPrefix="login" showSub={false} />
         </div>

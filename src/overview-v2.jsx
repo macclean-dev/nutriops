@@ -12,6 +12,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { resolveLimits, resolveTone } from './limits';
 import { EquipmentDetailModal, EquipmentChart, toneColor, toneBg } from './equipment-detail';
+import CountUp from './count-up';
 
 function fmtRelative(iso) {
   if (!iso) return '—';
@@ -72,15 +73,15 @@ function Sparkline({ data, limits, width = 220, height = 72 }) {
       {/* Faixa permitida (banda verde sutil) */}
       <rect x={pad} y={bandTop} width={cW} height={Math.max(0, bandBot - bandTop)}
         fill="var(--green-light)" rx={2} />
-      {/* Área sob a linha */}
-      <path d={areaPath} fill="var(--primary)" fillOpacity={0.06} />
-      {/* Linha */}
-      <path d={linePath} fill="none" stroke="var(--primary)" strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" />
-      {/* Último ponto destacado */}
+      {/* Área sob a linha — revela por fade depois que a linha se riscou */}
+      <path className="chart-area" d={areaPath} fill="var(--primary)" fillOpacity={0.06} />
+      {/* Linha sólida — se risca da esquerda pra direita (pathLength normaliza o dashoffset) */}
+      <path className="chart-line-draw" pathLength={1} d={linePath} fill="none" stroke="var(--primary)" strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" />
+      {/* Último ponto destacado — micro-pop no final da coreografia */}
       {points.length > 0 && (() => {
         const last = points[points.length - 1];
         const tone = resolveTone(last.value, limits.min, limits.max);
-        return <circle cx={last.x} cy={last.y} r={3.2} fill={toneColor(tone)} stroke="var(--surface)" strokeWidth={1.5} />;
+        return <circle className="chart-dot" cx={last.x} cy={last.y} r={3.2} fill={toneColor(tone)} stroke="var(--surface)" strokeWidth={1.5} />;
       })()}
     </svg>
   );
@@ -88,7 +89,7 @@ function Sparkline({ data, limits, width = 220, height = 72 }) {
 
 // ─── KPI grande (estilo Linear/Stripe) ────────────────────────────────────
 
-function MetricBig({ label, value, sub, tone = 'neutral', accent }) {
+function MetricBig({ label, value, sub, tone = 'neutral', accent, count = false }) {
   return (
     <div style={{
       flex:1, minWidth:140, padding:'18px 22px',
@@ -102,9 +103,9 @@ function MetricBig({ label, value, sub, tone = 'neutral', accent }) {
       }}>{label}</div>
       <div style={{
         fontFamily:'var(--serif)', fontSize:38, fontWeight:400, lineHeight:1,
-        letterSpacing:'-.02em',
+        letterSpacing:'-.02em', fontVariantNumeric:'tabular-nums',
         color: accent ?? (tone !== 'neutral' ? toneColor(tone) : 'var(--text)'),
-      }}>{value}</div>
+      }}>{count ? <CountUp text={String(value)} /> : value}</div>
       {sub && (
         <div style={{ fontSize:11, color:'var(--text-secondary)', marginTop:2 }}>{sub}</div>
       )}
@@ -121,6 +122,7 @@ function EquipmentCard({ equipment, history, onOpen }) {
 
   return (
     <button onClick={onOpen} style={{
+      flex:1, minWidth:0,
       padding:'20px 22px',
       background:'var(--surface)', border:'1px solid var(--border-subtle)',
       borderRadius:'var(--r-lg)',
@@ -281,6 +283,8 @@ function WeeklyHeatmap({ tenants, records, onCellClick }) {
               </td>
               {row.cells.map((c, j) => (
                 <td key={j} style={{ padding:0, textAlign:'center' }}>
+                  {/* Wrapper leva o pop de entrada; o hover do button usa transform */}
+                  <div className="heat-pop" style={{ animationDelay:`${(0.45 + i * 0.09 + j * 0.065).toFixed(3)}s`, display:'inline-block' }}>
                   <button onClick={() => onCellClick?.(row.tenant, row.equipment, c)}
                     title={`${c.count} leitura${c.count!==1?'s':''} · ${c.tone === 'empty' ? 'sem dados' : c.tone}`}
                     style={{
@@ -297,6 +301,7 @@ function WeeklyHeatmap({ tenants, records, onCellClick }) {
                   >
                     {c.count > 0 ? c.count : ''}
                   </button>
+                  </div>
                 </td>
               ))}
               <td style={{ textAlign:'right', padding:'4px 0 4px 12px', fontFamily:'var(--mono)', fontSize:12, color: row.total === 0 ? 'var(--text-placeholder)' : 'var(--text)' }}>
@@ -385,7 +390,7 @@ function ActivityTimeline({ records, limit = 12 }) {
 
 function Section({ title, subtitle, action, children }) {
   return (
-    <section style={{ display:'flex', flexDirection:'column', gap:14, marginTop:32 }}>
+    <section className="dash-in" style={{ display:'flex', flexDirection:'column', gap:14, marginTop:32, animationDelay:'.18s' }}>
       <header style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', gap:12 }}>
         <div>
           <h2 style={{
@@ -407,7 +412,7 @@ function Section({ title, subtitle, action, children }) {
 
 function HeroGreeting({ session, activeTenant, lastRecord, complianceToday }) {
   return (
-    <header style={{
+    <header className="dash-in" style={{
       display:'flex', flexDirection:'column', gap:8, marginBottom:24,
       paddingBottom:24, borderBottom:'1px solid var(--border-subtle)',
     }}>
@@ -478,8 +483,9 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
       <HeroGreeting session={session} activeTenant={activeTenant} lastRecord={lastRecord} complianceToday={complianceToday} />
 
       {/* Pulse — 3 KPIs grandes. Estado vazio é neutro (não alarmante). */}
-      <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
+      <div className="dash-stagger" style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
         <MetricBig
+          count
           label="Conformidade hoje"
           value={todayRecords.length === 0 ? '—' : `${complianceToday}%`}
           sub={todayRecords.length === 0
@@ -489,6 +495,7 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
             : complianceToday >= 80 ? 'ok'
             : complianceToday >= 50 ? 'warn' : 'danger'} />
         <MetricBig
+          count
           label="Alertas ativos"
           value={alertCount}
           sub={alertCount === 0 ? (todayRecords.length === 0 ? 'sem leituras hoje' : 'tudo dentro da faixa') : 'leituras fora/no limite'}
@@ -510,18 +517,21 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
             cursor:'pointer', fontFamily:'var(--font)',
           }}>Modo quiosque</button>
         }>
-        <div style={{
+        <div className="dash-stagger" style={{
           display:'grid',
           gridTemplateColumns:'repeat(auto-fit, minmax(340px, 1fr))',
           gap:12,
         }}>
+          {/* Wrapper por card: o hover do EquipmentCard usa transform — a
+              animação de entrada precisa viver no pai pra não brigar com ele */}
           {(equipmentCatalog || []).map(eq => (
-            <EquipmentCard
-              key={eq.label}
-              equipment={eq}
-              history={equipmentHistory.get(eq.label) ?? []}
-              onOpen={() => setDrillEq(eq)}
-            />
+            <div key={eq.label} style={{ display:'flex' }}>
+              <EquipmentCard
+                equipment={eq}
+                history={equipmentHistory.get(eq.label) ?? []}
+                onOpen={() => setDrillEq(eq)}
+              />
+            </div>
           ))}
         </div>
       </Section>
@@ -586,13 +596,15 @@ function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records
       <HeroGreeting session={session} activeTenant={activeTenant} lastRecord={lastRecord} />
 
       {/* Pulse focado no colaborador */}
-      <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
+      <div className="dash-stagger" style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
         <MetricBig
+          count
           label="Pendentes no turno"
           value={pending.length}
           sub={pending.length === 0 ? 'tudo registrado' : `de ${equipmentCatalog?.length || 0} equipamentos`}
           tone={pending.length === 0 ? 'ok' : 'warn'} />
         <MetricBig
+          count
           label="Suas leituras hoje"
           value={myToday.length}
           sub={myToday.length > 0 ? `última ${fmtRelative(myToday[0].createdAt)}` : 'comece registrando'} />
@@ -603,7 +615,7 @@ function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records
         <Section
           title="Registrar agora"
           subtitle="Toque no equipamento pra abrir a tela de captura">
-          <div style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
+          <div className="dash-stagger" style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
             {pending.map(eq => (
               <button key={eq.label} onClick={() => onNavigate?.('overview')} style={{
                 flex:'1 1 200px', padding:'18px 20px',
@@ -672,8 +684,9 @@ function RTDashboard({ session, allTenants, records, onNavigate }) {
       <HeroGreeting session={session} activeTenant={{ name: `${allTenants.length} unidade${allTenants.length>1?'s':''} sob responsabilidade` }} lastRecord={lastRecord} />
 
       {/* Pulse — visão semanal */}
-      <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
+      <div className="dash-stagger" style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
         <MetricBig
+          count
           label="Conformidade — 7 dias"
           value={stats.conformityPct != null ? `${stats.conformityPct}%` : '—'}
           sub={stats.total === 0 ? 'nenhuma leitura nos últimos 7 dias' : `${stats.byTone.ok} de ${stats.total} leituras dentro da faixa`}
@@ -681,11 +694,13 @@ function RTDashboard({ session, allTenants, records, onNavigate }) {
             : stats.conformityPct >= 90 ? 'ok'
             : stats.conformityPct >= 70 ? 'warn' : 'danger'} />
         <MetricBig
+          count
           label="Desvios leves"
           value={stats.byTone.warn}
           sub="leituras próximas dos limites"
           tone={stats.byTone.warn === 0 ? 'neutral' : 'warn'} />
         <MetricBig
+          count
           label="Não-conformes"
           value={stats.byTone.danger}
           sub="leituras fora da faixa"
@@ -694,7 +709,7 @@ function RTDashboard({ session, allTenants, records, onNavigate }) {
 
       {/* Distribuição por unidade */}
       <Section title="Distribuição por unidade" subtitle="Volume de leituras dos últimos 7 dias">
-        <div style={{ display:'flex', flexWrap:'wrap', gap:12 }}>
+        <div className="dash-stagger" style={{ display:'flex', flexWrap:'wrap', gap:12 }}>
           {allTenants.map(t => {
             const tRecs = recentRecords.filter(r => r.tenantId === t.id);
             const ok = tRecs.filter(r => {
@@ -717,8 +732,8 @@ function RTDashboard({ session, allTenants, records, onNavigate }) {
                 </div>
                 <div style={{ fontFamily:'var(--serif)', fontSize:20, color:'var(--text)' }}>{t.name}</div>
                 <div style={{ display:'flex', alignItems:'baseline', gap:8, marginTop:4 }}>
-                  <span style={{ fontFamily:'var(--serif)', fontSize:32, color: pct != null ? toneColor(pct >= 90 ? 'ok' : pct >= 70 ? 'warn' : 'danger') : 'var(--text-secondary)' }}>
-                    {pct != null ? `${pct}%` : '—'}
+                  <span style={{ fontFamily:'var(--serif)', fontSize:32, fontVariantNumeric:'tabular-nums', color: pct != null ? toneColor(pct >= 90 ? 'ok' : pct >= 70 ? 'warn' : 'danger') : 'var(--text-secondary)' }}>
+                    {pct != null ? <CountUp text={`${pct}%`} /> : '—'}
                   </span>
                   <span style={{ fontSize:12, color:'var(--text-secondary)' }}>conformidade</span>
                 </div>
@@ -780,7 +795,7 @@ function RTDashboard({ session, allTenants, records, onNavigate }) {
 
 function BetaBar({ onBack }) {
   return (
-    <div style={{
+    <div className="dash-in" style={{
       display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
       padding:'8px 14px', marginBottom:20,
       background:'rgba(0,163,92,.08)', border:'1px solid rgba(0,163,92,.25)',

@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useState, useMemo, useEffect } from 'react';
 import { getTemperatureRepository } from './repository';
 import { resolveLimits as resolveLimitsFromCatalog } from './limits';
+import CountUp from './count-up';
 
 const EquipmentDetailModal = lazy(() => import('./equipment-detail').then(m => ({ default: m.EquipmentDetailModal })));
 
@@ -68,8 +69,8 @@ function TempLineChart({ records, equipment, height = 180 }) {
         <line x1={0} y1={bandBot} x2={cW} y2={bandBot} stroke="#4ac26b" strokeDasharray="4 3" strokeWidth={1} opacity={.7} />
         <text x={cW + 4} y={bandTop} fontSize={9} fill="#1a7f37" dominantBaseline="middle">máx {limits.max}°</text>
         <text x={cW + 4} y={bandBot} fontSize={9} fill="#1a7f37" dominantBaseline="middle">mín {limits.min}°</text>
-        <path d={areaPath} fill="#1d4e89" fillOpacity={.06} />
-        <path d={linePath} fill="none" stroke="#1d4e89" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        <path className="chart-area" d={areaPath} fill="#1d4e89" fillOpacity={.06} />
+        <path className="chart-line-draw" pathLength={1} d={linePath} fill="none" stroke="#1d4e89" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
         {pts.map((p, i) => {
           const tone = resolveTemperatureTone(p.r);
           const color = tone === 'ok' ? '#1a7f37' : tone === 'warn' ? '#9a6700' : '#cf222e';
@@ -237,20 +238,20 @@ export function DashboardView({ allTenants, records, activeTenant, onTenantChang
       </div>
 
       {allTenants.length > 1 && (
-        <div className="audit-stats" style={{ marginBottom:20 }}>
+        <div className="audit-stats dash-stagger" style={{ marginBottom:20 }}>
           <div className="audit-stat" style={{ borderTop:`3px solid ${globalCompliance>=90?'var(--green)':globalCompliance>=70?'var(--amber)':'var(--red)'}` }}>
             <span>Conformidade global</span>
-            <strong style={{ color: globalCompliance>=90?'var(--green)':globalCompliance>=70?'var(--amber)':'var(--red)' }}>{globalCompliance}%</strong>
+            <strong style={{ color: globalCompliance>=90?'var(--green)':globalCompliance>=70?'var(--amber)':'var(--red)', fontVariantNumeric:'tabular-nums' }}><CountUp text={`${globalCompliance}%`} /></strong>
           </div>
-          <div className="audit-stat"><span>Total registros</span><strong>{consolidated.total}</strong></div>
-          <div className="audit-stat ok"><span>Conformes</span><strong>{consolidated.ok}</strong></div>
-          <div className="audit-stat warn"><span>Desvios</span><strong>{consolidated.warn}</strong></div>
-          <div className="audit-stat danger"><span>Críticos</span><strong>{consolidated.danger}</strong></div>
-          <div className="audit-stat"><span>Hoje (todas)</span><strong>{consolidated.today}</strong></div>
+          <div className="audit-stat"><span>Total registros</span><strong style={{ fontVariantNumeric:'tabular-nums' }}><CountUp text={String(consolidated.total)} /></strong></div>
+          <div className="audit-stat ok"><span>Conformes</span><strong style={{ fontVariantNumeric:'tabular-nums' }}><CountUp text={String(consolidated.ok)} /></strong></div>
+          <div className="audit-stat warn"><span>Desvios</span><strong style={{ fontVariantNumeric:'tabular-nums' }}><CountUp text={String(consolidated.warn)} /></strong></div>
+          <div className="audit-stat danger"><span>Críticos</span><strong style={{ fontVariantNumeric:'tabular-nums' }}><CountUp text={String(consolidated.danger)} /></strong></div>
+          <div className="audit-stat"><span>Hoje (todas)</span><strong style={{ fontVariantNumeric:'tabular-nums' }}><CountUp text={String(consolidated.today)} /></strong></div>
         </div>
       )}
 
-      <div className="dashboard-grid">
+      <div className="dashboard-grid fade-stagger">
         {stats.map(({ tenant, total, ok, warn, danger, compliance, today, equipStats, trend, trainingAlertCount, storeStats }) => (
           <article key={tenant.id} className={`dash-card ${activeTenant.id === tenant.id ? 'active' : ''}`}
             style={{ borderTopColor: tenant.brandColor }} onClick={() => onTenantChange(tenant.id)}>
@@ -265,7 +266,7 @@ export function DashboardView({ allTenants, records, activeTenant, onTenantChang
                 )}
               </div>
               <div className="dash-compliance">
-                <strong style={{ color: compliance>=90?'var(--green)':compliance>=70?'var(--amber)':'var(--red)' }}>{compliance}%</strong>
+                <strong style={{ color: compliance>=90?'var(--green)':compliance>=70?'var(--amber)':'var(--red)', fontVariantNumeric:'tabular-nums' }}><CountUp text={`${compliance}%`} /></strong>
                 <span>conformidade</span>
                 {trend !== null && (
                   <span style={{ fontSize:10, color: trend >= compliance ? 'var(--green)' : 'var(--red)', display:'block' }}>
@@ -390,12 +391,12 @@ export function ChartsView({ activeTenant, allTenants, onTenantChange, records }
             </div>
           </div>
           <div style={{ padding: '16px 20px' }}>
-            <TempLineChart records={tenantRecords} equipment={selectedEquipment} height={200} />
+            <TempLineChart key={selectedEquipment} records={tenantRecords} equipment={selectedEquipment} height={200} />
           </div>
         </div>
       )}
 
-      <div className="dashboard-grid" style={{ marginTop: 16 }}>
+      <div className="dashboard-grid fade-stagger" style={{ marginTop: 16 }}>
         {catalog.map((eq) => {
           const er = tenantRecords.filter((r) => (r.equipment || r.equipmentInput) === eq.label);
           const eOk = er.filter((r) => resolveTemperatureTone(r) === 'ok').length;
@@ -408,7 +409,7 @@ export function ChartsView({ activeTenant, allTenants, onTenantChange, records }
               <div className="dash-card-head">
                 <div><span className="eyebrow">Equipamento</span><h2>{eq.label}</h2></div>
                 <div className="dash-compliance">
-                  <strong style={{ color: pct === null ? 'var(--text-secondary)' : pct >= 90 ? 'var(--green)' : pct >= 70 ? 'var(--amber)' : 'var(--red)' }}>{pct !== null ? `${pct}%` : '—'}</strong>
+                  <strong style={{ color: pct === null ? 'var(--text-secondary)' : pct >= 90 ? 'var(--green)' : pct >= 70 ? 'var(--amber)' : 'var(--red)', fontVariantNumeric:'tabular-nums' }}>{pct !== null ? <CountUp text={`${pct}%`} /> : '—'}</strong>
                   <span>conformidade</span>
                 </div>
               </div>

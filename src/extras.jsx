@@ -3,6 +3,7 @@ import { readFormRecords, readFormTemplates, catMeta, formatPeriodLabel, getPeri
 import { readSessions } from './training';
 import { APP_VERSION } from './pages';
 import { buildCommands, matchCommands, readRecentCommandIds, pushRecentCommandId } from './commands';
+import CountUp from './count-up';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -93,23 +94,23 @@ export function RTPanelView({ allTenants, records, session }) {
       </div>
 
       {/* Global KPIs */}
-      <div className="audit-stats" style={{ marginBottom:20 }}>
+      <div className="audit-stats dash-stagger" style={{ marginBottom:20 }}>
         <div className={`audit-stat ${totalPending > 0 ? 'warn' : 'ok'}`}>
-          <span>Planilhas p/ validar</span><strong>{totalPending}</strong>
+          <span>Planilhas p/ validar</span><strong style={{ fontVariantNumeric:'tabular-nums' }}><CountUp text={String(totalPending)} /></strong>
         </div>
         <div className={`audit-stat ${totalExpiring > 0 ? 'warn' : 'ok'}`}>
-          <span>Treinamentos vencendo</span><strong>{totalExpiring}</strong>
+          <span>Treinamentos vencendo</span><strong style={{ fontVariantNumeric:'tabular-nums' }}><CountUp text={String(totalExpiring)} /></strong>
         </div>
         <div className={`audit-stat ${totalOutOfRange > 0 ? 'danger' : 'ok'}`}>
-          <span>Desvios hoje</span><strong>{totalOutOfRange}</strong>
+          <span>Desvios hoje</span><strong style={{ fontVariantNumeric:'tabular-nums' }}><CountUp text={String(totalOutOfRange)} /></strong>
         </div>
         <div className="audit-stat ok">
-          <span>Empresas monitoradas</span><strong>{allTenants.length}</strong>
+          <span>Empresas monitoradas</span><strong style={{ fontVariantNumeric:'tabular-nums' }}><CountUp text={String(allTenants.length)} /></strong>
         </div>
       </div>
 
       {/* Per company */}
-      <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+      <div className="dash-stagger" style={{ display:'flex', flexDirection:'column', gap:12 }}>
         {data.map(({ tenant, pendingForms, expiringTraining, outOfRange, compliance, monthRecs }) => (
           <article key={tenant.id} className="management-card" style={{ borderLeft:`4px solid ${tenant.brandColor}` }}>
             <div className="card-head">

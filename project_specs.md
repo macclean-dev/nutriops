@@ -53,8 +53,9 @@ temperatura sem login.
 
 ## Tech stack
 
-- **Frontend:** React 19, Vite 7, JavaScript (sem TypeScript)
+- **Frontend:** React 19 + Vite 7, JavaScript (sem TypeScript) — SPA client-side, **não é Next.js** (sem SSR/App Router; build estático servido na Vercel + PWA)
 - **Estilo:** CSS puro com variáveis (sem Tailwind, sem styled-components)
+- **Visual (gráficos + logo):** SVG **artesanal**, sem biblioteca de charts (nada de Recharts/Chart.js/D3) — sparklines calculadas na unha em `overview-v2.jsx`; logomark `NutriMark` em `brand.jsx`
 - **Cache local:** localStorage por tenant
 - **Backend (cloud):** Supabase REST v2 (Postgres) — opcional por dispositivo
 - **Auth:** PIN local hoje; `auth.jsx` pronto pra Supabase Auth (não wired ainda)

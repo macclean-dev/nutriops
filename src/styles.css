@@ -1242,3 +1242,53 @@ label {
   transition: background var(--t);
 }
 .dark-mode-toggle:hover { background: rgba(255,255,255,.12); color: var(--rail-text); }
+
+/* ═══ Motion de entrada — "assentar, não quicar" ═══════════════════════════
+   Coreografia de abertura de tela: header assenta → cards em cascata →
+   números contam → linhas de gráfico se riscam → endpoints dão micro-pop.
+   Ease-out editorial, sem spring (exceção: chartPop). Tudo morto em ~2,2s.
+   Keyframes só com `from` (ou `to` explícito no draw) — nunca travar opacity
+   final de elemento que tem valor natural ≠ 1 (fill-mode both fixaria). */
+@keyframes dashIn { from { opacity: 0; transform: translateY(22px) scale(.975); } to { opacity: 1; transform: none; } }
+@keyframes chartGrow { from { transform: scaleY(0); } }
+@keyframes chartDraw { to { stroke-dashoffset: 0; } }
+@keyframes chartFade { from { opacity: 0; } }
+@keyframes chartPop { from { transform: scale(0); opacity: 0; } }
+
+.dash-in { animation: dashIn .65s cubic-bezier(.22,.61,.36,1) both; }
+.dash-stagger > * { animation: dashIn .6s cubic-bezier(.22,.61,.36,1) both; }
+.dash-stagger > *:nth-child(1) { animation-delay: .14s; }
+.dash-stagger > *:nth-child(2) { animation-delay: .26s; }
+.dash-stagger > *:nth-child(3) { animation-delay: .38s; }
+.dash-stagger > *:nth-child(4) { animation-delay: .50s; }
+.dash-stagger > *:nth-child(5) { animation-delay: .62s; }
+.dash-stagger > *:nth-child(n+6) { animation-delay: .74s; }
+
+/* Variante SÓ opacidade — pra grids de card que já usam transform no :hover
+   (ex.: .dash-card). Cascata idêntica, mas sem tocar em transform → o hover
+   continua vivo (fill-mode both em opacity não pina transform). */
+.fade-stagger > * { animation: chartFade .55s ease-out both; }
+.fade-stagger > *:nth-child(1) { animation-delay: .14s; }
+.fade-stagger > *:nth-child(2) { animation-delay: .26s; }
+.fade-stagger > *:nth-child(3) { animation-delay: .38s; }
+.fade-stagger > *:nth-child(4) { animation-delay: .50s; }
+.fade-stagger > *:nth-child(5) { animation-delay: .62s; }
+.fade-stagger > *:nth-child(n+6) { animation-delay: .74s; }
+
+/* SVG artesanal: transform-box pra origem ser do próprio elemento
+   (barra cresce da própria base, dot pop do próprio centro) */
+.chart-bar { transform-box: fill-box; transform-origin: 50% 100%; animation: chartGrow .5s cubic-bezier(.22,.61,.36,1) both; }
+/* Linha SÓLIDA se risca da esquerda pra direita — exige pathLength={1} no <path>.
+   Linha TRACEJADA nunca recebe isso (o dasharray É o visual) → .chart-fade-late */
+.chart-line-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: chartDraw 1.35s cubic-bezier(.4,0,.2,1) .55s forwards; }
+.chart-area { animation: chartFade .8s ease-out 1s both; }
+.chart-fade-late { animation: chartFade .5s ease-out 1.5s both; }
+.chart-dot { transform-box: fill-box; transform-origin: center; animation: chartPop .42s cubic-bezier(.34,1.75,.64,1) 1.8s both; }
+/* Células do heatmap entram em onda (delay por célula via style inline) */
+.heat-pop { animation: chartPop .42s cubic-bezier(.34,1.75,.64,1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-in, .dash-stagger > *, .fade-stagger > *, .chart-bar, .chart-line-draw, .chart-area, .chart-fade-late, .chart-dot, .heat-pop {
+    animation: none !important; opacity: 1; stroke-dashoffset: 0;
+  }
+}

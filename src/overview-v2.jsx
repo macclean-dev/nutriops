@@ -55,7 +55,10 @@ function Sparkline({ data, limits, width = 220, height = 72 }) {
   const yMax = limits.max + span * 0.3;
 
   const sx = (i) => pad + (i / Math.max(data.length - 1, 1)) * cW;
-  const sy = (v) => pad + cH - ((v - yMin) / (yMax - yMin)) * cH;
+  // Clampa dentro da área do gráfico: uma leitura fora da faixa (ex.: 14° numa
+  // faixa 0–6°) fica colada no topo/base em vez de estourar pra fora do card.
+  const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+  const sy = (v) => clamp(pad + cH - ((v - yMin) / (yMax - yMin)) * cH, pad, pad + cH);
 
   const points = data.map((p, i) => ({ x: sx(i), y: sy(p.value), value: p.value }));
   const linePath = points.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
@@ -65,7 +68,7 @@ function Sparkline({ data, limits, width = 220, height = 72 }) {
   const bandBot = sy(limits.min);
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} style={{ width:'100%', height:'auto', display:'block', overflow:'visible' }}>
+    <svg viewBox={`0 0 ${width} ${height}`} style={{ width:'100%', height:'auto', display:'block', overflow:'hidden' }}>
       {/* Faixa permitida (banda verde sutil) */}
       <rect x={pad} y={bandTop} width={cW} height={Math.max(0, bandBot - bandTop)}
         fill="var(--green-light)" rx={2} />

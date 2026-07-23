@@ -914,75 +914,84 @@ create table if not exists special_controls (
 create index if not exists idx_special_tenant on special_controls(tenant_id);
 create index if not exists idx_special_type   on special_controls(control_type);
 
--- 7. RLS desabilitada — auth é PIN local hoje, anon key tem acesso total.
--- As policies abaixo (seção 8) já existem mas NÃO fazem efeito enquanto RLS
--- estiver off — Postgres só aplica policy em tabela com RLS habilitada.
--- Sem isso, devices em prod falham silenciosamente em pushes (bug Swiss).
-alter table temperature_records disable row level security;
-alter table form_records         disable row level security;
-alter table form_templates       disable row level security;
-alter table equipment_catalog    disable row level security;
-alter table receiving_records    disable row level security;
-alter table products             disable row level security;
-alter table stock_logs           disable row level security;
-alter table special_controls     disable row level security;
-
--- 7b. Tabela 'tenants' (espelho do /admin). ATENÇÃO: o acesso anon a ela foi
--- migrado pra funções RPC security-definer + RLS deny-all — ver
--- docs/security-tenants-lockdown.sql (fecha o alerta do Advisor de access_token/
--- setup_pin_hash expostos). NÃO deixar mais RLS off aqui: o disable abaixo é
--- legado; a fonte de verdade agora é o arquivo de lockdown.
--- alter table tenants disable row level security;  -- (revogado pelo lockdown)
-
--- 8. Policies RLS por tenant — PREPARADAS mas SEM EFEITO (RLS off acima).
--- Fase 0 do épico Auth+RLS (docs/AUTH_RLS_PLAN.md): escreve e testa as
--- policies com segurança, sem arriscar os 3 clientes em produção. A troca
--- pra valer só acontece na Fase 3, quando TODOS os tenants já tiverem
--- device-token funcionando (troca o 'disable' acima pra 'enable').
+-- 7. ISOLAMENTO POR TENANT (RLS) — LIGADO em produção desde 18/07/2026.
+-- ⚠️ ORDEM IMPORTA: as policies (seção 8) vêm ANTES do enable (seção 9).
+-- Ligar RLS sem policy = deny-all: o app inteiro para de ler e de escrever.
 --
--- Assume tenant_id no JWT em user_metadata (contas device por tenant, ou
--- o admin global com role Administrador/Super-admin vendo tudo).
+-- 7b. A tabela 'tenants' NÃO é gerenciada por este script: o acesso anon a ela
+-- foi migrado pra RPCs security-definer + RLS deny-all — ver
+-- docs/security-tenants-lockdown.sql (fecha o alerta do Advisor de access_token/
+-- setup_pin_hash expostos). Nunca rode 'disable' nela.
+
+-- 8. Policies de isolamento por tenant. Fonte de verdade: docs/rls-fase3-policies.sql
+--
+-- Regra por linha:
+--   tenant_id = auth.jwt()->'app_metadata'->>'tenant_id'  → o device só a sua loja
+--   OR tenant_id = '__healthcheck__'                      → deixa o testWrite do boot passar
+--
+-- Usa app_metadata, NUNCA user_metadata: user_metadata é editável pelo próprio
+-- usuário (updateUser), então policy que confia nele é forjável — dava pra virar
+-- outro tenant pelo devtools. app_metadata só muda via service_role.
+--
+-- Sem cláusula 'to' → vale pra anon E authenticated:
+--   • device (authenticated, app_metadata.tenant_id=swiss) → linhas de swiss + healthcheck
+--   • anon (a chave pública que vai no bundle) → app_metadata é null, alcança só
+--     '__healthcheck__' e NUNCA dado real. É isso que fecha o buraco da anon key.
+--
+-- Não há bypass por role: a visão cross-tenant do /admin vai por RPC
+-- security-definer gated por app_metadata.role='admin', não por policy.
 -- drop policy if exists = idempotente, pode rodar este script de novo à vontade.
 
 drop policy if exists tenant_isolation on temperature_records;
 create policy tenant_isolation on temperature_records for all
-  using (tenant_id = (auth.jwt() -> 'user_metadata' ->> 'tenant_id') or (auth.jwt() -> 'user_metadata' ->> 'role') in ('Administrador','Super-admin'))
-  with check (tenant_id = (auth.jwt() -> 'user_metadata' ->> 'tenant_id') or (auth.jwt() -> 'user_metadata' ->> 'role') in ('Administrador','Super-admin'));
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
 
 drop policy if exists tenant_isolation on form_records;
 create policy tenant_isolation on form_records for all
-  using (tenant_id = (auth.jwt() -> 'user_metadata' ->> 'tenant_id') or (auth.jwt() -> 'user_metadata' ->> 'role') in ('Administrador','Super-admin'))
-  with check (tenant_id = (auth.jwt() -> 'user_metadata' ->> 'tenant_id') or (auth.jwt() -> 'user_metadata' ->> 'role') in ('Administrador','Super-admin'));
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
 
 drop policy if exists tenant_isolation on form_templates;
 create policy tenant_isolation on form_templates for all
-  using (tenant_id = (auth.jwt() -> 'user_metadata' ->> 'tenant_id') or (auth.jwt() -> 'user_metadata' ->> 'role') in ('Administrador','Super-admin'))
-  with check (tenant_id = (auth.jwt() -> 'user_metadata' ->> 'tenant_id') or (auth.jwt() -> 'user_metadata' ->> 'role') in ('Administrador','Super-admin'));
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
 
 drop policy if exists tenant_isolation on equipment_catalog;
 create policy tenant_isolation on equipment_catalog for all
-  using (tenant_id = (auth.jwt() -> 'user_metadata' ->> 'tenant_id') or (auth.jwt() -> 'user_metadata' ->> 'role') in ('Administrador','Super-admin'))
-  with check (tenant_id = (auth.jwt() -> 'user_metadata' ->> 'tenant_id') or (auth.jwt() -> 'user_metadata' ->> 'role') in ('Administrador','Super-admin'));
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
 
 drop policy if exists tenant_isolation on receiving_records;
 create policy tenant_isolation on receiving_records for all
-  using (tenant_id = (auth.jwt() -> 'user_metadata' ->> 'tenant_id') or (auth.jwt() -> 'user_metadata' ->> 'role') in ('Administrador','Super-admin'))
-  with check (tenant_id = (auth.jwt() -> 'user_metadata' ->> 'tenant_id') or (auth.jwt() -> 'user_metadata' ->> 'role') in ('Administrador','Super-admin'));
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
 
 drop policy if exists tenant_isolation on products;
 create policy tenant_isolation on products for all
-  using (tenant_id = (auth.jwt() -> 'user_metadata' ->> 'tenant_id') or (auth.jwt() -> 'user_metadata' ->> 'role') in ('Administrador','Super-admin'))
-  with check (tenant_id = (auth.jwt() -> 'user_metadata' ->> 'tenant_id') or (auth.jwt() -> 'user_metadata' ->> 'role') in ('Administrador','Super-admin'));
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
 
 drop policy if exists tenant_isolation on stock_logs;
 create policy tenant_isolation on stock_logs for all
-  using (tenant_id = (auth.jwt() -> 'user_metadata' ->> 'tenant_id') or (auth.jwt() -> 'user_metadata' ->> 'role') in ('Administrador','Super-admin'))
-  with check (tenant_id = (auth.jwt() -> 'user_metadata' ->> 'tenant_id') or (auth.jwt() -> 'user_metadata' ->> 'role') in ('Administrador','Super-admin'));
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
 
 drop policy if exists tenant_isolation on special_controls;
 create policy tenant_isolation on special_controls for all
-  using (tenant_id = (auth.jwt() -> 'user_metadata' ->> 'tenant_id') or (auth.jwt() -> 'user_metadata' ->> 'role') in ('Administrador','Super-admin'))
-  with check (tenant_id = (auth.jwt() -> 'user_metadata' ->> 'tenant_id') or (auth.jwt() -> 'user_metadata' ->> 'role') in ('Administrador','Super-admin'));`;
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
+
+-- 9. LIGAR o RLS — só DEPOIS das policies acima existirem.
+-- Rollback de emergência (1 comando por tabela): alter table X disable row level security;
+alter table temperature_records enable row level security;
+alter table form_records         enable row level security;
+alter table form_templates       enable row level security;
+alter table equipment_catalog    enable row level security;
+alter table receiving_records    enable row level security;
+alter table products             enable row level security;
+alter table stock_logs           enable row level security;
+alter table special_controls     enable row level security;`;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // USAGE TRACKING

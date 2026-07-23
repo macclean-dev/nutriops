@@ -303,22 +303,28 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
   const openLink = (id) => { const c = (clients ?? []).find(x => x.id === id); if (c) setTokenModal(c); };
 
   const bestEffortPush = async (tenantId) => {
-    // Propaga plano pro Supabase (metadata). Best-effort — não bloqueia a UI.
+    // Propaga plano pro Supabase. Não bloqueia a UI, mas DEVOLVE o resultado: um
+    // catch mudo aqui fazia local e nuvem divergirem sem nenhum sinal na tela.
     try {
       const c = readClients().find(x => x.id === tenantId);
-      if (!c) return;
+      if (!c) return { ok: false, reason: 'cliente não encontrado' };
       const { pushTenant } = await import('./tenant-sync');
-      await pushTenant(c);
-    } catch {}
+      return await pushTenant(c);
+    } catch (e) { return { ok: false, reason: e?.message ?? 'erro' }; }
   };
 
-  const changePlan = (tenant, planId) => {
+  const changePlan = async (tenant, planId) => {
     if (tenant.source !== 'client') return; // seeds: plano read-only
     if (planId === tenant.plan) return;
     persistClients(setClientPlan(clients, tenant.id, planId));
     logAction({ type:'plan_change', tenantId: tenant.id, tenantName: tenant.name, detail: `${planLabel(tenant.plan)} → ${planLabel(planId)}` });
-    bestEffortPush(tenant.id);
     setMsg({ tone:'ok', text:`Plano de ${tenant.name} → ${planLabel(planId)}.` });
+    const r = await bestEffortPush(tenant.id);
+    if (!r?.ok) {
+      setMsg({ tone:'warn', text: r.reason === 'no-session'
+        ? `Plano de ${tenant.name} salvo só neste device — sua sessão de admin expirou. Entre de novo e troque o plano outra vez.`
+        : `Plano de ${tenant.name} salvo só neste device — não subiu pra nuvem (${r.reason}). Repita quando reconectar.` });
+    }
   };
 
   const toggleActive = (tenant) => {

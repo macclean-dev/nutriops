@@ -114,9 +114,17 @@ $$;
 
 -- upsert_tenant: espelha o pushTenant do /admin (criar/editar cliente, mudar
 -- plano). Não sobrescreve o setup_pin_hash quando vem null (edições).
--- APARA de segurança: hoje é chamável pela anon (mesma capacidade de escrita de
--- antes — não é regressão). Quando o /admin migrar pro Supabase Auth, trocar por
--- `auth.jwt()->'user_metadata'->>'role' in ('Administrador','Super-admin')`.
+-- ⚠️ APARA DE SEGURANÇA ABERTA: é chamável pela anon, e como é SECURITY DEFINER
+-- ignora o RLS — qualquer um com a chave pública do bundle pode criar/sobrescrever
+-- empresa, inclusive girar access_token e setup_pin_hash. Fechar com o gate:
+--   if coalesce(auth.jwt() -> 'app_metadata' ->> 'role','') <> 'admin' then
+--     raise exception 'not authorized' using errcode = '42501';
+--   end if;
+-- e depois `revoke execute ... from anon, public`.
+-- Use SEMPRE app_metadata, NUNCA user_metadata: user_metadata é editável pelo
+-- próprio usuário via updateUser, logo forjável (bastaria o devtools pra virar
+-- admin). Pré-requisito: o pushTenant precisa mandar o JWT do admin — feito em
+-- src/tenant-sync.js (v1.9.47).
 drop function if exists public.upsert_tenant(text, text, text, text, text, text, text, jsonb, jsonb, jsonb, text, text, text, timestamptz);
 create function public.upsert_tenant(
   p_id text, p_access_token text, p_name text, p_segment text, p_plan text,

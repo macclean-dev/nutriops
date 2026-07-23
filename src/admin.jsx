@@ -231,10 +231,14 @@ export function ClientModal({ client, onSave, onClose }) {
     // Push pro Supabase (opcional — se sync ligado).
     // Se falhar não bloqueamos a criação local — o cliente pode tentar logar
     // de outro device e o admin é notificado.
+    let pushFailed = false;
     if (isTenantSyncEnabled()) {
       const result = await pushTenant(tenantPayload);
       if (!result.ok) {
-        setPushError(`Tenant não foi salvo no servidor (${result.reason}). Cliente pode não conseguir entrar de outros dispositivos.`);
+        pushFailed = true;
+        setPushError(result.reason === 'no-session'
+          ? 'Sua sessão de administrador expirou. O cliente foi salvo só neste dispositivo e NÃO subiu pro servidor — entre de novo e use "Editar (regerar PIN)" pra concluir o cadastro.'
+          : `Cliente não subiu pro servidor (${result.reason}). Ficou salvo só neste dispositivo — use "Editar (regerar PIN)" pra tentar de novo.`);
         // Continua salvando local — admin pode regenerar depois.
       }
     }
@@ -262,7 +266,12 @@ export function ClientModal({ client, onSave, onClose }) {
     });
 
     setBusy(false);
-    if (setupPinPlain) {
+    if (pushFailed) {
+      // NÃO entrega link+PIN de um cliente que não chegou na nuvem: o cliente
+      // abriria o ?token= e receberia "not-found". Mantém o modal aberto com o
+      // erro à vista pro admin corrigir a sessão e regerar o PIN.
+      setRegenerate(false);
+    } else if (setupPinPlain) {
       // Não fecha o modal — admin precisa copiar o PIN antes
       setGeneratedPin(setupPinPlain);
       setRegenerate(false);

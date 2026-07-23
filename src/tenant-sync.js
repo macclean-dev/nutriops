@@ -43,10 +43,20 @@ export function isTenantSyncEnabled() {
 }
 
 // Chama uma função RPC. Devolve o Response cru pra quem chama decidir fallback.
-async function sbRpc(fn, args) {
+//
+// `token` (JWT da sessão) é OPCIONAL de propósito: as RPCs de onboarding
+// (get_tenant_by_token, mark_setup_consumed, bump_setup_attempts) rodam ANTES de
+// existir qualquer sessão e precisam mesmo ir como anon. Quem exige privilégio
+// (upsert_tenant) passa o token — só assim o Postgres enxerga `authenticated` em
+// vez de `anon`, e o gate de role no banco consegue funcionar.
+async function sbRpc(fn, args, { token } = {}) {
   return fetch(`${sbBase()}/rpc/${fn}`, {
     method: 'POST',
-    headers: sbHeaders(),
+    headers: {
+      apikey: SB_KEY,
+      Authorization: `Bearer ${token || SB_KEY}`,
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify(args ?? {}),
   });
 }
@@ -64,6 +74,16 @@ export async function pushTenant(tenant) {
     console.debug('[tenant-sync] push skip — Supabase env vars ausentes');
     return { ok: false, reason: 'no-supabase' };
   }
+  // upsert_tenant cria/sobrescreve empresa — inclui access_token e setup_pin_hash.
+  // Só o admin global pode chamar, então vai com o JWT da sessão e NUNCA cai pra
+  // anon: se caísse, o Postgres veria role=anon e o gate server-side seria inútil.
+  // Sem sessão o erro tem que aparecer, não ser mascarado.
+  const { getValidAccessToken } = await import('./auth');
+  const token = await getValidAccessToken();
+  if (!token) {
+    console.warn('[tenant-sync] push abortado — sem sessão de admin válida');
+    return { ok: false, reason: 'no-session' };
+  }
   try {
     const res = await sbRpc('upsert_tenant', {
       p_id: tenant.id,
@@ -80,8 +100,10 @@ export async function pushTenant(tenant) {
       p_admin_email: tenant.adminEmail ?? null,
       p_admin_name: tenant.adminName ?? null,
       p_trial_ends_at: tenant.trialEndsAt ?? null,
-    });
-    if (rpcMissing(res)) return pushTenantDirect(tenant);
+    }, { token });
+    // Sem fallback REST aqui: a tabela `tenants` está com RLS deny-all, então o
+    // caminho direto nunca funciona — ele só mascarava permission-denied como
+    // "RPC ausente" e produzia mensagem de erro enganosa.
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
       throw new Error(`${res.status} ${txt}`);
@@ -257,36 +279,9 @@ export function mergeCloudTenants(localClients = [], cloudRows = []) {
 // i.e. antes de rodar o SQL Parte 1). Depois da Parte 2 (RLS on) a tabela fica
 // deny-all e estes caminhos param de ser alcançados — a RPC sempre existe. ──────
 
-async function pushTenantDirect(tenant) {
-  const row = {
-    id: tenant.id,
-    access_token: tenant.accessToken,
-    name: tenant.name,
-    segment: tenant.segment,
-    plan: tenant.plan,
-    brand_color: tenant.brandColor,
-    brand_soft: tenant.brandSoft,
-    equipment_catalog: tenant.equipmentCatalog ?? [],
-    modules: tenant.modules ?? [],
-    stores: tenant.stores ?? [],
-    setup_pin_hash: tenant.setupPinHash,
-    admin_email: tenant.adminEmail ?? null,
-    admin_name: tenant.adminName ?? null,
-    trial_ends_at: tenant.trialEndsAt ?? null,
-    updated_at: new Date().toISOString(),
-  };
-  if (!tenant.setupPinHash) delete row.setup_pin_hash;
-  const res = await fetch(`${sbBase()}/tenants`, {
-    method: 'POST',
-    headers: sbHeaders('resolution=merge-duplicates,return=minimal'),
-    body: JSON.stringify(row),
-  });
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    throw new Error(`${res.status} ${txt}`);
-  }
-  return { ok: true };
-}
+// (pushTenantDirect removido: escrevia direto na tabela `tenants`, que hoje está
+// com RLS deny-all + grants revogados. Nunca funcionaria, e mascarava erro de
+// permissão como "RPC ausente". O upsert vai só pela RPC, com o JWT do admin.)
 
 async function fetchTenantByTokenDirect(token) {
   const res = await fetch(

@@ -13,10 +13,19 @@ function sbHeaders()  {
 }
 
 async function sbAuthFetch(path, body) {
-  const res = await fetch(`${sbAuthBase()}${path}`, {
-    method: 'POST', headers: sbHeaders(), body: JSON.stringify(body),
-  });
-  const data = await res.json();
+  let res;
+  try {
+    res = await fetch(`${sbAuthBase()}${path}`, {
+      method: 'POST', headers: sbHeaders(), body: JSON.stringify(body),
+    });
+  } catch (e) {
+    // fetch só rejeita por falha de REDE (offline, DNS, CORS). Marcamos pra
+    // quem chama não confundir "sem internet" com "credencial inválida".
+    const err = new Error('Sem conexão com o servidor de autenticação.');
+    err.isNetworkError = true;
+    throw err;
+  }
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error_description ?? data.msg ?? 'Erro de autenticação');
   return data;
 }
@@ -94,7 +103,15 @@ export async function refreshSession() {
     const session = buildSession(data.user, data.access_token, data.refresh_token);
     saveAuthSession(session);
     return session;
-  } catch { clearAuthSession(); return null; }
+  } catch (e) {
+    // Só desloga quando o SERVIDOR rejeitou o refresh token (expirado/revogado).
+    // Queda de internet NÃO pode deslogar: o PDV da loja ficaria trancado pra
+    // fora do registro sanitário até a rede voltar. Mantém a sessão e tenta
+    // de novo depois.
+    if (e?.isNetworkError) return null;
+    clearAuthSession();
+    return null;
+  }
 }
 
 // ─── Build session object ──────────────────────────────────────────────────

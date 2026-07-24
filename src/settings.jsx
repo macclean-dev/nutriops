@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { APP_VERSION } from './brand';
+import { getEffectivePin, writePinOverride, isWeakPin } from './pin';
 import {
   getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled,
   supabaseRepository, SUPABASE_SQL, migrateAllToSupabase,
@@ -139,19 +140,23 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
     setMigrating(false);
   };
 
+  // ⚠️ Mesma correção do "Meu perfil" (extras.jsx): validar e gravar pelo
+  // override, que é o que o login lê. Gravar em `users[].pin` não alterava o
+  // PIN de login — só mentia um "✓ alterado com sucesso" pro usuário.
   const handleChangePin = () => {
     setPinMsg(null);
     if (!session?.user) return;
     if (newPin.length < 4) { setPinMsg({ tone:'danger', text:'PIN deve ter no mínimo 4 dígitos.' }); return; }
     if (newPin !== confirmPin) { setPinMsg({ tone:'danger', text:'Os PINs não coincidem.' }); return; }
+    if (isWeakPin(newPin)) { setPinMsg({ tone:'danger', text:'PIN muito fácil. Escolha outra combinação.' }); return; }
     const tenantId = session.tenantId;
-    const usersKey = `nutriops.users.${tenantId}`;
-    const users = JSON.parse(localStorage.getItem(usersKey) ?? 'null') ??
+    const users = JSON.parse(localStorage.getItem(`nutriops.users.${tenantId}`) ?? 'null') ??
       (tenants.find(t=>t.id===tenantId)?.usersList ?? []);
-    const expectedPin = (users.find(u=>u.name===session.user.name)?.pin ?? '0000');
-    if (currentPin !== expectedPin) { setPinMsg({ tone:'danger', text:'PIN atual incorreto.' }); return; }
-    const updated = users.map(u => u.name===session.user.name ? { ...u, pin: newPin } : u);
-    localStorage.setItem(usersKey, JSON.stringify(updated));
+    const me = users.find(u=>u.name===session.user.name) ?? { name: session.user.name };
+    if (currentPin !== getEffectivePin(tenantId, me)) {
+      setPinMsg({ tone:'danger', text:'PIN atual incorreto.' }); return;
+    }
+    writePinOverride(tenantId, session.user.name, newPin);
     setCurrentPin(''); setNewPin(''); setConfirmPin('');
     setPinMsg({ tone:'ok', text:'✓ PIN alterado com sucesso!' });
   };

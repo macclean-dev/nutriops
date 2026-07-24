@@ -4,6 +4,7 @@ import { readSessions } from './training';
 import { APP_VERSION } from './pages';
 import { buildCommands, matchCommands, readRecentCommandIds, pushRecentCommandId } from './commands';
 import CountUp from './count-up';
+import { getEffectivePin, writePinOverride, isWeakPin } from './pin';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -167,17 +168,22 @@ export function ProfileView({ session, onLogout }) {
 
   const sessionHistory = readSessions2(session?.tenantId).filter(s => s.user === session?.user?.name).slice(0, 8);
 
+  // ⚠️ Alterar PIN TEM que passar por getEffectivePin/writePinOverride — as
+  // mesmas funções que o login usa. Antes daqui isto lia e gravava em
+  // `users[].pin` (o PIN de FÁBRICA), enquanto o login lê o override, que tem
+  // precedência. Resultado: pedia o PIN de fábrica como "PIN atual" e mostrava
+  // "✓ alterado com sucesso" sem trocar nada no login.
   const handleChangePin = () => {
     setPinMsg(null);
     if (newPin.length < 4) { setPinMsg({ tone:'danger', text:'PIN deve ter no mínimo 4 dígitos.' }); return; }
     if (newPin !== confirmPin) { setPinMsg({ tone:'danger', text:'Os PINs não coincidem.' }); return; }
-    const usersKey = `nutriops.users.${session.tenantId}`;
-    const tenants  = JSON.parse(localStorage.getItem('nutriops.data.tenants') ?? 'null');
-    const users    = JSON.parse(localStorage.getItem(usersKey) ?? 'null') ?? [];
-    const expected = users.find(u => u.name === session.user.name)?.pin ?? '0000';
-    if (currentPin !== expected) { setPinMsg({ tone:'danger', text:'PIN atual incorreto.' }); return; }
-    const updated = users.map(u => u.name === session.user.name ? { ...u, pin: newPin } : u);
-    localStorage.setItem(usersKey, JSON.stringify(updated));
+    if (isWeakPin(newPin)) { setPinMsg({ tone:'danger', text:'PIN muito fácil. Escolha outra combinação.' }); return; }
+    const users = JSON.parse(localStorage.getItem(`nutriops.users.${session.tenantId}`) ?? 'null') ?? [];
+    const me = users.find(u => u.name === session.user.name) ?? { name: session.user.name };
+    if (currentPin !== getEffectivePin(session.tenantId, me)) {
+      setPinMsg({ tone:'danger', text:'PIN atual incorreto.' }); return;
+    }
+    writePinOverride(session.tenantId, session.user.name, newPin);
     setCurrentPin(''); setNewPin(''); setConfirmPin('');
     setPinMsg({ tone:'ok', text:'✓ PIN alterado com sucesso!' });
   };

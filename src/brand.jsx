@@ -5,7 +5,7 @@
 
 import React from 'react';
 
-export const APP_VERSION = '1.9.48';
+export const APP_VERSION = '1.9.49';
 
 // ─── Logomark: N calligráfico — diagonal verde, stems brancos ──────────────
 // Diagonal em verde MongoDB (#00ed64) como assinatura do NutriOPS.

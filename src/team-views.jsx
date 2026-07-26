@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { loginHandle } from './user-match';
+import { writePinOverride, isWeakPin } from './pin';
 
 const catalogKey = (id) => `nutriops.equipment.catalog.${id}`;
 const turnsKey   = (id) => `nutriops.turns.${id}`;
@@ -99,12 +100,26 @@ export function UsersView({ activeTenant, allTenants, onTenantChange }) {
   const roles = ['Colaborador', 'Supervisor', 'Nutricionista RT', 'Administrador'];
   useEffect(() => { setUsers(readUsers(activeTenant)); setEditingIndex(null); setNameInput(''); setRoleInput('Colaborador'); setLocationInput(''); setStatusInput('Ativo'); setPinInput('0000'); }, [activeTenant.id]);
   useEffect(() => { writeUsers(activeTenant.id, users); }, [activeTenant.id, users]);
-  const startEdit = (i) => { const u = users[i]; setEditingIndex(i); setNameInput(u.name); setRoleInput(u.role); setLocationInput(u.location ?? ''); setStatusInput(u.status ?? 'Ativo'); setPinInput(u.pin ?? '0000'); };
+  // Na edição o campo PIN começa VAZIO = "manter o atual" — não prefill com o
+  // pin de fábrica (que não é o PIN real de quem já resetou no 1º login) pra não
+  // sobrescrever sem querer ao salvar outra coisa.
+  const startEdit = (i) => { const u = users[i]; setEditingIndex(i); setNameInput(u.name); setRoleInput(u.role); setLocationInput(u.location ?? ''); setStatusInput(u.status ?? 'Ativo'); setPinInput(''); };
   const cancelEdit = () => { setEditingIndex(null); setNameInput(''); setRoleInput('Colaborador'); setLocationInput(''); setStatusInput('Ativo'); setPinInput('0000'); };
   const saveUser = () => {
     if (!nameInput.trim()) return;
-    const user = { name: nameInput.trim(), role: roleInput, location: locationInput.trim(), status: statusInput, pin: pinInput || '0000' };
-    setUsers((prev) => editingIndex === null ? [...prev, user] : prev.map((u, i) => i === editingIndex ? user : u));
+    const isEditing = editingIndex !== null;
+    const trimmedName = nameInput.trim();
+    // Novo usuário: pinInput é o PIN de FÁBRICA (troca obrigatória no 1º login),
+    // então 0000 é aceitável de propósito. Edição com campo preenchido = reset
+    // explícito → vai pro OVERRIDE (o que o login lê), com veto a PIN fraco.
+    if (isEditing && pinInput) {
+      if (!/^\d{4,6}$/.test(pinInput)) { alert('PIN inválido. Use 4 a 6 dígitos.'); return; }
+      if (isWeakPin(pinInput)) { alert('PIN muito fácil (ex.: 0000, 1234). Escolha outra combinação.'); return; }
+    }
+    const factoryPin = isEditing ? (users[editingIndex].pin ?? '0000') : (pinInput || '0000');
+    const user = { name: trimmedName, role: roleInput, location: locationInput.trim(), status: statusInput, pin: factoryPin };
+    setUsers((prev) => isEditing ? prev.map((u, i) => i === editingIndex ? user : u) : [...prev, user]);
+    if (isEditing && pinInput) writePinOverride(activeTenant.id, trimmedName, pinInput);
     cancelEdit();
   };
   const removeUser = (i) => { if (!window.confirm(`Remover "${users[i]?.name}"?`)) return; setUsers((prev) => prev.filter((_, idx) => idx !== i)); if (editingIndex === i) cancelEdit(); };
@@ -128,8 +143,8 @@ export function UsersView({ activeTenant, allTenants, onTenantChange }) {
             <label>Perfil<select value={roleInput} onChange={(e) => setRoleInput(e.target.value)}>{roles.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
             <label>Localização / unidade<input value={locationInput} onChange={(e) => setLocationInput(e.target.value)} placeholder="Ex.: Loja 1, Produção" /></label>
             <label>Status<select value={statusInput} onChange={(e) => setStatusInput(e.target.value)}><option value="Ativo">Ativo</option><option value="Inativo">Inativo</option><option value="Pendente">Pendente</option></select></label>
-            <label>PIN de acesso (4–6 dígitos)
-              <input type="password" value={pinInput} onChange={(e) => setPinInput(e.target.value.replace(/\D/g,'').slice(0,6))} placeholder="0000" inputMode="numeric" style={{ letterSpacing:'0.2em', fontFamily:'var(--mono)' }} />
+            <label>{editingIndex === null ? 'PIN de acesso (4–6 dígitos)' : 'Novo PIN (deixe em branco para manter)'}
+              <input type="password" value={pinInput} onChange={(e) => setPinInput(e.target.value.replace(/\D/g,'').slice(0,6))} placeholder={editingIndex === null ? '0000' : '••••'} inputMode="numeric" style={{ letterSpacing:'0.2em', fontFamily:'var(--mono)' }} />
             </label>
             <div className="actions-row">
               {editingIndex !== null && <button className="secondary-action" onClick={cancelEdit}>Cancelar</button>}
@@ -162,7 +177,14 @@ export function UsersView({ activeTenant, allTenants, onTenantChange }) {
                       <button className="ghost-action" style={{ fontSize:11 }} onClick={() => {
                         const newPin = window.prompt(`Novo PIN para ${u.name} (4-6 dígitos):`);
                         if (!newPin || !/^\d{4,6}$/.test(newPin)) { if (newPin !== null) alert('PIN inválido. Use 4 a 6 dígitos numéricos.'); return; }
+                        if (isWeakPin(newPin)) { alert('PIN muito fácil (ex.: 0000, 1234). Escolha outra combinação.'); return; }
+                        // Grava o OVERRIDE — é o que o login lê (getEffectivePin).
+                        // Antes gravava users[].pin (o PIN de fábrica), que o login
+                        // ignora quando já existe override: reset silenciosamente
+                        // sem efeito pra quem já logou uma vez.
+                        writePinOverride(activeTenant.id, u.name, newPin);
                         setUsers(prev => prev.map((usr, idx) => idx === ri ? { ...usr, pin: newPin } : usr));
+                        alert(`PIN de ${u.name} redefinido. Já vale no próximo login.`);
                       }}>🔑 PIN</button>
                       <button className="ghost-action" onClick={() => startEdit(ri)}>Editar</button>
                       <button className="ghost-action danger" onClick={() => removeUser(ri)}>Remover</button>

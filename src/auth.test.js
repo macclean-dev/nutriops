@@ -42,6 +42,39 @@ describe('refreshSession — sessão não pode cair por falta de internet (v1.9.
     expect(localStorage.getItem(KEY)).toBeNull();      // ✅ sessão LIMPA (correto)
   });
 
+  it('SERVIDOR 503 (transitório): mantém a sessão — não desloga por instabilidade', async () => {
+    const { refreshSession } = await import('./auth');
+    withRefreshToken();
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+      ok: false, status: 503, json: () => Promise.resolve({ msg: 'service unavailable' }),
+    })));
+    const r = await refreshSession();
+    expect(r).toBeNull();
+    expect(localStorage.getItem(KEY)).not.toBeNull();  // ✅ preservada
+  });
+
+  it('SERVIDOR 429 (throttle): mantém a sessão', async () => {
+    const { refreshSession } = await import('./auth');
+    withRefreshToken();
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+      ok: false, status: 429, json: () => Promise.resolve({ msg: 'too many requests' }),
+    })));
+    const r = await refreshSession();
+    expect(r).toBeNull();
+    expect(localStorage.getItem(KEY)).not.toBeNull();  // ✅ preservada
+  });
+
+  it('SERVIDOR 401 (token revogado): LIMPA a sessão — segurança não regride', async () => {
+    const { refreshSession } = await import('./auth');
+    withRefreshToken();
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+      ok: false, status: 401, json: () => Promise.resolve({ error_description: 'invalid refresh token' }),
+    })));
+    const r = await refreshSession();
+    expect(r).toBeNull();
+    expect(localStorage.getItem(KEY)).toBeNull();       // ✅ limpa (correto)
+  });
+
   it('getValidAccessToken offline devolve null SEM apagar a sessão', async () => {
     const { getValidAccessToken } = await import('./auth');
     // expiresAt no passado (truthy) → isSessionValid=false → força o refresh,

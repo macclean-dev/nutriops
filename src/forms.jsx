@@ -681,6 +681,11 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
             createdAt: existing?.createdAt ?? new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           };
+          // Sobe pro Supabase (enfileira se offline) — o handleSave normal já
+          // faz isto (linha 649). Sem esta linha, a planilha BPF preenchida no
+          // quiosque ficava SÓ no localStorage e sumia ao limpar o device:
+          // perda silenciosa de registro de conformidade RDC 216.
+          pushFormRecord(activeTenant.id, updated);
           setRecords(prev => existing ? prev.map(r => r.id === existing.id ? updated : r) : [...prev, updated]);
         }}
       />

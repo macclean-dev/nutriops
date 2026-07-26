@@ -26,7 +26,11 @@ async function sbAuthFetch(path, body) {
     throw err;
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error_description ?? data.msg ?? 'Erro de autenticação');
+  if (!res.ok) {
+    const err = new Error(data.error_description ?? data.msg ?? 'Erro de autenticação');
+    err.status = res.status; // deixa refreshSession distinguir 5xx/429 de 400/401
+    throw err;
+  }
   return data;
 }
 
@@ -74,16 +78,21 @@ export async function signIn({ email, password }) {
 // ─── Sign out ──────────────────────────────────────────────────────────────
 
 export async function signOut() {
-  clearAuthSession();
-  if (!isSupabaseEnabled()) return;
+  // Revogar no servidor ANTES de limpar. Antes, o clearAuthSession() vinha
+  // primeiro, então readAuthSession() já devolvia null e o POST /logout era
+  // código morto — o refresh token seguia válido no servidor após "Sair".
   try {
-    const s = readAuthSession();
-    if (!s?.accessToken) return;
-    await fetch(`${sbAuthBase()}/logout`, {
-      method: 'POST',
-      headers: { ...sbHeaders(), Authorization: `Bearer ${s.accessToken}` },
-    });
-  } catch { /* silent */ }
+    if (isSupabaseEnabled()) {
+      const s = readAuthSession();
+      if (s?.accessToken) {
+        await fetch(`${sbAuthBase()}/logout`, {
+          method: 'POST',
+          headers: { ...sbHeaders(), Authorization: `Bearer ${s.accessToken}` },
+        });
+      }
+    }
+  } catch { /* rede caiu — limpa localmente mesmo assim (abaixo) */ }
+  clearAuthSession();
 }
 
 // ─── Reset password ────────────────────────────────────────────────────────
@@ -108,7 +117,10 @@ export async function refreshSession() {
     // Queda de internet NÃO pode deslogar: o PDV da loja ficaria trancado pra
     // fora do registro sanitário até a rede voltar. Mantém a sessão e tenta
     // de novo depois.
-    if (e?.isNetworkError) return null;
+    // Só limpa em rejeição REAL do token (400/401). Rede caída, 5xx ou 429
+    // (throttle) são transitórios — manter a sessão e tentar de novo depois,
+    // pra não trancar o PDV da loja por instabilidade passageira do servidor.
+    if (e?.isNetworkError || e?.status >= 500 || e?.status === 429) return null;
     clearAuthSession();
     return null;
   }

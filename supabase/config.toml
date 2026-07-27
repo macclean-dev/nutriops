@@ -1,0 +1,8 @@
+# Config mínima do Supabase CLI — só pro deploy da Edge Function.
+project_id = "owuycuyfdngyjsumwgmy"
+
+[functions.invite-collaborator]
+# verify_jwt = false: a checagem do JWT é feita DENTRO da função (getUser), pra
+# o preflight CORS (OPTIONS, sem token) passar. A autorização real (tenant_admin)
+# está no corpo da função.
+verify_jwt = false

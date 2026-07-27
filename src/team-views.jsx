@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { loginHandle } from './user-match';
 import { writePinOverride, isWeakPin } from './pin';
+import { isSupabaseEnabled as supabaseEnabled } from './repository';
 
 const catalogKey = (id) => `nutriops.equipment.catalog.${id}`;
 const turnsKey   = (id) => `nutriops.turns.${id}`;
@@ -87,7 +88,7 @@ export function TurnsView({ activeTenant, allTenants, onTenantChange, records })
   );
 }
 
-export function UsersView({ activeTenant, allTenants, onTenantChange }) {
+export function UsersView({ activeTenant, allTenants, onTenantChange, session }) {
   const [users, setUsers]                 = useState(() => readUsers(activeTenant));
   const [nameInput, setNameInput]         = useState('');
   const [roleInput, setRoleInput]         = useState('Colaborador');
@@ -97,6 +98,32 @@ export function UsersView({ activeTenant, allTenants, onTenantChange }) {
   const [search, setSearch]               = useState('');
   const [roleFilter, setRoleFilter]       = useState('Todos');
   const [pinInput, setPinInput] = useState('0000');
+  // Convite por e-mail (Fase 3) — cria conta com senha inicial via Edge Function.
+  const [invEmail, setInvEmail] = useState('');
+  const [invName, setInvName]   = useState('');
+  const [invPwd, setInvPwd]     = useState('');
+  const [invRole, setInvRole]   = useState('Colaborador');
+  const [invMsg, setInvMsg]     = useState(null);
+  const [inviting, setInviting] = useState(false);
+  // Só quem administra a loja convida; e só faz sentido com o Supabase ligado.
+  const canInvite = supabaseEnabled() && ['Administrador','Super-admin','Nutricionista RT'].includes(session?.user?.role);
+
+  const handleInvite = async () => {
+    setInvMsg(null);
+    const email = invEmail.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setInvMsg({ tone:'danger', text:'E-mail inválido.' }); return; }
+    if (invPwd.length < 8) { setInvMsg({ tone:'danger', text:'A senha inicial precisa de no mínimo 8 caracteres.' }); return; }
+    setInviting(true);
+    try {
+      const { inviteCollaborator } = await import('./auth');
+      await inviteCollaborator({ email, name: invName.trim(), role: invRole, tenantId: activeTenant.id, password: invPwd });
+      setInvMsg({ tone:'ok', text:`✓ ${email} convidado. Entra com o e-mail + a senha inicial e troca depois.` });
+      setInvEmail(''); setInvName(''); setInvPwd('');
+    } catch (e) {
+      setInvMsg({ tone:'danger', text: e.message });
+    }
+    setInviting(false);
+  };
   const roles = ['Colaborador', 'Supervisor', 'Nutricionista RT', 'Administrador'];
   useEffect(() => { setUsers(readUsers(activeTenant)); setEditingIndex(null); setNameInput(''); setRoleInput('Colaborador'); setLocationInput(''); setStatusInput('Ativo'); setPinInput('0000'); }, [activeTenant.id]);
   useEffect(() => { writeUsers(activeTenant.id, users); }, [activeTenant.id, users]);
@@ -127,6 +154,31 @@ export function UsersView({ activeTenant, allTenants, onTenantChange }) {
   return (
     <section className="management-page">
       <div className="page-header"><div><span className="eyebrow">Cadastro</span><h1>Usuários</h1><p className="muted">Gerencie os usuários por empresa. Aparecem no login e na trilha de auditoria.</p></div><div className="page-actions"><span className="badge subtle">{activeTenant.name}</span></div></div>
+
+      {canInvite && (
+        <article className="management-card" style={{ marginBottom: 16 }}>
+          <div className="card-head"><div><span className="eyebrow">Acesso por e-mail</span><h2>Convidar colaborador</h2></div></div>
+          <div className="capture-fields">
+            <p className="muted" style={{ fontSize:12 }}>
+              O colaborador entra com o <strong>e-mail + esta senha</strong> e pode trocá-la depois.
+              Cada pessoa com login próprio = quem registrou fica identificado (rastreabilidade RDC 216).
+            </p>
+            <label>E-mail<input type="email" value={invEmail} onChange={(e)=>setInvEmail(e.target.value)} placeholder="email@colaborador.com" /></label>
+            <label>Nome (opcional)<input value={invName} onChange={(e)=>setInvName(e.target.value)} placeholder="Nome do colaborador" /></label>
+            <label>Senha inicial (mín. 8 caracteres)<input type="text" value={invPwd} onChange={(e)=>setInvPwd(e.target.value)} placeholder="senha provisória" autoComplete="off" /></label>
+            <label>Perfil<select value={invRole} onChange={(e)=>setInvRole(e.target.value)}>
+              <option value="Colaborador">Colaborador</option>
+              <option value="Supervisor">Supervisor</option>
+              <option value="Nutricionista RT">Nutricionista RT</option>
+              <option value="tenant_admin">Administrador da loja</option>
+            </select></label>
+            {invMsg && <p style={{ fontSize:13, fontWeight:600, color: invMsg.tone==='ok' ? 'var(--green)' : 'var(--red)' }}>{invMsg.text}</p>}
+            <div className="actions-row">
+              <button className="primary-action" onClick={handleInvite} disabled={inviting || !invEmail || !invPwd}>{inviting ? 'Convidando…' : 'Adicionar colaborador'}</button>
+            </div>
+          </div>
+        </article>
+      )}
       <div className="audit-stats" style={{ marginBottom: 16 }}>{roles.map((r) => (<div key={r} className="audit-stat"><span>{r}</span><strong>{users.filter((u) => u.role === r).length}</strong></div>))}</div>
       <div className="management-grid">
         <article className="management-card">

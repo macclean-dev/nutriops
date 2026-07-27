@@ -259,22 +259,26 @@ export async function mfaVerify(accessToken, factorId, challengeId, code) {
   return data;
 }
 
-// ─── Invite user (admin creates accounts for collaborators) ──────────────
-
-export async function inviteUser({ email, name, role, tenantId, tenantName }) {
+// ─── Convidar colaborador — cria conta + vínculo via Edge Function ───────────
+// O dono da loja (tenant_admin) cria a conta do colaborador COM senha inicial.
+// Passa pela Edge Function invite-collaborator, que guarda a service_role no
+// servidor (nunca no bundle) e autoriza pelo JWT do chamador.
+//
+// ⚠️ O antigo inviteUser chamava /auth/v1/admin/users com o token do usuário —
+// endpoint que SÓ aceita service_role, então nunca funcionaria pra um dono comum
+// (e, se alguém pusesse a service_role no cliente, seria a chave-mestra no bundle
+// público). Removido em favor deste caminho.
+export async function inviteCollaborator({ email, name, role, tenantId, password }) {
   if (!isSupabaseEnabled()) throw new Error('Supabase não configurado.');
-  const s = readAuthSession();
-  if (!s?.accessToken) throw new Error('Não autenticado.');
-  const res = await fetch(`${sbAuthBase()}/admin/users`, {
+  const token = await getValidAccessToken();
+  if (!token) throw new Error('Sua sessão expirou. Entre de novo.');
+  const { url, anonKey } = getSupabaseConfig();
+  const res = await fetch(`${url.replace(/\/$/, '')}/functions/v1/invite-collaborator`, {
     method: 'POST',
-    headers: { ...sbHeaders(), Authorization: `Bearer ${s.accessToken}` },
-    body: JSON.stringify({
-      email,
-      password: Math.random().toString(36).slice(2, 10), // temp password
-      email_confirm: true,
-      user_metadata: { name, role, tenantId, tenantName },
-    }),
+    headers: { apikey: anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, name, role, tenantId, password }),
   });
-  if (!res.ok) { const e = await res.json(); throw new Error(e.msg ?? 'Erro ao convidar usuário'); }
-  return res.json();
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? 'Erro ao convidar colaborador');
+  return data;
 }

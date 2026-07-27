@@ -2087,12 +2087,37 @@ export function App() {
   const [activeView, setActiveView]         = useState('overview');
   const [records, setRecords]               = useState([]);
 
-  // Always derive activeTenant from tenants list
+  // Always derive activeTenant from tenants list.
+  // activeTenants É dependência: quando a empresa do membro é hidratada no boot
+  // (Fase 3), o memo precisa recalcular pra achar a loja recém-adicionada —
+  // senão fica preso no fallback activeTenants[0] (aparecia "Swiss" pro dono da
+  // CASA DOCE após reload).
   const activeTenant = useMemo(() => {
     const found = activeTenants.find((t) => t.id === activeTenantId);
     if (found) return found;
     return activeTenants.find((t) => t.id === session?.tenantId) ?? activeTenants[0];
-  }, [activeTenantId, session?.tenantId]);
+  }, [activeTenantId, session?.tenantId, activeTenants]);
+
+  // Fase 3 — hidrata a empresa do membro no BOOT. A sessão (com tenantId da loja)
+  // persiste no localStorage, mas activeTenants é reconstruído das lojas-seed a
+  // cada boot, SEM a empresa do membro (ex.: CASA DOCE). Sem isto, após reload o
+  // app não achava a loja e caía no fallback activeTenants[0] (aparecia "Swiss"
+  // pro dono da CASA DOCE). Só dispara quando a loja da sessão não está na lista
+  // — logins por PIN (tenant seed) já estão presentes, então não são afetados.
+  useEffect(() => {
+    if (!session?.tenantId) return;
+    if (activeTenants.some((t) => t.id === session.tenantId)) return;
+    let cancelled = false;
+    import('./tenant-sync')
+      .then((m) => m.fetchMemberTenants())
+      .then((list) => {
+        if (cancelled || !Array.isArray(list) || list.length === 0) return;
+        const ids = new Set(list.map((t) => t.id));
+        setActiveTenants((prev) => [...list, ...prev.filter((t) => !ids.has(t.id))]);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [session?.tenantId, activeTenants]);
 
   // Active store object
   const activeStore = useMemo(() => {

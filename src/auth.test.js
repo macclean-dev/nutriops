@@ -92,3 +92,39 @@ describe('refreshSession — sessão não pode cair por falta de internet (v1.9.
     expect(localStorage.getItem(KEY)).not.toBeNull();  // ✅ dá pra tentar de novo quando a rede voltar
   });
 });
+
+describe('scopeSessionToMembership — escopo da sessão por vínculo (Fase 3)', () => {
+  const base = { accessToken: 'jwt', tenantId: null, user: { name: 'Dona', role: 'Colaborador', location: '' } };
+
+  it('sem vínculo: devolve a sessão INTACTA (caminho do admin global)', async () => {
+    const { scopeSessionToMembership } = await import('./auth');
+    expect(scopeSessionToMembership(base, [])).toBe(base);
+    expect(scopeSessionToMembership(base, undefined)).toBe(base);
+  });
+
+  it('dono da loja (tenant_admin) vira Administrador COM tenantId — não é admin global', async () => {
+    const { scopeSessionToMembership, isSessionValid } = await import('./auth');
+    const s = scopeSessionToMembership(base, [
+      { id: 'bf245c3b-2f9', name: 'CASA DOCE', memberRole: 'tenant_admin' },
+    ]);
+    expect(s.tenantId).toBe('bf245c3b-2f9');
+    expect(s.user.role).toBe('Administrador');   // tenant_admin → Administrador
+    expect(s.user.location).toBe('CASA DOCE');
+    // tem tenantId → NÃO é admin global (não vê o portfólio das outras lojas)
+    expect(!s.tenantId).toBe(false);
+    void isSessionValid;
+  });
+
+  it('RT/Supervisor multi-empresa: papel do vínculo preservado + lista de empresas', async () => {
+    const { scopeSessionToMembership } = await import('./auth');
+    const s = scopeSessionToMembership(base, [
+      { id: 'swiss',    name: 'Swiss',    memberRole: 'Nutricionista RT' },
+      { id: 'backerei', name: 'Bäckerei', memberRole: 'Nutricionista RT' },
+      { id: 'dbk-producao', name: 'DBK', memberRole: 'Nutricionista RT' },
+    ]);
+    expect(s.user.role).toBe('Nutricionista RT');  // já é papel do app → preservado
+    expect(s.tenantId).toBe('swiss');              // primeira como ativa
+    expect(s.memberTenants).toHaveLength(3);       // seletor mostra as 3
+    expect(s.memberTenants.map(t => t.id)).toEqual(['swiss','backerei','dbk-producao']);
+  });
+});

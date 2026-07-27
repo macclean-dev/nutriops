@@ -31,9 +31,16 @@ export function LoginScreen({ onLogin, activeTenants }) {
   const handleEmailLogin = async () => {
     setError(''); setLoading(true);
     try {
-      const { signIn } = await import('./auth');
+      const { signIn, scopeSessionToMembership } = await import('./auth');
       const s = await signIn({ email, password });
-      save(SESSION_KEY, s); onLogin(s);
+      // Fase 3: se o usuário pertence a empresas (tenant_members), escopa a sessão
+      // pra elas e passa a metadata pro app hidratar. Vazio = admin global (papel
+      // e tenant vêm do app_metadata) → caminho existente, sem regressão.
+      const { fetchMemberTenants } = await import('./tenant-sync');
+      const memberTenants = await fetchMemberTenants();
+      const finalSession = scopeSessionToMembership(s, memberTenants);
+      save(SESSION_KEY, finalSession);
+      onLogin(finalSession, memberTenants);
     }
     catch (e) { setError(e.message); }
     setLoading(false);

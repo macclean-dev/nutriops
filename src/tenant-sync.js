@@ -218,6 +218,50 @@ export async function fetchAllTenantsFromCloud() {
   } catch { return []; }
 }
 
+// ─── Empresas do MEMBRO logado (Fase 3 — login por e-mail/senha) ─────────────
+// Depois do signIn, o app chama isto pra saber a que empresas o usuário pertence
+// (via tenant_members) e hidratar a metadata de cada uma — sem access_token e
+// sem depender da tabela `tenants` direto (grants revogados). Gated no servidor
+// por auth.uid(); a RPC nunca devolve segredo. Dev-safe: sem token/erro → [].
+export async function fetchMemberTenants() {
+  if (!isTenantSyncEnabled()) return [];
+  try {
+    const { getValidAccessToken } = await import('./auth');
+    const token = await getValidAccessToken();
+    if (!token) return [];
+    const res = await fetch(`${sbBase()}/rpc/get_member_tenants`, {
+      method: 'POST',
+      headers: { apikey: SB_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    if (!res.ok) return []; // 404 (RPC ausente ainda) / 401 → caller decide
+    const rows = await res.json();
+    return Array.isArray(rows) ? rows.map(memberRowToTenant) : [];
+  } catch { return []; }
+}
+
+// Linha da get_member_tenants → objeto de tenant do app. Espelha rowToTenant,
+// mas SEM access_token / setup_pin_hash (a RPC não os devolve, por segurança).
+function memberRowToTenant(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    segment: row.segment,
+    plan: row.plan,
+    brandColor: row.brand_color,
+    brandSoft: row.brand_soft,
+    equipmentCatalog: row.equipment_catalog ?? [],
+    modules: row.modules ?? [],
+    stores: row.stores ?? [{ id: `${row.id}-main`, name: `${row.name} — Principal`, location: 'Principal' }],
+    trialEndsAt: row.trial_ends_at,
+    memberRole: row.role, // papel do usuário NESTA empresa (vem do tenant_members)
+    usersList: [],
+    multiStore: false,
+    audit: [], forms: [], alertsList: [],
+    _fromMembership: true,
+  };
+}
+
 function cloudRowToClient(row) {
   return {
     id: row.id,

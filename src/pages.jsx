@@ -2018,7 +2018,15 @@ export function App() {
   const [session, setSession]         = useState(() => readSession());
   const [activeTenants, setActiveTenants] = useState(() => readOnboardingTenants() ?? defaultTenants);
 
-  const handleLogin = useCallback((s) => {
+  const handleLogin = useCallback((s, memberTenants) => {
+    // Fase 3: login por e-mail de um membro traz as empresas dele (com metadata
+    // completa da RPC get_member_tenants). Funde no activeTenants pra a loja
+    // renderizar num device novo, mesmo sem ter entrado via link ?token=.
+    // Membership tem precedência (dado fresco da nuvem) sobre o que já havia.
+    if (Array.isArray(memberTenants) && memberTenants.length > 0) {
+      const ids = new Set(memberTenants.map((t) => t.id));
+      setActiveTenants((prev) => [...memberTenants, ...prev.filter((t) => !ids.has(t.id))]);
+    }
     setSession(s);
     // logSession é uma chamada one-shot — usa dynamic import pra não puxar
     // extras.jsx no boot (33KB+).
@@ -2104,9 +2112,17 @@ export function App() {
 
   const visibleTenants = useMemo(() => {
     if (seesAllTenants) return tenants;
+    // Membro por e-mail (Fase 3): vê as empresas do próprio vínculo — resolve a
+    // RT com 3 unidades e a supervisora com 2. Aditivo: sessão por PIN não tem
+    // memberTenants, então cai no comportamento antigo.
+    if (session?.memberTenants?.length > 0) {
+      const ids = new Set(session.memberTenants.map((m) => m.id));
+      const mine = activeTenants.filter((t) => ids.has(t.id));
+      if (mine.length > 0) return mine;
+    }
     const own = activeTenants.filter((t) => t.id === session?.tenantId);
     return own.length > 0 ? own : [activeTenant];
-  }, [seesAllTenants, session?.tenantId, activeTenant, activeTenants]);
+  }, [seesAllTenants, session?.tenantId, session?.memberTenants, activeTenant, activeTenants]);
 
   const handleTenantChange = useCallback((id) => {
     if (!seesAllTenants) return;

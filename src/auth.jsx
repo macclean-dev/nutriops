@@ -145,6 +145,28 @@ function buildSession(user, accessToken, refreshToken) {
   };
 }
 
+// ─── Fase 3: escopo por membership (tenant_members) ─────────────────────────
+// O papel no vínculo é conceito de banco; o app conhece outros nomes. tenant_admin
+// (dono da loja) = Administrador DENTRO da própria loja (tem tenantId, então NÃO
+// é admin global — isGlobalAdmin exige tenantId nulo). Os demais papéis do vínculo
+// (Nutricionista RT, Supervisor, Colaborador) já são papéis do app.
+const MEMBER_ROLE_TO_APP = { tenant_admin: 'Administrador' };
+
+// Escopa uma sessão Supabase Auth às empresas do membro. Pura e testável: se o
+// usuário não pertence a nenhuma empresa (memberTenants vazio), devolve a sessão
+// intacta — é o caminho do admin global (papel/tenant vêm do app_metadata).
+export function scopeSessionToMembership(session, memberTenants) {
+  if (!session || !Array.isArray(memberTenants) || memberTenants.length === 0) return session;
+  const primary = memberTenants[0];
+  const appRole = MEMBER_ROLE_TO_APP[primary.memberRole] ?? primary.memberRole ?? session.user?.role;
+  return {
+    ...session,
+    tenantId: primary.id,
+    user: { ...session.user, role: appRole, location: primary.name ?? session.user?.location },
+    memberTenants: memberTenants.map((t) => ({ id: t.id, name: t.name, role: t.memberRole })),
+  };
+}
+
 // ─── Check if session is valid ────────────────────────────────────────────
 
 export function isSessionValid(session) {

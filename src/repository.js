@@ -42,15 +42,37 @@ export function shouldAutoConfigSupabase(existing, tenantSupabase) {
   return { apply: false, reason: 'já configurado' };
 }
 
-// tenantId opcional: quando presente, tenta usar o JWT do device daquele
-// tenant (Fase 2); sem tenantId, ou se o device-auth falhar por qualquer
-// motivo, cai pra anon key — comportamento idêntico ao de antes da Fase 2.
+// Modelo E-MAIL (Fase 3): se o usuário logado é MEMBRO deste tenant, o JWT dele
+// é o que o RLS libera (via is_member) — sem device-token nem senha pública.
+// Lê a sessão do app (nutriops.session); só devolve token se ela cobre o tenant.
+// PIN (seed) não tem sessão Supabase → getValidAccessToken null → cai no device.
+async function memberTokenFor(tenantId) {
+  if (!tenantId) return null;
+  try {
+    const s = ls('nutriops.session', null);
+    if (!s) return null;
+    const cobre = s.tenantId === tenantId
+      || (Array.isArray(s.memberTenants) && s.memberTenants.some(m => m.id === tenantId));
+    if (!cobre) return null;
+    const { getValidAccessToken } = await import('./auth');
+    return await getValidAccessToken();
+  } catch { return null; }
+}
+
+// Ordem de credencial pra REST sob RLS:
+//   1. JWT do membro logado (modelo e-mail — CASA DOCE)
+//   2. device-token do tenant (modelo PIN/seed — Swiss/Bäckerei/DBK)
+//   3. anon key (fallback; sob RLS só alcança __healthcheck__)
 async function sbHeaders(tenantId) {
   const { anonKey } = getSupabaseConfig();
   let token = anonKey;
   if (tenantId) {
-    const deviceToken = await getDeviceAccessToken(tenantId);
-    if (deviceToken) token = deviceToken;
+    const memberJwt = await memberTokenFor(tenantId);
+    if (memberJwt) token = memberJwt;
+    else {
+      const deviceToken = await getDeviceAccessToken(tenantId);
+      if (deviceToken) token = deviceToken;
+    }
   }
   return { apikey: anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 }

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { completionPct, generateFormPDF } from './forms';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { completionPct, generateFormPDF, readFormTemplates } from './forms';
 
 // Template no formato do CASA DOCE Banheiros, exercitando os tipos novos.
 const TPL = {
@@ -30,6 +30,35 @@ describe('completionPct — tipos date e checkbox (Fase B)', () => {
   });
   it('tudo preenchido = 100%', () => {
     expect(completionPct(TPL, { responses:{ lg:true, mn:true, dt:'2026-07-28', lgh:'08:00' } })).toBe(100);
+  });
+});
+
+describe('seedTemplates CASA DOCE — 8 planilhas BPF (Fase A+B)', () => {
+  beforeEach(() => localStorage.clear());
+  const CD = { id:'bf245c3b-2f9', name:'CASA DOCE' };
+
+  it('retorna 8 templates com ids uuid únicos', () => {
+    const tpls = readFormTemplates(CD);
+    expect(tpls).toHaveLength(8);
+    const ids = tpls.map(t => t.id);
+    expect(new Set(ids).size).toBe(8);                         // sem colisão de uuid
+    for (const id of ids) expect(id).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('todo campo tem id/label/type; ids de campo não repetem no template', () => {
+    for (const t of readFormTemplates(CD)) {
+      const fieldIds = [];
+      for (const s of t.sections) for (const f of s.fields) {
+        expect(Boolean(f.id && f.label && f.type)).toBe(true);
+        fieldIds.push(f.id);
+      }
+      expect(new Set(fieldIds).size).toBe(fieldIds.length);    // sem campo duplicado
+    }
+  });
+
+  it('carrinhos tem os 32 códigos', () => {
+    const carr = readFormTemplates(CD).find(t => t.title.includes('Carrinhos'));
+    expect(carr.sections[0].fields).toHaveLength(32);
   });
 });
 

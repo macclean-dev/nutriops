@@ -58,6 +58,7 @@ const CAT = {
   potabilidade:    { label:'Potabilidade',     color:'#1e40af', bg:'#eff6ff' },
   manutencao:      { label:'Manutenção',       color:'#92400e', bg:'#fffbeb' },
   recebimento:     { label:'Recebimento',      color:'#374151', bg:'#f9fafb' },
+  residuos:        { label:'Resíduos',          color:'#3f6212', bg:'#f7fee7' },
   custom:          { label:'Personalizado',    color:'#374151', bg:'#f9fafb' },
 };
 export function catMeta(cat) { return CAT[cat] ?? CAT.custom; }
@@ -412,13 +413,136 @@ const TPL_CASADOCE_BANHEIROS = () => ({
   ],
 });
 
+// ── CASA DOCE · Fase B — demais planilhas BPF (rascunhos das planilhas reais da
+// nutricionista). Ids FIXOS pra bater com a nuvem no merge. Frequências marcadas
+// "a confirmar" nas descrições — trocar 1 valor + re-rodar o SQL se ela ajustar.
+
+const TPL_CD_HORTIFRUTI = () => ({
+  id:'f565a332-b2a1-401d-b1f4-5e70825aafec', category:'faxina', frequency:'daily',
+  title:'Higienização de Hortifrutícolas',
+  description:'Registro da higienização de hortifrutícolas (imersão em solução sanitizante). Frequência: diária (a confirmar com a RT).',
+  sections:[
+    { id:'cd-hf-reg', title:'Registro', fields:[
+      { id:'cd-hf-data', label:'Data', type:'date_sig' },
+      { id:'cd-hf-item', label:'Hortifrutícola', type:'text', hint:'Ex.: alface, morango' },
+      { id:'cd-hf-sol',  label:'Solução utilizada', type:'text', hint:'Ex.: hipoclorito 200 ppm' },
+      { id:'cd-hf-tempo',label:'Tempo de imersão (min)', type:'number' },
+    ]},
+    { id:'cd-hf-nc', title:'Não conformidade (se houver)', fields:[
+      { id:'cd-hf-ncdesc', label:'Não conformidade', type:'text' },
+      { id:'cd-hf-ncacao', label:'Ação corretiva', type:'text' },
+    ]},
+  ],
+});
+
+const TPL_CD_FILTRO_CAFE = () => ({
+  id:'aca18344-2856-4931-9f29-372d36132824', category:'faxina', frequency:'daily',
+  title:'Lavagem do Filtro de Café',
+  description:'Registro da lavagem do filtro de café. Frequência: diária (a confirmar com a RT).',
+  sections:[
+    { id:'cd-fc-reg', title:'Registro de lavagem', fields:[
+      { id:'cd-fc-data', label:'Data', type:'date_sig' },
+      { id:'cd-fc-prod', label:'Produto utilizado', type:'text' },
+      { id:'cd-fc-qtd',  label:'Quantidade', type:'number' },
+    ]},
+  ],
+});
+
+const TPL_CD_RESIDUOS = () => ({
+  id:'1197f2fd-682b-47a0-8912-d23bbe69c708', category:'residuos', frequency:'daily',
+  title:'Controle de Saída de Resíduos',
+  description:'Pesagem/volume diário dos resíduos por categoria.',
+  sections:[
+    { id:'cd-res-dia', title:'Saída do dia', fields:[
+      { id:'cd-res-rec-kg', label:'Reciclável — Kg', type:'number' },
+      { id:'cd-res-rec-l',  label:'Reciclável — Litros', type:'number' },
+      { id:'cd-res-rej-kg', label:'Rejeito — Kg', type:'number' },
+      { id:'cd-res-rej-l',  label:'Rejeito — Litros', type:'number' },
+      { id:'cd-res-org-kg', label:'Orgânico — Kg', type:'number' },
+      { id:'cd-res-org-l',  label:'Orgânico — Litros', type:'number' },
+      { id:'cd-res-vid-l',  label:'Vidros — Litros', type:'number' },
+      { id:'cd-res-oleo-l', label:'Óleo — Litros', type:'number' },
+      { id:'cd-res-obs',    label:'Observações', type:'text' },
+    ]},
+  ],
+});
+
+const TPL_CD_CARRINHOS = () => {
+  const codes = ['T1','T2','T3','T4','T5','T6','T7','E1','E2','B1','B2','B3','C1','C2','C3','F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12','A1','A2','A3','A4','A5'];
+  return {
+    id:'0be8daac-24a5-461b-af6c-f438edcf5f48', category:'faxina', frequency:'biweekly',
+    title:'Higienização dos Carrinhos',
+    description:'Lavagem dos carrinhos (quinzenal). A legenda dos prefixos T/E/B/C/F/A está a confirmar com a RT.',
+    sections:[
+      { id:'cd-carr-lav', title:'Lavagem', fields:
+        codes.map(c => ({ id:`cd-carr-${c}`, label:`Carrinho ${c}`, type:'date_sig' }))
+      },
+      { id:'cd-carr-obs', title:'Observações', fields:[
+        { id:'cd-carr-obs-t', label:'Observações', type:'text' },
+      ]},
+    ],
+  };
+};
+
+const TPL_CD_CLIMATIZACAO = () => ({
+  id:'bb60649e-c14d-4c61-b115-ac16238fa010', category:'manutencao', frequency:'monthly',
+  title:'Limpeza e Troca de Filtro — Climatização',
+  description:'Registro de limpeza/troca de filtro dos equipamentos de climatização. Frequência: mensal/por evento (a confirmar com a RT).',
+  sections:[
+    { id:'cd-cl-reg', title:'Registro', fields:[
+      { id:'cd-cl-data', label:'Data', type:'date' },
+      { id:'cd-cl-eq',   label:'Identificação do equipamento', type:'text' },
+      { id:'cd-cl-troca',label:'Troca de filtro', type:'checkbox' },
+      { id:'cd-cl-limp', label:'Limpeza', type:'checkbox' },
+      { id:'cd-cl-resp', label:'Responsável', type:'text' },
+      { id:'cd-cl-prox', label:'Previsão da próxima manutenção', type:'date' },
+      { id:'cd-cl-obs',  label:'Observações (falhas / anomalias)', type:'text' },
+    ]},
+  ],
+});
+
+const TPL_CD_MANUT_PROG = () => ({
+  id:'637fcd48-4eb2-4a4c-adfe-0318a304a775', category:'manutencao', frequency:'monthly',
+  title:'Manutenção Programada e Periódica',
+  description:'Registro de manutenção preventiva/corretiva de equipamentos. Frequência: por evento (a confirmar com a RT).',
+  sections:[
+    { id:'cd-mp-reg', title:'Registro', fields:[
+      { id:'cd-mp-data', label:'Data', type:'date' },
+      { id:'cd-mp-eq',   label:'Identificação do equipamento', type:'text' },
+      { id:'cd-mp-prev', label:'Preventiva', type:'checkbox' },
+      { id:'cd-mp-corr', label:'Corretiva', type:'checkbox' },
+      { id:'cd-mp-info', label:'Informações complementares', type:'text' },
+      { id:'cd-mp-resp', label:'Responsável / executante', type:'text' },
+      { id:'cd-mp-prox', label:'Data da próxima manutenção', type:'date' },
+    ]},
+  ],
+});
+
+const TPL_CD_CALIBRACAO = () => ({
+  id:'f4d07b4c-7e7d-4a1f-8e05-fe3c474c37d8', category:'manutencao', frequency:'monthly',
+  title:'Calibração de Instrumentos de Medição',
+  description:'Registro de calibração de termômetros, balanças, etc. Frequência: conforme validade da calibração (a confirmar com a RT).',
+  sections:[
+    { id:'cd-cal-reg', title:'Registro', fields:[
+      { id:'cd-cal-data', label:'Data', type:'date' },
+      { id:'cd-cal-eq',   label:'Identificação do equipamento', type:'text' },
+      { id:'cd-cal-apto', label:'Equipamento apto?', type:'cnc', hint:'C = SIM (apto) · NC = NÃO' },
+      { id:'cd-cal-emp',  label:'Empresa responsável', type:'text' },
+      { id:'cd-cal-prox', label:'Data da próxima calibração', type:'date' },
+    ]},
+  ],
+});
+
 function seedTemplates(tenant) {
   const id = (tenant.id ?? '').toLowerCase();
   const name = (tenant.name ?? '').toLowerCase();
   if (id.includes('swiss'))                          return [TPL_HIGIENE_PESSOAL(), TPL_VETORES('C=Cozinha D=Distribuição S=Salão E=Externa'), TPL_DEDETIZACAO(), TPL_FAXINA_SWISS()];
   if (id.includes('backerei')||id.includes('bäck')) return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_FAXINA_BACKEREI(), TPL_POTABILIDADE()];
   if (id.includes('dbk'))                            return [TPL_FAXINA_DBK(), TPL_MANUTENCAO_DBK(), TPL_VETORES()];
-  if (id.includes('bf245c3b') || name.includes('casa doce')) return [TPL_CASADOCE_BANHEIROS()];
+  if (id.includes('bf245c3b') || name.includes('casa doce')) return [
+    TPL_CASADOCE_BANHEIROS(), TPL_CD_HORTIFRUTI(), TPL_CD_FILTRO_CAFE(), TPL_CD_RESIDUOS(),
+    TPL_CD_CARRINHOS(), TPL_CD_CLIMATIZACAO(), TPL_CD_MANUT_PROG(), TPL_CD_CALIBRACAO(),
+  ];
   return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO()];
 }
 
@@ -526,6 +650,7 @@ function FormFill({ template, record, onSave, onBack, session, tenant }) {
                   {field.type==='presence' && <PresenceField value={responses[field.id]} onChange={(v) => setField(field.id,v)} />}
                   {field.type==='date_sig' && <DateSigField value={responses[field.id]} onChange={(v) => setField(field.id,v)} />}
                   {field.type==='date'     && <input type="date" value={responses[field.id]??''} onChange={(e) => setField(field.id,e.target.value)} style={{ padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', fontSize:13, fontFamily:'inherit' }} />}
+                  {field.type==='number'   && <input type="number" inputMode="decimal" value={responses[field.id]??''} onChange={(e) => setField(field.id,e.target.value)} placeholder="0" style={{ width:120, padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', fontSize:13, fontFamily:'inherit', fontVariantNumeric:'tabular-nums' }} />}
                   {field.type==='checkbox' && <label style={{ display:'inline-flex', alignItems:'center', gap:8, fontSize:13, cursor:'pointer' }}><input type="checkbox" checked={responses[field.id]===true} onChange={(e) => setField(field.id,e.target.checked)} style={{ width:18, height:18, accentColor:'var(--primary)' }} /> Marcar</label>}
                   {field.type==='text'     && <textarea value={responses[field.id]??''} onChange={(e) => setField(field.id,e.target.value)} placeholder="Observações…" style={{ width:'100%', padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', fontSize:13, fontFamily:'inherit', resize:'vertical', minHeight:54 }} />}
                 </div>

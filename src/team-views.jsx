@@ -107,6 +107,11 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
   const [inviting, setInviting] = useState(false);
   // Só quem administra a loja convida; e só faz sentido com o Supabase ligado.
   const canInvite = supabaseEnabled() && ['Administrador','Super-admin','Nutricionista RT'].includes(session?.user?.role);
+  // Loja do modelo E-MAIL (nuvem/membership) — ex.: CASA DOCE. Aqui o acesso é
+  // por e-mail/senha, então o cadastro por PIN e o handle "nome@id" não fazem
+  // sentido (o id da loja é feio: nome@bf245c3b-2f9). Seeds (Swiss/Bäckerei/DBK)
+  // não têm essas flags → seguem com PIN até a Fase 4.
+  const emailModel = Boolean(activeTenant?._fromMembership || activeTenant?._fromCloud);
 
   const handleInvite = async () => {
     setInvMsg(null);
@@ -180,7 +185,10 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
         </article>
       )}
       <div className="audit-stats" style={{ marginBottom: 16 }}>{roles.map((r) => (<div key={r} className="audit-stat"><span>{r}</span><strong>{users.filter((u) => u.role === r).length}</strong></div>))}</div>
-      <div className="management-grid">
+      <div className="management-grid" style={emailModel ? { gridTemplateColumns: '1fr' } : undefined}>
+        {/* Cadastro por PIN só pra loja seed. Loja e-mail (CASA DOCE) usa o
+            "Convidar colaborador" acima — nada de PIN nem handle nome@id feio. */}
+        {!emailModel && (
         <article className="management-card">
           <div className="card-head"><div><span className="eyebrow">{editingIndex === null ? 'Novo' : 'Editando'}</span><h2>{editingIndex === null ? 'Cadastrar usuário' : users[editingIndex]?.name}</h2></div><span className="badge neutral">{users.length}</span></div>
           <div className="capture-fields">
@@ -204,6 +212,7 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
             </div>
           </div>
         </article>
+        )}
         <article className="management-card">
           <div className="card-head"><div><span className="eyebrow">Lista</span><h2>Usuários cadastrados</h2></div><span className="badge neutral">{filtered.length}/{users.length}</span></div>
           <div className="capture-fields equipment-filters">
@@ -221,12 +230,12 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
                   <div>
                     <strong>{u.name}</strong>
                     <span>{u.role} · {u.location || 'Sem localização'}</span>
-                    <span style={{ fontFamily:'var(--mono)', fontSize:11, color:'var(--text-secondary)', display:'block', marginTop:2 }}>{handle}</span>
+                    {!emailModel && <span style={{ fontFamily:'var(--mono)', fontSize:11, color:'var(--text-secondary)', display:'block', marginTop:2 }}>{handle}</span>}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span className={`badge ${u.status === 'Ativo' ? 'ok' : u.status === 'Pendente' ? 'warn' : 'neutral'}`}>{u.status}</span>
                     <div className="equipment-row-actions">
-                      <button className="ghost-action" style={{ fontSize:11 }} onClick={() => {
+                      {!emailModel && <button className="ghost-action" style={{ fontSize:11 }} onClick={() => {
                         const newPin = window.prompt(`Novo PIN para ${u.name} (4-6 dígitos):`);
                         if (!newPin || !/^\d{4,6}$/.test(newPin)) { if (newPin !== null) alert('PIN inválido. Use 4 a 6 dígitos numéricos.'); return; }
                         if (isWeakPin(newPin)) { alert('PIN muito fácil (ex.: 0000, 1234). Escolha outra combinação.'); return; }
@@ -237,7 +246,7 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
                         writePinOverride(activeTenant.id, u.name, newPin);
                         setUsers(prev => prev.map((usr, idx) => idx === ri ? { ...usr, pin: newPin } : usr));
                         alert(`PIN de ${u.name} redefinido. Já vale no próximo login.`);
-                      }}>🔑 PIN</button>
+                      }}>🔑 PIN</button>}
                       <button className="ghost-action" onClick={() => startEdit(ri)}>Editar</button>
                       <button className="ghost-action danger" onClick={() => removeUser(ri)}>Remover</button>
                     </div>

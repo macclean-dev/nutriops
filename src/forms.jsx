@@ -72,6 +72,7 @@ export function completionPct(template, record) {
       if (field.type==='text') continue;
       total++;
       const v = record.responses?.[field.id];
+      if (field.type==='checkbox') { if (v===true) filled++; continue; } // só marcado conta
       if (v!==undefined && v!==null && v!=='') { if (typeof v==='object' ? (v.date||v.sig||v.detected!==undefined) : v!=='') filled++; }
     }
   }
@@ -115,6 +116,10 @@ export function generateFormPDF(template, record, tenant) {
     }
     if (field.type==='date_sig' && typeof val==='object')
       return `${val.date||'—'} · Resp.: <strong>${val.sig||'—'}</strong>`;
+    if (field.type==='date') return String(val).split('-').reverse().join('/'); // AAAA-MM-DD → DD/MM/AAAA
+    if (field.type==='checkbox') return val===true
+      ? '<span style="color:#00a35c;font-weight:700">✓ SIM</span>'
+      : '<span style="color:#9198a1">—</span>';
     return String(val);
   };
 
@@ -498,6 +503,8 @@ function FormFill({ template, record, onSave, onBack, session, tenant }) {
                   {field.type==='cnc'      && <CNCButton value={responses[field.id]??''} onChange={(v) => setField(field.id,v)} />}
                   {field.type==='presence' && <PresenceField value={responses[field.id]} onChange={(v) => setField(field.id,v)} />}
                   {field.type==='date_sig' && <DateSigField value={responses[field.id]} onChange={(v) => setField(field.id,v)} />}
+                  {field.type==='date'     && <input type="date" value={responses[field.id]??''} onChange={(e) => setField(field.id,e.target.value)} style={{ padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', fontSize:13, fontFamily:'inherit' }} />}
+                  {field.type==='checkbox' && <label style={{ display:'inline-flex', alignItems:'center', gap:8, fontSize:13, cursor:'pointer' }}><input type="checkbox" checked={responses[field.id]===true} onChange={(e) => setField(field.id,e.target.checked)} style={{ width:18, height:18, accentColor:'var(--primary)' }} /> Marcar</label>}
                   {field.type==='text'     && <textarea value={responses[field.id]??''} onChange={(e) => setField(field.id,e.target.value)} placeholder="Observações…" style={{ width:'100%', padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', fontSize:13, fontFamily:'inherit', resize:'vertical', minHeight:54 }} />}
                 </div>
               </div>

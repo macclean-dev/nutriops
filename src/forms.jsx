@@ -392,11 +392,33 @@ const TPL_MANUTENCAO_DBK = () => ({
   ]}],
 });
 
+// CASA DOCE — planilha "FP.HIG.001". Ids FIXOS (não uid()) pra bater com a linha
+// da nuvem (form_templates) no merge por id — sem duplicar. Novos templates da
+// CASA DOCE (Fase B) entram aqui conforme a nutricionista confirma os detalhes.
+const TPL_CASADOCE_BANHEIROS = () => ({
+  id:'c61acf39-5ff8-404e-8fae-f9f68734f1b2', category:'faxina', frequency:'daily',
+  title:'Controle de Higienização de Banheiros',
+  description:'Registro diário. Marque a atividade realizada e o horário; quem preenche fica identificado (assinatura digital). Ref.: FP.HIG.001.',
+  sections:[
+    { id:'cd-ban-lg', title:'Limpeza Geral', fields:[
+      { id:'cd-ban-lg-feito', label:'Realizada', type:'checkbox', hint:'Limpeza geral do banheiro' },
+      { id:'cd-ban-lg-hora',  label:'Horário',  type:'text', hint:'Hora em que foi feita' },
+    ]},
+    { id:'cd-ban-mn', title:'Manutenção', fields:[
+      { id:'cd-ban-mn-feito', label:'Realizada', type:'checkbox', hint:'Reposição de papel, sabonete, etc.' },
+      { id:'cd-ban-mn-hora',  label:'Horário',  type:'text', hint:'Hora em que foi feita' },
+      { id:'cd-ban-obs',      label:'Observações', type:'text' },
+    ]},
+  ],
+});
+
 function seedTemplates(tenant) {
   const id = (tenant.id ?? '').toLowerCase();
+  const name = (tenant.name ?? '').toLowerCase();
   if (id.includes('swiss'))                          return [TPL_HIGIENE_PESSOAL(), TPL_VETORES('C=Cozinha D=Distribuição S=Salão E=Externa'), TPL_DEDETIZACAO(), TPL_FAXINA_SWISS()];
   if (id.includes('backerei')||id.includes('bäck')) return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_FAXINA_BACKEREI(), TPL_POTABILIDADE()];
   if (id.includes('dbk'))                            return [TPL_FAXINA_DBK(), TPL_MANUTENCAO_DBK(), TPL_VETORES()];
+  if (id.includes('bf245c3b') || name.includes('casa doce')) return [TPL_CASADOCE_BANHEIROS()];
   return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO()];
 }
 

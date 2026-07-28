@@ -1,0 +1,6 @@
+-- CASA DOCE — template BPF "Banheiros" (Fase B). Idempotente. Mesmo uuid do seed no código.
+insert into public.form_templates (id, tenant_id, category, frequency, title, description, sections, updated_at) values
+  ('c61acf39-5ff8-404e-8fae-f9f68734f1b2', 'bf245c3b-2f9', 'faxina', 'daily', 'Controle de Higienização de Banheiros', 'Registro diário. Marque a atividade realizada e o horário; quem preenche fica identificado (assinatura digital). Ref.: FP.HIG.001.', '[{"id":"cd-ban-lg","title":"Limpeza Geral","fields":[{"id":"cd-ban-lg-feito","label":"Realizada","type":"checkbox","hint":"Limpeza geral do banheiro"},{"id":"cd-ban-lg-hora","label":"Horário","type":"text","hint":"Hora em que foi feita"}]},{"id":"cd-ban-mn","title":"Manutenção","fields":[{"id":"cd-ban-mn-feito","label":"Realizada","type":"checkbox","hint":"Reposição de papel, sabonete, etc."},{"id":"cd-ban-mn-hora","label":"Horário","type":"text","hint":"Hora em que foi feita"},{"id":"cd-ban-obs","label":"Observações","type":"text"}]}]'::jsonb, now())
+on conflict (id) do update set
+  category=excluded.category, frequency=excluded.frequency, title=excluded.title,
+  description=excluded.description, sections=excluded.sections, updated_at=now();

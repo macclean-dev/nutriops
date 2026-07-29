@@ -265,6 +265,27 @@ export async function fetchTenantMembers(tenantId) {
   } catch { return []; }
 }
 
+// Log de acessos (IP + horário + e-mail) — modelo e-mail só. p_tenant_id null
+// só funciona pro admin global (get_access_log barra o resto no servidor).
+export async function fetchAccessLog(tenantId, limit = 200) {
+  if (!isTenantSyncEnabled()) return [];
+  try {
+    const { getValidAccessToken } = await import('./auth');
+    const token = await getValidAccessToken();
+    if (!token) return [];
+    const res = await fetch(`${sbBase()}/rpc/get_access_log`, {
+      method: 'POST',
+      headers: { apikey: SB_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_tenant_id: tenantId ?? null, p_limit: limit }),
+    });
+    if (!res.ok) return [];
+    const rows = await res.json();
+    return Array.isArray(rows) ? rows.map(r => ({
+      at: r.at, email: r.email, ipAddress: r.ip_address, action: r.action, tenantId: r.tenant_id,
+    })) : [];
+  } catch { return []; }
+}
+
 function memberRowToTenant(row) {
   return {
     id: row.id,

@@ -5,6 +5,8 @@ import { APP_VERSION } from './pages';
 import { buildCommands, matchCommands, readRecentCommandIds, pushRecentCommandId } from './commands';
 import CountUp from './count-up';
 import { getEffectivePin, writePinOverride, isWeakPin } from './pin';
+import { isGlobalAdmin } from './permissions';
+import { fetchAccessLog } from './tenant-sync';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -784,8 +786,24 @@ export function MonthlyExportView({ allTenants, records, session }) {
 // 6. HISTÓRICO DE SESSÕES (Admin)
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function SessionHistoryView({ activeTenant, allTenants, onTenantChange }) {
+export function SessionHistoryView({ activeTenant, allTenants, onTenantChange, session }) {
   const sessions = readSessions2(activeTenant.id);
+  const isSuper = isGlobalAdmin(session);
+  const emailModel = Boolean(activeTenant?._fromMembership || activeTenant?._fromCloud);
+  const showCloudLog = isSuper || emailModel;
+
+  const [cloudLog, setCloudLog] = useState([]);
+  const [cloudLoading, setCloudLoading] = useState(false);
+
+  useEffect(() => {
+    if (!showCloudLog) return;
+    let cancelled = false;
+    setCloudLoading(true);
+    fetchAccessLog(isSuper ? null : activeTenant.id).then((rows) => {
+      if (!cancelled) { setCloudLog(rows); setCloudLoading(false); }
+    });
+    return () => { cancelled = true; };
+  }, [showCloudLog, isSuper, activeTenant.id]);
 
   return (
     <section className="management-page">
@@ -797,8 +815,34 @@ export function SessionHistoryView({ activeTenant, allTenants, onTenantChange })
           </select>
         </div>
       </div>
+
+      {showCloudLog && (
+        <article className="management-card" style={{ marginBottom: 16 }}>
+          <div className="card-head">
+            <div><span className="eyebrow">IP + horário + usuário</span><h2>{isSuper ? 'Acessos na nuvem — todas as lojas' : `Acessos na nuvem — ${activeTenant.name}`}</h2></div>
+            <span className="badge neutral">{cloudLog.length}</span>
+          </div>
+          <div className="equipment-maintenance-list">
+            {cloudLoading ? <p className="muted" style={{ padding:'20px' }}>Carregando…</p>
+              : cloudLog.length === 0 ? <p className="muted" style={{ padding:'20px' }}>Nenhum acesso registrado ainda. Só cobre contas de e-mail (convidadas) — logins por PIN não passam pelo Supabase Auth.</p>
+              : cloudLog.map((l, i) => (
+                <div key={i} className="equipment-maintenance-row">
+                  <div>
+                    <strong>{l.email}</strong>
+                    <span style={{ fontSize:11, color:'var(--text-secondary)' }}>{l.ipAddress || 'IP não capturado'}</span>
+                  </div>
+                  <div style={{ textAlign:'right', flexShrink:0 }}>
+                    <div style={{ fontSize:12, fontWeight:600 }}>{fmtDT(l.at)}</div>
+                    <span className={`badge ${l.action === 'login' ? 'ok' : 'neutral'}`} style={{ fontSize:10 }}>{l.action === 'login' ? 'Login' : 'Logout'}</span>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </article>
+      )}
+
       <article className="management-card">
-        <div className="card-head"><div><span className="eyebrow">Acessos</span><h2>{activeTenant.name}</h2></div><span className="badge neutral">{sessions.length}</span></div>
+        <div className="card-head"><div><span className="eyebrow">Acessos por PIN (device)</span><h2>{activeTenant.name}</h2></div><span className="badge neutral">{sessions.length}</span></div>
         <div className="equipment-maintenance-list">
           {sessions.length === 0 ? <p className="muted" style={{ padding:'20px' }}>Nenhum acesso registrado ainda.</p>
             : sessions.map(s => (

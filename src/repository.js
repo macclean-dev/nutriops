@@ -532,7 +532,12 @@ function eqFromRow(row) {
   };
 }
 
-const EQ_KEY = (tenantId) => `nutriops.equip_assets.${tenantId}`;
+// ⚠️ TEM que ser a MESMA chave que a UI lê (catalogKey em pages.jsx:
+// `nutriops.equipment.catalog.{id}`). Antes era `nutriops.equip_assets.{id}` —
+// o sync puxava o catálogo da nuvem e gravava numa chave que a tela NÃO lê, então
+// tenant sem catálogo no seed (ex.: CASA DOCE) mostrava "nenhum equipamento".
+// Nas lojas-seed ficou mascarado porque elas têm o catálogo embutido no build.
+const EQ_KEY = (tenantId) => `nutriops.equipment.catalog.${tenantId}`;
 
 export async function syncEquipmentCatalog(tenantId) {
   if (!isSupabaseEnabled() || !navigator.onLine) {

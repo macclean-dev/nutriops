@@ -33,15 +33,15 @@ describe('completionPct — tipos date e checkbox (Fase B)', () => {
   });
 });
 
-describe('seedTemplates CASA DOCE — 8 planilhas BPF (Fase A+B)', () => {
+describe('seedTemplates CASA DOCE — 11 planilhas BPF (Fase A+B+C)', () => {
   beforeEach(() => localStorage.clear());
   const CD = { id:'bf245c3b-2f9', name:'CASA DOCE' };
 
-  it('retorna 8 templates com ids uuid únicos', () => {
+  it('retorna 11 templates com ids uuid únicos', () => {
     const tpls = readFormTemplates(CD);
-    expect(tpls).toHaveLength(8);
+    expect(tpls).toHaveLength(11);
     const ids = tpls.map(t => t.id);
-    expect(new Set(ids).size).toBe(8);                         // sem colisão de uuid
+    expect(new Set(ids).size).toBe(11);                        // sem colisão de uuid
     for (const id of ids) expect(id).toMatch(/^[0-9a-f-]{36}$/);
   });
 
@@ -59,6 +59,27 @@ describe('seedTemplates CASA DOCE — 8 planilhas BPF (Fase A+B)', () => {
   it('carrinhos tem os 32 códigos', () => {
     const carr = readFormTemplates(CD).find(t => t.title.includes('Carrinhos'));
     expect(carr.sections[0].fields).toHaveLength(32);
+  });
+
+  it('vetores customizado: sem Pombo, com Abelha, hint de setor', () => {
+    const vet = readFormTemplates(CD).find(t => t.category === 'vetores_pragas');
+    const labels = vet.sections[0].fields.map(f => f.label);
+    expect(labels.some(l => l.includes('Pombo'))).toBe(false);
+    expect(labels.some(l => l.includes('Abelha'))).toBe(true);
+    const abelha = vet.sections[0].fields.find(f => f.label.includes('Abelha'));
+    expect(abelha.hint).toMatch(/Padaria/);
+  });
+
+  it('banheiros e hortifrutícolas têm bloco de não conformidade completo (desc+ação+responsável)', () => {
+    const tpls = readFormTemplates(CD);
+    for (const title of ['Banheiros', 'Hortifrutícolas']) {
+      const t = tpls.find(x => x.title.includes(title));
+      const ncSection = t.sections.find(s => s.title.includes('conformidade'));
+      const labels = ncSection.fields.map(f => f.label);
+      expect(labels.some(l => l.includes('conformidade'))).toBe(true);
+      expect(labels.some(l => l.includes('corretiva'))).toBe(true);
+      expect(labels.some(l => l.includes('Responsável'))).toBe(true);
+    }
   });
 });
 

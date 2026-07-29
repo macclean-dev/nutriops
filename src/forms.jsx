@@ -410,6 +410,11 @@ const TPL_CASADOCE_BANHEIROS = () => ({
       { id:'cd-ban-mn-hora',  label:'Horário',  type:'text', hint:'Hora em que foi feita' },
       { id:'cd-ban-obs',      label:'Observações', type:'text' },
     ]},
+    { id:'cd-ban-nc', title:'Não conformidade (se houver)', fields:[
+      { id:'cd-ban-ncdesc', label:'Não conformidade', type:'text' },
+      { id:'cd-ban-ncacao', label:'Ação corretiva', type:'text' },
+      { id:'cd-ban-ncresp', label:'Responsável pela correção', type:'text' },
+    ]},
   ],
 });
 
@@ -431,6 +436,7 @@ const TPL_CD_HORTIFRUTI = () => ({
     { id:'cd-hf-nc', title:'Não conformidade (se houver)', fields:[
       { id:'cd-hf-ncdesc', label:'Não conformidade', type:'text' },
       { id:'cd-hf-ncacao', label:'Ação corretiva', type:'text' },
+      { id:'cd-hf-ncresp', label:'Responsável pela correção', type:'text' },
     ]},
   ],
 });
@@ -518,6 +524,62 @@ const TPL_CD_MANUT_PROG = () => ({
   ],
 });
 
+// CASA DOCE — Higiene Pessoal / Vetores / Dedetização (Fase C, 29/07). Mesmo
+// conteúdo dos templates genéricos (TPL_HIGIENE_PESSOAL/TPL_DEDETIZACAO), mas
+// com ids FIXOS (convenção TPL_CD_*) pra bater com a nuvem. Vetores é
+// customizado: a nutricionista respondeu (29/07) que usa a mesma planilha em
+// todos os setores, mas quer o setor de destinação anotado (Padaria/Café/
+// Gelateria/Confeitaria); Pombo sai da lista (controle já feito à parte por
+// fora), Abelha entra (já estava no genérico).
+const TPL_CD_HIGIENE = () => ({
+  id:'c1e7838e-1cac-4a76-a0c3-296e1bebbfdb', category:'higiene_pessoal', frequency:'daily',
+  title:'Higiene Pessoal dos Colaboradores',
+  description:'Verificação diária de higiene, uniforme, comportamento e EPI. C=conforme / NC=não conforme.',
+  sections:[{ id:'cd-hig-ver', title:'Verificação', fields:[
+    { id:'cd-hig-uniforme', label:'Uniforme', type:'cnc' },
+    { id:'cd-hig-sapato',   label:'Sapato', type:'cnc' },
+    { id:'cd-hig-cabelo',   label:'Cabelo', type:'cnc' },
+    { id:'cd-hig-barba',    label:'Barba', type:'cnc' },
+    { id:'cd-hig-unha',     label:'Unha', type:'cnc' },
+    { id:'cd-hig-adorno',   label:'Adorno', type:'cnc', hint:'Remover brincos, anéis, pulseiras, colares' },
+    { id:'cd-hig-comport',  label:'Comportamento', type:'cnc', hint:'Atitudes higiênicas, não manipular objetos fora da atividade' },
+    { id:'cd-hig-avental',  label:'Avental', type:'cnc' },
+    { id:'cd-hig-perfume',  label:'Perfume', type:'cnc', hint:'Ausência de perfume forte' },
+    { id:'cd-hig-ferim',    label:'Ferimento', type:'cnc', hint:'Ferimentos devidamente cobertos' },
+    { id:'cd-hig-maos',     label:'Lavar Mãos', type:'cnc', hint:'Ao iniciar, usar banheiro, trocar atividade, colocar luvas' },
+    { id:'cd-hig-obs',      label:'Observações', type:'text' },
+  ]}],
+});
+
+const TPL_CD_VETORES = () => ({
+  id:'96496ddc-a938-4b90-9aa5-fd5710a54fb0', category:'vetores_pragas', frequency:'daily',
+  title:'Controle Integrado de Vetores e Pragas',
+  description:'Verificação diária. Registrar tipo de praga e o setor onde foi feito o controle. Anexar comprovante de dedetização.',
+  sections:[{ id:'cd-vet-ocorr', title:'Ocorrências do dia', fields:[
+    { id:'cd-vet-abelha',  label:'Abelha (A)',           type:'presence', hint:'Setor: Padaria / Café / Gelateria / Confeitaria' },
+    { id:'cd-vet-barata',  label:'Barata (B)',           type:'presence', hint:'Setor: Padaria / Café / Gelateria / Confeitaria' },
+    { id:'cd-vet-formiga', label:'Formiga (F)',          type:'presence', hint:'Setor: Padaria / Café / Gelateria / Confeitaria' },
+    { id:'cd-vet-mosca',   label:'Mosca / Mosquito (M)', type:'presence', hint:'Setor: Padaria / Café / Gelateria / Confeitaria' },
+    { id:'cd-vet-roedor',  label:'Roedor (R)',           type:'presence', hint:'Setor: Padaria / Café / Gelateria / Confeitaria' },
+    { id:'cd-vet-acao',    label:'Ação tomada', type:'text' },
+    { id:'cd-vet-obs',     label:'Observações',  type:'text' },
+  ]}],
+});
+
+const TPL_CD_DEDETIZACAO = () => ({
+  id:'17ce4089-0e51-48a7-991a-bdde090a33e9', category:'dedetizacao', frequency:'monthly',
+  title:'Controle de Dedetização',
+  description:'Registrar empresa, data, serviço e produto. Anexar comprovante.',
+  sections:[{ id:'cd-ded-reg', title:'Registro do serviço', fields:[
+    { id:'cd-ded-emp',  label:'Empresa executora', type:'text' },
+    { id:'cd-ded-data', label:'Data do serviço', type:'text' },
+    { id:'cd-ded-serv', label:'Serviço executado', type:'text' },
+    { id:'cd-ded-prod', label:'Produto utilizado', type:'text' },
+    { id:'cd-ded-cert', label:'Número do certificado', type:'text' },
+    { id:'cd-ded-obs',  label:'Observações', type:'text' },
+  ]}],
+});
+
 const TPL_CD_CALIBRACAO = () => ({
   id:'f4d07b4c-7e7d-4a1f-8e05-fe3c474c37d8', category:'manutencao', frequency:'monthly',
   title:'Calibração de Instrumentos de Medição',
@@ -542,6 +604,7 @@ function seedTemplates(tenant) {
   if (id.includes('bf245c3b') || name.includes('casa doce')) return [
     TPL_CASADOCE_BANHEIROS(), TPL_CD_HORTIFRUTI(), TPL_CD_FILTRO_CAFE(), TPL_CD_RESIDUOS(),
     TPL_CD_CARRINHOS(), TPL_CD_CLIMATIZACAO(), TPL_CD_MANUT_PROG(), TPL_CD_CALIBRACAO(),
+    TPL_CD_HIGIENE(), TPL_CD_VETORES(), TPL_CD_DEDETIZACAO(),
   ];
   return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO()];
 }

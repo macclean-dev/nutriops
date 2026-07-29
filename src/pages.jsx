@@ -1452,6 +1452,7 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
   const [quantidade, setQuantidade] = useState('');
   const [validade, setValidade]     = useState('');
   const [temperatura, setTemperatura] = useState('');
+  const [conservacao, setConservacao] = useState('');
   const [checks, setChecks]         = useState({});
   const [resultado, setResultado]   = useState('');
   const [motivoRejeicao, setMotivoRejeicao] = useState('');
@@ -1477,6 +1478,7 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
       quantidade: quantidade.trim(),
       validade: validade.trim(),
       temperatura: temperatura.trim(),
+      conservacao,
       checks,
       resultado,
       motivoRejeicao: resultado === 'rejeitado' ? motivoRejeicao.trim() : '',
@@ -1489,7 +1491,7 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
     pushReceivingRecord(activeTenant.id, record);
     // Reset form
     setFornecedor(''); setNf(''); setProduto(''); setQuantidade('');
-    setValidade(''); setTemperatura(''); setChecks({}); setResultado('');
+    setValidade(''); setTemperatura(''); setConservacao(''); setChecks({}); setResultado('');
     setMotivoRejeicao(''); setObs('');
     setSaving(false); setSaved(true);
     setTimeout(() => setSaved(false), 3000);
@@ -1500,7 +1502,7 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
   const filtered = filter === 'all' ? items : items.filter((r) => r.resultado === filter);
 
   const exportCSV = () => {
-    const cols = ['createdAt','fornecedor','nf','produto','quantidade','validade','temperatura','resultado','motivoRejeicao','obs','user'];
+    const cols = ['createdAt','fornecedor','nf','produto','quantidade','validade','temperatura','conservacao','resultado','motivoRejeicao','obs','user'];
     const esc = (v) => `"${String(v??'').replaceAll('"','""')}"`;
     const csv = [cols.join(','), ...items.map((r) => cols.map((k) => esc(r[k])).join(','))].join('\n');
     const blob = new Blob(['\uFEFF'+csv], { type:'text/csv;charset=utf-8' });
@@ -1542,6 +1544,23 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
             <label>Temperatura na chegada (°C)
               <input value={temperatura} onChange={(e) => setTemperatura(e.target.value)} inputMode="decimal" placeholder="Se aplicável" />
             </label>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text-secondary)', marginBottom: 8 }}>
+                Forma de conservação <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(informativo — não precisa medir por item, cada categoria já vai pra câmara com a temperatura fixa dela)</span>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {['resfriado', 'congelado', 'ambiente'].map((opt) => {
+                  const labels = { resfriado: 'Resfriado', congelado: 'Congelado', ambiente: 'Ambiente' };
+                  const on = conservacao === opt;
+                  return (
+                    <button key={opt} onClick={() => setConservacao(on ? '' : opt)}
+                      style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${on ? 'var(--primary)' : '#d0d7de'}`, background: on ? 'rgba(0,104,74,.1)' : 'white', color: on ? 'var(--primary)' : '#656d76', fontWeight: on ? 700 : 500, fontSize: 12, cursor: 'pointer', textAlign: 'center' }}>
+                      {labels[opt]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             {/* Checks */}
             <div>
@@ -1634,7 +1653,7 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
                         <span className={`badge ${tone}`}>{label}</span>
                       </div>
                       <span>{r.fornecedor}{r.nf ? ` · NF ${r.nf}` : ''}</span>
-                      <span>{r.quantidade}{r.validade ? ` · Val. ${r.validade}` : ''}{r.temperatura ? ` · ${r.temperatura}°C` : ''}</span>
+                      <span>{r.quantidade}{r.validade ? ` · Val. ${r.validade}` : ''}{r.temperatura ? ` · ${r.temperatura}°C` : ''}{r.conservacao ? ` · ${{resfriado:'Resfriado',congelado:'Congelado',ambiente:'Ambiente'}[r.conservacao] ?? r.conservacao}` : ''}</span>
                       {r.motivoRejeicao && <span style={{ color: 'var(--red)', fontSize: 11 }}>Rejeição: {r.motivoRejeicao}</span>}
                       <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{formatCompactDateTime(r.createdAt)} · {r.user}</span>
                     </div>

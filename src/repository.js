@@ -665,6 +665,7 @@ function recvToRow(r) {
   return {
     id: r.id, tenant_id: r.tenantId, fornecedor: r.fornecedor, nf: r.nf, produto: r.produto,
     quantidade: r.quantidade, validade: r.validade, temperatura: r.temperatura,
+    conservacao: r.conservacao ?? null,
     checks: r.checks, resultado: r.resultado, motivo_rejeicao: r.motivoRejeicao, obs: r.obs,
     user_name: r.user, role: r.role, created_at: r.createdAt,
   };
@@ -673,6 +674,7 @@ function recvFromRow(row) {
   return {
     id: row.id, tenantId: row.tenant_id, fornecedor: row.fornecedor, nf: row.nf, produto: row.produto,
     quantidade: row.quantidade, validade: row.validade, temperatura: row.temperatura,
+    conservacao: row.conservacao,
     checks: row.checks, resultado: row.resultado, motivoRejeicao: row.motivo_rejeicao, obs: row.obs,
     user: row.user_name, role: row.role, createdAt: row.created_at,
   };
@@ -963,7 +965,7 @@ create index if not exists idx_eq_tenant on equipment_catalog(tenant_id);
 create table if not exists receiving_records (
   id uuid primary key default gen_random_uuid(),
   tenant_id text not null, fornecedor text, nf text, produto text,
-  quantidade text, validade text, temperatura text,
+  quantidade text, validade text, temperatura text, conservacao text,
   checks jsonb, resultado text, motivo_rejeicao text, obs text,
   user_name text, role text, created_at timestamptz default now()
 );

@@ -112,6 +112,19 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
   // sentido (o id da loja é feio: nome@bf245c3b-2f9). Seeds (Swiss/Bäckerei/DBK)
   // não têm essas flags → seguem com PIN até a Fase 4.
   const emailModel = Boolean(activeTenant?._fromMembership || activeTenant?._fromCloud);
+  // Modelo e-mail: a "lista de usuários" são os MEMBROS da nuvem (tenant_members
+  // + auth), não a lista local de PINs. Convidados por e-mail vivem lá.
+  const [members, setMembers] = useState([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const loadMembers = () => {
+    if (!emailModel) return;
+    setLoadingMembers(true);
+    import('./tenant-sync')
+      .then(m => m.fetchTenantMembers(activeTenant.id))
+      .then(list => { setMembers(Array.isArray(list) ? list : []); setLoadingMembers(false); })
+      .catch(() => setLoadingMembers(false));
+  };
+  useEffect(() => { setMembers([]); if (emailModel) loadMembers(); /* eslint-disable-next-line */ }, [emailModel, activeTenant.id]);
 
   const handleInvite = async () => {
     setInvMsg(null);
@@ -124,6 +137,7 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
       await inviteCollaborator({ email, name: invName.trim(), role: invRole, tenantId: activeTenant.id, password: invPwd });
       setInvMsg({ tone:'ok', text:`✓ ${email} convidado. Entra com o e-mail + a senha inicial e troca depois.` });
       setInvEmail(''); setInvName(''); setInvPwd('');
+      loadMembers(); // recarrega a lista pra o convidado aparecer na hora
     } catch (e) {
       setInvMsg({ tone:'danger', text: e.message });
     }
@@ -184,7 +198,7 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
           </div>
         </article>
       )}
-      <div className="audit-stats" style={{ marginBottom: 16 }}>{roles.map((r) => (<div key={r} className="audit-stat"><span>{r}</span><strong>{users.filter((u) => u.role === r).length}</strong></div>))}</div>
+      <div className="audit-stats" style={{ marginBottom: 16 }}>{roles.map((r) => (<div key={r} className="audit-stat"><span>{r}</span><strong>{(emailModel ? members : users).filter((u) => u.role === r).length}</strong></div>))}</div>
       <div className="management-grid" style={emailModel ? { gridTemplateColumns: '1fr' } : undefined}>
         {/* Cadastro por PIN só pra loja seed. Loja e-mail (CASA DOCE) usa o
             "Convidar colaborador" acima — nada de PIN nem handle nome@id feio. */}
@@ -214,7 +228,27 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
         </article>
         )}
         <article className="management-card">
-          <div className="card-head"><div><span className="eyebrow">Lista</span><h2>Usuários cadastrados</h2></div><span className="badge neutral">{filtered.length}/{users.length}</span></div>
+          <div className="card-head"><div><span className="eyebrow">Lista</span><h2>Usuários cadastrados</h2></div><span className="badge neutral">{emailModel ? members.length : `${filtered.length}/${users.length}`}</span></div>
+          {emailModel ? (
+          <div className="equipment-maintenance-list">
+            {loadingMembers ? <p className="muted" style={{ padding:'16px 20px' }}>Carregando…</p>
+              : members.length === 0 ? <p className="muted" style={{ padding:'16px 20px' }}>Nenhum colaborador convidado ainda. Use "Convidar colaborador" acima.</p>
+              : members.map((m) => (
+                <div key={m.userId} className="equipment-maintenance-row user-row">
+                  <div>
+                    <strong>{m.name}</strong>
+                    <span>{m.role} · {m.email}</span>
+                    <span style={{ fontSize:11, color:'var(--text-secondary)', display:'block', marginTop:2 }}>
+                      {m.lastSignInAt ? `Último acesso: ${new Date(m.lastSignInAt).toLocaleString('pt-BR')}` : 'convidado — ainda não entrou'}
+                    </span>
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <span className="badge ok">Ativo</span>
+                  </div>
+                </div>
+              ))}
+          </div>
+          ) : (<>
           <div className="capture-fields equipment-filters">
             <label>Buscar<input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nome ou localização" /></label>
             <label>Perfil<select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>{['Todos', ...roles].map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
@@ -254,6 +288,7 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
                 </div>
               ); })}
           </div>
+          </>)}
         </article>
       </div>
     </section>

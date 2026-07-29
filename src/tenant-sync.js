@@ -242,6 +242,29 @@ export async function fetchMemberTenants() {
 
 // Linha da get_member_tenants → objeto de tenant do app. Espelha rowToTenant,
 // mas SEM access_token / setup_pin_hash (a RPC não os devolve, por segurança).
+// Membros (contas de e-mail) de uma loja — pra a tela de Usuários do modelo
+// e-mail. Chama list_tenant_members com o JWT do dono (gated no servidor).
+export async function fetchTenantMembers(tenantId) {
+  if (!isTenantSyncEnabled() || !tenantId) return [];
+  try {
+    const { getValidAccessToken } = await import('./auth');
+    const token = await getValidAccessToken();
+    if (!token) return [];
+    const res = await fetch(`${sbBase()}/rpc/list_tenant_members`, {
+      method: 'POST',
+      headers: { apikey: SB_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_tenant_id: tenantId }),
+    });
+    if (!res.ok) return [];
+    const rows = await res.json();
+    return Array.isArray(rows) ? rows.map(r => ({
+      userId: r.user_id, email: r.email, name: r.name,
+      role: r.role === 'tenant_admin' ? 'Administrador' : r.role,
+      lastSignInAt: r.last_sign_in_at, createdAt: r.created_at,
+    })) : [];
+  } catch { return []; }
+}
+
 function memberRowToTenant(row) {
   return {
     id: row.id,

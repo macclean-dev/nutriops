@@ -277,6 +277,8 @@ function memberRowToTenant(row) {
     modules: row.modules ?? [],
     stores: row.stores ?? [{ id: `${row.id}-main`, name: `${row.name} — Principal`, location: 'Principal' }],
     trialEndsAt: row.trial_ends_at,
+    implantacao: row.implantacao === true, // modo treino (alertas suspensos)
+    goLiveAt: row.go_live_at ?? null,      // início oficial da operação
     memberRole: row.role, // papel do usuário NESTA empresa (vem do tenant_members)
     usersList: [],
     multiStore: false,

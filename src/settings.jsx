@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { APP_VERSION } from './brand';
 import { getEffectivePin, writePinOverride, isWeakPin } from './pin';
+import { isGlobalAdmin } from './permissions';
 import {
   getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled,
   supabaseRepository, SUPABASE_SQL, migrateAllToSupabase,
@@ -18,6 +19,12 @@ export function saveCompanyProfile(tenantId, profile) {
 }
 
 export function SettingsView({ session, activeTenant, activeTenants, tenants }) {
+  // Infra (Supabase, Anon Key, SQL, migração, backup) é só pro SUPER ADMIN —
+  // não faz sentido (e assusta) pro dono de loja, que não é de TI. A anon key é
+  // pública por design (o RLS protege), mas não há motivo de exibi-la ao cliente.
+  const isSuper = isGlobalAdmin(session);
+  // Loja modelo e-mail não usa PIN → esconde "Alterar meu PIN".
+  const emailModel = Boolean(activeTenant?._fromMembership || activeTenant?._fromCloud);
   const cfg = getSupabaseConfig();
   const [url,     setUrl]     = useState(cfg.url ?? '');
   const [anonKey, setAnonKey] = useState(cfg.anonKey ?? '');
@@ -214,6 +221,7 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
         </div>
       </article>
 
+      {isSuper && (<>
       <div className="management-grid">
         <article className="management-card">
           <div className="card-head"><div><span className="eyebrow">Backend</span><h2>Supabase</h2></div>
@@ -293,6 +301,8 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
           </div>
         </div>
       </article>
+      </>)}
+      {!emailModel && !isSuper && (
       <article className="management-card" style={{ marginTop:16 }}>
         <div className="card-head"><div><span className="eyebrow">Segurança</span><h2>Alterar meu PIN</h2></div>
           <span className="badge neutral">{session?.user?.name}</span>
@@ -315,6 +325,7 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
           {pinMsg && <div className={`submission ${pinMsg.tone}`}>{pinMsg.text}</div>}
         </div>
       </article>
+      )}
     </section>
   );
 }

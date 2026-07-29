@@ -158,7 +158,11 @@ function getEquipmentEntry(catalog = [], label = '') {
 
 // ─── Alert computation ─────────────────────────────────────────────────────
 
-function computeTurnAlerts(turns, records, equipCatalog, tenantId) {
+function computeTurnAlerts(turns, records, equipCatalog, tenantId, emImplantacao) {
+  // Modo implantação: enquanto a loja treina a equipe, não cobra pendências de
+  // turno (senão vira uma enxurrada de "atrasados" falsos — 44 equip × turnos).
+  // Só afeta lojas com a flag (CASA DOCE); seeds operacionais não têm → seguem.
+  if (emImplantacao) return [];
   equipCatalog = dedupeCatalog(equipCatalog); // catálogo pode chegar com dupe (nuvem) → alerta em dobro
   if (!turns?.length || !equipCatalog?.length) return [];
   const now = new Date(), todayStr = now.toDateString(), nowMin = now.getHours() * 60 + now.getMinutes();
@@ -1181,7 +1185,7 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
 function AlertsView({ activeTenant, allTenants, onTenantChange, records, onAlertsChanged }) {
   const [, setTick] = useState(0); // re-render local ao dar ciência
   const turns = readTurns(activeTenant), catalog = readEquipmentCatalog(activeTenant);
-  const alerts = computeTurnAlerts(turns, records, catalog, activeTenant.id);
+  const alerts = computeTurnAlerts(turns, records, catalog, activeTenant.id, activeTenant.implantacao === true);
   const giveAck = (id) => { dismissAlertId(activeTenant.id, id); setTick(t => t + 1); onAlertsChanged?.(); };
   const today = records.filter((r) => r.tenantId === activeTenant.id && new Date(r.createdAt).toDateString() === new Date().toDateString());
   const outOfRange = today.filter((r) => resolveTemperatureTone(r) !== 'ok');
@@ -2253,7 +2257,7 @@ export function App() {
 
   const turns       = readTurns(activeTenant);
   const [alertsTick, setAlertsTick] = useState(0); // bump ao dar ciência → recomputa badge/lista
-  const alertCount  = useMemo(() => computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id).length, [records, activeTenant.id, equipmentCatalog, alertsTick]);
+  const alertCount  = useMemo(() => computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id, activeTenant.implantacao === true).length, [records, activeTenant.id, activeTenant.implantacao, equipmentCatalog, alertsTick]);
   const maintAlertCount = useMemo(() => {
     const equips = JSON.parse(localStorage.getItem(`nutriops.equip_assets.${activeTenant.id}`) ?? '[]');
     const logs   = JSON.parse(localStorage.getItem(`nutriops.maint_logs.${activeTenant.id}`) ?? '[]');
@@ -2531,6 +2535,12 @@ export function App() {
         )}
         <LocalModeBanner session={session} activeTenant={activeTenant} setActiveView={setActiveView} />
         <SupabaseAuthErrorBanner session={session} setActiveView={setActiveView} />
+        {activeTenant.implantacao === true && (
+          <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap', padding:'10px 16px', marginBottom:12, borderRadius:'var(--r-lg)', background:'rgba(0,104,74,.08)', border:'1px solid rgba(0,104,74,.25)', fontSize:13, color:'var(--text)' }}>
+            <span style={{ fontWeight:700, color:'var(--primary)', letterSpacing:'.04em' }}>EM IMPLANTAÇÃO</span>
+            <span style={{ color:'var(--text-secondary)' }}>Fase de treinamento — os registros ficam marcados como treino e os alertas de pendência estão suspensos até o início oficial da operação.</span>
+          </div>
+        )}
         <Suspense fallback={<ViewLoading />}>
           {/* Wrapper de entrada: remonta a cada troca de view (key) e replaya
               o fade-up. overview-v2 fica de fora — tem coreografia própria. */}
@@ -2539,7 +2549,7 @@ export function App() {
               a nova Visão Geral, que tem coreografia própria (fica fora do wrapper de fade-up).
               A v1 fica dormente em 'overview-v2' pra rollback. */}
           {activeView === 'overview'   && <OverviewV2 {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onLaunchKiosk={() => setShowKioskSetup(true)} onNavigate={setActiveView} onBack={() => setActiveView('overview-v2')} />}
-          {activeView === 'overview-v2' && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} trialStatus={trialStatus} onTryV2={() => setActiveView('overview')} />}
+          {activeView === 'overview-v2' && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id, activeTenant.implantacao === true)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} trialStatus={trialStatus} onTryV2={() => setActiveView('overview')} />}
           {activeView === 'forms'      && <FormsView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
           {activeView === 'pops'       && <POPsView {...sharedProps} session={session} />}
           {activeView === 'training'   && <TrainingView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}

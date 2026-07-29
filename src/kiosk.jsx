@@ -1,22 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getTemperatureRepository } from './repository';
+import { resolveLimits as resolveTemperatureLimits, resolveTone as resolveTemperatureTone } from './limits';
 import { BrandLockup } from './brand';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
-
-function resolveTemperatureLimits(label = '') {
-  const l = label.toLowerCase();
-  if (l.includes('freezer') || l.includes('congel') || l.includes('congelada')) return { min: -25, max: -18 };
-  return { min: 0, max: 9 };
-}
-
-function resolveTemperatureTone(value, min, max) {
-  const v = Number(value), mn = Number(min), mx = Number(max);
-  if (isNaN(v) || isNaN(mn) || isNaN(mx)) return 'neutral';
-  if (v >= mn && v <= mx) return 'ok';
-  if (v >= mn - 3 && v <= mx + 3) return 'warn';
-  return 'danger';
-}
 
 function fmtTime() {
   return new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -146,11 +133,17 @@ export function KioskApp({ config, onExit }) {
   }, []);
 
   const active = catalog[activeIdx];
-  const limits = resolveTemperatureLimits(active?.label ?? '');
+  const limits = resolveTemperatureLimits(active?.label ?? '', active);
   const tone   = value ? resolveTemperatureTone(value, limits.min, limits.max) : 'neutral';
 
   const handleConfirm = useCallback(async () => {
     if (!value || !active || saving) return;
+    // Guarda contra erro de digitação (ex.: freezer a -19°C lançado como 19°C):
+    // valor bem fora da faixa cadastrada pede confirmação antes de gravar.
+    if (resolveTemperatureTone(value, limits.min, limits.max) === 'danger') {
+      const proceed = window.confirm(`${value}°C está bem fora da faixa esperada para ${active.label} (${limits.min}° a ${limits.max}°C).\n\nConfira se não é erro de digitação (ex.: sinal de negativo esquecido). Confirma o registro assim mesmo?`);
+      if (!proceed) return;
+    }
     setSaving(true);
     try {
       const payload = {

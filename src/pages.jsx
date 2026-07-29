@@ -8,7 +8,7 @@ import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupa
 import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
-import { resolveLimits as resolveLimitsFromCatalog, heuristicLimits, suggestLimits, dedupeCatalog } from './limits';
+import { resolveLimits as resolveLimitsFromCatalog, resolveTone, heuristicLimits, suggestLimits, dedupeCatalog } from './limits';
 
 // ─── Lazy view loading ────────────────────────────────────────────────────
 // Cada chunk só baixa quando o usuário navega pra view correspondente.
@@ -785,15 +785,30 @@ function TemperatureCapture({ activeTenant, session, equipmentCatalog, onRecordS
 
   const handleSaveAll = async () => {
     if (pendingDrafts === 0) return;
+    const toSave = [];
+    if (hasValue && !savedByEquipment[activeEquipment]) toSave.push({ label: activeEquipment, val: numericValue, loc: equipmentLocation, nt: note });
+    for (const [label, draft] of Object.entries(draftByEquipment)) {
+      if (label === activeEquipment) continue;
+      const val = Number(draft.value || '');
+      if (!isNaN(val) && draft.value && !savedByEquipment[label]) toSave.push({ label, val, loc: draft.location ?? '', nt: draft.note ?? '' });
+    }
+    // Guarda contra erro de digitação (ex.: freezer a -19°C lançado como 19°C):
+    // valor bem fora da faixa cadastrada pede confirmação antes de gravar —
+    // evita não-conformidade falsa por typo, sem bloquear um valor real ruim.
+    const outOfRange = toSave.filter((item) => {
+      const lim = resolveTemperatureLimits(item.label, equipmentCatalog);
+      return resolveTone(item.val, lim.min, lim.max) === 'danger';
+    });
+    if (outOfRange.length) {
+      const detail = outOfRange.map((item) => {
+        const lim = resolveTemperatureLimits(item.label, equipmentCatalog);
+        return `${item.label}: ${item.val}°C (esperado ${lim.min}° a ${lim.max}°)`;
+      }).join('\n');
+      const proceed = window.confirm(`Valor bem fora da faixa esperada:\n\n${detail}\n\nConfira se não é erro de digitação (ex.: sinal de negativo esquecido). Confirma o registro assim mesmo?`);
+      if (!proceed) return;
+    }
     setSubmissionState('saving');
     try {
-      const toSave = [];
-      if (hasValue && !savedByEquipment[activeEquipment]) toSave.push({ label: activeEquipment, val: numericValue, loc: equipmentLocation, nt: note });
-      for (const [label, draft] of Object.entries(draftByEquipment)) {
-        if (label === activeEquipment) continue;
-        const val = Number(draft.value || '');
-        if (!isNaN(val) && draft.value && !savedByEquipment[label]) toSave.push({ label, val, loc: draft.location ?? '', nt: draft.note ?? '' });
-      }
       const newSaved = { ...savedByEquipment };
       for (const item of toSave) {
         const created = await repository.create(buildPayload(item.label, item.val, item.loc, item.nt));
@@ -1962,7 +1977,7 @@ function ReportsHub({ activeView, setActiveView, session, allTenants, records, .
       {current === 'charts'    && <ChartsView    {...shared} />}
       {current === 'reports'   && <ReportsView   allTenants={allTenants} records={records} />}
       {current === 'monthly'   && <MonthlyExportView allTenants={allTenants} records={records} session={session} />}
-      {current === 'audit'     && <AuditView     allTenants={allTenants} records={records} session={session} />}
+      {current === 'audit'     && <AuditView     allTenants={allTenants} records={records} session={session} onRecordSaved={rest.onRecordSaved} />}
     </>
   );
 }
@@ -2564,7 +2579,7 @@ export function App() {
           {/* Hub: Relatórios (dashboard/charts/reports/monthly/audit) */}
           {REPORTS_KEYS.includes(activeView) && (
             <ReportsHub activeView={activeView} setActiveView={setActiveView}
-              allTenants={visibleTenants} records={records} session={session} {...sharedProps} />
+              allTenants={visibleTenants} records={records} session={session} onRecordSaved={handleRecordSaved} {...sharedProps} />
           )}
 
           {activeView === 'alerts'     && <AlertsView {...sharedProps} records={records} onAlertsChanged={() => setAlertsTick(t => t + 1)} />}

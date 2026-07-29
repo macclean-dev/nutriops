@@ -237,6 +237,8 @@ function tempToRow(input) {
     value: input.value, min_value: input.min, max_value: input.max,
     note: input.note ?? null, user_name: input.user, user_role: input.role,
     control_mode: input.controlMode ?? 'routine', observation_interval: input.observationInterval ?? null,
+    original_value: input.originalValue ?? null, correction_reason: input.correctionReason ?? null,
+    corrected_by: input.correctedBy ?? null, corrected_at: input.correctedAt ?? null,
     created_at: input.createdAt,
   };
 }
@@ -249,6 +251,22 @@ function tempFromRow(row) {
     value: row.value, min: row.min_value, max: row.max_value, note: row.note,
     user: row.user_name, role: row.user_role, controlMode: row.control_mode,
     observationInterval: row.observation_interval, equipment: row.equipment_key,
+    originalValue: row.original_value, correctionReason: row.correction_reason,
+    correctedBy: row.corrected_by, correctedAt: row.corrected_at,
+  };
+}
+
+// Row parcial só com os campos de correção — NUNCA reusar tempToRow aqui:
+// ele preenche colunas ausentes com `?? null`, o que apagaria o resto do
+// registro num PATCH/upsert parcial.
+function correctionToRow(id, tenantId, patch) {
+  return {
+    id, tenant_id: tenantId,
+    value: patch.value,
+    original_value: patch.originalValue,
+    correction_reason: patch.correctionReason,
+    corrected_by: patch.correctedBy,
+    corrected_at: patch.correctedAt,
   };
 }
 
@@ -282,6 +300,18 @@ export const localRepository = {
     const cols = ['createdAt','tenantName','equipmentInput','equipmentKey','equipmentLocation','measuredAt','value','min','max','user','role','note','controlMode'];
     const esc  = (v) => `"${String(v??'').replaceAll('"','""')}"`;
     return [cols.join(','), ...records.map((r) => cols.map((k) => esc(r[k])).join(','))].join('\n');
+  },
+  // Correção com trilha de auditoria — nunca sobrescreve sem rastro. `patch`
+  // já traz originalValue calculado pelo caller (preserva o 1º valor mesmo
+  // que o registro seja corrigido mais de uma vez).
+  async update(id, tenantId, patch) {
+    const records = ls(RECORDS_KEY, []);
+    const idx = records.findIndex((r) => r.id === id);
+    if (idx === -1) return null;
+    records[idx] = { ...records[idx], ...patch };
+    lw(RECORDS_KEY, records);
+    enqueue('temperature_records', 'upsert', correctionToRow(id, tenantId, patch));
+    return records[idx];
   },
 };
 
@@ -320,6 +350,34 @@ export const supabaseRepository = {
       // Falhou: salva local + enfileira pro retry
       const local = await localRepository.create(input);
       return { ...local, _pending: true };
+    }
+  },
+  async update(id, tenantId, patch) {
+    const applyLocal = (fields) => {
+      const records = ls(RECORDS_KEY, []);
+      const idx = records.findIndex((r) => r.id === id);
+      if (idx === -1) return null;
+      records[idx] = { ...records[idx], ...fields };
+      lw(RECORDS_KEY, records);
+      return records[idx];
+    };
+    if (!navigator.onLine) {
+      enqueue('temperature_records', 'upsert', correctionToRow(id, tenantId, patch));
+      return { ...applyLocal(patch), _pending: true };
+    }
+    try {
+      const row = await sbFetch('temperature_records', {
+        method: 'PATCH', filter: `id=eq.${id}`,
+        body: correctionToRow(id, tenantId, patch),
+        prefer: 'return=representation',
+      }, tenantId);
+      const record = tempFromRow(Array.isArray(row) ? row[0] : row);
+      applyLocal(record);
+      return record;
+    } catch (e) {
+      console.warn('[repo] supabaseRepository.update PATCH failed:', e?.message);
+      enqueue('temperature_records', 'upsert', correctionToRow(id, tenantId, patch));
+      return { ...applyLocal(patch), _pending: true };
     }
   },
   async syncQueue() {
@@ -857,6 +915,7 @@ create table if not exists temperature_records (
   measured_at text, value numeric not null, min_value numeric, max_value numeric,
   note text, user_name text, user_role text,
   control_mode text default 'routine', observation_interval integer,
+  original_value numeric, correction_reason text, corrected_by text, corrected_at timestamptz,
   created_at timestamptz default now()
 );
 create index if not exists idx_temp_tenant  on temperature_records(tenant_id);

@@ -441,7 +441,7 @@ export function ChartsView({ activeTenant, allTenants, onTenantChange, records }
   );
 }
 
-export function AuditView({ allTenants, records, session }) {
+export function AuditView({ allTenants, records, session, onRecordSaved }) {
   const repository = useMemo(() => getTemperatureRepository(), []);
   const [tenantFilter, setTenantFilter] = useState('all');
   const [periodFilter, setPeriodFilter] = useState('30');
@@ -454,8 +454,31 @@ export function AuditView({ allTenants, records, session }) {
   const [signingPeriod, setSigningPeriod] = useState(false);
   const [rtNote, setRtNote] = useState('');
   const [drillEq, setDrillEq] = useState(null);
+  const [correctingId, setCorrectingId] = useState(null);
+  const [correctionValue, setCorrectionValue] = useState('');
+  const [correctionReason, setCorrectionReason] = useState('');
+  const [correctionSaving, setCorrectionSaving] = useState(false);
 
   const isRT = ['Nutricionista RT','Administrador','Super-admin'].includes(session?.user?.role);
+
+  const startCorrection = (r) => { setCorrectingId(r.id); setCorrectionValue(String(r.value)); setCorrectionReason(''); };
+  const cancelCorrection = () => setCorrectingId(null);
+  const submitCorrection = async (r) => {
+    const val = Number(correctionValue);
+    if (isNaN(val) || !correctionReason.trim()) return;
+    setCorrectionSaving(true);
+    try {
+      await repository.update(r.id, r.tenantId, {
+        value: val,
+        originalValue: r.originalValue ?? r.value,
+        correctionReason: correctionReason.trim(),
+        correctedBy: session.user.name,
+        correctedAt: new Date().toISOString(),
+      });
+      setCorrectingId(null);
+      onRecordSaved?.();
+    } finally { setCorrectionSaving(false); }
+  };
 
   const saveValidation = (note) => {
     const v = { id: crypto.randomUUID(), by: session.user.name, role: session.user.role, at: new Date().toISOString(), periodFilter, tenantFilter, recordCount: filtered.length, note: note.trim() };
@@ -583,11 +606,36 @@ export function AuditView({ allTenants, records, session }) {
                   </button>
                   {r.equipmentLocation && <small style={{ color: 'var(--text-secondary)', display:'block', marginTop:2 }}>{r.equipmentLocation}</small>}
                 </td>
-                <td style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 16 }}>{r.value}°C</td>
+                <td style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 16 }}>
+                  {r.value}°C
+                  {r.correctedAt && (
+                    <small style={{ display: 'block', color: 'var(--text-secondary)', fontWeight: 400, fontSize: 10 }}>
+                      <s>{r.originalValue}°C</s> corrigido
+                    </small>
+                  )}
+                </td>
                 <td style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-secondary)' }}>{r.min ?? '?'}–{r.max ?? '?'}°C</td>
                 <td>{r.user}{r.role && <><br /><small style={{ color: 'var(--text-secondary)' }}>{r.role}</small></>}</td>
                 <td><span className={`badge ${tone}`}>{tl[tone]}</span></td>
-                <td style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{r.note || '—'}</td>
+                <td style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+                  {r.note || '—'}
+                  {r.correctedAt && (
+                    <small style={{ display: 'block', marginTop: 4, color: 'var(--text-secondary)' }}>
+                      Corrigido por {r.correctedBy} em {formatCompactDateTime(r.correctedAt)} · {r.correctionReason}
+                    </small>
+                  )}
+                  {isRT && correctingId === r.id && (
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
+                      <input inputMode="decimal" value={correctionValue} onChange={(e) => setCorrectionValue(e.target.value)} style={{ width: 70 }} />
+                      <input placeholder="Motivo (obrigatório)" value={correctionReason} onChange={(e) => setCorrectionReason(e.target.value)} style={{ flex: 1, minWidth: 140 }} />
+                      <button className="secondary-action" style={{ fontSize: 11, padding: '3px 8px' }} disabled={correctionSaving || !correctionReason.trim()} onClick={() => submitCorrection(r)}>Salvar</button>
+                      <button className="secondary-action" style={{ fontSize: 11, padding: '3px 8px' }} onClick={cancelCorrection}>Cancelar</button>
+                    </div>
+                  )}
+                  {isRT && correctingId !== r.id && (
+                    <button className="secondary-action" style={{ fontSize: 11, padding: '2px 8px', marginTop: 4 }} onClick={() => startCorrection(r)}>Corrigir</button>
+                  )}
+                </td>
               </tr>
             ); })}</tbody></table>}
       </div>

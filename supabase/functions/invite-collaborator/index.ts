@@ -1,18 +1,25 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // invite-collaborator — o "pedacinho de servidor" do NutriOPS.
 //
-// POR QUE existe: criar conta de auth com senha inicial exige a service_role
-// (chave-mestra). Numa SPA estática ela não pode existir (iria pro bundle
-// público). Aqui ela vive no lado do Supabase (env SUPABASE_SERVICE_ROLE_KEY,
-// injetada automaticamente) — o navegador nunca a vê. É o equivalente ao que o
-// servidor do Nexum faz.
+// POR QUE existe: criar conta de auth com senha inicial (ou redefinir a senha
+// de uma já existente) exige a service_role (chave-mestra). Numa SPA estática
+// ela não pode existir (iria pro bundle público). Aqui ela vive no lado do
+// Supabase (env SUPABASE_SERVICE_ROLE_KEY, injetada automaticamente) — o
+// navegador nunca a vê. É o equivalente ao que o servidor do Nexum faz.
 //
-// FLUXO:
-//   1. Recebe o JWT do dono da loja (tenant_admin) + {email, senha, papel, tenantId}.
+// Duas ações, body.action (default 'invite' — compat com quem já chamava sem o
+// campo):
+//   'invite'         — cria conta nova com senha inicial + vincula em tenant_members.
+//   'reset_password' — redefine a senha de um membro JÁ vinculado a essa loja
+//                      (ex.: dono esqueceu a senha que definiu no convite).
+//
+// FLUXO comum aos dois:
+//   1. Recebe o JWT do dono da loja (tenant_admin) + tenantId.
 //   2. AUTORIZA: confirma que quem chamou é tenant_admin DAQUELA loja (ou admin
-//      global) — senão 403. Um dono não cria gente em loja que não é dele.
-//   3. Cria a conta com a senha inicial (email_confirm=true → já pode logar).
-//   4. Vincula em tenant_members com o papel escolhido.
+//      global) — senão 403. Um dono não mexe em loja que não é dele.
+//   3. 'invite': cria a conta (email_confirm=true → já pode logar) + vincula.
+//      'reset_password': confere que o ALVO pertence a essa loja (evita reset
+//      cross-tenant por um tenant_admin mal-intencionado) e troca a senha.
 //
 // Segurança: papel restrito a um allowlist (não dá pra criar admin GLOBAL nem
 // tenant_admin de outra loja); service_role só no servidor.
@@ -50,19 +57,15 @@ Deno.serve(async (req) => {
     if (uErr || !caller) return json({ error: 'sessão inválida' }, 401);
 
     const body = await req.json().catch(() => ({}));
-    const email = String(body.email ?? '').trim().toLowerCase();
-    const password = String(body.password ?? '');
-    const name = String(body.name ?? '').trim();
-    const role = String(body.role ?? 'Colaborador');
+    const action = String(body.action ?? 'invite');
     const tenantId = String(body.tenantId ?? '').trim();
-
-    if (!email || !tenantId) return json({ error: 'e-mail e empresa são obrigatórios' }, 400);
-    if (!ALLOWED_ROLES.includes(role)) return json({ error: 'papel inválido' }, 400);
-    if (password.length < 8) return json({ error: 'a senha inicial precisa de no mínimo 8 caracteres' }, 400);
+    const password = String(body.password ?? '');
+    if (!tenantId) return json({ error: 'empresa é obrigatória' }, 400);
 
     const admin = createClient(url, serviceKey);
 
-    // 2) AUTORIZAÇÃO — o chamador tem que ser tenant_admin DESTA loja (ou admin global).
+    // 2) AUTORIZAÇÃO (comum às duas ações) — o chamador tem que ser tenant_admin
+    // DESTA loja (ou admin global).
     const { data: membership } = await admin
       .from('tenant_members').select('role')
       .eq('user_id', caller.id).eq('tenant_id', tenantId).maybeSingle();
@@ -70,6 +73,34 @@ Deno.serve(async (req) => {
     if (membership?.role !== 'tenant_admin' && !isGlobalAdmin) {
       return json({ error: 'você não administra esta empresa' }, 403);
     }
+
+    if (action === 'reset_password') {
+      const userId = String(body.userId ?? '').trim();
+      if (!userId) return json({ error: 'usuário é obrigatório' }, 400);
+      if (password.length < 8) return json({ error: 'a senha precisa de no mínimo 8 caracteres' }, 400);
+
+      // Confere que o ALVO pertence a esta loja — sem isso, um tenant_admin
+      // poderia redefinir a senha de QUALQUER usuário da instância só
+      // informando um userId arbitrário junto com a própria loja.
+      const { data: targetMembership } = await admin
+        .from('tenant_members').select('role')
+        .eq('user_id', userId).eq('tenant_id', tenantId).maybeSingle();
+      if (!targetMembership) return json({ error: 'esse usuário não pertence a esta empresa' }, 404);
+
+      const { error: pErr } = await admin.auth.admin.updateUserById(userId, { password });
+      if (pErr) return json({ error: pErr.message || 'erro ao redefinir senha' }, 400);
+
+      return json({ ok: true, user_id: userId });
+    }
+
+    // ── action === 'invite' (default) ──────────────────────────────────────
+    const email = String(body.email ?? '').trim().toLowerCase();
+    const name = String(body.name ?? '').trim();
+    const role = String(body.role ?? 'Colaborador');
+
+    if (!email) return json({ error: 'e-mail é obrigatório' }, 400);
+    if (!ALLOWED_ROLES.includes(role)) return json({ error: 'papel inválido' }, 400);
+    if (password.length < 8) return json({ error: 'a senha inicial precisa de no mínimo 8 caracteres' }, 400);
 
     // 3) Cria a conta com a senha inicial (já confirmada → loga na hora).
     const { data: created, error: cErr } = await admin.auth.admin.createUser({

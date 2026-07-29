@@ -282,3 +282,22 @@ export async function inviteCollaborator({ email, name, role, tenantId, password
   if (!res.ok) throw new Error(data.error ?? 'Erro ao convidar colaborador');
   return data;
 }
+
+// Redefine a senha de um colaborador JÁ vinculado à loja (ex.: dono esqueceu
+// a senha inicial que definiu no convite). Mesma Edge Function do convite,
+// action='reset_password' — o servidor confere que quem chama é tenant_admin
+// dessa loja e que o alvo pertence a ela antes de trocar a senha.
+export async function resetCollaboratorPassword({ userId, tenantId, password }) {
+  if (!isSupabaseEnabled()) throw new Error('Supabase não configurado.');
+  const token = await getValidAccessToken();
+  if (!token) throw new Error('Sua sessão expirou. Entre de novo.');
+  const { url, anonKey } = getSupabaseConfig();
+  const res = await fetch(`${url.replace(/\/$/, '')}/functions/v1/invite-collaborator`, {
+    method: 'POST',
+    headers: { apikey: anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'reset_password', userId, tenantId, password }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? 'Erro ao redefinir senha');
+  return data;
+}

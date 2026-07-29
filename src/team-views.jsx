@@ -143,6 +143,21 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
     }
     setInviting(false);
   };
+  const [resettingId, setResettingId] = useState(null);
+  const resetPasswordFor = async (m) => {
+    const newPwd = window.prompt(`Nova senha para ${m.name} (mín. 8 caracteres):`);
+    if (newPwd === null) return; // cancelou
+    if (newPwd.length < 8) { alert('A senha precisa de no mínimo 8 caracteres.'); return; }
+    setResettingId(m.userId);
+    try {
+      const { resetCollaboratorPassword } = await import('./auth');
+      await resetCollaboratorPassword({ userId: m.userId, tenantId: activeTenant.id, password: newPwd });
+      alert(`Senha de ${m.name} redefinida. Combine a nova senha com a pessoa por um canal separado (WhatsApp/pessoalmente).`);
+    } catch (e) {
+      alert(e.message);
+    }
+    setResettingId(null);
+  };
   const roles = ['Colaborador', 'Supervisor', 'Nutricionista RT', 'Administrador'];
   useEffect(() => { setUsers(readUsers(activeTenant)); setEditingIndex(null); setNameInput(''); setRoleInput('Colaborador'); setLocationInput(''); setStatusInput('Ativo'); setPinInput('0000'); }, [activeTenant.id]);
   useEffect(() => { writeUsers(activeTenant.id, users); }, [activeTenant.id, users]);
@@ -244,6 +259,13 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
                   </div>
                   <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                     <span className="badge ok">Ativo</span>
+                    {canInvite && (
+                      <button className="ghost-action" style={{ fontSize:11 }} disabled={resettingId === m.userId}
+                        title="Define uma nova senha pra essa pessoa (esqueceu a atual, por exemplo)."
+                        onClick={() => resetPasswordFor(m)}>
+                        {resettingId === m.userId ? 'Redefinindo…' : 'Redefinir senha'}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

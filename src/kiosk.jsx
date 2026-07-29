@@ -266,11 +266,14 @@ export function KioskSetup({ activeTenant, equipmentCatalog, session, onLaunch, 
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200, padding:24 }}>
-      <div style={{ background:'white', borderRadius:16, padding:28, width:'100%', maxWidth:480, boxShadow:'0 24px 48px rgba(0,0,0,.2)' }}>
+      <div style={{ background:'white', borderRadius:16, padding:28, width:'100%', maxWidth:480, maxHeight:'85vh', display:'flex', flexDirection:'column', boxShadow:'0 24px 48px rgba(0,0,0,.2)' }}>
         <h2 style={{ fontSize:20, fontWeight:800, letterSpacing:'-.03em', marginBottom:6 }}>Modo Quiosque</h2>
         <p style={{ fontSize:13, color:'#5c6c7a', marginBottom:20 }}>Interface simplificada para tablet na loja. Selecione os equipamentos a registrar.</p>
 
-        <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:20 }}>
+        {/* Lista rola por dentro (flex:1 + minHeight:0) — sem isso, catálogos
+            grandes (ex.: 44 equip. da CASA DOCE) empurram os botões "Cancelar"/
+            "Lançar quiosque" pra fora da tela, sem jeito de rolar até eles. */}
+        <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:20, overflowY:'auto', flex:1, minHeight:0 }}>
           {equipmentCatalog.map(eq => {
             const sel = selectedEquips.includes(eq.label);
             return (

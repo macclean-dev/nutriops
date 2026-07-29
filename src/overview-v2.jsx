@@ -9,9 +9,10 @@
 //   - Cada perfil vê primeiro o que mais importa pra ele
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { resolveLimits, resolveTone } from './limits';
 import { EquipmentDetailModal, EquipmentChart, toneColor, toneBg } from './equipment-detail';
+import { getTemperatureRepository } from './repository';
 import CountUp from './count-up';
 
 function fmtRelative(iso) {
@@ -115,13 +116,13 @@ function MetricBig({ label, value, sub, tone = 'neutral', accent, count = false 
 
 // ─── Equipment card (a estrela do show pro Supervisor) ────────────────────
 
-function EquipmentCard({ equipment, history, onOpen }) {
+function EquipmentCard({ equipment, history, onOpen, onQuickRegister }) {
   const limits = resolveLimits(equipment.label, equipment);
   const last = history[history.length - 1];
   const tone = last ? resolveTone(last.value, limits.min, limits.max) : 'neutral';
 
   return (
-    <button onClick={onOpen} style={{
+    <div onClick={onOpen} style={{
       flex:1, minWidth:0,
       padding:'20px 22px',
       background:'var(--surface)', border:'1px solid var(--border-subtle)',
@@ -141,14 +142,26 @@ function EquipmentCard({ equipment, history, onOpen }) {
             {equipment.location || 'Sem localização'} · faixa {limits.min}° / {limits.max}°
           </div>
         </div>
-        <span style={{
-          padding:'2px 8px', borderRadius:20, fontSize:10, fontWeight:600,
-          letterSpacing:'.06em', textTransform:'uppercase',
-          background:toneBg(tone), color:toneColor(tone),
-          flexShrink:0,
-        }}>
-          {tone === 'ok' ? 'OK' : tone === 'warn' ? 'Atenção' : tone === 'danger' ? 'Crítico' : 'Sem leitura'}
-        </span>
+        <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+          {onQuickRegister && (
+            <button onClick={e => { e.stopPropagation(); onQuickRegister(); }}
+              title="Registrar uma leitura agora pra esse equipamento, sem abrir o modo quiosque."
+              style={{
+                padding:'3px 9px', borderRadius:20, fontSize:10, fontWeight:600,
+                border:'1px solid var(--primary)', background:'transparent', color:'var(--primary)',
+                cursor:'pointer', fontFamily:'var(--font)',
+              }}>
+              + Registrar
+            </button>
+          )}
+          <span style={{
+            padding:'2px 8px', borderRadius:20, fontSize:10, fontWeight:600,
+            letterSpacing:'.06em', textTransform:'uppercase',
+            background:toneBg(tone), color:toneColor(tone),
+          }}>
+            {tone === 'ok' ? 'OK' : tone === 'warn' ? 'Atenção' : tone === 'danger' ? 'Crítico' : 'Sem leitura'}
+          </span>
+        </div>
       </div>
 
       <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', gap:12 }}>
@@ -167,7 +180,107 @@ function EquipmentCard({ equipment, history, onOpen }) {
           <Sparkline data={history.slice(-30)} limits={limits} />
         </div>
       </div>
-    </button>
+    </div>
+  );
+}
+
+// ─── Registro rápido — 1 equipamento, sem abrir o modo quiosque ────────────
+// Atalho pedido pelo dono: Administrador/Supervisor viam os cards mas só
+// conseguiam REGISTRAR abrindo o quiosque inteiro. Mesma lógica de guarda
+// contra typo (fora da faixa → confirma) usada em TemperatureCapture/kiosk.
+
+function QuickRegisterModal({ equipment, activeTenant, session, onClose, onSaved }) {
+  const [value, setValue] = useState('');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef(null);
+  const repository = useMemo(() => getTemperatureRepository(), []);
+  const limits = resolveLimits(equipment.label, equipment);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  const numericValue = Number(value);
+  const hasValue = value !== '' && !isNaN(numericValue);
+  const tone = hasValue ? resolveTone(numericValue, limits.min, limits.max) : 'neutral';
+
+  const save = async () => {
+    if (!hasValue || saving) return;
+    if (tone === 'danger') {
+      const proceed = window.confirm(`${numericValue}°C está bem fora da faixa esperada (${limits.min}° a ${limits.max}°C).\n\nConfira se não é erro de digitação (ex.: sinal de negativo esquecido). Confirma o registro assim mesmo?`);
+      if (!proceed) return;
+    }
+    setSaving(true);
+    try {
+      await repository.create({
+        tenantId: activeTenant.id, tenantName: activeTenant.name,
+        equipmentInput: equipment.label, equipmentKey: equipment.label,
+        equipmentLocation: equipment.location ?? null,
+        user: session.user.name, role: session.user.role, equipment: equipment.label,
+        measuredAt: new Date().toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }),
+        controlMode: 'routine', value: numericValue, note,
+        min: limits.min, max: limits.max,
+      });
+      onSaved?.();
+      onClose();
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position:'fixed', inset:0, zIndex:1000,
+      background:'rgba(20,20,19,.55)', backdropFilter:'blur(4px)',
+      display:'flex', alignItems:'center', justifyContent:'center', padding:24,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background:'var(--surface)', borderRadius:'var(--r-xl)',
+        width:'100%', maxWidth:360, boxShadow:'var(--shadow-lg)', padding:24,
+        display:'flex', flexDirection:'column', gap:14,
+      }}>
+        <div>
+          <div style={{ fontSize:10, fontWeight:600, letterSpacing:'.12em', textTransform:'uppercase', color:'var(--text-secondary)' }}>
+            {equipment.location || 'Registro rápido'}
+          </div>
+          <h2 style={{ fontFamily:'var(--serif)', fontSize:24, fontWeight:400, letterSpacing:'-.02em', color:'var(--text)', margin:0 }}>
+            {equipment.label}
+          </h2>
+          <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:4 }}>Faixa: {limits.min}° a {limits.max}°C</div>
+        </div>
+
+        <label style={{ display:'flex', flexDirection:'column', gap:6 }}>
+          <span style={{ fontSize:11, fontWeight:600, color:'var(--text-secondary)', textTransform:'uppercase', letterSpacing:'.06em' }}>Temperatura (°C)</span>
+          <input ref={inputRef} inputMode="decimal" value={value}
+            onChange={e => setValue(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') save(); }}
+            placeholder={`${limits.min} a ${limits.max}`}
+            style={{
+              padding:'10px 14px', borderRadius:'var(--r)', fontSize:20, fontFamily:'var(--mono)',
+              border:`1.5px solid ${tone==='danger'?'var(--red)':tone==='warn'?'var(--amber)':'var(--border)'}`,
+              color:'var(--text)', background:'var(--surface)',
+            }} />
+        </label>
+
+        <label style={{ display:'flex', flexDirection:'column', gap:6 }}>
+          <span style={{ fontSize:11, fontWeight:600, color:'var(--text-secondary)', textTransform:'uppercase', letterSpacing:'.06em' }}>Observação (opcional)</span>
+          <textarea value={note} onChange={e => setNote(e.target.value)} style={{ minHeight:54, padding:'8px 12px', borderRadius:'var(--r)', border:'1px solid var(--border)', fontFamily:'var(--font)', fontSize:13, resize:'vertical' }} />
+        </label>
+
+        <div style={{ display:'flex', gap:10 }}>
+          <button onClick={onClose} style={{ flex:1, padding:'10px', borderRadius:'var(--r)', border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', cursor:'pointer', fontSize:13, fontWeight:600, fontFamily:'var(--font)' }}>Cancelar</button>
+          <button onClick={save} disabled={!hasValue || saving} style={{
+            flex:2, padding:'10px', borderRadius:'var(--r)', border:'none',
+            background: !hasValue ? 'var(--border)' : 'var(--primary)', color:'white',
+            cursor: !hasValue ? 'not-allowed' : 'pointer', fontSize:13, fontWeight:700, fontFamily:'var(--font)',
+          }}>
+            {saving ? 'Salvando…' : 'Registrar'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -437,10 +550,11 @@ function HeroGreeting({ session, activeTenant, lastRecord, complianceToday }) {
   );
 }
 
-function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records, onLaunchKiosk, onNavigate }) {
+function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records, onLaunchKiosk, onNavigate, onRecordSaved }) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const todayMs = today.getTime();
   const [drillEq, setDrillEq] = useState(null);
+  const [quickRegEq, setQuickRegEq] = useState(null);
 
   const tenantRecords = useMemo(() =>
     records.filter(r => r.tenantId === activeTenant.id),
@@ -530,6 +644,7 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
                 equipment={eq}
                 history={equipmentHistory.get(eq.label) ?? []}
                 onOpen={() => setDrillEq(eq)}
+                onQuickRegister={() => setQuickRegEq(eq)}
               />
             </div>
           ))}
@@ -554,11 +669,19 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
           onClose={() => setDrillEq(null)}
         />
       )}
+
+      {/* Registro rápido */}
+      {quickRegEq && (
+        <QuickRegisterModal
+          equipment={quickRegEq} activeTenant={activeTenant} session={session}
+          onClose={() => setQuickRegEq(null)} onSaved={onRecordSaved}
+        />
+      )}
     </div>
   );
 }
 
-function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records, onLaunchKiosk, onNavigate }) {
+function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records, onLaunchKiosk, onNavigate, onRecordSaved }) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const todayMs = today.getTime();
 
@@ -590,6 +713,7 @@ function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records
   }, [equipmentCatalog, equipmentHistory, todayMs]);
 
   const lastRecord = tenantRecords[0];
+  const [quickRegEq, setQuickRegEq] = useState(null);
 
   return (
     <div style={{ maxWidth:1000, margin:'0 auto' }}>
@@ -617,7 +741,7 @@ function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records
           subtitle="Toque no equipamento pra abrir a tela de captura">
           <div className="dash-stagger" style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
             {pending.map(eq => (
-              <button key={eq.label} onClick={() => onNavigate?.('overview')} style={{
+              <button key={eq.label} onClick={() => setQuickRegEq(eq)} style={{
                 flex:'1 1 200px', padding:'18px 20px',
                 background:'var(--surface)', border:'1px solid var(--border)',
                 borderRadius:'var(--r-lg)', cursor:'pointer', fontFamily:'var(--font)',
@@ -653,6 +777,14 @@ function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records
           Abrir modo quiosque (tablet do balcão)
         </button>
       </div>
+
+      {/* Registro rápido */}
+      {quickRegEq && (
+        <QuickRegisterModal
+          equipment={quickRegEq} activeTenant={activeTenant} session={session}
+          onClose={() => setQuickRegEq(null)} onSaved={onRecordSaved}
+        />
+      )}
     </div>
   );
 }

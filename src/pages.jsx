@@ -2563,7 +2563,7 @@ export function App() {
           {/* v2 é o padrão: 'overview' (default + todos os redirects/logout/exit) renderiza
               a nova Visão Geral, que tem coreografia própria (fica fora do wrapper de fade-up).
               A v1 fica dormente em 'overview-v2' pra rollback. */}
-          {activeView === 'overview'   && <OverviewV2 {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onLaunchKiosk={() => setShowKioskSetup(true)} onNavigate={setActiveView} onBack={() => setActiveView('overview-v2')} />}
+          {activeView === 'overview'   && <OverviewV2 {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} onLaunchKiosk={() => setShowKioskSetup(true)} onNavigate={setActiveView} onBack={() => setActiveView('overview-v2')} />}
           {activeView === 'overview-v2' && <OverviewView {...sharedProps} session={session} equipmentCatalog={equipmentCatalog} records={records} onRecordSaved={handleRecordSaved} alerts={computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id, activeTenant.implantacao === true)} notifPermission={notifPermission} onRequestNotif={requestNotif} onLaunchKiosk={() => setShowKioskSetup(true)} trialStatus={trialStatus} onTryV2={() => setActiveView('overview')} />}
           {activeView === 'forms'      && <FormsView activeTenant={activeTenant} allTenants={visibleTenants} onTenantChange={handleTenantChange} session={session} />}
           {activeView === 'pops'       && <POPsView {...sharedProps} session={session} />}

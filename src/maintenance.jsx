@@ -7,7 +7,13 @@ const sk = (k, id) => `nutriops.${k}.${id}`;
 const sl = (k, fb) => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : fb; } catch { return fb; } };
 const ss = (k, v)  => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
-export const readEquipments     = (id) => sl(sk('equip_assets', id), []);
+// Filtra lixo sem nome — antes da v1.9.60, syncEquipmentCatalog gravava o
+// catálogo de temperatura (shape {label,...}, sem `name`) nessa MESMA chave
+// por um bug de EQ_KEY errado (ver repository.js). Devices que sincronizaram
+// nessa janela ficaram com entradas fantasma (sem nome) que dobravam a
+// contagem no merge com o catálogo — auto-repara ao ler, sem precisar de
+// intervenção manual em cada device afetado.
+export const readEquipments     = (id) => sl(sk('equip_assets', id), []).filter((e) => e && e.name);
 export const writeEquipments    = (id, v) => ss(sk('equip_assets', id), v);
 // Catálogo de temperatura (mesmo que a tela "Equipamentos" usa). A Manutenção
 // mescla ele na lista pra você não recadastrar tudo — ver mergedEquipments.
@@ -218,10 +224,12 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
                     <div style={{ fontSize:14, fontWeight:800, color:'var(--red)', fontFamily:'var(--mono)' }}>{dueLabel(plan.days)}</div>
                     <div style={{ display:'flex', gap:6, marginTop:4, justifyContent:'flex-end' }}>
                       <button className="primary-action" style={{ fontSize:11, padding:'4px 10px' }}
+                        title="Marca essa manutenção como feita hoje e reinicia a contagem pro próximo vencimento."
                         onClick={() => setShowLogModal({ equipment: eq, plan })}>
                         ✓ Registrar
                       </button>
                       <button className="secondary-action" style={{ fontSize:11, padding:'4px 10px' }}
+                        title="Abre uma ordem de serviço pra esse equipamento (ex.: chamar o técnico)."
                         onClick={() => setEditOrder({ equipmentId: eq.id })}>
                         + OS
                       </button>
@@ -325,13 +333,19 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
                   </div>
                 </div>
                 <div style={{ display:'flex', gap:6 }}>
-                  <button className="secondary-action" style={{ fontSize:11 }} onClick={() => setShowLogModal({ equipment: eq })}>
+                  <button className="secondary-action" style={{ fontSize:11 }}
+                    title="Registra que a manutenção desse equipamento foi executada agora."
+                    onClick={() => setShowLogModal({ equipment: eq })}>
                     ✓ Registrar
                   </button>
-                  <button className="secondary-action" style={{ fontSize:11 }} onClick={() => setEditOrder({ equipmentId: eq.id })}>
+                  <button className="secondary-action" style={{ fontSize:11 }}
+                    title="Abre uma ordem de serviço pra esse equipamento (ex.: chamar o técnico)."
+                    onClick={() => setEditOrder({ equipmentId: eq.id })}>
                     + Abrir OS
                   </button>
-                  {isManager && <button className="ghost-action" style={{ fontSize:11 }} onClick={() => setEditEquip(eq)}>Editar</button>}
+                  {isManager && <button className="ghost-action" style={{ fontSize:11 }}
+                    title="Edita dados do equipamento (local, marca, plano de manutenção)."
+                    onClick={() => setEditEquip(eq)}>Editar</button>}
                 </div>
               </div>
               {eq.plans.length > 0 && (

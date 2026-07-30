@@ -2191,7 +2191,14 @@ export function App() {
   }, [activeTenant, activeStoreId]);
 
   const visibleTenants = useMemo(() => {
-    if (seesAllTenants) return tenants;
+    // activeTenants (state), NÃO o `tenants` do módulo: aquele é congelado no
+    // load com as lojas-seed, então clientes da nuvem (CASA DOCE) ficavam de
+    // fora da lista do admin global. Efeito colateral cruel: o <select> das
+    // telas recebe value=activeTenant.id sem uma <option> correspondente, o
+    // navegador exibe a PRIMEIRA opção ("Swiss") e a tela inteira parecia ser
+    // da Swiss enquanto mostrava dados da CASA DOCE (falso "44 equipamentos
+    // na Swiss", 30/07).
+    if (seesAllTenants) return activeTenants;
     // Membro por e-mail (Fase 3): vê as empresas do próprio vínculo — resolve a
     // RT com 3 unidades e a supervisora com 2. Aditivo: sessão por PIN não tem
     // memberTenants, então cai no comportamento antigo.
@@ -2299,10 +2306,13 @@ export function App() {
 
   const refreshRecords = useCallback(async () => {
     // Load records for all companies (RT/Admin) or just own company
-    const tenantsToLoad = seesAllTenants ? tenants : [activeTenant];
+    // Mesmo motivo do visibleTenants: com o `tenants` do módulo, o admin global
+    // nunca carregava os registros de clientes da nuvem (CASA DOCE aparecia
+    // sempre com 0 leituras).
+    const tenantsToLoad = seesAllTenants ? activeTenants : [activeTenant];
     const all = await Promise.all(tenantsToLoad.map(async (t) => { const items = await repository.list({ tenantId: t.id, days: 90 }); return items.map((r) => ({ ...r, tenantName: r.tenantName ?? t.name })); }));
     setRecords(all.flat().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
-  }, [repository, seesAllTenants, activeTenant]);
+  }, [repository, seesAllTenants, activeTenant, activeTenants]);
 
   useEffect(() => { refreshRecords(); }, [refreshRecords]);
 

@@ -1257,9 +1257,26 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
   const [editingIndex, setEditingIndex]     = useState(null);
   const [search, setSearch]                 = useState('');
   const [locationFilter, setLocationFilter] = useState('');
+  // De QUAL loja é o `catalog` que está em memória agora. Sem essa marcação, a
+  // troca de empresa corrompia o catálogo da loja de destino: o efeito de
+  // escrita tem activeTenant.id nas deps, então ele rodava no render da troca
+  // — quando o id JÁ é o novo mas o `catalog` do state AINDA é o da loja
+  // anterior — e gravava o catálogo antigo por cima da nova. Foi assim que os
+  // 44 equipamentos da CASA DOCE apagaram Swiss/Bäckerei/DBK (bug de 30/07).
+  // Guardar em state (não em ref) é essencial: o valor lido pelo efeito precisa
+  // ser o do render, senão a checagem passa e o bug volta.
+  const [catalogTenant, setCatalogTenant] = useState(activeTenant.id);
   const resetForm = () => { setEditingIndex(null); setLabelInput(''); setAliasInput(''); setLocationInput(''); setMinInput(''); setMaxInput(''); };
-  useEffect(() => { setCatalog(readEquipmentCatalog(activeTenant)); resetForm(); }, [activeTenant.id]);
-  useEffect(() => { writeEquipmentCatalog(activeTenant.id, catalog); }, [activeTenant.id, catalog]);
+  useEffect(() => {
+    setCatalog(readEquipmentCatalog(activeTenant));
+    setCatalogTenant(activeTenant.id);
+    resetForm();
+  }, [activeTenant.id]);
+  useEffect(() => {
+    // Troca de loja em andamento (catalog ainda é da loja anterior) → não grava.
+    if (catalogTenant !== activeTenant.id) return;
+    writeEquipmentCatalog(activeTenant.id, catalog);
+  }, [activeTenant.id, catalogTenant, catalog]);
 
   // Sugestão automática de faixa quando o usuário digita o nome (só preenche
   // se os campos estiverem vazios — não sobrescreve o que o user escolheu)

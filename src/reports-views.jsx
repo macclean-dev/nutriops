@@ -119,6 +119,54 @@ function TempLineChart({ records, equipment, height = 180 }) {
   );
 }
 
+// Lista de equipamentos de um card do Dashboard, com chips de setor (a
+// partir da `location` de cada item) pra filtrar — pedido do dono: dá pra
+// ter os 44 equipamentos da CASA DOCE separados por setor sem precisar de
+// uma aba/rota nova por setor. Mostra o setor junto ao nome sempre, mesmo
+// sem filtrar, pra identificar de cara onde está o equipamento com desvio.
+function EquipBreakdown({ equipStats, onOpen }) {
+  const [sector, setSector] = useState('all');
+  const sectors = useMemo(() => {
+    const set = new Set(equipStats.map((e) => e.location).filter(Boolean));
+    return [...set].sort();
+  }, [equipStats]);
+  const filtered = sector === 'all' ? equipStats : equipStats.filter((e) => e.location === sector);
+
+  return (
+    <div className="equip-breakdown">
+      {sectors.length > 1 && (
+        <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:2 }}>
+          {['all', ...sectors].map((s) => {
+            const on = sector === s;
+            return (
+              <button key={s} onClick={(e) => { e.stopPropagation(); setSector(s); }}
+                style={{
+                  padding:'2px 9px', borderRadius:20, fontSize:10, fontWeight:600,
+                  border:`1px solid ${on ? 'var(--primary)' : 'var(--border)'}`,
+                  background: on ? 'rgba(0,104,74,.1)' : 'transparent',
+                  color: on ? 'var(--primary)' : 'var(--text-secondary)',
+                  cursor:'pointer', fontFamily:'var(--font)',
+                }}>
+                {s === 'all' ? 'Todos' : s}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {filtered.map((eq) => (
+        <button key={eq.label} className="equip-bar-row"
+          onClick={(e) => { e.stopPropagation(); onOpen(eq); }}
+          title="Abrir histórico do equipamento"
+          style={{ background:'none', border:'none', cursor:'pointer', textAlign:'left', width:'100%', padding:0, fontFamily:'inherit', color:'inherit' }}>
+          <span>{eq.label}{eq.location ? ` · ${eq.location}` : ''}</span>
+          <div className="equip-bar-track"><div className="equip-bar-fill" style={{ width:`${eq.pct??0}%`, background: eq.pct===null?'var(--border)':eq.pct>=90?'var(--green)':eq.pct>=70?'var(--amber)':'var(--red)' }} /></div>
+          <strong>{eq.pct !== null ? `${eq.pct}%` : '—'}</strong>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function DashboardView({ allTenants, records, activeTenant, onTenantChange }) {
   const now = Date.now();
   const [period, setPeriod] = useState(30);
@@ -149,7 +197,7 @@ export function DashboardView({ allTenants, records, activeTenant, onTenantChang
     const equipStats = catalog.map((eq) => {
       const er = tr.filter((r) => (r.equipment || r.equipmentInput) === eq.label);
       const eOk = er.filter((r) => resolveTemperatureTone(r) === 'ok').length;
-      return { label: eq.label, total: er.length, ok: eOk, pct: er.length > 0 ? Math.round((eOk / er.length) * 100) : null };
+      return { label: eq.label, location: eq.location || null, total: er.length, ok: eOk, pct: er.length > 0 ? Math.round((eOk / er.length) * 100) : null };
     });
     const last7 = records.filter((r) => r.tenantId === tenant.id && now - new Date(r.createdAt).getTime() <= 7 * 86400000);
     const trend = last7.length > 0 ? Math.round((last7.filter(r=>resolveTemperatureTone(r)==='ok').length / last7.length) * 100) : null;
@@ -286,22 +334,10 @@ export function DashboardView({ allTenants, records, activeTenant, onTenantChang
               <div className="dash-stat"><span>Hoje</span><strong>{today}</strong></div>
             </div>
             {equipStats.length > 0 && (
-              <div className="equip-breakdown">
-                {equipStats.map((eq) => (
-                  <button key={eq.label} className="equip-bar-row"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const equipment = readEquipmentCatalog(tenant).find(x => x.label === eq.label) ?? { label: eq.label };
-                      setDrill({ tenant, equipment });
-                    }}
-                    title="Abrir histórico do equipamento"
-                    style={{ background:'none', border:'none', cursor:'pointer', textAlign:'left', width:'100%', padding:0, fontFamily:'inherit', color:'inherit' }}>
-                    <span>{eq.label}</span>
-                    <div className="equip-bar-track"><div className="equip-bar-fill" style={{ width:`${eq.pct??0}%`, background: eq.pct===null?'var(--border)':eq.pct>=90?'var(--green)':eq.pct>=70?'var(--amber)':'var(--red)' }} /></div>
-                    <strong>{eq.pct !== null ? `${eq.pct}%` : '—'}</strong>
-                  </button>
-                ))}
-              </div>
+              <EquipBreakdown equipStats={equipStats} onOpen={(eq) => {
+                const equipment = readEquipmentCatalog(tenant).find(x => x.label === eq.label) ?? { label: eq.label };
+                setDrill({ tenant, equipment });
+              }} />
             )}
             {storeStats.length > 0 && (
               <div style={{ padding:'8px 16px 4px', borderTop:'1px solid var(--border-subtle)' }}>

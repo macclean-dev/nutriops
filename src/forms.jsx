@@ -473,15 +473,26 @@ const TPL_CD_RESIDUOS = () => ({
   ],
 });
 
+// Higienização dos Carrinhos — a nutricionista esclareceu (29/07): NÃO é
+// registro obrigatório da Anvisa, é só controle interno de limpeza. Na
+// prática todos os carrinhos são higienizados no MESMO DIA (não um por vez
+// em datas diferentes) — o modelo antigo pedia data+assinatura por carrinho
+// (32x), gerando a fricção que ela relatou ("sempre esquecem de preencher").
+// Redesenhado: 1 data + 1 responsável pro lote inteiro, e um checklist leve
+// (checkbox) de quais carrinhos foram feitos nesse dia.
 const TPL_CD_CARRINHOS = () => {
   const codes = ['T1','T2','T3','T4','T5','T6','T7','E1','E2','B1','B2','B3','C1','C2','C3','F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12','A1','A2','A3','A4','A5'];
   return {
     id:'0be8daac-24a5-461b-af6c-f438edcf5f48', category:'faxina', frequency:'biweekly',
     title:'Higienização dos Carrinhos',
-    description:'Lavagem dos carrinhos (quinzenal). A legenda dos prefixos T/E/B/C/F/A está a confirmar com a RT.',
+    description:'Controle interno de limpeza (não é registro obrigatório da Anvisa). Higienização quinzenal, feita no mesmo dia para todos os carrinhos — registre a data/responsável uma vez e marque os que foram higienizados.',
     sections:[
-      { id:'cd-carr-lav', title:'Lavagem', fields:
-        codes.map(c => ({ id:`cd-carr-${c}`, label:`Carrinho ${c}`, type:'date_sig' }))
+      { id:'cd-carr-reg', title:'Registro', fields:[
+        { id:'cd-carr-data', label:'Data da higienização', type:'date' },
+        { id:'cd-carr-resp', label:'Responsável', type:'text' },
+      ]},
+      { id:'cd-carr-lav', title:'Carrinhos higienizados', fields:
+        codes.map(c => ({ id:`cd-carr-${c}`, label:`Carrinho ${c}`, type:'checkbox' }))
       },
       { id:'cd-carr-obs', title:'Observações', fields:[
         { id:'cd-carr-obs-t', label:'Observações', type:'text' },

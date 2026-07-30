@@ -56,9 +56,13 @@ describe('seedTemplates CASA DOCE — 11 planilhas BPF (Fase A+B+C)', () => {
     }
   });
 
-  it('carrinhos tem os 32 códigos', () => {
+  it('carrinhos tem os 32 códigos como checklist (1 data/responsável pro lote)', () => {
     const carr = readFormTemplates(CD).find(t => t.title.includes('Carrinhos'));
-    expect(carr.sections[0].fields).toHaveLength(32);
+    const checklist = carr.sections.find(s => s.id === 'cd-carr-lav');
+    expect(checklist.fields).toHaveLength(32);
+    expect(checklist.fields.every(f => f.type === 'checkbox')).toBe(true);
+    const registro = carr.sections.find(s => s.id === 'cd-carr-reg');
+    expect(registro.fields.map(f => f.type)).toEqual(['date', 'text']);
   });
 
   it('vetores customizado: sem Pombo, com Abelha, hint de setor', () => {

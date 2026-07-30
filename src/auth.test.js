@@ -128,3 +128,37 @@ describe('scopeSessionToMembership — escopo da sessão por vínculo (Fase 3)',
     expect(s.memberTenants.map(t => t.id)).toEqual(['swiss','backerei','dbk-producao']);
   });
 });
+
+// Regressão do vazamento cross-tenant de 30/07: refreshSession reconstruía a
+// sessão a partir do JWT (buildSession), e o user_metadata de contas criadas no
+// painel/Edge Function tem tenantId nulo — então o vínculo com a loja sumia a
+// cada renovação de token (~1h) e a dona da CASA DOCE virava "admin global".
+describe('preserveMembershipScope — o refresh não pode perder o vínculo com a loja', () => {
+  const anterior = {
+    tenantId: 'bf245c3b-2f9',
+    memberTenants: [{ id: 'bf245c3b-2f9', name: 'CASA DOCE', role: 'tenant_admin' }],
+    user: { email: 'casadocest@gmail.com', role: 'Administrador', location: 'CASA DOCE' },
+  };
+  // O que buildSession devolve: sem tenantId, papel cru do user_metadata.
+  const novoDoJwt = {
+    accessToken: 'novo', refreshToken: 'r2', tenantId: null, isPlatformAdmin: false,
+    user: { email: 'casadocest@gmail.com', role: 'Colaborador', location: '' },
+  };
+
+  it('mantém loja, papel e lista de empresas após renovar o token', async () => {
+    const { preserveMembershipScope } = await import('./auth');
+    const s = preserveMembershipScope(novoDoJwt, anterior);
+    expect(s.tenantId).toBe('bf245c3b-2f9');
+    expect(s.user.role).toBe('Administrador');
+    expect(s.user.location).toBe('CASA DOCE');
+    expect(s.memberTenants).toHaveLength(1);
+    expect(s.accessToken).toBe('novo');           // token novo é o que vale
+  });
+
+  it('sessão sem vínculo (admin da plataforma) passa intacta', async () => {
+    const { preserveMembershipScope } = await import('./auth');
+    const semVinculo = { tenantId: null, user: { role: 'Administrador' } };
+    const fresh = { ...novoDoJwt, isPlatformAdmin: true };
+    expect(preserveMembershipScope(fresh, semVinculo)).toEqual(fresh);
+  });
+});

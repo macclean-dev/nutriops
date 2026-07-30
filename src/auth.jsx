@@ -109,7 +109,10 @@ export async function refreshSession() {
   if (!s?.refreshToken || !isSupabaseEnabled()) return null;
   try {
     const data = await sbAuthFetch('/token?grant_type=refresh_token', { refresh_token: s.refreshToken });
-    const session = buildSession(data.user, data.access_token, data.refresh_token);
+    const session = preserveMembershipScope(
+      buildSession(data.user, data.access_token, data.refresh_token),
+      s,
+    );
     saveAuthSession(session);
     return session;
   } catch (e) {
@@ -130,17 +133,41 @@ export async function refreshSession() {
 
 function buildSession(user, accessToken, refreshToken) {
   const meta = user.user_metadata ?? {};
+  const appMeta = user.app_metadata ?? {};
   return {
     accessToken,
     refreshToken,
     expiresAt: Date.now() + 3600 * 1000, // 1h
     tenantId:  meta.tenantId ?? null,
+    // Admin da PLATAFORMA (NutriOPS), não de uma loja. Vem do app_metadata, que
+    // só o service_role escreve — user_metadata é editável pelo próprio usuário
+    // (updateUser), então confiar nele pra privilégio seria forjável.
+    isPlatformAdmin: appMeta.role === 'admin',
     user: {
       id:       user.id,
       email:    user.email,
       name:     meta.name ?? user.email,
       role:     meta.role ?? 'Colaborador',
       location: meta.tenantName ?? '',
+    },
+  };
+}
+
+// Reaplica o escopo por loja que o login estabeleceu. buildSession só enxerga o
+// user_metadata do JWT — e contas criadas no painel/Edge Function têm
+// tenantId nulo lá. Sem isto, o refresh de 1h apagava o vínculo e "promovia" a
+// dona da CASA DOCE a admin global, que passava a ver Swiss/Bäckerei/DBK
+// (vazamento cross-tenant relatado em 30/07).
+export function preserveMembershipScope(fresh, previous) {
+  if (!previous?.memberTenants?.length) return fresh;
+  return {
+    ...fresh,
+    tenantId: previous.tenantId ?? fresh.tenantId,
+    memberTenants: previous.memberTenants,
+    user: {
+      ...fresh.user,
+      role:     previous.user?.role     ?? fresh.user.role,
+      location: previous.user?.location ?? fresh.user.location,
     },
   };
 }

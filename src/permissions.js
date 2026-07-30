@@ -49,5 +49,15 @@ export function canAccess(role, view) { const p = getPermissions(role); return p
 // com tenantId nulo. Só ele vê a área "Super Admin" (plataforma). Um
 // Administrador amarrado a um tenant (tenantId setado) NÃO é global.
 export function isGlobalAdmin(session) {
-  return !session?.tenantId && ['Administrador', 'Super-admin'].includes(session?.user?.role);
+  if (!session) return false;
+  // Preso a uma loja, ou membro de alguma → é admin DA LOJA, nunca da plataforma.
+  if (session.tenantId) return false;
+  if (session.memberTenants?.length > 0) return false;
+  // Sessão Supabase (tem accessToken): exige o carimbo `app_metadata.role='admin'`,
+  // que só o service_role escreve. Sem isso, uma conta de cliente criada no painel
+  // com role 'Administrador' e tenantId nulo virava admin global e enxergava as
+  // outras empresas — foi o vazamento de 30/07. `user_metadata` não serve de
+  // portão: o próprio usuário edita via updateUser.
+  if (session.accessToken && session.isPlatformAdmin !== true) return false;
+  return ['Administrador', 'Super-admin'].includes(session.user?.role);
 }

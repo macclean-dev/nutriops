@@ -1270,6 +1270,10 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
   useEffect(() => {
     setCatalog(readEquipmentCatalog(activeTenant));
     setCatalogTenant(activeTenant.id);
+    // Os setores são de outra loja agora — sem limpar, o filtro fica apontando
+    // pra um setor inexistente e a lista aparece vazia "sem motivo".
+    setLocationFilter('');
+    setSearch('');
     resetForm();
   }, [activeTenant.id]);
   useEffect(() => {
@@ -1326,11 +1330,20 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
     deleteEquipmentItem(activeTenant.id, item.label).catch(() => {});
   };
 
+  // Setores existentes no catálogo — alimentam o filtro. Vem da própria
+  // `location` de cada equipamento, sem cadastro novo.
+  const sectors = useMemo(() => {
+    const set = new Set(catalog.map((e) => e.location).filter(Boolean));
+    return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
+  }, [catalog]);
+
   const filtered = catalog
     .filter((item) => {
-      const q = search.toLowerCase(), lf = locationFilter.toLowerCase();
+      const q = search.toLowerCase();
+      // Setor é comparação exata (vem da lista, não digitado) — `includes`
+      // faria "Padaria" casar também com "Padaria 2".
       return (!q || item.label.toLowerCase().includes(q) || item.aliases?.some((a) => a.toLowerCase().includes(q)))
-          && (!lf || String(item.location ?? '').toLowerCase().includes(lf));
+          && (!locationFilter || String(item.location ?? '') === locationFilter);
     })
     .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' }));
 
@@ -1418,7 +1431,16 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
           </div>
           <div className="capture-fields equipment-filters">
             <label>Buscar<input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nome ou apelido" /></label>
-            <label>Localização<input value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} placeholder="Filtrar por local" /></label>
+            {sectors.length > 0 && (
+              <label>Setor
+                <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}>
+                  <option value="">Todos os setores ({catalog.length})</option>
+                  {sectors.map((s) => (
+                    <option key={s} value={s}>{s} ({catalog.filter((e) => e.location === s).length})</option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
           <div className="equipment-maintenance-list">
             {filtered.length === 0

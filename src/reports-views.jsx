@@ -134,32 +134,36 @@ function EquipBreakdown({ equipStats, onOpen }) {
 
   return (
     <div className="equip-breakdown">
+      {/* Lista suspensa, não chips: a CASA DOCE tem 12 setores e 44 equipamentos
+          — em chips isso virava 5 linhas de botões dentro de um cartão estreito,
+          ocupando mais espaço que os próprios dados. */}
       {sectors.length > 1 && (
-        <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:2 }}>
-          {['all', ...sectors].map((s) => {
-            const on = sector === s;
-            return (
-              <button key={s} onClick={(e) => { e.stopPropagation(); setSector(s); }}
-                style={{
-                  padding:'2px 9px', borderRadius:20, fontSize:10, fontWeight:600,
-                  border:`1px solid ${on ? 'var(--primary)' : 'var(--border)'}`,
-                  background: on ? 'rgba(0,104,74,.1)' : 'transparent',
-                  color: on ? 'var(--primary)' : 'var(--text-secondary)',
-                  cursor:'pointer', fontFamily:'var(--font)',
-                }}>
-                {s === 'all' ? 'Todos' : s}
-              </button>
-            );
-          })}
-        </div>
+        <select
+          value={sector}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => { e.stopPropagation(); setSector(e.target.value); }}
+          style={{ width:'100%', marginBottom:4, fontSize:11, padding:'4px 8px' }}>
+          <option value="all">Todos os setores ({equipStats.length})</option>
+          {sectors.map((s) => (
+            <option key={s} value={s}>{s} ({equipStats.filter(e => e.location === s).length})</option>
+          ))}
+        </select>
       )}
       {filtered.map((eq) => (
         <button key={eq.label} className="equip-bar-row"
           onClick={(e) => { e.stopPropagation(); onOpen(eq); }}
-          title="Abrir histórico do equipamento"
+          title={`${eq.label}${eq.location ? ` · ${eq.location}` : ''} — abrir histórico`}
           style={{ background:'none', border:'none', cursor:'pointer', textAlign:'left', width:'100%', padding:0, fontFamily:'inherit', color:'inherit' }}>
-          <span>{eq.label}{eq.location ? ` · ${eq.location}` : ''}</span>
-          <div className="equip-bar-track"><div className="equip-bar-fill" style={{ width:`${eq.pct??0}%`, background: eq.pct===null?'var(--border)':eq.pct>=90?'var(--green)':eq.pct>=70?'var(--amber)':'var(--red)' }} /></div>
+          {/* flex:1 no nome + barra estreita e fixa: sem isso a barra (flex:1)
+              comia o espaço e o nome saía cortado ("Atendimento Pã…"). */}
+          <span style={{ flex:'1 1 auto', minWidth:0 }}>
+            {eq.label}
+            {/* Setor só faz sentido repetir quando a lista está misturada. */}
+            {sector === 'all' && eq.location && (
+              <em style={{ fontStyle:'normal', color:'var(--text-secondary)', opacity:.75 }}> · {eq.location}</em>
+            )}
+          </span>
+          <div className="equip-bar-track" style={{ flex:'0 0 44px' }}><div className="equip-bar-fill" style={{ width:`${eq.pct??0}%`, background: eq.pct===null?'var(--border)':eq.pct>=90?'var(--green)':eq.pct>=70?'var(--amber)':'var(--red)' }} /></div>
           <strong>{eq.pct !== null ? `${eq.pct}%` : '—'}</strong>
         </button>
       ))}

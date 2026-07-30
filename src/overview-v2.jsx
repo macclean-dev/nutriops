@@ -555,6 +555,12 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
   const todayMs = today.getTime();
   const [drillEq, setDrillEq] = useState(null);
   const [quickRegEq, setQuickRegEq] = useState(null);
+  // Filtro por setor da grade de equipamentos (pedido do cliente: com 44
+  // equipamentos, olhar um setor por vez). Sai da `location` do catálogo.
+  const [sectorFilter, setSectorFilter] = useState('all');
+  // Trocar de empresa: os setores são outros. Sem limpar, o filtro aponta pra
+  // um setor inexistente e a grade fica vazia sem explicação.
+  useEffect(() => { setSectorFilter('all'); }, [activeTenant.id]);
 
   const tenantRecords = useMemo(() =>
     records.filter(r => r.tenantId === activeTenant.id),
@@ -592,6 +598,18 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
     return map;
   }, [tenantRecords, equipmentCatalog]);
 
+  const sectors = useMemo(() => {
+    const set = new Set((equipmentCatalog || []).map((e) => e.location).filter(Boolean));
+    return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
+  }, [equipmentCatalog]);
+
+  // Comparação exata (o valor vem da lista, não é digitado): com `includes`,
+  // "Padaria" traria também "Padaria 2".
+  const visibleEquipment = useMemo(() => {
+    const all = equipmentCatalog || [];
+    return sectorFilter === 'all' ? all : all.filter((e) => e.location === sectorFilter);
+  }, [equipmentCatalog, sectorFilter]);
+
   return (
     <div style={{ maxWidth:1200, margin:'0 auto' }}>
       <HeroGreeting session={session} activeTenant={activeTenant} lastRecord={lastRecord} complianceToday={complianceToday} />
@@ -625,11 +643,22 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
         title="Equipamentos"
         subtitle="Status atual, faixa permitida e tendência das últimas 30 leituras"
         action={
-          <button onClick={onLaunchKiosk} style={{
-            padding:'8px 16px', border:'1px solid var(--border)', borderRadius:'var(--r)',
-            background:'var(--surface)', color:'var(--text)', fontSize:13, fontWeight:500,
-            cursor:'pointer', fontFamily:'var(--font)',
-          }}>Modo quiosque</button>
+          <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+            {sectors.length > 1 && (
+              <select value={sectorFilter} onChange={(e) => setSectorFilter(e.target.value)}
+                style={{ width:'auto', fontSize:13, padding:'7px 10px' }}>
+                <option value="all">Todos os setores ({equipmentCatalog?.length ?? 0})</option>
+                {sectors.map((s) => (
+                  <option key={s} value={s}>{s} ({equipmentCatalog.filter(e => e.location === s).length})</option>
+                ))}
+              </select>
+            )}
+            <button onClick={onLaunchKiosk} style={{
+              padding:'8px 16px', border:'1px solid var(--border)', borderRadius:'var(--r)',
+              background:'var(--surface)', color:'var(--text)', fontSize:13, fontWeight:500,
+              cursor:'pointer', fontFamily:'var(--font)',
+            }}>Modo quiosque</button>
+          </div>
         }>
         <div className="dash-stagger" style={{
           display:'grid',
@@ -638,7 +667,7 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
         }}>
           {/* Wrapper por card: o hover do EquipmentCard usa transform — a
               animação de entrada precisa viver no pai pra não brigar com ele */}
-          {(equipmentCatalog || []).map(eq => (
+          {visibleEquipment.map(eq => (
             <div key={eq.label} style={{ display:'flex' }}>
               <EquipmentCard
                 equipment={eq}

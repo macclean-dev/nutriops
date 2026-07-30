@@ -119,24 +119,44 @@ function TempLineChart({ records, equipment, height = 180 }) {
   );
 }
 
-// Lista de equipamentos de um card do Dashboard, com chips de setor (a
-// partir da `location` de cada item) pra filtrar — pedido do dono: dá pra
-// ter os 44 equipamentos da CASA DOCE separados por setor sem precisar de
-// uma aba/rota nova por setor. Mostra o setor junto ao nome sempre, mesmo
-// sem filtrar, pra identificar de cara onde está o equipamento com desvio.
+// Lista de equipamentos de um card do Dashboard, separada por setor (vem da
+// `location` de cada item — sem cadastro novo). Pedido do cliente: achar de
+// imediato em que setor está o equipamento com desvio.
+//
+// Duas iterações antes desta: chips de setor (12 setores viravam 5 fileiras de
+// botões) e setor colado no nome de cada linha (truncava tudo: "Atendimento
+// Pã…"). Agora o setor vira CABEÇALHO de grupo — aparece uma vez, e o nome do
+// equipamento fica com a largura inteira.
 function EquipBreakdown({ equipStats, onOpen }) {
   const [sector, setSector] = useState('all');
   const sectors = useMemo(() => {
     const set = new Set(equipStats.map((e) => e.location).filter(Boolean));
-    return [...set].sort();
+    return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
   }, [equipStats]);
-  const filtered = sector === 'all' ? equipStats : equipStats.filter((e) => e.location === sector);
+
+  const semSetor = equipStats.filter((e) => !e.location);
+  // Agrupa só quando faz sentido: em "todos" com mais de um setor. Com um setor
+  // escolhido, o cabeçalho seria redundante com o que está selecionado.
+  const grupos = sector === 'all'
+    ? [...sectors.map((s) => [s, equipStats.filter((e) => e.location === s)]),
+       ...(semSetor.length ? [['Sem setor', semSetor]] : [])]
+    : [[null, equipStats.filter((e) => e.location === sector)]];
+
+  const linha = (eq) => (
+    <button key={eq.label} className="equip-bar-row"
+      onClick={(e) => { e.stopPropagation(); onOpen(eq); }}
+      title={`${eq.label} — abrir histórico`}
+      style={{ background:'none', border:'none', cursor:'pointer', textAlign:'left', width:'100%', padding:0, fontFamily:'inherit', color:'inherit' }}>
+      {/* flex:1 no nome + barra estreita e fixa: sem isso a barra (flex:1)
+          tomava o espaço e o nome saía cortado. */}
+      <span style={{ flex:'1 1 auto', minWidth:0 }}>{eq.label}</span>
+      <div className="equip-bar-track" style={{ flex:'0 0 44px' }}><div className="equip-bar-fill" style={{ width:`${eq.pct??0}%`, background: eq.pct===null?'var(--border)':eq.pct>=90?'var(--green)':eq.pct>=70?'var(--amber)':'var(--red)' }} /></div>
+      <strong>{eq.pct !== null ? `${eq.pct}%` : '—'}</strong>
+    </button>
+  );
 
   return (
     <div className="equip-breakdown">
-      {/* Lista suspensa, não chips: a CASA DOCE tem 12 setores e 44 equipamentos
-          — em chips isso virava 5 linhas de botões dentro de um cartão estreito,
-          ocupando mais espaço que os próprios dados. */}
       {sectors.length > 1 && (
         <select
           value={sector}
@@ -149,23 +169,19 @@ function EquipBreakdown({ equipStats, onOpen }) {
           ))}
         </select>
       )}
-      {filtered.map((eq) => (
-        <button key={eq.label} className="equip-bar-row"
-          onClick={(e) => { e.stopPropagation(); onOpen(eq); }}
-          title={`${eq.label}${eq.location ? ` · ${eq.location}` : ''} — abrir histórico`}
-          style={{ background:'none', border:'none', cursor:'pointer', textAlign:'left', width:'100%', padding:0, fontFamily:'inherit', color:'inherit' }}>
-          {/* flex:1 no nome + barra estreita e fixa: sem isso a barra (flex:1)
-              comia o espaço e o nome saía cortado ("Atendimento Pã…"). */}
-          <span style={{ flex:'1 1 auto', minWidth:0 }}>
-            {eq.label}
-            {/* Setor só faz sentido repetir quando a lista está misturada. */}
-            {sector === 'all' && eq.location && (
-              <em style={{ fontStyle:'normal', color:'var(--text-secondary)', opacity:.75 }}> · {eq.location}</em>
-            )}
-          </span>
-          <div className="equip-bar-track" style={{ flex:'0 0 44px' }}><div className="equip-bar-fill" style={{ width:`${eq.pct??0}%`, background: eq.pct===null?'var(--border)':eq.pct>=90?'var(--green)':eq.pct>=70?'var(--amber)':'var(--red)' }} /></div>
-          <strong>{eq.pct !== null ? `${eq.pct}%` : '—'}</strong>
-        </button>
+      {grupos.map(([titulo, itens]) => itens.length === 0 ? null : (
+        <div key={titulo ?? 'unico'} style={{ display:'flex', flexDirection:'column', gap:6 }}>
+          {titulo && (
+            <div style={{
+              fontSize:9, fontWeight:700, letterSpacing:'.08em', textTransform:'uppercase',
+              color:'var(--text-secondary)', marginTop:6, paddingBottom:3,
+              borderBottom:'1px solid var(--border-subtle)',
+            }}>
+              {titulo} <span style={{ opacity:.6 }}>· {itens.length}</span>
+            </div>
+          )}
+          {itens.map(linha)}
+        </div>
       ))}
     </div>
   );

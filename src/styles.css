@@ -717,9 +717,12 @@ label {
 .alert-banner span:last-child  { font-size: 12px; color: var(--text-secondary); }
 
 /* ===== DASHBOARD ===== */
+/* auto-fit (não auto-fill): com uma empresa só — caso do cliente que enxerga
+   apenas a própria loja — as trilhas vazias colapsam e o cartão ocupa a largura
+   toda, em vez de ficar espremido em 300px com o resto da tela vazio. */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 14px;
 }
 .dash-card {

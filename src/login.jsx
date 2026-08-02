@@ -31,16 +31,29 @@ export function LoginScreen({ onLogin, activeTenants }) {
   const handleEmailLogin = async () => {
     setError(''); setLoading(true);
     try {
-      const { signIn, scopeSessionToMembership } = await import('./auth');
+      const { signIn, scopeSessionToMembership, clearAuthSession } = await import('./auth');
       const s = await signIn({ email, password });
       // Fase 3: se o usuário pertence a empresas (tenant_members), escopa a sessão
-      // pra elas e passa a metadata pro app hidratar. Vazio = admin global (papel
-      // e tenant vêm do app_metadata) → caminho existente, sem regressão.
+      // pra elas e passa a metadata pro app hidratar.
       const { fetchMemberTenants } = await import('./tenant-sync');
       const memberTenants = await fetchMemberTenants();
-      const finalSession = scopeSessionToMembership(s, memberTenants);
+      // Falha FECHADA (30/07): uma conta que não é admin da plataforma só entra
+      // com vínculo estabelecido. Antes, RPC falhando (null) ou conta sem vínculo
+      // eram tratados como "admin global" e o app caía na primeira loja-seed
+      // (Swiss) — lendo dados reais de OUTRO cliente via device-token.
+      if (s.isPlatformAdmin !== true && !s.tenantId) {
+        if (memberTenants === null) {
+          clearAuthSession();
+          throw new Error('Não foi possível carregar suas empresas agora. Tente de novo em alguns segundos.');
+        }
+        if (memberTenants.length === 0) {
+          clearAuthSession();
+          throw new Error('Sua conta ainda não está vinculada a nenhuma empresa. Peça ao administrador para vincular seu acesso.');
+        }
+      }
+      const finalSession = scopeSessionToMembership(s, memberTenants ?? []);
       save(SESSION_KEY, finalSession);
-      onLogin(finalSession, memberTenants);
+      onLogin(finalSession, memberTenants ?? []);
     }
     catch (e) { setError(e.message); }
     setLoading(false);

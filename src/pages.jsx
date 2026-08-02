@@ -2124,6 +2124,20 @@ export function App() {
     setSession(null);
   }, []);
 
+  // Guarda de FORMA da sessão (30/07): sessão Supabase sem NENHUM vínculo
+  // (sem tenantId, sem memberTenants) e sem carimbo de admin da plataforma não
+  // tem estado legítimo — é a sessão contaminada pré-v1.9.74 ainda gravada no
+  // device, ou um login antigo que passou sem vínculo. Sem isto ela caía em
+  // activeTenants[0] (Swiss) e lia dados reais de outro cliente via
+  // device-token. Fail closed: desloga; o re-login refaz o vínculo ou barra
+  // (login.jsx). PIN (sem accessToken) e impersonação não passam por aqui.
+  useEffect(() => {
+    if (!session?.accessToken) return;
+    if (session.isPlatformAdmin === true) return;
+    if (session.tenantId || session.memberTenants?.length > 0) return;
+    handleLogout();
+  }, [session, handleLogout]);
+
   // Show onboarding wizard for genuinely new users (no session, no onboarding data, not on demo)
   // Show onboarding only when accessed via token (new client link)
   // or when explicitly requested via ?onboarding=1
@@ -2159,7 +2173,11 @@ export function App() {
   // embutidas no build (vazamento cross-tenant client-side).
   const seesAllTenants = isGlobalAdmin(session);
 
-  const [activeTenantId, setActiveTenantId] = useState(() => session?.tenantId ?? tenants[0].id);
+  // activeTenants (state), não o `tenants` congelado do módulo — e o fallback
+  // pra primeira loja só vale pra quem PODE ver todas (admin) ou sessão PIN
+  // (sempre tem tenantId). A guarda de forma abaixo desloga sessão Supabase
+  // sem vínculo antes de qualquer dado carregar.
+  const [activeTenantId, setActiveTenantId] = useState(() => session?.tenantId ?? activeTenants[0]?.id ?? null);
   const [activeStoreId, setActiveStoreId]   = useState(() => session?.storeId ?? null);
   const [activeView, setActiveView]         = useState('overview');
   const [records, setRecords]               = useState([]);
@@ -2172,8 +2190,23 @@ export function App() {
   const activeTenant = useMemo(() => {
     const found = activeTenants.find((t) => t.id === activeTenantId);
     if (found) return found;
-    return activeTenants.find((t) => t.id === session?.tenantId) ?? activeTenants[0];
-  }, [activeTenantId, session?.tenantId, activeTenants]);
+    const own = activeTenants.find((t) => t.id === session?.tenantId);
+    if (own) return own;
+    // Sessão presa a uma loja que (ainda) não está na lista — membro da nuvem
+    // no boot, antes da hidratação chegar ou quando ela falha. NUNCA cair numa
+    // loja-seed de outro cliente: era o resquício do vazamento de 30/07 — o
+    // membro via a tela da Swiss e refreshRecords carregava os dados dela via
+    // device-token. Stub mínimo da própria loja; os dados corretos já carregam
+    // pelo JWT do membro (memberTokenFor casa por session.tenantId).
+    if (session?.tenantId) {
+      return {
+        id: session.tenantId,
+        name: session.user?.location || 'Sua empresa',
+        segment: '', equipmentCatalog: [], stores: [],
+      };
+    }
+    return activeTenants[0];
+  }, [activeTenantId, session?.tenantId, session?.user?.location, activeTenants]);
 
   // Fase 3 — hidrata a empresa do membro no BOOT. A sessão (com tenantId da loja)
   // persiste no localStorage, mas activeTenants é reconstruído das lojas-seed a
@@ -2238,7 +2271,7 @@ export function App() {
     setActiveTenantId(id);
     const t = activeTenants.find(x => x.id === id);
     setActiveStoreId(t?.stores?.[0]?.id ?? null);
-  }, [seesAllTenants]);
+  }, [seesAllTenants, activeTenants]);
 
   const handleStoreChange = useCallback((storeId) => {
     setActiveStoreId(storeId);
@@ -2247,9 +2280,13 @@ export function App() {
   // ─── Troca de empresa (relogin) ──────────────────────────────────────────
   // Empresas que o usuário pode COMUTAR (distinto de multiTenant, que é ver
   // dados agregados). Supervisor/RT/Admin podem trocar; Colaborador não.
+  // activeTenants (state), não o `tenants` do módulo: a lista congelada não
+  // tem os clientes da nuvem (CASA DOCE) — o switcher do avatar/drawer ficava
+  // sem a loja e o <select> exibia "Swiss" por fallback (mesma classe do bug
+  // corrigido na v1.9.72 em visibleTenants/refreshRecords).
   const switchableTenants = useMemo(
-    () => (seesAllTenants ? tenants : []),
-    [seesAllTenants]
+    () => (seesAllTenants ? activeTenants : []),
+    [seesAllTenants, activeTenants]
   );
   const [switchTarget, setSwitchTarget] = useState(null);
 
@@ -2258,9 +2295,9 @@ export function App() {
     // RT/Admin já têm acesso agregado autorizado → troca instantânea (sem atrito).
     // Supervisora (sem multiTenant) → relogin com PIN da empresa-alvo.
     if (seesAllTenants) { handleTenantChange(id); return; }
-    const t = tenants.find(x => x.id === id);
+    const t = activeTenants.find(x => x.id === id);
     if (t) setSwitchTarget(t);
-  }, [activeTenantId, seesAllTenants, handleTenantChange]);
+  }, [activeTenantId, seesAllTenants, handleTenantChange, activeTenants]);
 
   const handleSwitchSuccess = useCallback((newSession) => {
     setSwitchTarget(null);
@@ -2309,14 +2346,14 @@ export function App() {
     try { localStorage.removeItem(IMPERSONATE_ORIGIN_KEY); } catch {}
     if (origin) {
       save(SESSION_KEY, origin);
-      setActiveTenantId(origin.tenantId ?? tenants[0].id);
+      setActiveTenantId(origin.tenantId ?? activeTenants[0]?.id ?? null);
       setActiveStoreId(null);
       setActiveView('superadmin');
       handleLogin(origin);
     } else {
       handleLogout();
     }
-  }, [session, handleLogin, handleLogout]);
+  }, [session, handleLogin, handleLogout, activeTenants]);
 
   useEffect(() => {
     if (session?.tenantId && !seesAllTenants) {

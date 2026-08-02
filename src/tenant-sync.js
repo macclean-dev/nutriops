@@ -223,6 +223,12 @@ export async function fetchAllTenantsFromCloud() {
 // (via tenant_members) e hidratar a metadata de cada uma — sem access_token e
 // sem depender da tabela `tenants` direto (grants revogados). Gated no servidor
 // por auth.uid(); a RPC nunca devolve segredo. Dev-safe: sem token/erro → [].
+// Devolve [] = "confirmado: sem vínculo" e **null = "não deu pra saber"**
+// (rede/500/401). A distinção é de SEGURANÇA (30/07): o login usava [] pros
+// dois casos, então uma falha transitória da RPC deixava a dona da CASA DOCE
+// entrar "sem empresa" — e o app caía na primeira loja-seed (Swiss), lendo
+// dados reais de outro cliente via device-token. Falha agora é null → o
+// caller barra o login em vez de seguir sem vínculo.
 export async function fetchMemberTenants() {
   if (!isTenantSyncEnabled()) return [];
   try {
@@ -234,10 +240,10 @@ export async function fetchMemberTenants() {
       headers: { apikey: SB_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: '{}',
     });
-    if (!res.ok) return []; // 404 (RPC ausente ainda) / 401 → caller decide
+    if (!res.ok) return null; // erro (401/404/500) ≠ "sem vínculo"
     const rows = await res.json();
     return Array.isArray(rows) ? rows.map(memberRowToTenant) : [];
-  } catch { return []; }
+  } catch { return null; }
 }
 
 // Linha da get_member_tenants → objeto de tenant do app. Espelha rowToTenant,

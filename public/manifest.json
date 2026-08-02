@@ -4,8 +4,8 @@
   "description": "Conformidade sanitária digital · RDC 216/2004",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#0969da",
+  "background_color": "#001e2b",
+  "theme_color": "#001e2b",
   "orientation": "any",
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },

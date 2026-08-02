@@ -5,35 +5,31 @@
 
 import React from 'react';
 
-export const APP_VERSION = '1.9.75';
+export const APP_VERSION = '1.9.76';
 
-// ─── Logomark: N calligráfico — diagonal verde, stems brancos ──────────────
-// Diagonal em verde MongoDB (#00ed64) como assinatura do NutriOPS.
-// Compartilha o vocabulário da suite.
+// ─── Logomark: N-termômetro ────────────────────────────────────────────────
+// O stem esquerdo do N é um termômetro: coluna de mercúrio verde subindo dentro
+// do tubo branco e bulbo na base. Amarra a marca ao coração do produto
+// (monitoramento de temperatura) — o N caligráfico anterior era vocabulário
+// herdado do Nexum e não dizia nada sobre alimento/conformidade.
+//
+// Cores sólidas de propósito (sem gradiente): o mark é usado a partir de 20px,
+// onde gradiente vira sujeira. `idPrefix` continua na assinatura só pra não
+// quebrar quem já chama com ele.
 export function NutriMark({ size = 21, idPrefix = 'nut' }) {
-  const d = `${idPrefix}-d`;
-  const r = `${idPrefix}-r`;
+  void idPrefix;
   return (
     <svg width={size} height={size} viewBox="0 0 30 30" fill="none">
-      <defs>
-        {/* Diagonal — traço verde MongoDB (assinatura do NutriOPS) */}
-        <linearGradient id={d} x1="7" y1="4" x2="23" y2="26" gradientUnits="userSpaceOnUse">
-          <stop offset="0%"   stopColor="#00ed64" stopOpacity="0.78"/>
-          <stop offset="100%" stopColor="#00ed64"/>
-        </linearGradient>
-        {/* Right stem — sobe do verde em direção ao branco */}
-        <linearGradient id={r} x1="23" y1="26" x2="23" y2="4" gradientUnits="userSpaceOnUse">
-          <stop offset="0%"   stopColor="rgba(255,255,255,0.40)"/>
-          <stop offset="38%"  stopColor="#ffffff"/>
-          <stop offset="100%" stopColor="#ffffff"/>
-        </linearGradient>
-      </defs>
-      {/* Left stem — branco sólido */}
-      <line x1="7"  y1="4"  x2="7"  y2="26" stroke="#ffffff"       strokeWidth="4.5" strokeLinecap="round"/>
-      {/* Diagonal — verde calligráfico (mais fino) */}
-      <line x1="7"  y1="4"  x2="23" y2="26" stroke={`url(#${d})`} strokeWidth="3"   strokeLinecap="round"/>
-      {/* Right stem — gradiente verde→branco */}
-      <line x1="23" y1="26" x2="23" y2="4"  stroke={`url(#${r})`} strokeWidth="4.5" strokeLinecap="round"/>
+      {/* Tubo do termômetro (stem esquerdo do N) */}
+      <line x1="7.5" y1="4.5" x2="7.5" y2="19"  stroke="#ffffff" strokeWidth="4.5" strokeLinecap="round"/>
+      {/* Coluna de mercúrio — verde vivo, por dentro do tubo */}
+      <line x1="7.5" y1="13"  x2="7.5" y2="20.5" stroke="#00ed64" strokeWidth="2"   strokeLinecap="round"/>
+      {/* Bulbo */}
+      <circle cx="7.5" cy="23.4" r="4" fill="#00ed64"/>
+      {/* Diagonal do N */}
+      <line x1="7.5"  y1="4.5"  x2="22.5" y2="25.5" stroke="#ffffff" strokeWidth="3"   strokeLinecap="round"/>
+      {/* Stem direito do N */}
+      <line x1="22.5" y1="25.5" x2="22.5" y2="4.5"  stroke="#ffffff" strokeWidth="4.5" strokeLinecap="round"/>
     </svg>
   );
 }

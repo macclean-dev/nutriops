@@ -186,10 +186,15 @@ git status
 
 ## Sync por tenant (via Supabase)
 
-Tabelas do `syncAllModules`:
+Tabelas do `syncAllModules` (8, todas com RLS ligado):
 `temperature_records` · `form_records` · `form_templates` ·
 **`equipment_catalog`** (label/aliases/location/min_temp/max_temp) ·
 `receiving_records` · `products` · `stock_logs` · `special_controls`
+
+⚠️ Há uma **9ª tabela, `tenant_staff`, em trabalho não commitado** (`syncTenantStaff`
++ policy no `SUPABASE_SQL` do `repository.js`, `team-views.jsx`, `staff-sync.test.js`).
+Ainda não está no HEAD nem, presumivelmente, no Supabase. Ao commitar: rodar o SQL
+da policy ANTES do deploy, senão o sync dessa tabela toma 401/403.
 
 Tabela `tenants` (fora do `syncAllModules`): espelha tenants criados via `/admin`
 pra o cliente abrir o link `?token=` em qualquer device. Lida só por

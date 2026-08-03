@@ -19,9 +19,12 @@ Quatro perfis, com permissões diferentes (ver `src/permissions.js`):
 | **Nutricionista RT** | Responsável técnica que assina pela rede | Valida registros, dashboards, relatórios, capacitações |
 | **Administrador / Super-admin** | Equipe NutriOPS / dono da rede | Gestão de clientes, planos, usuários, config |
 
-Login é `nome@empresa` + PIN de 4 dígitos. Hoje sem JWT — PIN é validado no
-frontend contra `src/data.js` (em produção) ou `nutriops.onboarding.tenants`
-(clientes que assinaram via onboarding wizard).
+**Colaborador** entra com `nome@empresa` + PIN de 4 dígitos, validado no frontend
+contra `src/data.js` ou `nutriops.onboarding.tenants`. **Admin global e admin de
+cliente** entram com e-mail + senha via Supabase Auth (`auth.jsx` → `signIn`),
+que devolve JWT. O sync com a nuvem é assinado por uma conta device por tenant
+(`device-auth.js`), cujo `app_metadata.tenant_id` é o que o RLS lê. Migração pra
+abolir o PIN está em andamento — ver CLAUDE.md.
 
 ## Pages e fluxos
 
@@ -31,7 +34,7 @@ frontend contra `src/data.js` (em produção) ou `nutriops.onboarding.tenants`
 |------|---------|
 | `/` (sem token) | Tela de login |
 | `/?token=XXX` | Primeiro acesso via link de cliente novo (admin gera o link no painel) |
-| `/admin` | Painel admin global (senha hardcoded — trocar antes de escalar) |
+| `/admin` | Painel admin global — Supabase Auth desde a v1.9.37 (`VITE_ADMIN_PASSWORD` só em dev) |
 
 ### Autenticadas (após login)
 
@@ -58,7 +61,7 @@ temperatura sem login.
 - **Visual (gráficos + logo):** SVG **artesanal**, sem biblioteca de charts (nada de Recharts/Chart.js/D3) — sparklines calculadas na unha em `overview-v2.jsx`; logomark `NutriMark` em `brand.jsx`
 - **Cache local:** localStorage por tenant
 - **Backend (cloud):** Supabase REST v2 (Postgres) — opcional por dispositivo
-- **Auth:** PIN local hoje; `auth.jsx` pronto pra Supabase Auth (não wired ainda)
+- **Auth:** Supabase Auth wired (`auth.jsx`, consumido por login/admin/team/superadmin) + PIN local pro colaborador no tablet
 - **E-mail:** EmailJS (templates de boas-vindas + notificação interna)
 - **PWA:** `public/sw.js` + `manifest.json` — instalável no celular
 - **Deploy:** Vercel (auto-deploy no push pra `main`)
@@ -91,14 +94,20 @@ temperatura sem login.
 ```sql
 temperature_records   -- registros de temperatura
 form_records          -- planilhas BPF
+form_templates        -- modelos de planilha por tenant
+equipment_catalog     -- equipamentos + faixas min/max
 receiving_records     -- recebimento
 products              -- validades/estoque
 stock_logs            -- movimentações
 special_controls      -- óleo/descongelamento/resfriamento/térmico
 ```
 
-RLS hoje **desabilitada** — auth é PIN local. Wiring de Supabase Auth + RLS
-por tenant é épico pendente.
+> ⚠️ **RLS está LIGADO nessas 8 tabelas** (épico concluído em 19/07/2026) e a
+> tabela `tenants` está com deny-all + anon revogado. As policies filtram por
+> `auth.jwt() -> 'app_metadata' ->> 'tenant_id'`. **Nunca** escrever policy que
+> leia `user_metadata` — é editável pelo próprio usuário, logo forjável. Fonte de
+> verdade: `docs/rls-fase3-policies.sql`, espelhada no `SUPABASE_SQL` do
+> `repository.js`. Detalhes do rollout: `docs/HISTORICO.md`.
 
 ## Serviços externos
 
@@ -125,8 +134,10 @@ por tenant é épico pendente.
 | `swiss` | Swiss Confeitaria | Confeitaria | Pro |
 | `backerei` | Bäckerei Padaria | Padaria | Enterprise |
 | `dbk-producao` | DBK Produção | Produção central | Enterprise |
+| `bf245c3b-2f9` | CASA DOCE | Confeitaria | em implantação |
 
-PINs e usuários reais ficam em `src/data.js` (gitignored — ver CLAUDE.md).
+Usuários e PINs default ficam em `src/data.js`, que **é versionado** — mas PIN
+específico de cliente pago não entra no commit. Regra completa no CLAUDE.md.
 
 ## Planos comerciais
 

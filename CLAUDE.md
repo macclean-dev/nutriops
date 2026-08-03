@@ -1,19 +1,21 @@
 # NutriOPS — guia rápido pra Claude Code
 
 > Antes de mexer em qualquer coisa: leia este arquivo e `project_specs.md`.
+> Histórico de pendências já resolvidas: `docs/HISTORICO.md`.
+> Receitas operacionais (destravar device, ativar CI): `docs/RUNBOOK.md`.
 
 ---
 
 ## O que é
 
 SaaS multi-tenant de conformidade sanitária RDC 216/2004 (ANVISA). Em produção
-com 3 clientes (Swiss, Bäckerei, DBK Produção). Detalhes técnicos completos em
-`project_specs.md`.
+com 3 clientes (Swiss, Bäckerei, DBK Produção) + CASA DOCE em implantação.
+Detalhes técnicos completos em `project_specs.md`.
 
 - **Prod:** https://nutriops.uniwares.net
 - **Repo:** https://github.com/macclean-dev/nutriops.git
 - **Local:** `/Users/mac/Documents/NutriOPS/`
-- **Versão atual:** v1.9.0
+- **Versão atual:** `APP_VERSION` em `src/brand.jsx` (fonte de verdade)
 
 ---
 
@@ -35,28 +37,26 @@ clientes pagando. O ROI dessa reescrita é negativo agora.
 
 ### Login do admin global (v1.9.9+)
 
-> **O admin global NÃO usa mais PIN `9999`.** A partir da v1.9.9 ele autentica
-> com **e-mail + senha via Supabase Auth** (`auth.jsx` → `signIn`). O usuário
-> vive em `Authentication → Users` no Supabase, com `raw_user_meta_data`
+> **O admin global NÃO usa mais PIN `9999`.** Ele autentica com **e-mail + senha
+> via Supabase Auth** (`auth.jsx` → `signIn`). O usuário vive em
+> `Authentication → Users` no Supabase, com `raw_user_meta_data`
 > `{"name":"Administrador","role":"Administrador","tenantId":null}`. Na tela de
-> login: botão **"Entrar como administrador"** → e-mail/senha. O `__admin__`/PIN
-> 9999 foi **removido** do `login.jsx`. (Colaborador segue com PIN no tablet.)
+> login: botão **"Entrar como administrador"**. O `__admin__`/PIN 9999 foi
+> **removido** do `login.jsx`. (Colaborador segue com PIN no tablet.)
 > O `tenants-public.js` precisa das env `VITE_SB_*` no build pra o Supabase ligar
 > antes do login — já garantido em produção. Ver `docs/AUTH_RLS_PLAN.md`.
 
 ### `src/data.js` e PINs
 
-A partir do split (`src/tenants-public.js` + `src/data.js`), os defaults
-de PIN (`0000` colaboradores, `6270` Fran, `8771` Ana Paula) ficam no `data.js`
-e **são commitáveis** — são apenas valores de fábrica sobrescritos pelo PIN
-reset obrigatório no 1º login. (O `globalAdmin`/`9999` virou legado: a conta de
-admin global agora é Supabase Auth — ver acima.)
+Os defaults de PIN (`0000` colaboradores, `6270` Fran, `8771` Ana Paula) ficam no
+`data.js` e **são commitáveis** — valores de fábrica sobrescritos pelo PIN reset
+obrigatório no 1º login.
 
 **Não commitar:**
 
 - `nutriops.pin.overrides.{tenantId}` no localStorage — fica só no device
-- Qualquer alteração em `data.js` que coloque PINs **específicos** de
-  cliente pago (ex.: a Fran pediu PIN `4729`). Nesses casos:
+- Alteração em `data.js` com PIN **específico** de cliente pago (ex.: a Fran
+  pediu `4729`). Nesses casos:
 
   ```bash
   git add -A
@@ -69,27 +69,26 @@ admin global agora é Supabase Auth — ver acima.)
 
 ### Variáveis de ambiente
 
-`.env.example` lista as envs esperadas. Copia pra `.env.local` em dev. Em
-produção, configura em Vercel → Project → Settings → Environment Variables.
-`.env.local` está no `.gitignore` e nunca deve ir pro repo.
+`.env.example` lista as envs esperadas. Copia pra `.env.local` em dev (está no
+`.gitignore`). Em produção: Vercel → Project → Settings → Environment Variables.
 
 | Variável | Onde é usada | Default |
 |----------|--------------|---------|
-| `VITE_ADMIN_PASSWORD` | Senha do `/admin` **só em DEV** (build sem env do Supabase). Em PROD o `/admin` migrou pra **Supabase Auth** (v1.9.37): login com o e-mail/senha do admin global → JWT → gate `isGlobalAdmin`. Fecha o backdoor. | `nutriops@admin2026` (fallback dev) |
+| `VITE_ADMIN_PASSWORD` | Senha do `/admin` **só em DEV**. Em PROD o `/admin` usa Supabase Auth (v1.9.37+). | `nutriops@admin2026` (fallback dev) |
 | `VITE_SB_URL` | URL do projeto Supabase compartilhado pelos tenants seed | vazio (modo local por device) |
-| `VITE_SB_ANON_KEY` | Anon key pública desse projeto Supabase | vazio (modo local por device) |
+| `VITE_SB_ANON_KEY` | Anon key pública desse projeto | vazio (modo local por device) |
+| `VITE_DEVICE_PASSWORD` | Senha das contas device (`device-{tenantId}@nutriops.internal`) que assinam o sync. Aceita override por loja: `VITE_DEVICE_PASSWORD_{TENANT}`. | — |
 
-Quando `VITE_SB_URL` + `VITE_SB_ANON_KEY` estão preenchidas no build, todos
-os 3 tenants seed (Swiss, Bäckerei, DBK Produção) ganham `tenant.supabase`
-automaticamente, e `handleLogin` em `pages.jsx` propaga pro localStorage do
-device. Resultado: qualquer aparelho que abrir o app já entra sincronizando.
+Com `VITE_SB_URL` + `VITE_SB_ANON_KEY` no build, os 3 tenants seed ganham
+`tenant.supabase` automaticamente e `handleLogin` (`pages.jsx`) propaga pro
+localStorage do device — qualquer aparelho já entra sincronizando.
 
 ### Onde mora cada parte de tenant
 
 - `src/tenants-public.js` — metadata pura (id, nome, segmento, equipamentos).
   **Pode commitar.** Sem PINs, sem credenciais.
-- `src/data.js` — `usersList` com PINs + `globalAdmin`. **Gitignored.**
-  Importa de `tenants-public.js` e merge no runtime.
+- `src/data.js` — `usersList` com PINs. Importa de `tenants-public.js` e faz
+  merge no runtime. Ver regra de commit acima.
 
 ### Antes de marcar tarefa como "done"
 
@@ -99,44 +98,47 @@ device. Resultado: qualquer aparelho que abrir o app já entra sincronizando.
 
 ### Versionamento (acordo com o dono — 05/06/2026)
 
-**Todo commit incrementa o patch do `APP_VERSION` em +1** (`src/brand.jsx`):
-`1.9.1` → `1.9.2` → `1.9.3` … Inclui commits de docs/chore. Bump junto com a
-mudança, no mesmo commit. A versão aparece no rodapé do rail e no login.
+**Todo commit incrementa o patch do `APP_VERSION` em +1** (`src/brand.jsx`),
+inclusive docs/chore. Bump no mesmo commit da mudança.
 
-### Design (paleta MongoDB — verde/teal, própria, NÃO mais coral/Nexum)
+### Deploys
 
-> **v1.9.26+ trocou a paleta coral/creme (idêntica ao Nexum) pela do MongoDB
-> design system** (`DesignNewColours.md`). Só as CORES mudaram — navegação,
-> layout, fontes e espaçamentos ficaram iguais. Tudo é dirigido por variáveis
-> CSS em `src/styles.css` (`:root` + `[data-theme="dark"]`).
+**Não dar `git push` sem aprovação** — a cota da Vercel é apertada. Commitar
+local é livre; push só quando o dono confirmar.
+
+### Design (paleta MongoDB — verde/teal, NÃO mais coral/Nexum)
+
+> **v1.9.26+** trocou a paleta coral/creme pela do MongoDB design system
+> (`DesignNewColours.md`). Só as CORES mudaram. Tudo dirigido por variáveis CSS
+> em `src/styles.css` (`:root` + `[data-theme="dark"]`).
 
 - **Sem emojis em ícones de UI** — usar `NavIcon` (SVG outline 16×16) ou outro SVG
-- **Sem gradientes genéricos** — primária é **verde sólido** (`--primary` = `#00684a`)
+- **Sem gradientes genéricos** — primária é verde sólido (`--primary` = `#00684a`)
 - **Tipografia:** `Instrument Sans` (UI) + `Instrument Serif` (wordmark)
-- **Paleta:** off-white `#f9fbfa` canvas / ink navy-teal `#001e2b` / verde primary `#00684a`
-  (fill com texto branco) / **verde vivo `#00ed64`** (`--accent`, só como acento:
-  nav ativo, focus, diagonal do logo) / **rail Green Dark `#00543b` com letras
-  brancas** (preferência do dono — não é teal). Vermelho/âmbar/azul ficam como
-  sinais de status funcionais, não são "marca".
-- **Regra do verde:** `#00684a` (green-dark) é o único verde que aceita texto
-  branco em cima; use `#00ed64` (vivo) só como acento/detalhe, nunca como fundo
-  de texto (fica ilegível). É como o MongoDB usa: com parcimônia.
-- **Brand primitives:** `src/brand.jsx` exporta `NutriMark`, `BrandLockup`, `APP_VERSION`
+- **Paleta:** off-white `#f9fbfa` canvas / ink navy-teal `#001e2b` / verde primary
+  `#00684a` (fill com texto branco) / **verde vivo `#00ed64`** (`--accent`, só
+  acento: nav ativo, focus, diagonal do logo) / **rail Green Dark `#00543b` com
+  letras brancas** (preferência do dono — não é teal). Vermelho/âmbar/azul são
+  sinais de status funcionais, não "marca".
+- **Regra do verde:** `#00684a` é o único verde que aceita texto branco em cima;
+  `#00ed64` só como acento, nunca como fundo de texto.
+- **Brand primitives:** `src/brand.jsx` exporta `NutriMark`, `BrandLockup`,
+  `APP_VERSION`
 
 ### Adicionar novo módulo/view
 
 Atualizar **TRÊS lugares**:
 
-1. `src/permissions.js` — adicionar o key em `ALL_VIEWS` e nos `nav` dos roles que devem ver
-2. `buildNavSections` em `pages.jsx` — adicionar o item no grupo certo
-3. Switch de views em `App()` (`pages.jsx` ~2700) — adicionar a renderização
+1. `src/permissions.js` — key em `ALL_VIEWS` e nos `nav` dos roles que devem ver
+2. `buildNavSections` em `pages.jsx` — item no grupo certo
+3. Switch de views em `App()` (`pages.jsx` ~2700) — a renderização
 
 ### Hubs com sub-tabs
 
-Quando 3+ views são variações da mesma coisa, agrupar num hub (estilo
-Nexum flat nav). Hoje já temos: `ControlsHub` (5 controles especiais),
-`ReportsHub` (5 relatórios), `TeamHub` (users/turns/sessions). Padrão em
-`pages.jsx` — copiar `HubTabs` + `resolveHubTab`.
+Quando 3+ views são variações da mesma coisa, agrupar num hub. Hoje:
+`ControlsHub` (5 controles), `ReportsHub` (5 relatórios), `TeamHub`
+(users/turns/sessions). Padrão em `pages.jsx` — copiar `HubTabs` +
+`resolveHubTab`.
 
 ---
 
@@ -148,27 +150,26 @@ Mais detalhes em `project_specs.md`. Resumo:
 |---------|------------------|
 | `pages.jsx` | App principal, todos os views, login, RailNav, hubs — ~2900 linhas |
 | `styles.css` | Design system, dark mode, mobile responsivo |
-| `brand.jsx` | NutriMark, BrandLockup, APP_VERSION — compartilhado pela suite |
+| `brand.jsx` | NutriMark, BrandLockup, APP_VERSION |
 | `permissions.js` | RBAC por perfil + ALL_VIEWS |
 | `repository.js` | localStorage + Supabase REST + offline queue |
-| `data.js` | ⚠️ Tenants e PINs reais — **nunca commitar** |
+| `data.js` | Tenants e PINs — ver regra de commit acima |
 
 ---
 
 ## Como responder
 
-Pra cada resposta de mudança no código, incluir:
+Pra cada mudança no código, incluir:
 
 - **O que fiz** — em português claro, sem jargão
 - **O que você precisa fazer** — passo a passo
-- **Por que** — uma linha de propósito
+- **Por que** — uma linha
 - **Próximo passo** — uma ação clara
-- **Erros** — se algo deu errado, o que é e como corrigir
+- **Erros** — o que é e como corrigir
 
-Quando envolver ferramenta externa (Supabase, Vercel, etc.):
-- Mostrar exatamente onde encontrar (ex.: "Supabase → Settings → API")
-- Explicar o que cada coisa faz em uma frase
-- Se tem SQL, explicar o que faz antes de pedir pra rodar
+Ferramenta externa (Supabase, Vercel): mostrar onde encontrar ("Supabase →
+Settings → API"), explicar cada coisa em uma frase, e explicar o SQL antes de
+pedir pra rodar.
 
 ---
 
@@ -176,201 +177,80 @@ Quando envolver ferramenta externa (Supabase, Vercel, etc.):
 
 ```bash
 cd /Users/mac/Documents/NutriOPS
-
-# Dev local
 npm run dev         # http://localhost:5173
-
-# Build
 npm run build
-
-# Antes do commit/push
 git status
-git add -A && git reset src/data.js
 ```
 
 ---
 
 ## Sync por tenant (via Supabase)
 
-Tabelas que sincronizam via `syncAllModules`:
-- `temperature_records` · `form_records` · `form_templates`
-- **`equipment_catalog`** (label/aliases/location/min_temp/max_temp por tenant)
-- `receiving_records` · `products` · `stock_logs` · `special_controls`
+Tabelas do `syncAllModules`:
+`temperature_records` · `form_records` · `form_templates` ·
+**`equipment_catalog`** (label/aliases/location/min_temp/max_temp) ·
+`receiving_records` · `products` · `stock_logs` · `special_controls`
 
-Tabela `tenants` (separada do `syncAllModules`):
-- Espelha tenants criados via `/admin` pra que clientes consigam abrir
-  o link `?token=` em qualquer device e baixar a metadata + hash do
-  setup PIN. Lida só por `src/tenant-sync.js` (push no admin, fetch no boot).
-- Schema:
-  ```sql
-  create table if not exists tenants (
-    id text primary key,
-    access_token text unique not null,
-    name text, segment text, plan text,
-    brand_color text, brand_soft text,
-    equipment_catalog jsonb,
-    modules jsonb,
-    stores jsonb,
-    setup_pin_hash text,
-    setup_pin_used_at timestamptz,
-    setup_pin_attempts integer default 0,
-    setup_pin_locked_until timestamptz,
-    admin_email text, admin_name text,
-    trial_ends_at timestamptz,
-    created_at timestamptz default now(),
-    updated_at timestamptz default now()
-  );
-  create unique index if not exists idx_tenants_token on tenants(access_token);
-  alter table tenants disable row level security;
-  ```
+Tabela `tenants` (fora do `syncAllModules`): espelha tenants criados via `/admin`
+pra o cliente abrir o link `?token=` em qualquer device. Lida só por
+`src/tenant-sync.js`. Está com RLS deny-all + anon revogado; acesso só pelas RPCs
+`security definer` (`docs/security-tenants-lockdown.sql`). Schema em
+`docs/HISTORICO.md`.
 
-Equipment catalog: salvar em qualquer device chama `pushEquipmentItem`;
-boot em qualquer outro device chama `syncEquipmentCatalog` e puxa updates.
-Cloud é source-of-truth: se remoto > 0, sobrescreve local. Se remoto vazio,
-cai no seed de `tenants-public.js`.
+Equipment catalog: salvar chama `pushEquipmentItem`; boot em outro device chama
+`syncEquipmentCatalog`. Cloud é source-of-truth: remoto > 0 sobrescreve local;
+remoto vazio cai no seed de `tenants-public.js`.
+
+### Regras que NÃO podem regredir
+
+Vêm do bug crítico de 29/05 (dados das lojas não chegavam no Supabase — PWA preso
+em bundle antigo + pushes com no-op silencioso):
+
+- **Todo push enfileira mesmo com Supabase off** (`repository.js`). Nunca voltar
+  pro `if (!enabled) return`.
+- **Service worker força update** via toast + `controllerchange` (`main.jsx`).
+- **Auto-config sobrescreve** se URL/anonKey mudaram (`handleLogin`, `pages.jsx`).
+- **RLS ligado nas 8 tabelas + `tenants` fechada** (épico concluído 19/07). O
+  sync usa device-token por tenant (`app_metadata.tenant_id`). **Nunca** escrever
+  policy que leia `user_metadata` (editável pelo próprio usuário via `updateUser`
+  → forjável); só `app_metadata`. Fonte de verdade: `docs/rls-fase3-policies.sql`,
+  espelhada no `SUPABASE_SQL` do `repository.js` (que a UI de Configurações exibe
+  pro usuário copiar — manter os dois em sincronia, ordem policy→enable).
+
+---
 
 ## Fluxo admin → cliente operacional (v1.8.0+)
 
-> **v1.9.33:** o **Super Admin** (dentro do app, atrás do login + 2FA) agora tem
-> um botão **"+ Novo cliente"** que reusa o `ClientModal` + `AccessTokenModal`
-> do `/admin` (mesma máquina abaixo) — cadastra empresa, gera token + setup PIN
-> e mostra o link, sem precisar do painel `/admin` separado. Os componentes são
-> exportados de `admin.jsx` e consumidos por `superadmin-view.jsx`.
-
-Quando o admin cadastra um cliente em `/admin`:
+> **v1.9.33:** o **Super Admin** (dentro do app) tem botão **"+ Novo cliente"**
+> que reusa `ClientModal` + `AccessTokenModal` do `/admin` — cadastra empresa,
+> gera token + setup PIN e mostra o link, sem precisar do painel separado.
+> Exportados de `admin.jsx`, consumidos por `superadmin-view.jsx`.
 
 1. Gera setup PIN aleatório de 4 dígitos (PBKDF2 100k iter — `src/crypto.js`)
-2. Push do tenant na tabela `tenants` do Supabase (`src/tenant-sync.js`)
-3. `AccessTokenModal` mostra o PIN uma única vez no overlay coral —
-   admin precisa enviar por **canal separado** do link (WhatsApp/SMS)
-4. Cliente abre `?token=XYZ`:
-   - `main.jsx` busca tenant no Supabase via `fetchTenantByToken`
-   - Popula `nutriops.onboarding.tenants` local
-   - `pages.jsx` detecta tenant sem usersList povoado → renderiza `SetupPinScreen`
-5. Cliente digita setup PIN → rate-limited (3 tentativas → bloqueio 15 min,
-   persistido em local + remoto)
-6. Acerto → tela "Crie seu PIN definitivo" → valida não-fraco (`isWeakPin`)
-   → cria admin owner → marca `setup_pin_used_at` no cloud → sessão criada
+2. Push do tenant na tabela `tenants` (`src/tenant-sync.js`, assinado com o JWT
+   do admin)
+3. `AccessTokenModal` mostra o PIN **uma única vez** — enviar por canal separado
+   do link (WhatsApp/SMS)
+4. Cliente abre `?token=XYZ`: `main.jsx` busca via `fetchTenantByToken` → popula
+   `nutriops.onboarding.tenants` → `pages.jsx` detecta tenant sem `usersList` →
+   renderiza `SetupPinScreen`
+5. Cliente digita o setup PIN → rate-limited (3 tentativas → bloqueio 15 min,
+   local + remoto)
+6. Acerto → "Crie seu PIN definitivo" → valida `isWeakPin` → cria admin owner →
+   marca `setup_pin_used_at` no cloud → sessão criada
 
-Wizard antigo (`OnboardingWizard`) ainda existe como fallback quando o
-cliente abre `?onboarding=1` ou quando o tenant não foi pré-criado pelo admin.
+`OnboardingWizard` antigo segue como fallback (`?onboarding=1` ou tenant não
+pré-criado).
 
-## GitHub Actions CI
+---
 
-Workflow `.github/workflows/ci.yml` (rodando `npm test` + `npm run build`)
-está versionado localmente mas ainda **não foi pushado** — o PAT atual não
-tem scope `workflow`. Pra ativar:
-
-1. GitHub → Settings → Developer settings → Personal access tokens
-2. Edita o token usado nesse repo
-3. Marca o scope `workflow`
-4. Salva, depois `git add .github/workflows/ci.yml && git commit -m "ci: build + test em push/PR" && git push`
-
-A partir daí, todo PR e push pra `main` roda build + 38 testes automaticamente.
-
-## Pendências conhecidas
+## Pendências abertas
 
 | Prioridade | Item |
 |------------|------|
-| ✅ Resolvida (v1.9.34 · 15/07) | **Vazamento cross-tenant client-side** — um Administrador/RT PRESO a um tenant (admin de cliente, ex.: CASA DOCE) via `perms.multiTenant` (papel) enxergava, CARREGAVA os registros e podia entrar SEM PIN nas lojas-seed (Swiss/Bäckerei/DBK, embutidas no build via `data.js`). Fix: `pages.jsx` amarra "ver/carregar/trocar todas" em **`seesAllTenants = isGlobalAdmin(session)`** (só o admin GLOBAL sem tenantId vê o portfólio; tenant-scoped vê só a própria). Validado: global vê 3, scoped vê 1. Decisão do dono: visão cruzada é via admin global; equipe de loja vê só a dela. |
-| ✅ Resolvida (v1.9.31 · 10/07) | **Advisor: `tenants` exposta + colunas sensíveis** — FECHADO e VERIFICADO em prod. Acesso anon à `tenants` migrado pra RPCs `security definer` (`get_tenant_by_token` não devolve `access_token`) + RLS deny-all + grants revogados (`docs/security-tenants-lockdown.sql`, rodado). Prova: `GET /tenants?select=*` com anon key → **401 permission denied**; as 4 RPCs respondem. As 8 tabelas de dados seguem abertas → Fase 3 (device-token). Aparas: `upsert_tenant` ainda é anon-callable (apertar quando /admin virar Supabase Auth); RPC ainda devolve `setup_pin_hash`/e-mail (chaveado por token, baixo risco). |
-| 🔴 Alta | **Deploy do Vercel travado** — limite do Hobby estourado (Fluid CPU + Fast Origin Transfer, puxado pelo Nexum). Pushes chegam no GitHub mas o Vercel não builda (produção parou na v1.9.11; commits v1.9.12→1.9.15 acumulados). Destravar: migrar Nexum pro Cloudflare Pages, upgrade Pro, ou esperar reset do ciclo. |
-| ✅ **Resolvida (19/07) — épico Auth+RLS CONCLUÍDO.** | **As 8 tabelas de dados estão com RLS LIGADO e auditadas em produção.** Prova empírica (anon key extraída do bundle público, `GET /rest/v1/<tabela>` nas 8): 7 retornam `[]` e `temperature_records` retorna só a linha `__healthcheck__` — **zero dado real vaza**, mesmo havendo 100+ registros da Swiss lá dentro (é RLS filtrando, não tabela vazia). `tenants` → **401**. RPC legítima `get_tenant_by_token` → 200 (onboarding intacto). Limpeza da Fase 4 feita: o `SUPABASE_SQL` do `repository.js` — que a UI de **Configurações exibe com botão de copiar** — tinha 8 `disable row level security` + policies lendo `user_metadata` (forjável); um paste desfazia o épico inteiro. Reescrito pra espelhar a produção (policies `app_metadata` + `__healthcheck__`, depois `enable`, nessa ordem). **`upsert_tenant` FECHADA (23/07):** era a última brecha de ESCRITA não-autenticada — `SECURITY DEFINER` + anon-callable = qualquer um com a chave pública criava/sobrescrevia empresa, inclusive girando `access_token` e `setup_pin_hash`. Fechada em 3 fases: (1) `revoke` nas 2 RPCs de admin; (2) v1.9.47 — `pushTenant` passou a assinar com o JWT do admin (`sbHeaders()` fixava a anon key, então o upsert rodava como `role=anon` mesmo com admin logado — revogar antes disso quebraria o cadastro de clientes); (3) portão `app_metadata.role='admin'` DENTRO da função + `revoke from anon, public`. Prova: ataque simulado com a chave pública → **401 `permission denied for function`**, nenhuma empresa fantasma criada; `get_tenant_by_token` segue 200. ⚠️ O `revoke` do `anon` precisou rodar ISOLADO (fora da transação do `create or replace`, que o Supabase re-concede) — se voltar a aparecer `anon=X` na `proacl`, o portão interno continua barrando. **Aparas remanescentes (nenhuma é vazamento de dado nem escrita não-autenticada — as duas são negação de serviço no onboarding):** `get_tenant_by_token` devolve `setup_pin_hash` a quem tiver o token (PIN de 4 dígitos quebrável offline → mover a conferência pra RPC `verify_setup_pin(token,pin)`); `mark_setup_consumed`/`bump_setup_attempts` são chaveadas por `tenant_id` adivinhável (`swiss`, `backerei`) sem prova de posse do token → dá pra travar o onboarding de cliente novo (chavear por `access_token`). Fora isso: suspensão por `active` sem enforcement server-side; 2FA ainda é TOFU. Histórico do rollout: `/admin` migrado pro Supabase Auth (v1.9.37) fechando o backdoor `VITE_ADMIN_PASSWORD`; RPCs security-definer gated por `app_metadata.role='admin'` (v1.9.38); `VITE_DEVICE_PASSWORD` no Vercel com os 3 device-tokens validados na REST. |
-| 🔴 **Alta (segurança · ABERTA)** | **Senha dos device-tokens é pública no bundle — dá pra ler os dados de uma loja.** `VITE_DEVICE_PASSWORD` está inlinada no JS público (o prefixo `VITE_` faz o Vite substituir pelo literal no build) junto com o padrão de e-mail `device-{tenantId}@nutriops.internal` (`device-auth.js:31,39`). Quem baixa o bundle tem o par completo, loga como o device de qualquer loja e recebe um JWT com `app_metadata.tenant_id` — exatamente o carimbo em que o RLS confia. **O isolamento ENTRE tenants continua de pé (cross-tenant = 403), mas a confidencialidade de UMA loja não:** dá pra ler todos os registros reais dela. ⚠️ Isso qualifica o "épico RLS fechado": a prova de 19/07 foi feita com a **anon key** (que não tem `app_metadata` e só alcança `__healthcheck__`) — não com um device-token. Validamos a fechadura sem testar a cópia da chave. Não verificado ao vivo (autenticar é ação restrita), mas é leitura direta de código. **Paliativo:** senha aleatória e distinta por loja via `VITE_DEVICE_PASSWORD_{TENANT}` (o código já suporta) — não resolve, só evita que vazar uma entregue as outras; qualquer segredo usado por app client-side é público. **Solução real ("Design 1"):** device deixa de usar senha e passa a provar posse do `access_token` da loja numa RPC que devolve JWT de curta duração. Rotacionar não exige deploy de código: trocar a senha das 3 contas no Supabase + a env na Vercel. |
-| 🔴 Alta | **Conectar a DBK Produção** — única loja ainda zerada na nuvem. Auto-connect + auto-backfill já resolvem no próximo boot online do device dela. |
-| 🟡 Média | **Bäckerei** — no ar (18 registros), último de 04/06. Verificar no device (check local×nuvem na receita). |
-| ✅ Resolvida (v1.9.30) | **"Modo local" agora é online por padrão** — o `LocalModeBanner` (pages.jsx) ganhou o guard `buildEnvHasSupabase = import.meta.env.VITE_SB_URL`: em qualquer build de PROD (feito com o env) o banner "os dados ficam só neste dispositivo" **nunca aparece** pro cliente; o app auto-conecta no boot e o auto-backfill sobe o local. O banner só sobra pro DEV local (build sem env). Erros reais de conexão seguem no `SupabaseAuthErrorBanner` à parte. |
-| 🟢 Baixa | Limpar a linha duplicada no `equipment_catalog` da Swiss na nuvem (o código já dedupa defensivamente — v1.9.14 — mas o dado sujo continua lá). |
-
-### Resolvidas (v1.9.6–1.9.15 — sessão 01/07)
-
-- ✅ **Login endurecido** — admin global saiu do PIN `9999` pra e-mail/senha via
-  Supabase Auth (`6e79b1d`→`4ebeef6`); backdoor removido. Colaborador segue PIN.
-- ✅ **Auto-connect + auto-backfill do Supabase** (`1908d08`) — devices ligam o
-  Supabase e sobem histórico sozinhos no boot; env `VITE_SB_*` no build do Vercel.
-- ✅ **Épico Auth+RLS Fases 0/1/2** — 3 contas device no Supabase Auth,
-  `device-auth.js` (JWT por tenant com fallback pra anon key), 8 policies escritas
-  (RLS ainda OFF). Revisão adversarial (22 agentes) confirmou zero regressão hoje.
-- ✅ **Bugs de cadastro/login** (`e977275`) — nome com espaço, `@Bäckerei` com
-  trema, handle na lista de usuários.
-- ✅ **Dedup do catálogo de equipamentos** (`19f16e3`) — mata alerta de turno em
-  dobro (`dedupeCatalog` em limits.js).
-- ✅ **Infra Vercel limpa** — projeto duplicado deletado, `nutriops-dev`
-  renomeado pra `nutriops` (produção).
-
-### Resolvidas (v1.9.1–1.9.5 — sessão 06/06)
-
-- ✅ **Seletor de empresa no header** (`d75f412`) — dropdown no avatar pra
-  Supervisor/RT/Admin. RT/Admin trocam instantâneo; Supervisora via relogin com
-  PIN da empresa-alvo (`TenantSwitchModal` + `CompanySwitcher` em pages.jsx;
-  flag `canSwitchTenant` em permissions.js; `user-match.js` compartilhado).
-- ✅ **Breadcrumb nos hubs** (`f6090bb`) — "Hub › Sub-view"; barra de tabs some
-  com 1 sub-view só (ex.: Supervisora em Relatórios).
-- ✅ **Polimento login + ⌘K** (`0f197db`) — "admin global" virou botão visível;
-  ⌘K alinhado ao novo modelo de troca de empresa.
-- ✅ **Swiss conectada** — device ligou Supabase, `testWrite ok`, fila 92→0,
-  77 registros de temperatura na nuvem (último de hoje). Sincroniza de ponta a
-  ponta. Check local×nuvem opcional pendente (sem urgência). Roteiro de campo:
-  `~/Documents/NutriOPS-roteiro-migracao-estacoes.pdf`.
-- ✅ **Convenção de versionamento** — cada commit bumpa o patch do `APP_VERSION`.
-
-### Resolvidas (v1.9.0 — sessão 29-30/05)
-
-- ✅ **Sync automático no boot + logs** — health-check de write, banner "modo
-  local" agressivo, detector de 401, logs verbosos. Ver `HANDOFF_2026-05-29.md`.
-- ✅ **Banner "modo local"** — `LocalModeBanner` conta registros e escala cor.
-- ✅ **Versionar CACHE do SW** — `scripts/version-sw.js` injeta BUILD_ID por deploy.
-- ✅ **Code splitting** — bundle inicial 121 KB → 95 KB gzip (<100 KB). pages.jsx
-  quebrado em login/settings/reports-views/team-views.
-- ✅ **CI no GitHub Actions** — `.github/workflows/ci.yml` rodando build + 128
-  testes em todo push/PR pra `main`.
-- ✅ **Tooltip no gráfico** — hover nos pontos mostra temperatura + data/hora.
-
-> ⚠️ **VITE_ADMIN_PASSWORD — PARQUEADO (não resolvido).** Tentamos setar no
-> Vercel em 30/05 mas a env **não chegava no build** (as `VITE_SB_*` chegam,
-> essa não; provado via hash do chunk; causa inconclusiva). O `/admin` ainda
-> usa o fallback `nutriops@admin2026`. Como a senha é `VITE_` (extraível do
-> bundle), o ganho seria marginal — o fix real é o épico de Auth (role de
-> admin server-side). Dobrado no `docs/AUTH_RLS_PLAN.md`.
->
-> ⚠️ Anon key: **adiada de propósito**. Rotacionar não adianta enquanto RLS
-> estiver off (a chave é pública por design — vai no bundle). A proteção real
-> é o épico de Auth + RLS. Ver `docs/AUTH_RLS_PLAN.md`.
-
-### Receita — validar/destravar device de loja (sem precisar de mim)
-
-Quando um device de loja não estiver sincronizando (dados só locais):
-
-1. No device: feche o app por completo (ou Cmd+Shift+R no navegador)
-2. Reabra `nutriops.uniwares.net` → aparece o toast coral **"Nova versão
-   disponível"** → **Atualizar agora**
-3. Faça login normal
-4. F12 → Console, confirme as 3 linhas:
-   `[NutriOPS] boot — Supabase: ON …` · `testWrite ok` · `auto-sync done — N/9`
-5. Se aparecer banner amarelo "N registros aguardando" → **Configurações →
-   Migrar registros locais para Supabase**
-6. Confirme na nuvem (Supabase → SQL Editor):
-   ```sql
-   SELECT tenant_id, COUNT(*), MAX(created_at)
-   FROM temperature_records GROUP BY tenant_id ORDER BY tenant_id;
-   ```
-   As 3 lojas (`swiss`, `backerei`, `dbk-producao`) devem ter `MAX(created_at)`
-   recente.
-
-## Sync — entenda antes de mexer (lições da v1.9.0)
-
-Bug crítico investigado em 29/05: dados das lojas não chegavam no Supabase.
-Causa = PWA preso em bundle antigo (sem env vars) + pushes que faziam no-op
-silencioso quando Supabase off. Regras que NÃO podem regredir:
-
-- **Todo push enfileira mesmo com Supabase off** (`repository.js`). Quando
-  habilitar depois, `syncQueue` empurra. Nunca voltar pro `if (!enabled) return`.
-- **Service worker força update** via toast + `controllerchange` (`main.jsx`).
-- **Auto-config sobrescreve** se URL/anonKey mudaram (`handleLogin` em pages.jsx).
-- **RLS: LIGADO nas 8 tabelas + `tenants` fechada. Épico concluído (19/07).**
-  O sync usa device-token por tenant (`app_metadata.tenant_id`), não mais só a
-  anon key. **Nunca** escrever policy que leia `user_metadata` (é editável pelo
-  próprio usuário via `updateUser` → forjável); só `app_metadata`. Fonte de
-  verdade das policies: `docs/rls-fase3-policies.sql`, espelhada no
-  `SUPABASE_SQL` do `repository.js` (que a UI de Configurações exibe pro
-  usuário copiar — manter os dois em sincronia, e a ordem policy→enable).
+| 🔴 Alta (segurança) | **Senha dos device-tokens é pública no bundle — dá pra ler os dados de uma loja.** `VITE_DEVICE_PASSWORD` fica inlinada no JS público (o prefixo `VITE_` vira literal no build) junto com o padrão `device-{tenantId}@nutriops.internal` (`device-auth.js:31,39`). Quem baixa o bundle loga como o device de qualquer loja e recebe um JWT com `app_metadata.tenant_id` — o carimbo em que o RLS confia. Isolamento ENTRE tenants segue de pé (cross-tenant = 403), mas a confidencialidade de UMA loja não. ⚠️ A auditoria de 19/07 usou a **anon key**, não um device-token — validamos a fechadura sem testar a cópia da chave. **Paliativo:** senha distinta por loja via `VITE_DEVICE_PASSWORD_{TENANT}` (já suportado) — só evita que vazar uma entregue as outras. **Solução real ("Design 1"):** device prova posse do `access_token` da loja numa RPC que devolve JWT de curta duração. Rotação: `docs/RUNBOOK.md`. |
+| 🔴 Alta | **Deploy da Vercel travado** — limite do Hobby estourado (Fluid CPU + Fast Origin Transfer, puxado pelo Nexum). Destravar: migrar Nexum pro Cloudflare Pages, upgrade Pro, ou esperar reset do ciclo. |
+| 🔴 Alta | **Conectar a DBK Produção** — única loja ainda zerada na nuvem. Auto-connect + auto-backfill resolvem no próximo boot online do device dela. |
+| 🟡 Média | **Bäckerei** — no ar (18 registros), último de 04/06. Verificar no device (receita em `docs/RUNBOOK.md`). |
+| 🟡 Média | **Aparas do épico Auth+RLS** — 2 DoS de onboarding + suspensão sem enforcement + 2FA TOFU. Detalhe em `docs/HISTORICO.md`. |
+| 🟢 Baixa | Limpar a linha duplicada no `equipment_catalog` da Swiss na nuvem (o código dedupa desde a v1.9.14, mas o dado sujo continua lá). |

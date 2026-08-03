@@ -140,6 +140,9 @@ const readSession           = ()   => load(SESSION_KEY, null);
 import { getEffectivePin, hasPinOverride, writePinOverride, isWeakPin } from './pin';
 // Matching de nome de usuário — compartilhado com login.jsx (troca de empresa)
 import { findUserByName } from './user-match';
+// Operador atual — atribuição por pessoa dentro da sessão compartilhada da loja
+import { needsOperator, applyOperatorToSession, isStoreAccountSession, readOperator } from './operator';
+import { OperatorPicker, OperatorChip } from './operator-picker';
 
 // ─── Equipment utils ───────────────────────────────────────────────────────
 
@@ -426,7 +429,7 @@ const resolveHubTab = (activeView, hubId, defaultSub, subIds) =>
   resolveHubTabBase(activeView, hubId, defaultSub, subIds, typeof localStorage !== 'undefined' ? localStorage : null);
 export { CONTROLS_KEYS, REPORTS_KEYS, TEAM_KEYS, isItemActive };
 
-function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenantChange, onStoreChange, activeStore, session, records, alertCount, actionCount, maintAlertCount = 0, onLogout, onSearch, switchableTenants = [], onRequestTenantSwitch }) {
+function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenantChange, onStoreChange, activeStore, session, records, alertCount, actionCount, maintAlertCount = 0, onLogout, onSearch, onChangeOperator, switchableTenants = [], onRequestTenantSwitch }) {
   const perms = getPermissions(session?.user?.role);
   const canSwitch = perms.canSwitchTenant && switchableTenants.length > 1;
   const [accountOpen, setAccountOpen] = useState(false);
@@ -514,6 +517,11 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
           </div>
         )}
       </div>
+
+      {/* Operador — só na conta de loja (aparelho compartilhado do balcão) */}
+      {isStoreAccountSession(session) && (
+        <OperatorChip tenantId={activeTenant.id} onChange={onChangeOperator} />
+      )}
 
       {/* Multi-store selector */}
       {activeTenant.multiStore && activeTenant.stores?.length > 1 && (
@@ -2277,6 +2285,21 @@ export function App() {
     setActiveStoreId(storeId);
   }, []);
 
+  // ─── Operador (conta de loja) ────────────────────────────────────────────
+  // O nome escolhido entra em session.user.name — é assim que os 14 pontos que
+  // carimbam registro passam a gravar a PESSOA em vez do nome genérico da loja,
+  // sem precisar tocar em nenhum deles. O papel continua o da conta (permissão
+  // é da conta, não de quem tocou no nome).
+  const [operatorPickerOpen, setOperatorPickerOpen] = useState(false);
+  const applyOperator = useCallback((nome) => {
+    setOperatorPickerOpen(false);
+    setSession((prev) => {
+      const next = applyOperatorToSession(prev, nome);
+      if (next !== prev) save(SESSION_KEY, next);
+      return next;
+    });
+  }, []);
+
   // ─── Troca de empresa (relogin) ──────────────────────────────────────────
   // Empresas que o usuário pode COMUTAR (distinto de multiTenant, que é ver
   // dados agregados). Supervisor/RT/Admin podem trocar; Colaborador não.
@@ -2568,6 +2591,15 @@ export function App() {
     return <TrialExpiredScreen client={trialStatus.client} />;
   }
 
+  // Conta de LOJA sem operador escolhido (abertura de turno, ou o anterior
+  // expirou): trava antes de qualquer registro. Sem isto, tudo sairia
+  // carimbado no nome genérico da loja e a atribuição exigida pela RDC 216 se
+  // perderia. `required` → não dá pra dispensar.
+  if (needsOperator(session)) return (
+    <OperatorPicker tenant={activeTenant} required
+      onPick={(nome) => applyOperator(nome)} />
+  );
+
   // Kiosk mode — full screen override
   if (kioskConfig) return (
     <Suspense fallback={<ViewLoading />}>
@@ -2579,6 +2611,12 @@ export function App() {
 
   return (
     <div className="super-shell">
+      {/* Troca voluntária de operador (pelo chip do rail) */}
+      {operatorPickerOpen && (
+        <OperatorPicker tenant={activeTenant}
+          onPick={(nome) => applyOperator(nome)}
+          onCancel={() => setOperatorPickerOpen(false)} />
+      )}
       {showSearch && (
         <Suspense fallback={null}>
           <GlobalSearch
@@ -2640,6 +2678,7 @@ export function App() {
         session={session} records={records} alertCount={alertCount} actionCount={actionCount}
         maintAlertCount={maintAlertCount}
         onLogout={handleLogout} onSearch={() => setShowSearch(true)}
+        onChangeOperator={() => setOperatorPickerOpen(true)}
         switchableTenants={switchableTenants} onRequestTenantSwitch={requestTenantSwitch}
         onStoreChange={handleStoreChange} activeStore={activeStore} />
       <main className="super-main">

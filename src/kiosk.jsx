@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getTemperatureRepository } from './repository';
 import { resolveLimits as resolveTemperatureLimits, resolveTone as resolveTemperatureTone } from './limits';
+import { readOperator } from './operator';
+import { OperatorPicker, readStaff } from './operator-picker';
 import { BrandLockup } from './brand';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -127,6 +129,19 @@ export function KioskApp({ config, onExit }) {
   const [exitAttempts, setExitAttempts] = useState(0);
   const [currentTime, setCurrentTime] = useState(fmtTime());
 
+  // Operador do quiosque. Antes o nome era congelado na ABERTURA (config.userName)
+  // e todas as leituras do dia saíam carimbadas em quem abriu o tablet — mesmo
+  // que outras cinco pessoas medissem depois. O quiosque é, por definição, o
+  // aparelho compartilhado: quem mede é quem toca no próprio nome.
+  const tenantForStaff = { id: config.tenantId, name: config.tenantName };
+  const [operator, setOperator] = useState(() => readOperator(config.tenantId)?.name ?? null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  // Sem lista de equipe cadastrada não dá pra escolher ninguém — cai no nome de
+  // quem abriu, pra não travar a loja fora do registro sanitário.
+  const staffCount = useMemo(() => readStaff(tenantForStaff).length, [config.tenantId]);
+  const precisaEscolher = !operator && staffCount > 0;
+  const autorAtual = operator ?? config.userName ?? 'Quiosque';
+
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(fmtTime()), 10000);
     return () => clearInterval(t);
@@ -150,7 +165,7 @@ export function KioskApp({ config, onExit }) {
         tenantId: config.tenantId, tenantName: config.tenantName,
         equipmentInput: active.label, equipmentKey: active.label,
         equipmentLocation: active.location ?? null,
-        user: config.userName ?? 'Quiosque', role: config.userRole ?? 'Colaborador',
+        user: autorAtual, role: config.userRole ?? 'Colaborador',
         equipment: active.label, measuredAt: fmtTime(), controlMode: 'routine',
         value: Number(value), note: '',
         min: limits.min, max: limits.max,
@@ -164,7 +179,7 @@ export function KioskApp({ config, onExit }) {
       const next = catalog.findIndex((eq, i) => i > activeIdx && !savedValues[eq.label]);
       if (next !== -1) setTimeout(() => setActiveIdx(next), 2600);
     } finally { setSaving(false); }
-  }, [value, active, saving, config, limits, repository, catalog, activeIdx, savedValues]);
+  }, [value, active, saving, config, limits, repository, catalog, activeIdx, savedValues, autorAtual]);
 
   const allSaved = catalog.every(eq => savedValues[eq.label]);
   const savedCount = Object.keys(savedValues).length;
@@ -178,13 +193,27 @@ export function KioskApp({ config, onExit }) {
     <div style={{ minHeight:'100vh', background:'#f9fbfa', fontFamily:'-apple-system, "Segoe UI", system-ui, sans-serif', userSelect:'none' }}>
       {successData && <SuccessOverlay {...successData} onDismiss={() => setSuccessData(null)} />}
 
+      {/* Abertura do turno / troca de pessoa no tablet */}
+      {(precisaEscolher || pickerOpen) && (
+        <OperatorPicker tenant={tenantForStaff} required={precisaEscolher}
+          onPick={(nome) => { setOperator(nome); setPickerOpen(false); }}
+          onCancel={() => setPickerOpen(false)} />
+      )}
+
       {/* Header */}
       <div style={{ background:'#001e2b', padding:'14px 20px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
         <div style={{ display:'flex', alignItems:'center', gap:14 }}>
           <BrandLockup size="sm" idPrefix="kiosk" showSub={false} />
           <span style={{ fontSize:11, color:'#a8b3bc', letterSpacing:'.06em', textTransform:'uppercase' }}>
-            {config.tenantName} · {config.userName}
+            {config.tenantName}
           </span>
+          {/* Quem está medindo — visível e trocável a qualquer momento, senão
+              a pessoa seguinte registra sem perceber no nome da anterior. */}
+          <button onClick={() => setPickerOpen(true)}
+            style={{ display:'flex', alignItems:'center', gap:8, background:'rgba(0,237,100,.12)', border:'1px solid rgba(0,237,100,.35)', color:'#dffbe9', borderRadius:20, padding:'5px 12px', cursor:'pointer', fontSize:12, fontFamily:'inherit' }}>
+            <strong style={{ fontWeight:700 }}>{autorAtual}</strong>
+            <span style={{ opacity:.7, fontSize:11 }}>trocar</span>
+          </button>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:16 }}>
           <div style={{ textAlign:'right' }}>

@@ -159,8 +159,22 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
     setResettingId(null);
   };
   const roles = ['Colaborador', 'Supervisor', 'Nutricionista RT', 'Administrador'];
-  useEffect(() => { setUsers(readUsers(activeTenant)); setEditingIndex(null); setNameInput(''); setRoleInput('Colaborador'); setLocationInput(''); setStatusInput('Ativo'); setPinInput('0000'); }, [activeTenant.id]);
-  useEffect(() => { writeUsers(activeTenant.id, users); }, [activeTenant.id, users]);
+  // De QUAL loja é a lista em memória. Sem esta marcação, o efeito de escrita
+  // (que tem activeTenant.id nas deps) rodava no render da TROCA de empresa —
+  // id novo, `users` ainda da loja anterior — e gravava a equipe (com PIN!) de
+  // uma loja sob a chave da outra. Mesma classe do bug do catálogo de
+  // equipamentos (v1.9.71), e agora mais grave: esta lista sincroniza pra
+  // nuvem, então a contaminação sairia do aparelho. Precisa ser state, não ref
+  // (com ref o efeito leria o valor já atualizado e a checagem passaria).
+  const [usersTenant, setUsersTenant] = useState(activeTenant.id);
+  useEffect(() => {
+    setUsers(readUsers(activeTenant)); setUsersTenant(activeTenant.id);
+    setEditingIndex(null); setNameInput(''); setRoleInput('Colaborador'); setLocationInput(''); setStatusInput('Ativo'); setPinInput('0000');
+  }, [activeTenant.id]);
+  useEffect(() => {
+    if (usersTenant !== activeTenant.id) return; // troca de loja em andamento
+    writeUsers(activeTenant.id, users);
+  }, [activeTenant.id, usersTenant, users]);
   // Na edição o campo PIN começa VAZIO = "manter o atual" — não prefill com o
   // pin de fábrica (que não é o PIN real de quem já resetou no 1º login) pra não
   // sobrescrever sem querer ao salvar outra coisa.
@@ -181,9 +195,23 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
     const user = { name: trimmedName, role: roleInput, location: locationInput.trim(), status: statusInput, pin: factoryPin };
     setUsers((prev) => isEditing ? prev.map((u, i) => i === editingIndex ? user : u) : [...prev, user]);
     if (isEditing && pinInput) writePinOverride(activeTenant.id, trimmedName, pinInput);
+    // Sobe pra nuvem (sem o PIN — ver staffToRow) pra o tablet da loja enxergar
+    // quem o gerente cadastrou aqui. Se editou e mudou o nome, a linha antiga
+    // fica órfã na nuvem (chave é tenant_id+name) → apaga a anterior.
+    const nomeAntigo = isEditing ? users[editingIndex]?.name : null;
+    import('./repository').then(m => {
+      if (nomeAntigo && nomeAntigo !== trimmedName) m.deleteStaffMember(activeTenant.id, nomeAntigo).catch(() => {});
+      m.pushStaffMember(activeTenant.id, user);
+    }).catch(() => {});
     cancelEdit();
   };
-  const removeUser = (i) => { if (!window.confirm(`Remover "${users[i]?.name}"?`)) return; setUsers((prev) => prev.filter((_, idx) => idx !== i)); if (editingIndex === i) cancelEdit(); };
+  const removeUser = (i) => {
+    const alvo = users[i];
+    if (!window.confirm(`Remover "${alvo?.name}"?`)) return;
+    setUsers((prev) => prev.filter((_, idx) => idx !== i));
+    if (editingIndex === i) cancelEdit();
+    if (alvo?.name) import('./repository').then(m => m.deleteStaffMember(activeTenant.id, alvo.name)).catch(() => {});
+  };
   const filtered = users.filter((u) => { const q = search.toLowerCase(); return (!q || u.name.toLowerCase().includes(q) || (u.location ?? '').toLowerCase().includes(q)) && (roleFilter === 'Todos' || u.role === roleFilter); }).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }));
   return (
     <section className="management-page">

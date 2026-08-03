@@ -658,6 +658,90 @@ export async function deleteEquipmentItem(tenantId, label) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TENANT STAFF — lista de nomes da equipe da loja (SEM credencial)
+// ═══════════════════════════════════════════════════════════════════════════
+// No modelo novo (operador por registro), quem trabalha na loja é só um NOME
+// numa lista: entrou alguém = mais um nome; saiu = tira o nome. Mas a lista
+// vivia só no localStorage do aparelho — o gerente cadastrava no celular dele
+// e o tablet do balcão nunca via. Sem sincronizar, o modelo não fecha.
+//
+// ⚠️ MESMA CHAVE que readUsers/readStaff leem (`nutriops.users.{id}`). Gravar
+// em chave diferente foi exatamente o bug do catálogo de equipamentos (v1.9.60):
+// sincronizava pra um lugar que a tela não lia e a loja via "ninguém".
+const STAFF_KEY = (tenantId) => `nutriops.users.${tenantId}`;
+
+// ⚠️ `pin` NUNCA vai pra nuvem. O objeto de usuário do data.js carrega o PIN de
+// fábrica; isto aqui é lista de nomes, não de credenciais.
+function staffToRow(u, tenantId) {
+  return {
+    tenant_id: tenantId,
+    name: u.name,
+    role: u.role ?? 'Colaborador',
+    location: u.location ?? null,
+    status: u.status ?? 'Ativo',
+    updated_at: new Date().toISOString(),
+  };
+}
+function staffFromRow(row) {
+  return {
+    name: row.name,
+    role: row.role,
+    location: row.location ?? '',
+    status: row.status ?? 'Ativo',
+  };
+}
+
+export async function syncTenantStaff(tenantId) {
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok: false, reason: 'offline_or_disabled' };
+  try {
+    const rows = await sbFetch('tenant_staff', { filter: `tenant_id=eq.${tenantId}&order=name.asc&limit=300` }, tenantId);
+    const remote = rows.map(staffFromRow);
+    // Nuvem é a fonte de verdade — mas só sobrescreve se houver alguém lá.
+    // Nuvem vazia = loja ainda não migrou; apagar a lista local trancaria a
+    // equipe fora do registro.
+    if (remote.length > 0) lw(STAFF_KEY(tenantId), remote);
+    return { ok: true, count: remote.length };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+export async function pushStaffMember(tenantId, member) {
+  if (!isSupabaseEnabled() || !navigator.onLine) {
+    enqueue('tenant_staff', 'upsert', staffToRow(member, tenantId));
+    return;
+  }
+  try {
+    await sbFetch('tenant_staff', {
+      method: 'POST', body: staffToRow(member, tenantId),
+      prefer: 'resolution=merge-duplicates,return=minimal',
+    }, tenantId);
+  } catch (e) { logFailAndEnqueue('tenant_staff', 'upsert', staffToRow(member, tenantId), e); }
+}
+
+export async function deleteStaffMember(tenantId, name) {
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok: false };
+  try {
+    await sbFetch('tenant_staff', {
+      method: 'DELETE',
+      filter: `tenant_id=eq.${tenantId}&name=eq.${encodeURIComponent(name)}`,
+    }, tenantId);
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+// Sobe a lista local inteira (usado na migração de uma loja pro modelo novo).
+export async function pushAllStaff(tenantId, staff) {
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok: false };
+  let pushed = 0, failed = 0;
+  for (const u of (staff || [])) {
+    if (!u?.name) continue;
+    try { await pushStaffMember(tenantId, u); pushed++; } catch { failed++; }
+  }
+  return { ok: true, pushed, failed };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // RECEIVING RECORDS
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -816,6 +900,7 @@ export async function syncAllModules(tenantId) {
     syncFormRecords(tenantId),
     syncFormTemplates(tenantId),
     syncEquipmentCatalog(tenantId),
+    syncTenantStaff(tenantId),
     syncReceiving(tenantId),
     syncProducts(tenantId),
     syncSpecialControls('oil', tenantId),
@@ -961,6 +1046,20 @@ create table if not exists equipment_catalog (
 );
 create index if not exists idx_eq_tenant on equipment_catalog(tenant_id);
 
+-- 2d. Equipe da loja — lista de NOMES, sem credencial. É quem pode ser
+-- escolhido como operador ("quem está registrando") no aparelho compartilhado.
+-- Nunca guardar PIN/senha aqui: identificação, não autenticação.
+create table if not exists tenant_staff (
+  tenant_id text not null,
+  name text not null,
+  role text,
+  location text,
+  status text default 'Ativo',
+  updated_at timestamptz default now(),
+  primary key (tenant_id, name)
+);
+create index if not exists idx_staff_tenant on tenant_staff(tenant_id);
+
 -- 3. Recebimento
 create table if not exists receiving_records (
   id uuid primary key default gen_random_uuid(),
@@ -1050,6 +1149,11 @@ create policy tenant_isolation on equipment_catalog for all
   using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
   with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
 
+drop policy if exists tenant_isolation on tenant_staff;
+create policy tenant_isolation on tenant_staff for all
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
+
 drop policy if exists tenant_isolation on receiving_records;
 create policy tenant_isolation on receiving_records for all
   using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
@@ -1076,6 +1180,7 @@ alter table temperature_records enable row level security;
 alter table form_records         enable row level security;
 alter table form_templates       enable row level security;
 alter table equipment_catalog    enable row level security;
+alter table tenant_staff         enable row level security;
 alter table receiving_records    enable row level security;
 alter table products             enable row level security;
 alter table stock_logs           enable row level security;

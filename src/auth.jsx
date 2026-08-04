@@ -44,7 +44,7 @@ export function readAuthSession() {
 function saveAuthSession(s) {
   try { localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(s)); } catch {}
 }
-function clearAuthSession() {
+export function clearAuthSession() {
   try { localStorage.removeItem(AUTH_SESSION_KEY); } catch {}
 }
 

@@ -1,20 +1,28 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- NutriOPS · FASE 2 — Contas reais + vínculos pessoa ↔ empresa
 --
--- ORDEM: primeiro CONVIDE as pessoas pelo painel (passo 1, fora daqui), depois
--- rode o SQL de vínculo (passo 2). O vínculo só encontra quem já tem conta.
+-- ORDEM: primeiro CRIE as contas pelo painel do app (passo 1, fora daqui),
+-- depois rode o SQL de vínculo (passo 2). O vínculo só encontra quem já tem
+-- conta — sem isso o INSERT roda sem erro mas não insere nada (0 linhas).
 --
--- ⚠️ NINGUÉM aqui define senha de ninguém. O convite manda um link e a própria
--- pessoa escolhe a senha dela. Você não precisa saber, e não deve.
+-- ⚠️ Senha inicial é definida ali mesmo, na tela — não é uma senha que eu
+-- escolho ou vejo. Combine com cada pessoa por um canal separado (WhatsApp).
 --
 -- ─────────────────────────────────────────────────────────────────────────────
--- PASSO 1 — Convidar (Supabase → Authentication → Users → "Invite user")
+-- PASSO 1 — Criar em Equipe → Usuários → "Convidar colaborador", trocando a
+-- empresa ativa no seletor do topo antes de cada uma:
 --
---   casadocest@gmail.com   → dona da CASA DOCE
---   <email da Ana Paula>   → RT das 3 unidades
---   <email da Fran>        → supervisora Swiss + Bäckerei
+--   Empresa ativa | E-mail                          | Perfil            | conta de loja?
+--   Swiss         | swiss@nutriops.app               | Colaborador       | sim
+--   Bäckerei      | backerei@nutriops.app            | Colaborador       | sim
+--   DBK Produção  | dbk@nutriops.app                 | Colaborador       | sim
+--   Swiss         | fran@backerei.nutriops.app        | Supervisor        | não
+--   Swiss         | anapaula@backerei.nutriops.app    | Nutricionista RT  | não
 --
--- Cada uma recebe e-mail, clica e define a senha. Só depois rode o PASSO 2.
+-- Fran e Ana Paula entram só pela Swiss aqui — o convite vincula só à empresa
+-- ativa no momento. O vínculo delas com as outras lojas é o PASSO 2 abaixo.
+-- casadocest@gmail.com já foi criada antes (Fase 1) — segue no SQL só de
+-- conferência/idempotência, não precisa recriar.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -28,7 +36,11 @@ select email,
             else 'ativo' end as situacao,
        created_at
   from auth.users
- where email in ('casadocest@gmail.com')   -- acrescente os outros e-mails aqui
+ where email in (
+   'casadocest@gmail.com',
+   'swiss@nutriops.app', 'backerei@nutriops.app', 'dbk@nutriops.app',
+   'fran@backerei.nutriops.app', 'anapaula@backerei.nutriops.app'
+ )
  order by created_at desc;
 
 
@@ -57,23 +69,24 @@ on conflict (user_id, tenant_id) do update set role = excluded.role;
 
 
 -- ANA PAULA — RT das TRÊS unidades (é isto que o app_metadata escalar não fazia)
--- Descomente e troque o e-mail:
--- insert into public.tenant_members (user_id, tenant_id, role)
--- select u.id, t.id, 'Nutricionista RT'
---   from auth.users u
---   join public.tenants t on t.id in ('swiss','backerei','dbk-producao')
---  where u.email = 'EMAIL_DA_ANA_PAULA'
--- on conflict (user_id, tenant_id) do update set role = excluded.role;
+-- Conta criada via "Convidar colaborador" com Swiss ativa (Nutricionista RT).
+-- Este INSERT é idempotente (on conflict), então a linha da Swiss já criada
+-- pelo convite só tem o role reafirmado — as novidades são Bäckerei e DBK.
+insert into public.tenant_members (user_id, tenant_id, role)
+select u.id, tid, 'Nutricionista RT'
+  from auth.users u, unnest(array['swiss','backerei','dbk-producao']) as tid
+ where u.email = 'anapaula@backerei.nutriops.app'
+on conflict (user_id, tenant_id) do update set role = excluded.role;
 
 
 -- FRAN — supervisora de Swiss + Bäckerei
--- Descomente e troque o e-mail:
--- insert into public.tenant_members (user_id, tenant_id, role)
--- select u.id, t.id, 'Supervisor'
---   from auth.users u
---   join public.tenants t on t.id in ('swiss','backerei')
---  where u.email = 'EMAIL_DA_FRAN'
--- on conflict (user_id, tenant_id) do update set role = excluded.role;
+-- Conta criada via "Convidar colaborador" com Swiss ativa (Supervisor).
+-- Idempotente pelo mesmo motivo acima — a novidade é a Bäckerei.
+insert into public.tenant_members (user_id, tenant_id, role)
+select u.id, tid, 'Supervisor'
+  from auth.users u, unnest(array['swiss','backerei']) as tid
+ where u.email = 'fran@backerei.nutriops.app'
+on conflict (user_id, tenant_id) do update set role = excluded.role;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -87,9 +100,16 @@ select u.email, m.tenant_id, coalesce(t.name, '(empresa não encontrada)') as em
  order by u.email, empresa;
 
 -- Esperado depois de tudo:
---   casadocest@gmail.com  → CASA DOCE            (tenant_admin)
---   ana paula             → Swiss, Bäckerei, DBK (Nutricionista RT)   ← 3 linhas
---   fran                  → Swiss, Bäckerei      (Supervisor)          ← 2 linhas
+--   casadocest@gmail.com          → CASA DOCE            (tenant_admin)
+--   swiss@nutriops.app            → Swiss                (Colaborador)   ← conta de loja
+--   backerei@nutriops.app         → Bäckerei             (Colaborador)   ← conta de loja
+--   dbk@nutriops.app              → DBK Produção         (Colaborador)   ← conta de loja
+--   anapaula@backerei.nutriops.app → Swiss, Bäckerei, DBK (Nutricionista RT) ← 3 linhas
+--   fran@backerei.nutriops.app     → Swiss, Bäckerei      (Supervisor)        ← 2 linhas
+--
+-- As 3 contas de loja aparecem com só 1 linha cada — o vínculo delas já saiu
+-- certo direto do convite (Colaborador na própria loja), não precisam de
+-- PASSO 2. Só Fran e Ana Paula (multi-loja) dependem do INSERT acima.
 
 
 -- ─────────────────────────────────────────────────────────────────────────────

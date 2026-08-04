@@ -121,17 +121,21 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
   const emailModel = Boolean(activeTenant?._fromMembership || activeTenant?._fromCloud);
   // Modelo e-mail: a "lista de usuários" são os MEMBROS da nuvem (tenant_members
   // + auth), não a lista local de PINs. Convidados por e-mail vivem lá.
+  // Carrega pra QUALQUER tenant com convite habilitado — não só emailModel
+  // (CASA DOCE): loja-seed (Swiss/Bäckerei/DBK) também ganha membros por
+  // e-mail desde a Fase 4 (conta de loja + Fran/Ana Paula multi-loja), e sem
+  // isso não existe UI pra redefinir a senha delas depois de criadas.
   const [members, setMembers] = useState([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
   const loadMembers = () => {
-    if (!emailModel) return;
+    if (!canInvite) return;
     setLoadingMembers(true);
     import('./tenant-sync')
       .then(m => m.fetchTenantMembers(activeTenant.id))
       .then(list => { setMembers(Array.isArray(list) ? list : []); setLoadingMembers(false); })
       .catch(() => setLoadingMembers(false));
   };
-  useEffect(() => { setMembers([]); if (emailModel) loadMembers(); /* eslint-disable-next-line */ }, [emailModel, activeTenant.id]);
+  useEffect(() => { setMembers([]); loadMembers(); /* eslint-disable-next-line */ }, [canInvite, activeTenant.id]);
 
   const handleInvite = async () => {
     setInvMsg(null);
@@ -291,35 +295,9 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
           </div>
         </article>
         )}
+        {!emailModel && (
         <article className="management-card">
-          <div className="card-head"><div><span className="eyebrow">Lista</span><h2>Usuários cadastrados</h2></div><span className="badge neutral">{emailModel ? members.length : `${filtered.length}/${users.length}`}</span></div>
-          {emailModel ? (
-          <div className="equipment-maintenance-list">
-            {loadingMembers ? <p className="muted" style={{ padding:'16px 20px' }}>Carregando…</p>
-              : members.length === 0 ? <p className="muted" style={{ padding:'16px 20px' }}>Nenhum colaborador convidado ainda. Use "Convidar colaborador" acima.</p>
-              : members.map((m) => (
-                <div key={m.userId} className="equipment-maintenance-row user-row">
-                  <div>
-                    <strong>{m.name}</strong>
-                    <span>{m.role} · {m.email}</span>
-                    <span style={{ fontSize:11, color:'var(--text-secondary)', display:'block', marginTop:2 }}>
-                      {m.lastSignInAt ? `Último acesso: ${new Date(m.lastSignInAt).toLocaleString('pt-BR')}` : 'convidado — ainda não entrou'}
-                    </span>
-                  </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <span className="badge ok">Ativo</span>
-                    {canInvite && (
-                      <button className="ghost-action" style={{ fontSize:11 }} disabled={resettingId === m.userId}
-                        title="Define uma nova senha pra essa pessoa (esqueceu a atual, por exemplo)."
-                        onClick={() => resetPasswordFor(m)}>
-                        {resettingId === m.userId ? 'Redefinindo…' : 'Redefinir senha'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-          </div>
-          ) : (<>
+          <div className="card-head"><div><span className="eyebrow">Lista</span><h2>Usuários cadastrados</h2></div><span className="badge neutral">{`${filtered.length}/${users.length}`}</span></div>
           <div className="capture-fields equipment-filters">
             <label>Buscar<input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nome ou localização" /></label>
             <label>Perfil<select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>{['Todos', ...roles].map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
@@ -359,9 +337,41 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
                 </div>
               ); })}
           </div>
-          </>)}
         </article>
+        )}
       </div>
+      {/* Colaboradores por e-mail — pra QUALQUER tenant (loja-seed inclusive,
+          desde a Fase 4: conta de loja + Fran/Ana Paula multi-loja). Sem este
+          card não existe UI pra ver/redefinir a senha dessas contas depois de
+          criadas — o convite acima só cria, não gerencia. */}
+      {canInvite && (
+        <article className="management-card" style={{ marginTop: 16 }}>
+          <div className="card-head"><div><span className="eyebrow">Acesso por e-mail</span><h2>Colaboradores por e-mail</h2></div><span className="badge neutral">{members.length}</span></div>
+          <div className="equipment-maintenance-list">
+            {loadingMembers ? <p className="muted" style={{ padding:'16px 20px' }}>Carregando…</p>
+              : members.length === 0 ? <p className="muted" style={{ padding:'16px 20px' }}>Nenhum colaborador convidado ainda. Use "Convidar colaborador" acima.</p>
+              : members.map((m) => (
+                <div key={m.userId} className="equipment-maintenance-row user-row">
+                  <div>
+                    <strong>{m.name}</strong>
+                    <span>{m.role} · {m.email}</span>
+                    <span style={{ fontSize:11, color:'var(--text-secondary)', display:'block', marginTop:2 }}>
+                      {m.lastSignInAt ? `Último acesso: ${new Date(m.lastSignInAt).toLocaleString('pt-BR')}` : 'convidado — ainda não entrou'}
+                    </span>
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <span className="badge ok">Ativo</span>
+                    <button className="ghost-action" style={{ fontSize:11 }} disabled={resettingId === m.userId}
+                      title="Define uma nova senha pra essa pessoa (esqueceu a atual, por exemplo)."
+                      onClick={() => resetPasswordFor(m)}>
+                      {resettingId === m.userId ? 'Redefinindo…' : 'Redefinir senha'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </article>
+      )}
     </section>
   );
 }

@@ -265,7 +265,7 @@ export function LoginScreen({ onLogin, activeTenants }) {
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink:0 }}>
                   <path d="M12 2 3 6v6c0 5 4 8 9 10 5-2 9-5 9-10V6z" />
                 </svg>
-                Entrar como administrador
+                Entrar com e-mail
               </button>
             </div>
           </div>

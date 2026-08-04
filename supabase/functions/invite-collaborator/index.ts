@@ -97,6 +97,12 @@ Deno.serve(async (req) => {
     const email = String(body.email ?? '').trim().toLowerCase();
     const name = String(body.name ?? '').trim();
     const role = String(body.role ?? 'Colaborador');
+    // Conta GENÉRICA de loja (Fase 4 — operador por registro): não é uma
+    // pessoa, é o login compartilhado do aparelho do balcão. buildSession
+    // (src/auth.jsx) lê este carimbo do user_metadata e é ele que liga a tela
+    // "Quem está registrando?" — sem isto a conta loga normal e nunca pede
+    // operador, silenciosamente.
+    const isStoreAccount = body.isStoreAccount === true;
 
     if (!email) return json({ error: 'e-mail é obrigatório' }, 400);
     if (!ALLOWED_ROLES.includes(role)) return json({ error: 'papel inválido' }, 400);
@@ -104,7 +110,7 @@ Deno.serve(async (req) => {
 
     // 3) Cria a conta com a senha inicial (já confirmada → loga na hora).
     const { data: created, error: cErr } = await admin.auth.admin.createUser({
-      email, password, email_confirm: true, user_metadata: { name },
+      email, password, email_confirm: true, user_metadata: { name, isStoreAccount },
     });
     if (cErr || !created?.user) {
       const msg = String(cErr?.message ?? '');

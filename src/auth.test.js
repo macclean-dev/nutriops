@@ -127,6 +127,26 @@ describe('scopeSessionToMembership — escopo da sessão por vínculo (Fase 3)',
     expect(s.memberTenants).toHaveLength(3);       // seletor mostra as 3
     expect(s.memberTenants.map(t => t.id)).toEqual(['swiss','backerei','dbk-producao']);
   });
+
+  // Fase 4 (03/08): conta de LOJA (login compartilhado do balcão) precisa
+  // continuar marcada como tal depois de escopada pra loja — é esse carimbo
+  // que liga a tela "Quem está registrando?" (src/operator.js). Um bug aqui
+  // faria a conta logar normal e nunca pedir operador, silenciosamente.
+  it('carimbo isStoreAccount sobrevive ao escopo por membership', async () => {
+    const { scopeSessionToMembership } = await import('./auth');
+    const contaDeLoja = { ...base, isStoreAccount: true, user: { name: 'Swiss', role: 'Colaborador', location: '' } };
+    const s = scopeSessionToMembership(contaDeLoja, [
+      { id: 'swiss', name: 'Swiss', memberRole: 'Colaborador' },
+    ]);
+    expect(s.isStoreAccount).toBe(true);
+    expect(s.tenantId).toBe('swiss');
+  });
+
+  it('sessão pessoal (sem isStoreAccount) não vira conta de loja por engano', async () => {
+    const { scopeSessionToMembership } = await import('./auth');
+    const s = scopeSessionToMembership(base, [{ id: 'swiss', name: 'Swiss', memberRole: 'Supervisor' }]);
+    expect(s.isStoreAccount).toBeUndefined();
+  });
 });
 
 // Regressão do vazamento cross-tenant de 30/07: refreshSession reconstruía a

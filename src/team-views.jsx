@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { loginHandle } from './user-match';
 import { writePinOverride, isWeakPin } from './pin';
 import { isSupabaseEnabled as supabaseEnabled } from './repository';
+import { isGlobalAdmin } from './permissions';
 
 const catalogKey = (id) => `nutriops.equipment.catalog.${id}`;
 const turnsKey   = (id) => `nutriops.turns.${id}`;
@@ -103,10 +104,16 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
   const [invName, setInvName]   = useState('');
   const [invPwd, setInvPwd]     = useState('');
   const [invRole, setInvRole]   = useState('Colaborador');
+  const [invStoreAccount, setInvStoreAccount] = useState(false);
   const [invMsg, setInvMsg]     = useState(null);
   const [inviting, setInviting] = useState(false);
   // Só quem administra a loja convida; e só faz sentido com o Supabase ligado.
   const canInvite = supabaseEnabled() && ['Administrador','Super-admin','Nutricionista RT'].includes(session?.user?.role);
+  // "Conta de loja" (Fase 4 — operador por registro) é decisão estrutural, não
+  // um convite comum — só o admin da PLATAFORMA cria. Um tenant_admin convida
+  // pessoas normalmente; a conta compartilhada do balcão nasce uma vez, com
+  // supervisão de quem enxerga todas as lojas.
+  const canCreateStoreAccount = isGlobalAdmin(session);
   // Loja do modelo E-MAIL (nuvem/membership) — ex.: CASA DOCE. Aqui o acesso é
   // por e-mail/senha, então o cadastro por PIN e o handle "nome@id" não fazem
   // sentido (o id da loja é feio: nome@bf245c3b-2f9). Seeds (Swiss/Bäckerei/DBK)
@@ -134,9 +141,12 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
     setInviting(true);
     try {
       const { inviteCollaborator } = await import('./auth');
-      await inviteCollaborator({ email, name: invName.trim(), role: invRole, tenantId: activeTenant.id, password: invPwd });
-      setInvMsg({ tone:'ok', text:`✓ ${email} convidado. Entra com o e-mail + a senha inicial e troca depois.` });
-      setInvEmail(''); setInvName(''); setInvPwd('');
+      const isStoreAccount = canCreateStoreAccount && invStoreAccount;
+      await inviteCollaborator({ email, name: invName.trim(), role: invRole, tenantId: activeTenant.id, password: invPwd, isStoreAccount });
+      setInvMsg({ tone:'ok', text: isStoreAccount
+        ? `✓ Conta de loja "${invName.trim() || activeTenant.name}" criada. Quem for registrar entra com este e-mail e escolhe o próprio nome na hora.`
+        : `✓ ${email} convidado. Entra com o e-mail + a senha inicial e troca depois.` });
+      setInvEmail(''); setInvName(''); setInvPwd(''); setInvStoreAccount(false);
       loadMembers(); // recarrega a lista pra o convidado aparecer na hora
     } catch (e) {
       setInvMsg({ tone:'danger', text: e.message });
@@ -234,6 +244,17 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
               <option value="Nutricionista RT">Nutricionista RT</option>
               <option value="tenant_admin">Administrador da loja</option>
             </select></label>
+            {canCreateStoreAccount && (
+              <label style={{ flexDirection:'row', alignItems:'flex-start', gap:8 }}>
+                <input type="checkbox" checked={invStoreAccount} onChange={(e)=>setInvStoreAccount(e.target.checked)} style={{ marginTop:3 }} />
+                <span>
+                  <strong>É conta de loja</strong> (login compartilhado do aparelho do balcão)
+                  <br /><span style={{ fontSize:11, color:'var(--text-secondary)' }}>
+                    Sem operador fixo — cada pessoa toca no próprio nome pra registrar. Use "Nome" pro nome da loja (ex.: "{activeTenant.name}").
+                  </span>
+                </span>
+              </label>
+            )}
             {invMsg && <p style={{ fontSize:13, fontWeight:600, color: invMsg.tone==='ok' ? 'var(--green)' : 'var(--red)' }}>{invMsg.text}</p>}
             <div className="actions-row">
               <button className="primary-action" onClick={handleInvite} disabled={inviting || !invEmail || !invPwd}>{inviting ? 'Convidando…' : 'Adicionar colaborador'}</button>

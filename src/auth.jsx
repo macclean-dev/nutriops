@@ -143,6 +143,12 @@ function buildSession(user, accessToken, refreshToken) {
     // só o service_role escreve — user_metadata é editável pelo próprio usuário
     // (updateUser), então confiar nele pra privilégio seria forjável.
     isPlatformAdmin: appMeta.role === 'admin',
+    // Conta GENÉRICA de loja (Fase 4), não uma pessoa — liga a tela "Quem está
+    // registrando?" (src/operator.js). Gravado pelo invite-collaborator no
+    // user_metadata; sobrevive ao escopo por membership (scopeSessionToMembership
+    // faz spread do objeto de sessão inteiro) e ao preserveMembershipScope do
+    // refresh (idem).
+    isStoreAccount: meta.isStoreAccount === true,
     user: {
       id:       user.id,
       email:    user.email,
@@ -295,7 +301,7 @@ export async function mfaVerify(accessToken, factorId, challengeId, code) {
 // endpoint que SÓ aceita service_role, então nunca funcionaria pra um dono comum
 // (e, se alguém pusesse a service_role no cliente, seria a chave-mestra no bundle
 // público). Removido em favor deste caminho.
-export async function inviteCollaborator({ email, name, role, tenantId, password }) {
+export async function inviteCollaborator({ email, name, role, tenantId, password, isStoreAccount = false }) {
   if (!isSupabaseEnabled()) throw new Error('Supabase não configurado.');
   const token = await getValidAccessToken();
   if (!token) throw new Error('Sua sessão expirou. Entre de novo.');
@@ -303,7 +309,7 @@ export async function inviteCollaborator({ email, name, role, tenantId, password
   const res = await fetch(`${url.replace(/\/$/, '')}/functions/v1/invite-collaborator`, {
     method: 'POST',
     headers: { apikey: anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, name, role, tenantId, password }),
+    body: JSON.stringify({ email, name, role, tenantId, password, isStoreAccount }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error ?? 'Erro ao convidar colaborador');

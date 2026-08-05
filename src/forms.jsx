@@ -15,7 +15,29 @@ const recKey = (id) => `nutriops.forms.records.${id}`;
 const fl = (k, fb) => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : fb; } catch { return fb; } };
 const fs = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
-export const readFormTemplates  = (tenant) => { const s = fl(tplKey(tenant.id), null); if (s) return s; const d = seedTemplates(tenant); fs(tplKey(tenant.id), d); return d; };
+// Planilhas da loja = cache local + as do seed que ainda não chegaram nele.
+// Antes era `if (cache) return cache`, com dois furos que só apareciam depois:
+//   1. `[]` é TRUTHY. O syncModule grava [] quando a nuvem ainda não tem
+//      nenhuma planilha (loja nova, ou pull que veio vazio), e a partir daí o
+//      seed nunca mais rodava — a loja ficava com ZERO planilhas pra sempre.
+//   2. Planilha NOVA no seed nunca alcançava quem já tinha cache. As 21 de
+//      higienização da CASA DOCE (Fase D) chegaram depois das 11 primeiras:
+//      sem o merge, a loja continuaria vendo só as 11.
+// Merge por id (os ids do seed são FIXOS — é essa a razão da convenção) e só
+// ACRESCENTA: edição local de uma planilha existente é preservada. Não há
+// exclusão de planilha na UI, então não há risco de ressuscitar algo apagado
+// de propósito — se um dia houver, isto precisa de tombstone.
+export const readFormTemplates = (tenant) => {
+  const cache = fl(tplKey(tenant.id), null);
+  const seed  = seedTemplates(tenant);
+  if (!Array.isArray(cache)) { fs(tplKey(tenant.id), seed); return seed; }
+  const temos = new Set(cache.map((t) => t.id));
+  const novas = seed.filter((t) => !temos.has(t.id));
+  if (novas.length === 0) return cache;
+  const merged = [...cache, ...novas];
+  fs(tplKey(tenant.id), merged);
+  return merged;
+};
 export const writeFormTemplates = (id, v)  => fs(tplKey(id), v);
 export const readFormRecords    = (id)     => fl(recKey(id), []);
 export const writeFormRecords   = (id, v)  => fs(recKey(id), v);
@@ -55,6 +77,7 @@ const CAT = {
   vetores_pragas:  { label:'Vetores e Pragas', color:'#9a3412', bg:'#fff7ed' },
   dedetizacao:     { label:'Dedetização',      color:'#6b21a8', bg:'#faf5ff' },
   faxina:          { label:'Faxina',           color:'#065f46', bg:'#ecfdf5' },
+  higienizacao:    { label:'Higienização',     color:'#00684a', bg:'#ecfdf5' },
   potabilidade:    { label:'Potabilidade',     color:'#1e40af', bg:'#eff6ff' },
   manutencao:      { label:'Manutenção',       color:'#92400e', bg:'#fffbeb' },
   recebimento:     { label:'Recebimento',      color:'#374151', bg:'#f9fafb' },
@@ -606,6 +629,173 @@ const TPL_CD_CALIBRACAO = () => ({
   ],
 });
 
+// ── CASA DOCE · Fase D — Higienização por SETOR (21 folhas do papel) ────────
+// Cada folha vira uma planilha própria: a equipe da Padaria abre só a da
+// Padaria. As colunas "Semana 1..5" do papel viram um preenchimento POR SEMANA
+// (frequency:'weekly') — por isso TODAS são semanais mesmo quando a tarefa é
+// mensal/quinzenal/diária: o período de cada tarefa vai no nome dela, igual à
+// coluna "Período" da folha. É o mesmo compromisso que o papel já faz (lá
+// também há uma coluna por semana pra tarefa diária).
+//
+// ⚠️ O SETOR é derivado do TÍTULO em templateSector() ("Higienização — Padaria"
+// → "Padaria"). form_templates não tem coluna `sector` (id/tenant_id/category/
+// frequency/title/description/sections) e um campo solto no objeto NÃO
+// sobreviveria ao round-trip da nuvem. Mudou o formato do título? Ajuste lá.
+const PER = { S:'semanal', M:'mensal', Q:'quinzenal', D:'diária', X:'frequência a definir' };
+
+const higSetor = (uuid, slug, setor, tarefas) => () => ({
+  id:uuid, category:'higienizacao', frequency:'weekly',
+  title:`Higienização — ${setor}`,
+  description:`Higienização do setor ${setor}. Registre data e assinatura de cada tarefa concluída — o período esperado está no nome. Uma folha por semana, como no papel.`,
+  sections:[
+    { id:`cd-hig-${slug}-t`, title:'Tarefas', fields:tarefas.map(([nome, per], i) => (
+      { id:`cd-hig-${slug}-${i}`, label:`${nome} (${PER[per]})`, type:'date_sig' }
+    ))},
+    { id:`cd-hig-${slug}-nc`, title:'Não conformidade (se houver)', fields:[
+      { id:`cd-hig-${slug}-ncdesc`, label:'Não conformidade', type:'text' },
+      { id:`cd-hig-${slug}-ncacao`, label:'Ação corretiva', type:'text' },
+      { id:`cd-hig-${slug}-ncresp`, label:'Responsável pela correção', type:'text' },
+    ]},
+  ],
+});
+
+// Setor de uma planilha de higienização — ver o aviso do bloco acima.
+export function templateSector(tpl) {
+  if (tpl?.category !== 'higienizacao') return null;
+  const i = (tpl.title ?? '').indexOf('—');
+  return i < 0 ? null : tpl.title.slice(i + 1).trim() || null;
+}
+
+const TPL_CD_HIG = [
+  higSetor('7fc7a778-49ee-4a67-a4a0-0f9f5889ba59','camaras','Câmaras',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Prateleiras','S'],['Portas','M'],
+    ['Tela milimétrica','S'],['Ultracongelador U.1','S'],['Climática C.1','S'],
+    ['Câmara de refrigeração C.1','S'],['Câmara de congelamento C.2','S'],
+  ]),
+  higSetor('567dee3b-f84d-4454-908f-4728e38a852c','fornos','Fornos',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Coifa','S'],
+    ['Forno 01','S'],['Forno 02','S'],['Forno 03','S'],['Forno 04','S'],
+    ['Fogão','S'],['Bancada de apoio','S'],['Carrinho de apoio','S'],
+    ['Pasto chef 01','S'],['Pasto chef 02','S'],['Liquidificador','S'],
+    ['Pia de apoio','S'],['Janela','Q'],['Tela milimétrica','S'],['Climática','S'],
+    ['iVario (panela rational)','S'],
+  ]),
+  higSetor('77f9f2d2-77b4-4fec-a392-763e7b91b9ea','padaria','Padaria',[
+    ['Bancada refrigerada R.1','S'],['Refrigerador R.2','S'],['Ultra U.1','S'],
+    ['Modeladora / Divisoras','S'],['Laminadora','S'],['Boleadora / Prensa','S'],
+    ['Carrinho de farinha','S'],['Bancada de apoio 01','S'],['Bancada de apoio 02','S'],
+    ['Bancada de apoio 03','S'],['Climática C.2','S'],['Climática C.3','S'],
+    ['Prateleiras','S'],['Batedeiras','S'],
+  ]),
+  higSetor('73022bc1-033d-4b6e-8fd4-7a64e22646aa','confeitaria','Confeitaria',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Prateleira','S'],['Carrinho de apoio','S'],
+    ['Bancadas','S'],['Batedeiras industriais','S'],['Carrinho de farinha','S'],
+    ['Carrinho de açúcar','S'],['Balança 01','S'],['Balança 02','S'],
+    ['Liquidificadores','S'],['Micro-ondas','S'],['Batedeiras','S'],
+    ['Máquina de gomo','S'],['Pia de apoio','S'],['Ar condicionado','S'],['Pia','S'],
+    ['Sifão','S'],['Portas','M'],['Freezer F.1','Q'],['Ultracongelador U.2','S'],
+    ['Refrigerador vertical R.2','S'],['Refrigerador vertical R.3','S'],
+    ['Refrigerador vertical 2 portas R.4','S'],['Refrigerador vertical 2 portas R.5','S'],
+    ['Bancada refrigerada R.6','S'],['Bancada refrigerada R.7','S'],
+  ]),
+  higSetor('05eeeb97-375a-444b-8fec-14352d31a5b0','embalagens','Embalagens',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Bancada','S'],['Balança','S'],
+    ['Prateleira','S'],['Bancada de apoio','S'],
+  ]),
+  higSetor('1faa3e5f-453b-46e1-a414-584401a64c2d','salgados','Salgados',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Luminária','M'],['Porta','M'],
+    ['Cilindro','S'],['Ralo','S'],['Ar condicionado','S'],['Freezer F.8','Q'],
+    ['Refrigerador R.12','S'],['Bancada refrigerada R.13','S'],
+  ]),
+  higSetor('0b7ffa18-d2dd-4b90-9da9-93a411825f61','sanduiches','Sanduíches',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Porta','M'],['Fatiadora','S'],
+    ['Lixeira','D'],['Prateleiras','D'],
+  ]),
+  higSetor('e6ea58dd-2155-4c24-aaff-be5ea7c78fc7','hig-producao','Higienização Produção',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Luminárias','M'],['Rodapé','S'],
+    ['Ralos','S'],['Portas','S'],['Prateleiras','S'],['Lavar louças','S'],['Carrinhos','S'],
+  ]),
+  higSetor('d87793a8-06a5-48e2-8b3e-a9505688a506','gelateria','Gelateria',[
+    ['Piso','S'],['Parede','S'],['Teto','S'],['Micro-ondas','S'],['Maturação','S'],
+    ['Pasteurização','S'],['Prateleiras','S'],['Balança','S'],['Janela','M'],
+    ['Tela milimétrica','S'],['Pia','S'],['Bancadas','S'],['Lixeira','S'],['Ralo','S'],
+    ['Banho maria','S'],['Produtora pro 4 (bater os gelatos)','S'],
+    ['Ultracongelador U.3','S'],['Congelador vertical F.3','Q'],
+    ['Bancada congelada F.4','Q'],['Bancada refrigerada R.10','S'],
+  ]),
+  higSetor('7178f54b-6064-4cc0-a97f-f0c207283452','picoles','Produção de Picolés',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Produtora','S'],['Banho maria','S'],
+    ['Turbo 8','S'],['Prateleiras','S'],['Ralo','S'],['Lixeira','S'],['Pias','S'],
+    ['Ar condicionado','S'],['Freezer horizontal F.5','Q'],['Freezer horizontal F.6','Q'],
+    ['Freezer 2 portas vertical F.7','Q'],
+  ]),
+  higSetor('7ba47f37-24af-47ef-9bfc-68d2ab003371','atend-gelatos','Atendimento Gelatos',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Expositor','S'],['Armários','S'],
+    ['Vitrine congelada V.3','S'],['Vitrine congelada V.4','S'],
+    ['Cascata chocomix CM.1','S'],['Cascata chocomix CM.2','S'],
+  ]),
+  higSetor('4b7b2863-57e6-4122-ae7e-8ab1fb9b9b27','ilha-sobremesas','Ilha de Sobremesas',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Expositor','S'],['Lixeira','S'],
+    ['Prateleiras','S'],['Porta vai e vem','M'],['Armários','S'],['Balança','S'],
+    ['Vitrine refrigerada V.5','S'],['Vitrine refrigerada V.6','S'],
+    ['Vitrine refrigerada V.7','S'],['Vitrine refrigerada V.8','S'],
+  ]),
+  higSetor('83f2ef8d-6344-4d44-848d-072a8352893e','paes-cafe','Atendimento Pães e Café',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Forno de salgados 1','S'],
+    ['Forno de pizzas','S'],['Carrinho','S'],['Máquina de fatiar pão','S'],
+    ['Balanças','S'],['Armários','S'],['Prateleiras','S'],['Bancadas','S'],
+    ['Utensílios','S'],['Porta vai e vem','M'],['Cafeteira','S'],
+    ['Forno de salgados 2','S'],['Lixeiras','S'],['Máquina de lavar','S'],
+    ['Vitrine refrigerada V.1','S'],['Vitrine aquecida V.2','S'],
+    ['Bancada refrigerada R.8','S'],['Bancada refrigerada R.9','S'],
+    ['Bancada congelada F.2','Q'],['Máquina de laranja','S'],
+  ]),
+  higSetor('fe7e72f0-2d33-47f8-a7a5-782061185116','encomendas','Encomendas',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Lixeira','S'],['Prateleiras','S'],
+    ['Porta de correr','M'],['Armários','S'],['Balança','S'],
+    ['Refrigerador 3 portas R.11','S'],
+  ]),
+  higSetor('7e17b24b-2c06-4046-b50d-ca656e8cbda8','bistro','Bistrô',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Fogões','S'],['Chapas','S'],
+    ['Fritadeira 01','S'],['Fritadeira 02','S'],['Forno combinado','S'],
+    ['iVario (panela rational)','S'],['Pia de apoio','S'],['Forno','S'],
+    ['Char broiller','S'],['Prateleira','S'],['Bancada','S'],
+    ['Elevador','S'],['Laminadora','S'],['Batedeira','S'],['Forno 01','S'],['Forno 02','S'],
+    ['Refrigerador vertical 2 portas R.14','S'],['Refrigerador vertical R.15','S'],
+    ['Freezer vertical 2 portas F.9','Q'],['Freezer vertical 2 portas F.10','Q'],
+    ['Refrigerador vertical 2 portas R.16','S'],['Refrigerador vertical 4 portas R.17','S'],
+    ['Ultracongelador U.4','S'],['Bancada refrigerada R.18','S'],
+    ['Bancada refrigerada R.19','S'],['Pista fria P.1','S'],['Pista fria P.2','S'],
+  ]),
+  higSetor('1868768c-721a-4cec-b062-37ea6f8f9955','refeitorio','Refeitório',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Geladeira R.12','S'],['Banho maria BM.1','S'],
+  ]),
+  higSetor('979e3f8a-41e5-495e-9519-63597a28d78f','lavagem','Área de Lavagem',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Pia','S'],['Ralo','S'],['Lixeiras','S'],
+    ['Prateleiras','S'],['Bancada Sifão','S'],['Máquina de lavar louça','S'],
+    ['Carrinhos','S'],['Batedeira','S'],['Pia de higienização de mãos','S'],['Portas','S'],
+  ]),
+  higSetor('73463e76-cb88-424a-90bd-5b6443046576','lavagem-bistro','Área de Lavagem — Bistrô',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Pia de lavagem 01','D'],
+    ['Pia de lavagem 02','D'],['Lixeira','D'],['Bancada','D'],
+    ['Máquina de lavar louça','D'],['Sifão','S'],['Caixa de gordura','X'],
+  ]),
+  higSetor('0859145f-11b0-419e-add3-b2ee25b079d4','lixeiras','Lixeiras, Escadas e Vidraças',[
+    ['Lixeiras de rejeito','S'],['Lixeiras de orgânico','S'],
+    ['Lixeiras de recicláveis','Q'],['Lixeiras inox','Q'],['Vidraças / corrimão','Q'],
+    ['Escadas / rodapé 1','S'],['Escadas / rodapé 2','S'],
+    ['Cadeiras plásticas colaboradores','M'],['Bancos plásticos colaboradores','M'],
+  ]),
+  higSetor('fd001de5-2b6a-41cb-9a80-7704ecd427f5','vestiario','Vestiário / DML',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Ralos','S'],['Armários','S'],
+    ['Tanque','S'],['Mops','S'],['Portas','S'],
+  ]),
+  higSetor('9291bdc9-bf1a-4a26-a919-6a19e7bcee3f','estoque-seco','Estoque Seco',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Prateleiras','S'],['Ralos','S'],
+    ['Carrinho de farinha','S'],['Luminária','M'],['Ar condicionado','S'],
+  ]),
+];
+
 function seedTemplates(tenant) {
   const id = (tenant.id ?? '').toLowerCase();
   const name = (tenant.name ?? '').toLowerCase();
@@ -616,6 +806,7 @@ function seedTemplates(tenant) {
     TPL_CASADOCE_BANHEIROS(), TPL_CD_HORTIFRUTI(), TPL_CD_FILTRO_CAFE(), TPL_CD_RESIDUOS(),
     TPL_CD_CARRINHOS(), TPL_CD_CLIMATIZACAO(), TPL_CD_MANUT_PROG(), TPL_CD_CALIBRACAO(),
     TPL_CD_HIGIENE(), TPL_CD_VETORES(), TPL_CD_DEDETIZACAO(),
+    ...TPL_CD_HIG.map((mk) => mk()),
   ];
   return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO()];
 }
@@ -845,17 +1036,39 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   const [filling,   setFilling]   = useState(null);
   const [kioskForm, setKioskForm] = useState(null); // tablet mode for a specific form
   const [catFilter, setCatFilter] = useState('all');
+  // Setor só existe dentro de Higienização (21 planilhas, uma por setor). Fica
+  // em state separado e é ZERADO ao trocar de categoria — senão o filtro aponta
+  // pra um setor que não existe na categoria nova e a grade some sem explicação
+  // (mesma armadilha do filtro de setor dos equipamentos).
+  const [sectorFilter, setSectorFilter] = useState('all');
+  const pickCategory = (cat) => { setCatFilter(cat); setSectorFilter('all'); };
   const [histId,    setHistId]    = useState(null);
   const [tab,       setTab]       = useState('forms'); // 'forms' | 'validation'
 
+  // De QUAL loja são os dados em memória. Sem esta marcação, os efeitos de
+  // escrita abaixo (que têm activeTenant.id nas deps) rodavam no render da
+  // TROCA de empresa — id JÁ é o novo, `templates`/`records` AINDA são da loja
+  // anterior — e gravavam as planilhas de uma loja sob a chave da outra.
+  // Terceira vez que esta classe de bug aparece (catálogo v1.9.71, equipe
+  // v1.9.81); aqui contamina planilha E registro preenchido. Precisa ser state,
+  // não ref: com ref o efeito leria o valor já atualizado e a checagem passaria.
+  const [formsTenant, setFormsTenant] = useState(activeTenant.id);
   useEffect(() => {
     setTemplates(readFormTemplates(activeTenant));
     setRecords(readFormRecords(activeTenant.id));
+    setFormsTenant(activeTenant.id);
     setFilling(null); setHistId(null);
+    pickCategory('all');
   }, [activeTenant.id]);
 
-  useEffect(() => { writeFormRecords(activeTenant.id, records); }, [activeTenant.id, records]);
-  useEffect(() => { writeFormTemplates(activeTenant.id, templates); }, [activeTenant.id, templates]);
+  useEffect(() => {
+    if (formsTenant !== activeTenant.id) return;   // troca de loja em andamento
+    writeFormRecords(activeTenant.id, records);
+  }, [activeTenant.id, formsTenant, records]);
+  useEffect(() => {
+    if (formsTenant !== activeTenant.id) return;
+    writeFormTemplates(activeTenant.id, templates);
+  }, [activeTenant.id, formsTenant, templates]);
 
   const today = new Date();
   const getRecord = (tpl, pk) => records.find((r) => r.formId===tpl.id && r.periodKey===pk) ?? null;
@@ -885,8 +1098,15 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   }, []);
 
   const pendingValidation = records.filter((r) => r.status==='submitted' && !r.validation).length;
-  const filteredTemplates = catFilter==='all' ? templates : templates.filter((t) => t.category===catFilter);
+  const byCategory = catFilter==='all' ? templates : templates.filter((t) => t.category===catFilter);
+  const filteredTemplates = sectorFilter==='all'
+    ? byCategory
+    : byCategory.filter((t) => templateSector(t) === sectorFilter);
   const categories = [...new Set(templates.map((t) => t.category))];
+  // Setores da categoria em foco (só Higienização tem). Ordena em pt-BR pra
+  // "Área de Lavagem" e "Câmaras" não caírem depois de "Vestiário" por acento.
+  const sectors = [...new Set(byCategory.map(templateSector).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity:'base' }));
 
   if (kioskForm) {
     const { template, record, periodKey } = kioskForm;
@@ -963,19 +1183,35 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
 
       {tab==='forms' && (
         <>
-          <div className="chip-row" style={{ marginBottom:16 }}>
-            <button className={`quick-chip ${catFilter==='all'?'active':''}`} onClick={() => setCatFilter('all')}>
+          <div className="chip-row" style={{ marginBottom: sectors.length > 1 ? 10 : 16 }}>
+            <button className={`quick-chip ${catFilter==='all'?'active':''}`} onClick={() => pickCategory('all')}>
               <strong>Todas</strong><span>{templates.length} planilhas</span>
             </button>
             {categories.map((cat) => {
               const meta = catMeta(cat);
               return (
-                <button key={cat} className={`quick-chip ${catFilter===cat?'active':''}`} onClick={() => setCatFilter(cat)}>
+                <button key={cat} className={`quick-chip ${catFilter===cat?'active':''}`} onClick={() => pickCategory(cat)}>
                   <strong>{meta.label}</strong><span>{templates.filter((t) => t.category===cat).length}</span>
                 </button>
               );
             })}
           </div>
+
+          {/* Segundo nível: setor. Só aparece quando a categoria em foco tem
+              setores (Higienização) — pra Faxina/Dedetização/etc. seria uma
+              fileira de botões vazia. */}
+          {sectors.length > 1 && (
+            <div className="chip-row" style={{ marginBottom:16 }}>
+              <button className={`quick-chip ${sectorFilter==='all'?'active':''}`} onClick={() => setSectorFilter('all')}>
+                <strong>Todos os setores</strong><span>{sectors.length}</span>
+              </button>
+              {sectors.map((s) => (
+                <button key={s} className={`quick-chip ${sectorFilter===s?'active':''}`} onClick={() => setSectorFilter(s)}>
+                  <strong>{s}</strong>
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="forms-grid">
             {filteredTemplates.map((tpl) => {

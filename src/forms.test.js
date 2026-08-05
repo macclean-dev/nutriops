@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { completionPct, generateFormPDF, readFormTemplates } from './forms';
+import { completionPct, generateFormPDF, readFormTemplates, templateSector } from './forms';
 
 // Template no formato do CASA DOCE Banheiros, exercitando os tipos novos.
 const TPL = {
@@ -33,15 +33,15 @@ describe('completionPct — tipos date e checkbox (Fase B)', () => {
   });
 });
 
-describe('seedTemplates CASA DOCE — 11 planilhas BPF (Fase A+B+C)', () => {
+describe('seedTemplates CASA DOCE — 32 planilhas BPF (Fase A+B+C + 21 de higienização)', () => {
   beforeEach(() => localStorage.clear());
   const CD = { id:'bf245c3b-2f9', name:'CASA DOCE' };
 
-  it('retorna 11 templates com ids uuid únicos', () => {
+  it('retorna 32 templates com ids uuid únicos', () => {
     const tpls = readFormTemplates(CD);
-    expect(tpls).toHaveLength(11);
+    expect(tpls).toHaveLength(32);
     const ids = tpls.map(t => t.id);
-    expect(new Set(ids).size).toBe(11);                        // sem colisão de uuid
+    expect(new Set(ids).size).toBe(32);                        // sem colisão de uuid
     for (const id of ids) expect(id).toMatch(/^[0-9a-f-]{36}$/);
   });
 
@@ -63,6 +63,57 @@ describe('seedTemplates CASA DOCE — 11 planilhas BPF (Fase A+B+C)', () => {
     expect(checklist.fields.every(f => f.type === 'checkbox')).toBe(true);
     const registro = carr.sections.find(s => s.id === 'cd-carr-reg');
     expect(registro.fields.map(f => f.type)).toEqual(['date', 'text']);
+  });
+
+  // Higienização por setor (Fase D). O filtro de setor da tela de Planilhas
+  // deriva o setor do TÍTULO — não há coluna `sector` em form_templates, então
+  // um campo solto no objeto não sobreviveria ao round-trip da nuvem. Se o
+  // formato "Higienização — Setor" quebrar, o filtro silenciosamente esvazia.
+  it('as 21 planilhas de higienização expõem o setor pelo título', () => {
+    const higs = readFormTemplates(CD).filter(t => t.category === 'higienizacao');
+    expect(higs).toHaveLength(21);
+    const setores = higs.map(templateSector);
+    expect(setores.every(Boolean)).toBe(true);                 // nenhum null
+    expect(new Set(setores).size).toBe(21);                    // setor não repete
+    expect(setores).toContain('Padaria');
+    expect(setores).toContain('Área de Lavagem — Bistrô');     // título com 2 travessões
+  });
+
+  it('templateSector devolve null pra planilha que não é de higienização', () => {
+    const faxina = readFormTemplates(CD).find(t => t.category === 'faxina');
+    expect(templateSector(faxina)).toBeNull();
+    expect(templateSector(null)).toBeNull();
+  });
+
+  it('cada tarefa de higienização é data+assinatura e declara o período', () => {
+    const padaria = readFormTemplates(CD).find(t => t.title === 'Higienização — Padaria');
+    const tarefas = padaria.sections.find(s => s.id === 'cd-hig-padaria-t').fields;
+    expect(tarefas).toHaveLength(14);
+    expect(tarefas.every(f => f.type === 'date_sig')).toBe(true);
+    // Período no nome (a coluna "Período" do papel) — sem isso o colaborador
+    // não sabe se a tarefa é semanal ou mensal.
+    expect(tarefas.every(f => /\((semanal|mensal|quinzenal|diária|frequência a definir)\)$/.test(f.label))).toBe(true);
+    // Toda folha termina no bloco de não conformidade, como o papel.
+    expect(padaria.sections.at(-1).id).toBe('cd-hig-padaria-nc');
+  });
+
+  // Dois furos reais achados ao entregar as 21 de higienização (05/08). Sem
+  // estes, planilha nova NUNCA alcança loja que já rodava.
+  it('CACHE VAZIO ([] é truthy!) não impede o seed', () => {
+    localStorage.setItem('nutriops.forms.templates.bf245c3b-2f9', '[]');
+    expect(readFormTemplates(CD)).toHaveLength(32);
+  });
+
+  it('planilha NOVA do seed entra em quem já tinha cache; edição local sobrevive', () => {
+    const antigas = readFormTemplates(CD).slice(0, 11)
+      .map(t => t.title === 'Higienização — Padaria' ? t : { ...t, description:'editado pela loja' });
+    localStorage.setItem('nutriops.forms.templates.bf245c3b-2f9', JSON.stringify(antigas));
+
+    const depois = readFormTemplates(CD);
+    expect(depois).toHaveLength(32);                            // as 21 chegaram
+    // O que a loja editou não foi sobrescrito pelo seed.
+    expect(depois.find(t => t.id === antigas[0].id).description).toBe('editado pela loja');
+    expect(new Set(depois.map(t => t.id)).size).toBe(32);       // sem duplicar
   });
 
   it('vetores customizado: sem Pombo, com Abelha, hint de setor', () => {

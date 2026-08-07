@@ -2098,6 +2098,36 @@ function maybeAutoConfigSupabase(tenantId, activeTenants) {
   } catch (e) { console.warn('[NutriOPS] auto-config Supabase falhou:', e?.message); return false; }
 }
 
+// Funde a empresa vinda da nuvem (get_member_tenants) com a versão que o app já
+// tinha em memória — normalmente a loja-seed de tenants-public.js/data.js.
+//
+// POR QUE: loja-seed (Swiss/Bäckerei/DBK) NÃO tem linha em public.tenants, então
+// a RPC devolve os campos ricos vazios (`coalesce(...,'[]')`) e o nome cai pro
+// id ('swiss'). Substituir o seed por isso apagava a lista de nomes da equipe —
+// e o seletor "Quem está registrando?" abria SEM NOME NENHUM, travando a conta
+// de loja na abertura do turno (relatado no teste da Swiss, 05/08). Levava junto
+// o catálogo de equipamentos e o nome de exibição.
+//
+// Regra: o que a nuvem TEM manda (dado fresco); o que ela não tem, mantém do
+// seed. Tenant de verdade da nuvem (CASA DOCE) não é afetado — lá tudo vem
+// preenchido e vence normalmente.
+export function mergeMemberTenant(cloud, seed) {
+  if (!seed) return cloud;
+  const cheio = (v) => Array.isArray(v) && v.length > 0;
+  return {
+    ...seed,
+    ...cloud,
+    // A RPC faz coalesce(t.name, m.tenant_id): sem linha em tenants o "nome" é o
+    // próprio id. Aí "Swiss" viraria "swiss" no cabeçalho e no seletor.
+    name:     cloud.name && cloud.name !== cloud.id ? cloud.name : seed.name,
+    segment:  cloud.segment || seed.segment,
+    usersList:        cheio(cloud.usersList)        ? cloud.usersList        : (seed.usersList ?? []),
+    equipmentCatalog: cheio(cloud.equipmentCatalog) ? cloud.equipmentCatalog : (seed.equipmentCatalog ?? []),
+    stores:           cheio(cloud.stores)           ? cloud.stores           : (seed.stores ?? []),
+    multiStore: cloud.multiStore ?? seed.multiStore ?? false,
+  };
+}
+
 export function App() {
   const repository = useMemo(() => getTemperatureRepository(), []);
   const [session, setSession]         = useState(() => readSession());
@@ -2110,7 +2140,10 @@ export function App() {
     // Membership tem precedência (dado fresco da nuvem) sobre o que já havia.
     if (Array.isArray(memberTenants) && memberTenants.length > 0) {
       const ids = new Set(memberTenants.map((t) => t.id));
-      setActiveTenants((prev) => [...memberTenants, ...prev.filter((t) => !ids.has(t.id))]);
+      setActiveTenants((prev) => [
+        ...memberTenants.map((c) => mergeMemberTenant(c, prev.find((p) => p.id === c.id))),
+        ...prev.filter((t) => !ids.has(t.id)),
+      ]);
     }
     setSession(s);
     // logSession é uma chamada one-shot — usa dynamic import pra não puxar
@@ -2231,7 +2264,10 @@ export function App() {
       .then((list) => {
         if (cancelled || !Array.isArray(list) || list.length === 0) return;
         const ids = new Set(list.map((t) => t.id));
-        setActiveTenants((prev) => [...list, ...prev.filter((t) => !ids.has(t.id))]);
+        setActiveTenants((prev) => [
+          ...list.map((c) => mergeMemberTenant(c, prev.find((p) => p.id === c.id))),
+          ...prev.filter((t) => !ids.has(t.id)),
+        ]);
       })
       .catch(() => {});
     return () => { cancelled = true; };

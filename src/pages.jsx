@@ -1401,9 +1401,21 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
               <input value={aliasInput} onChange={(e) => setAliasInput(e.target.value)}
                 placeholder="Ex.: freezer, câmara congelada" />
             </label>
-            <label>Localização (opcional)
+            {/* Setor com sugestão dos já usados. Era texto livre: "Padaria",
+                "padaria" e "Padaria " viravam TRÊS setores, quebrando o filtro
+                e o agrupamento da captura. `datalist` sugere sem impedir criar
+                um setor novo — a nutricionista precisa dos dois. */}
+            <label>Setor / localização (opcional)
               <input value={locationInput} onChange={(e) => setLocationInput(e.target.value)}
-                placeholder="Ex.: cozinha, estoque" />
+                list="setores-cadastrados" placeholder="Ex.: Padaria, Confeitaria, Estoque Seco" />
+              <datalist id="setores-cadastrados">
+                {sectors.map((s) => <option key={s} value={s} />)}
+              </datalist>
+              {sectors.length > 0 && (
+                <span style={{ fontSize:11, color:'var(--text-secondary)', marginTop:4, display:'block' }}>
+                  {sectors.length} setor{sectors.length > 1 ? 'es' : ''} já cadastrado{sectors.length > 1 ? 's' : ''} — toque no campo pra escolher, ou digite um novo.
+                </span>
+              )}
             </label>
             <div className="grid-2">
               <label>Temp. mínima (°C)

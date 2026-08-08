@@ -216,6 +216,23 @@ describe('seedTemplates CASA DOCE — 32 planilhas BPF (Fase A+B+C + 21 de higie
     expect(acha(higiene, 'cd-hig-avental')).toBeUndefined();   // fundido no uniforme
   });
 
+  it('higiene pessoal tem campo de foto (evidência de não conformidade)', () => {
+    const higiene = readFormTemplates(CD).find(t => t.category === 'higiene_pessoal');
+    expect(acha(higiene, 'cd-hig-foto')?.type).toBe('photo');
+  });
+
+  // Foto e observação NÃO entram no percentual: são opcionais por natureza.
+  // Contando a foto, a planilha ficaria eternamente "incompleta" nos dias em
+  // que não houve nada pra fotografar — e o alerta de pendência dispararia à toa.
+  it('foto não conta no percentual de preenchimento', () => {
+    const tpl = { sections:[{ id:'s', fields:[
+      { id:'a', label:'Unha', type:'cnc' },
+      { id:'f', label:'Foto', type:'photo' },
+      { id:'o', label:'Obs',  type:'text' },
+    ]}]};
+    expect(completionPct(tpl, { responses:{ a:'C' } })).toBe(100);
+  });
+
   it('cada planilha de higienização tem responsável e mês de referência', () => {
     const higs = readFormTemplates(CD).filter(t => t.category === 'higienizacao');
     for (const h of higs) {

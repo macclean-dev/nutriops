@@ -706,6 +706,67 @@ export async function syncTenantStaff(tenantId) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// FOTOS DE EVIDÊNCIA (Supabase Storage) — bucket `form-photos`, privado.
+//
+// POR QUE Storage e não base64 no registro: a resposta do formulário vive em
+// form_records.responses (jsonb) e no localStorage. Uma foto de celular tem
+// 2-4 MB; mesmo reduzida ficaria em ~100 KB, e o localStorage do navegador
+// estoura em ~5 MB. Um checklist diário com uma foto encheria o aparelho em
+// poucos meses e travaria TODO o app, não só a foto. No registro guardamos só
+// o CAMINHO; o arquivo vive no Storage, com a mesma regra de isolamento por
+// loja das outras tabelas (docs/form-photos-storage.sql).
+//
+// Caminho: {tenantId}/{formId}/{periodKey}/{fieldId}-{carimbo}.jpg — o
+// tenantId como PRIMEIRA pasta é o que a policy usa pra isolar as lojas.
+const PHOTO_BUCKET = 'form-photos';
+function sbStorageBase() { return `${getSupabaseConfig().url}/storage/v1`; }
+
+export function buildPhotoPath({ tenantId, formId, periodKey, fieldId }) {
+  const seguro = (s) => String(s ?? '').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const carimbo = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
+  return `${seguro(tenantId)}/${seguro(formId)}/${seguro(periodKey)}/${seguro(fieldId)}-${carimbo}.jpg`;
+}
+
+// Envia o blob e devolve o caminho salvo. Lança em falha — quem chama mostra o
+// erro em vez de deixar o usuário achar que a foto foi anexada.
+export async function uploadFormPhoto(tenantId, blob, meta) {
+  if (!isSupabaseEnabled()) throw new Error('Sem conexão com a nuvem — não dá pra anexar foto agora.');
+  if (!navigator.onLine)   throw new Error('Sem internet — tire a foto de novo quando reconectar.');
+  const path = buildPhotoPath({ tenantId, ...meta });
+  const { anonKey } = getSupabaseConfig();
+  const { Authorization } = await sbHeaders(tenantId);   // member JWT ou device-token
+  const res = await fetch(`${sbStorageBase()}/object/${PHOTO_BUCKET}/${path}`, {
+    method: 'POST',
+    headers: { apikey: anonKey, Authorization, 'Content-Type': 'image/jpeg', 'x-upsert': 'false' },
+    body: blob,
+  });
+  if (!res.ok) {
+    if (res.status === 401 || res.status === 403) { markSupabaseAuthError(res.status, 'storage'); invalidateDeviceToken(tenantId); }
+    let msg = ''; try { msg = await res.text(); } catch {}
+    throw new Error(`Falha ao enviar a foto (${res.status})${msg ? ' — ' + msg.slice(0, 120) : ''}`);
+  }
+  return path;
+}
+
+// URL assinada pra exibir. O bucket é privado, então a foto NÃO abre por URL
+// pública — cada visualização pede um link temporário.
+export async function signedPhotoUrl(tenantId, path, segundos = 3600) {
+  if (!isSupabaseEnabled() || !path) return null;
+  try {
+    const { anonKey } = getSupabaseConfig();
+    const { Authorization } = await sbHeaders(tenantId);
+    const res = await fetch(`${sbStorageBase()}/object/sign/${PHOTO_BUCKET}/${path}`, {
+      method: 'POST',
+      headers: { apikey: anonKey, Authorization, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expiresIn: segundos }),
+    });
+    if (!res.ok) return null;
+    const { signedURL } = await res.json();
+    return signedURL ? `${sbStorageBase()}${signedURL.replace(/^\/storage\/v1/, '')}` : null;
+  } catch { return null; }
+}
+
 export async function pushStaffMember(tenantId, member) {
   if (!isSupabaseEnabled() || !navigator.onLine) {
     enqueue('tenant_staff', 'upsert', staffToRow(member, tenantId));

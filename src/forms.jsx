@@ -92,6 +92,77 @@ export function freqLabel(f) { return {daily:'Diária',weekly:'Semanal',biweekly
 function uid() { return crypto.randomUUID(); }
 const f = (label, type='cnc', hint=null) => ({ id:uid(), label, type, hint });
 
+// ─── Foto de evidência ─────────────────────────────────────────────────────
+// Reduz no APARELHO antes de enviar: foto de celular vem com 3-4 MB e 4000px,
+// resolução que não acrescenta nada pra provar uma unha comprida ou um uniforme
+// sujo. 1280px/JPEG 0.72 dá ~120 KB — sobe rápido no 4G da loja e não estoura a
+// franquia de armazenamento. O original nunca sai do aparelho.
+export async function reduzirFoto(file, maxLado = 1280, qualidade = 0.72) {
+  const bitmap = await createImageBitmap(file);
+  const escala = Math.min(1, maxLado / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * escala), h = Math.round(bitmap.height * escala);
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+  bitmap.close?.();
+  const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', qualidade));
+  if (!blob) throw new Error('Não consegui processar a imagem.');
+  return blob;
+}
+
+// value = { path, at } — só o CAMINHO no Storage; o arquivo não entra no
+// registro (ver o comentário do bucket em repository.js).
+function PhotoField({ value, onChange, tenantId, formId, periodKey, fieldId }) {
+  const [erro, setErro]   = useState('');
+  const [subindo, setSub] = useState(false);
+  const [url, setUrl]     = useState(null);
+
+  useEffect(() => {
+    let cancelado = false;
+    if (!value?.path) { setUrl(null); return; }
+    // Bucket privado → cada exibição pede um link temporário.
+    import('./repository').then(m => m.signedPhotoUrl(tenantId, value.path))
+      .then(u => { if (!cancelado) setUrl(u); }).catch(() => {});
+    return () => { cancelado = true; };
+  }, [value?.path, tenantId]);
+
+  const escolher = async (file) => {
+    if (!file) return;
+    setErro(''); setSub(true);
+    try {
+      const m = await import('./repository');
+      const blob = await reduzirFoto(file);
+      const path = await m.uploadFormPhoto(tenantId, blob, { formId, periodKey, fieldId });
+      onChange({ path, at: new Date().toISOString() });
+    } catch (e) {
+      setErro(e.message ?? 'Não consegui anexar a foto.');
+    }
+    setSub(false);
+  };
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:8, alignItems:'flex-start' }}>
+      {value?.path ? (
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          {url
+            ? <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="Evidência" style={{ width:88, height:88, objectFit:'cover', borderRadius:'var(--r)', border:'1px solid var(--border)' }} /></a>
+            : <div style={{ width:88, height:88, borderRadius:'var(--r)', border:'1px dashed var(--border)', display:'grid', placeItems:'center', fontSize:11, color:'var(--text-secondary)' }}>abrindo…</div>}
+          <button className="ghost-action danger" style={{ fontSize:11 }} onClick={() => onChange(null)}>Remover</button>
+        </div>
+      ) : (
+        // `capture` faz o celular abrir a câmera direto, sem passar pela galeria.
+        <label className="secondary-action" style={{ fontSize:12, padding:'7px 12px', cursor: subindo ? 'wait' : 'pointer' }}>
+          {subindo ? 'Enviando…' : '📷 Anexar foto'}
+          <input type="file" accept="image/*" capture="environment" disabled={subindo}
+            onChange={(e) => { escolher(e.target.files?.[0]); e.target.value = ''; }}
+            style={{ display:'none' }} />
+        </label>
+      )}
+      {erro && <span style={{ fontSize:11, color:'var(--red)', fontWeight:600 }}>{erro}</span>}
+    </div>
+  );
+}
+
 // ─── Editor de tarefas de uma planilha de higienização ─────────────────────
 // A RT cadastra equipamento novo (temperatura) mas não conseguia incluí-lo na
 // planilha de higienização do setor — pedido dela em 07/08. Mexe SÓ na seção
@@ -191,7 +262,10 @@ export function completionPct(template, record) {
   let total=0, filled=0;
   for (const sec of template.sections) {
     for (const field of sec.fields) {
-      if (field.type==='text') continue;
+      // text e photo não entram no percentual: observação e evidência são
+      // opcionais por natureza. Contar a foto deixaria a planilha eternamente
+      // "incompleta" nos dias em que não houve nada pra fotografar.
+      if (field.type==='text' || field.type==='photo') continue;
       total++;
       const v = record.responses?.[field.id];
       if (field.type==='checkbox') { if (v===true) filled++; continue; } // só marcado conta
@@ -242,6 +316,14 @@ export function generateFormPDF(template, record, tenant) {
     if (field.type==='checkbox') return val===true
       ? '<span style="color:#00a35c;font-weight:700">✓ SIM</span>'
       : '<span style="color:#9198a1">—</span>';
+    // Foto: o PDF é impresso na hora e o link assinado expira em 1h — imprimir
+    // uma URL que morre no mesmo dia seria pior que não imprimir. Registra que
+    // existe evidência e quando; a imagem se vê no app.
+    if (field.type==='photo') {
+      if (!val?.path) return '<span style="color:#9198a1">—</span>';
+      const q = val.at ? new Date(val.at).toLocaleString('pt-BR') : '';
+      return `<span style="color:#00a35c;font-weight:700">📷 Foto anexada</span>${q ? ` <span style="color:#5c6c7a">(${q})</span>` : ''}`;
+    }
     return String(val);
   };
 
@@ -685,7 +767,7 @@ const CD_SETORES_EQUIPE = [
 ];
 
 const TPL_CD_HIGIENE = () => ({
-  id:'c1e7838e-1cac-4a76-a0c3-296e1bebbfdb', category:'higiene_pessoal', frequency:'daily', v:2,
+  id:'c1e7838e-1cac-4a76-a0c3-296e1bebbfdb', category:'higiene_pessoal', frequency:'daily', v:3,
   title:'Higiene Pessoal dos Colaboradores',
   description:'Verificação por SETOR: escolha o setor, registre data e quem verificou. C=conforme / NC=não conforme. Ex.: toda segunda e terça o checklist da Padaria.',
   sections:[
@@ -711,6 +793,7 @@ const TPL_CD_HIGIENE = () => ({
       { id:'cd-hig-ferim',    label:'Ferimento', type:'cnc', hint:'Ferimentos devidamente cobertos' },
       { id:'cd-hig-maos',     label:'Lavar Mãos', type:'cnc', hint:'Ao iniciar, usar banheiro, trocar atividade, colocar luvas' },
       { id:'cd-hig-obs',      label:'Observações', type:'text', hint:'Ex.: colaboradora com unha grande — orientada e registrada' },
+      { id:'cd-hig-foto',     label:'Foto (opcional)', type:'photo', hint:'Evidência de não conformidade — ex.: unha comprida, uniforme sujo' },
     ]},
   ],
 });
@@ -1074,6 +1157,10 @@ function FormFill({ template, record, onSave, onBack, session, tenant }) {
                       <option value="">Selecione…</option>
                       {(field.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
                     </select>
+                  )}
+                  {field.type==='photo'    && (
+                    <PhotoField value={responses[field.id]} onChange={(v) => setField(field.id,v)}
+                      tenantId={tenant?.id} formId={template.id} periodKey={record?.periodKey ?? 'sem-periodo'} fieldId={field.id} />
                   )}
                 </div>
               </div>

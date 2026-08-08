@@ -266,38 +266,48 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
           </div>
         </article>
       )}
-      <div className="audit-stats" style={{ marginBottom: 16 }}>{roles.map((r) => (<div key={r} className="audit-stat"><span>{r}</span><strong>{(emailModel ? members : users).filter((u) => u.role === r).length}</strong></div>))}</div>
-      <div className="management-grid" style={emailModel ? { gridTemplateColumns: '1fr' } : undefined}>
-        {/* Cadastro por PIN só pra loja seed. Loja e-mail (CASA DOCE) usa o
-            "Convidar colaborador" acima — nada de PIN nem handle nome@id feio. */}
-        {!emailModel && (
+      <div className="audit-stats" style={{ marginBottom: 16 }}>{roles.map((r) => (<div key={r} className="audit-stat"><span>{r}</span><strong>{users.filter((u) => u.role === r).length}</strong></div>))}</div>
+      <div className="management-grid">
+        {/* Esta lista serve a DOIS propósitos e por isso vale pra TODA loja:
+            (1) login por PIN, só nas lojas-seed; (2) os nomes da tela "Quem
+            está registrando?" (Fase 4), que existe em qualquer loja com conta
+            compartilhada — inclusive as do modelo e-mail.
+            Estava escondida quando emailModel, então na CASA DOCE não havia
+            NENHUM jeito de cadastrar a equipe e o seletor de operador abria
+            vazio. O que é específico de PIN (campo do PIN, handle nome@id,
+            botão de reset) segue oculto ali — só o cadastro de NOME é comum. */}
         <article className="management-card">
-          <div className="card-head"><div><span className="eyebrow">{editingIndex === null ? 'Novo' : 'Editando'}</span><h2>{editingIndex === null ? 'Cadastrar usuário' : users[editingIndex]?.name}</h2></div><span className="badge neutral">{users.length}</span></div>
+          <div className="card-head"><div><span className="eyebrow">{editingIndex === null ? 'Novo' : 'Editando'}</span><h2>{editingIndex === null ? 'Cadastrar pessoa da equipe' : users[editingIndex]?.name}</h2></div><span className="badge neutral">{users.length}</span></div>
           <div className="capture-fields">
+            {emailModel && (
+              <p className="muted" style={{ fontSize:12, margin:0 }}>
+                Estes nomes aparecem na tela <strong>“Quem está registrando?”</strong> — quem abre o aparelho toca no próprio nome e fica identificado em cada registro. Não é login: quem precisa entrar sozinho recebe convite por e-mail acima.
+              </p>
+            )}
             <label>Empresa<select value={activeTenant.id} onChange={(e) => onTenantChange(e.target.value)}>{allTenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
             <label>Nome completo<input value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder="Nome do usuário" />
-              {loginHandle(nameInput, activeTenant.id) && (
+              {!emailModel && loginHandle(nameInput, activeTenant.id) && (
                 <span style={{ fontSize:12, color:'var(--text-secondary)', marginTop:4, display:'block' }}>
                   Vai logar como: <strong style={{ fontFamily:'var(--mono)', color:'var(--primary)' }}>{loginHandle(nameInput, activeTenant.id)}</strong> + PIN
                 </span>
               )}
             </label>
             <label>Perfil<select value={roleInput} onChange={(e) => setRoleInput(e.target.value)}>{roles.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
-            <label>Localização / unidade<input value={locationInput} onChange={(e) => setLocationInput(e.target.value)} placeholder="Ex.: Loja 1, Produção" /></label>
+            <label>Localização / unidade<input value={locationInput} onChange={(e) => setLocationInput(e.target.value)} placeholder="Ex.: Padaria, Confeitaria" /></label>
             <label>Status<select value={statusInput} onChange={(e) => setStatusInput(e.target.value)}><option value="Ativo">Ativo</option><option value="Inativo">Inativo</option><option value="Pendente">Pendente</option></select></label>
-            <label>{editingIndex === null ? 'PIN de acesso (4–6 dígitos)' : 'Novo PIN (deixe em branco para manter)'}
-              <input type="password" value={pinInput} onChange={(e) => setPinInput(e.target.value.replace(/\D/g,'').slice(0,6))} placeholder={editingIndex === null ? '0000' : '••••'} inputMode="numeric" style={{ letterSpacing:'0.2em', fontFamily:'var(--mono)' }} />
-            </label>
+            {!emailModel && (
+              <label>{editingIndex === null ? 'PIN de acesso (4–6 dígitos)' : 'Novo PIN (deixe em branco para manter)'}
+                <input type="password" value={pinInput} onChange={(e) => setPinInput(e.target.value.replace(/\D/g,'').slice(0,6))} placeholder={editingIndex === null ? '0000' : '••••'} inputMode="numeric" style={{ letterSpacing:'0.2em', fontFamily:'var(--mono)' }} />
+              </label>
+            )}
             <div className="actions-row">
               {editingIndex !== null && <button className="secondary-action" onClick={cancelEdit}>Cancelar</button>}
               <button className="primary-action" onClick={saveUser}>{editingIndex === null ? 'Adicionar' : 'Salvar alteração'}</button>
             </div>
           </div>
         </article>
-        )}
-        {!emailModel && (
         <article className="management-card">
-          <div className="card-head"><div><span className="eyebrow">Lista</span><h2>Usuários cadastrados</h2></div><span className="badge neutral">{`${filtered.length}/${users.length}`}</span></div>
+          <div className="card-head"><div><span className="eyebrow">Lista</span><h2>Equipe cadastrada</h2></div><span className="badge neutral">{`${filtered.length}/${users.length}`}</span></div>
           <div className="capture-fields equipment-filters">
             <label>Buscar<input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nome ou localização" /></label>
             <label>Perfil<select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>{['Todos', ...roles].map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
@@ -338,7 +348,6 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
               ); })}
           </div>
         </article>
-        )}
       </div>
       {/* Colaboradores por e-mail — pra QUALQUER tenant (loja-seed inclusive,
           desde a Fase 4: conta de loja + Fran/Ana Paula multi-loja). Sem este

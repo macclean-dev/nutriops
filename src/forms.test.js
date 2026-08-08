@@ -124,6 +124,26 @@ describe('seedTemplates CASA DOCE — 32 planilhas BPF (Fase A+B+C + 21 de higie
     expect(depois.updatedAt).toBeTruthy();
   });
 
+  // A RT edita a planilha de higienização pra incluir equipamento novo. Se um
+  // bump de versão meu passasse por cima, ela perderia o cadastro dela.
+  it('planilha marcada como custom NUNCA é sobrescrita pelo seed', () => {
+    const atuais = readFormTemplates(CD);
+    const padaria = atuais.find(t => t.title === 'Higienização — Padaria');
+    const editada = {
+      ...padaria, v: 1, custom: true,
+      sections: padaria.sections.map(s => s.id.endsWith('-t')
+        ? { ...s, fields: [...s.fields, { id:'cd-hig-padaria-x99', label:'Refrigerador R.20 (semanal)', type:'date_sig' }] }
+        : s),
+    };
+    localStorage.setItem('nutriops.forms.templates.bf245c3b-2f9',
+      JSON.stringify(atuais.map(t => t.id === padaria.id ? editada : t)));
+
+    const depois = readFormTemplates(CD).find(t => t.id === padaria.id);
+    const labels = depois.sections.flatMap(s => s.fields).map(f => f.label);
+    expect(labels).toContain('Refrigerador R.20 (semanal)');   // v:1 < v:2 e mesmo assim sobreviveu
+    expect(depois.custom).toBe(true);
+  });
+
   it('planilha de MESMA versão não é sobrescrita (edição da loja sobrevive)', () => {
     const atuais = readFormTemplates(CD);
     const alvo = atuais.find(t => t.category === 'higiene_pessoal');

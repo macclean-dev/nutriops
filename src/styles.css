@@ -1258,8 +1258,16 @@ label {
 @keyframes chartFade { from { opacity: 0; } }
 @keyframes chartPop { from { transform: scale(0); opacity: 0; } }
 
-.dash-in { animation: dashIn .65s cubic-bezier(.22,.61,.36,1) both; }
-.dash-stagger > * { animation: dashIn .6s cubic-bezier(.22,.61,.36,1) both; }
+/* fill-mode BACKWARDS, não `both`.
+   Com `both` o elemento congela no último keyframe, e `transform: none` ali
+   vira a MATRIZ IDENTIDADE computada — que ainda cria containing block. Todo
+   `position: fixed` descendente passava a se posicionar contra o wrapper da
+   view (alto de 3000px+) em vez da viewport: o modal existia no DOM mas nascia
+   centralizado lá embaixo, fora da tela. `backwards` segura o estado inicial
+   antes/durante o delay e devolve o estilo natural (transform: none de verdade)
+   quando termina. A visual é idêntica. */
+.dash-in { animation: dashIn .65s cubic-bezier(.22,.61,.36,1) backwards; }
+.dash-stagger > * { animation: dashIn .6s cubic-bezier(.22,.61,.36,1) backwards; }
 .dash-stagger > *:nth-child(1) { animation-delay: .14s; }
 .dash-stagger > *:nth-child(2) { animation-delay: .26s; }
 .dash-stagger > *:nth-child(3) { animation-delay: .38s; }

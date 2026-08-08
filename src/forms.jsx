@@ -46,6 +46,10 @@ export const readFormTemplates = (tenant) => {
     // O carimbo updatedAt é essencial: o sync funde local↔nuvem por mergeByKey,
     // que escolhe o mais RECENTE. Sem ele o seed vale epoch e qualquer linha
     // velha da nuvem desfaria a atualização no boot seguinte.
+    // `custom` = a RT editou as tarefas. Não sobrescreve: o ajuste dela vale
+    // mais que o meu seed, e sobrescrever apagaria equipamento que ela mesma
+    // cadastrou na planilha.
+    if (atual.custom) continue;
     if ((s.v ?? 0) > (atual.v ?? 0)) {
       porId.set(s.id, { ...s, updatedAt: new Date().toISOString() });
       mudou = true;
@@ -87,6 +91,82 @@ export function freqLabel(f) { return {daily:'Diária',weekly:'Semanal',biweekly
 
 function uid() { return crypto.randomUUID(); }
 const f = (label, type='cnc', hint=null) => ({ id:uid(), label, type, hint });
+
+// ─── Editor de tarefas de uma planilha de higienização ─────────────────────
+// A RT cadastra equipamento novo (temperatura) mas não conseguia incluí-lo na
+// planilha de higienização do setor — pedido dela em 07/08. Mexe SÓ na seção
+// de tarefas; o cabeçalho e o bloco de não conformidade ficam intactos.
+//
+// Planilha editada vira `custom:true` e para de receber atualização automática
+// do seed (readFormTemplates pula), senão o próximo ajuste meu apagaria o que
+// ela cadastrou. É a troca certa: quem edita assume o conteúdo.
+export function TaskEditorModal({ template, onSave, onClose }) {
+  const secId  = template.sections.find((s) => s.id.endsWith('-t'))?.id ?? template.sections[0]?.id;
+  const secIdx = template.sections.findIndex((s) => s.id === secId);
+  const [tarefas, setTarefas] = useState(() => template.sections[secIdx]?.fields ?? []);
+  const [nome, setNome] = useState('');
+  const [per,  setPer]  = useState('semanal');
+
+  const add = () => {
+    const t = nome.trim();
+    if (!t) return;
+    // id único e estável: sufixo do timestamp evita colidir com os do seed
+    // (cd-hig-padaria-0..13) quando ela adicionar e remover várias vezes.
+    setTarefas((prev) => [...prev, { id:`${secId}-x${prev.length}-${Date.now().toString(36)}`, label:`${t} (${per})`, type:'date_sig' }]);
+    setNome('');
+  };
+  const remover = (id) => setTarefas((prev) => prev.filter((f) => f.id !== id));
+
+  const salvar = () => {
+    const sections = template.sections.map((s, i) => i === secIdx ? { ...s, fields: tarefas } : s);
+    onSave({ ...template, sections, custom:true, updatedAt:new Date().toISOString() });
+  };
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:300, padding:24 }}>
+      <div className="management-card" style={{ width:'100%', maxWidth:560, maxHeight:'85vh', display:'flex', flexDirection:'column' }}>
+        <div className="card-head">
+          <div><span className="eyebrow">Editar tarefas</span><h2>{template.title}</h2></div>
+          <span className="badge neutral">{tarefas.length}</span>
+        </div>
+        <div className="capture-fields" style={{ borderBottom:'1px solid var(--border-subtle)', paddingBottom:14 }}>
+          <label>Nova tarefa / equipamento
+            <input value={nome} onChange={(e) => setNome(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+              placeholder="Ex.: Refrigerador vertical R.20" />
+          </label>
+          <div className="grid-2">
+            <label>Período
+              <select value={per} onChange={(e) => setPer(e.target.value)}>
+                {['diária','semanal','quinzenal','mensal'].map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </label>
+            <div style={{ display:'flex', alignItems:'flex-end' }}>
+              <button className="primary-action" onClick={add} disabled={!nome.trim()} style={{ width:'100%' }}>Adicionar</button>
+            </div>
+          </div>
+        </div>
+        <div className="equipment-maintenance-list" style={{ overflowY:'auto', flex:1, minHeight:0 }}>
+          {tarefas.length === 0
+            ? <p className="muted" style={{ padding:'16px 20px' }}>Nenhuma tarefa. Adicione ao menos uma.</p>
+            : tarefas.map((f) => (
+              <div key={f.id} className="equipment-maintenance-row">
+                <div><strong>{f.label}</strong></div>
+                <button className="ghost-action danger" style={{ fontSize:11 }} onClick={() => remover(f.id)}>Remover</button>
+              </div>
+            ))}
+        </div>
+        <p className="muted" style={{ fontSize:11, padding:'10px 0 0' }}>
+          Ao salvar, esta planilha passa a ser sua: deixa de receber atualizações automáticas do NutriOPS.
+        </p>
+        <div className="actions-row">
+          <button className="secondary-action" onClick={onClose}>Cancelar</button>
+          <button className="primary-action" onClick={salvar}>Salvar planilha</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Category metadata ─────────────────────────────────────────────────────
 
@@ -1121,6 +1201,17 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   const pickCategory = (cat) => { setCatFilter(cat); setSectorFilter('all'); };
   const [histId,    setHistId]    = useState(null);
   const [tab,       setTab]       = useState('forms'); // 'forms' | 'validation'
+  const [editingTpl, setEditingTpl] = useState(null);
+
+  // Salva a planilha editada pela RT: state → localStorage (pelo efeito) e
+  // nuvem. O push é o que faz a mudança chegar nos OUTROS aparelhos da loja —
+  // até aqui pushFormTemplate existia no repository mas nunca era chamado, ou
+  // seja, planilha nunca saía do device onde foi editada.
+  const salvarTemplate = useCallback((novo) => {
+    setTemplates((prev) => prev.map((t) => t.id === novo.id ? novo : t));
+    setEditingTpl(null);
+    import('./repository').then(m => m.pushFormTemplate(activeTenant.id, novo)).catch(() => {});
+  }, [activeTenant.id]);
 
   // De QUAL loja são os dados em memória. Sem esta marcação, os efeitos de
   // escrita abaixo (que têm activeTenant.id nas deps) rodavam no render da
@@ -1228,6 +1319,9 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
 
   return (
     <section className="management-page">
+      {editingTpl && (
+        <TaskEditorModal template={editingTpl} onSave={salvarTemplate} onClose={() => setEditingTpl(null)} />
+      )}
       <div className="page-header">
         <div>
           <span className="eyebrow">Boas Práticas de Fabricação</span>
@@ -1328,6 +1422,15 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
                       {histId===tpl.id?'Fechar':'Histórico'}
                     </button>
                     <div style={{ display:'flex', gap:6 }}>
+                      {/* Só higienização: são as planilhas cuja lista é de
+                          equipamentos/áreas e muda quando entra equipamento
+                          novo. As de checklist fixo (higiene pessoal, vetores)
+                          têm conteúdo normativo e não se editam por aqui. */}
+                      {isRT && tpl.category === 'higienizacao' && (
+                        <button className="ghost-action" style={{ fontSize:11 }}
+                          title="Adicionar ou remover equipamentos desta planilha"
+                          onClick={() => setEditingTpl(tpl)}>Editar</button>
+                      )}
                       {isDone && (
                         <button className="secondary-action" style={{ fontSize:11, padding:'5px 10px' }} onClick={() => {
                           const win = window.open('','_blank');

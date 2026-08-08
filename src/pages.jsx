@@ -2291,6 +2291,21 @@ export function App() {
     return activeTenant.stores?.find(s => s.id === activeStoreId) ?? activeTenant.stores?.[0] ?? null;
   }, [activeTenant, activeStoreId]);
 
+  // Contador que força reler o catálogo do localStorage depois do sync.
+  //
+  // BUG (07/08, relatado no celular do colaborador da CASA DOCE): device novo
+  // mostrava só 4 equipamentos — "Câmara Refrigerada, Câmara Congelada, Vitrine
+  // Refrigerada, Balcão Refrigerado", todos em "Unidade principal". São os
+  // DEFAULTS do segmento 'padaria' (segments.js), gravados no jsonb
+  // equipment_catalog de public.tenants quando a loja nasceu no /admin. Os 44
+  // reais vivem na TABELA equipment_catalog.
+  //
+  // No boot: localStorage vazio → cai no jsonb (4 velhos) → syncEquipmentCatalog
+  // traz os 44 e grava no localStorage → mas o useMemo só dependia de
+  // [activeTenant, activeStoreId], então a tela continuava nos 4 até um reload
+  // manual. Quem já tinha o app aberto antes (o dono) via os 44 e não percebia.
+  const [catalogVersion, setCatalogVersion] = useState(0);
+
   // Equipment catalog — store-specific if multi-store
   const equipmentCatalog = useMemo(() => {
     const raw = (activeTenant.multiStore && activeStoreId && activeTenant.storeEquipment?.[activeStoreId])
@@ -2299,7 +2314,10 @@ export function App() {
     // Dedup por label — catálogo da nuvem às vezes vem com equipamento repetido
     // (recadastro/caixa diferente), o que dobrava os alertas de turno. Ver Swiss.
     return dedupeCatalog(raw);
-  }, [activeTenant, activeStoreId]);
+    // catalogVersion: o sync escreve o catálogo no localStorage, fora do React.
+    // Sem esta dep o useMemo nunca reavalia e o device fica preso no que tinha
+    // no primeiro render — ver o bug do "só 4 equipamentos" abaixo.
+  }, [activeTenant, activeStoreId, catalogVersion]);
 
   const visibleTenants = useMemo(() => {
     // activeTenants (state), NÃO o `tenants` do módulo: aquele é congelado no
@@ -2533,6 +2551,9 @@ export function App() {
       try {
         const result = await syncAllModules(session.tenantId);
         console.info(`[NutriOPS] auto-sync done (${trigger}) — ${result.synced}/${result.total} módulos`);
+        // O sync gravou catálogo/equipe direto no localStorage. Sem este bump a
+        // tela segue mostrando o que leu no primeiro render (o bug dos 4).
+        setCatalogVersion((v) => v + 1);
 
         // Auto-backfill (auto-cura sem admin): na 1ª conexão bem-sucedida do
         // device, empurra o histórico local que não passou pela fila (registros

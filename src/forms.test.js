@@ -104,6 +104,35 @@ describe('seedTemplates CASA DOCE — 32 planilhas BPF (Fase A+B+C + 21 de higie
     expect(readFormTemplates(CD)).toHaveLength(32);
   });
 
+  // Sem isto, TODO ajuste pedido pela nutricionista (07/08) ficaria invisível
+  // pra ela: a planilha já existia no cache, então o merge por id a ignorava.
+  it('planilha do seed que MUDOU de versão substitui a antiga do cache', () => {
+    const atuais = readFormTemplates(CD);
+    const higiene = atuais.find(t => t.category === 'higiene_pessoal');
+    // Simula o cache da loja com a versão ANTIGA (sem os campos novos).
+    const antiga = { ...higiene, v: 1, sections: [{ id:'velha', title:'Verificação', fields:[
+      { id:'cd-hig-unha', label:'Unha', type:'cnc' },
+    ]}]};
+    localStorage.setItem('nutriops.forms.templates.bf245c3b-2f9',
+      JSON.stringify(atuais.map(t => t.id === higiene.id ? antiga : t)));
+
+    const depois = readFormTemplates(CD).find(t => t.id === higiene.id);
+    const campos = depois.sections.flatMap(s => s.fields);
+    expect(campos.find(f => f.id === 'cd-hig-unha').label).toBe('Unhas limpas, sem esmalte ou base');
+    expect(campos.some(f => f.id === 'cd-hig-setor')).toBe(true);
+    // Carimbo pra vencer a linha velha da nuvem no mergeByKey do sync.
+    expect(depois.updatedAt).toBeTruthy();
+  });
+
+  it('planilha de MESMA versão não é sobrescrita (edição da loja sobrevive)', () => {
+    const atuais = readFormTemplates(CD);
+    const alvo = atuais.find(t => t.category === 'higiene_pessoal');
+    localStorage.setItem('nutriops.forms.templates.bf245c3b-2f9',
+      JSON.stringify(atuais.map(t => t.id === alvo.id ? { ...t, description:'ajustado pela RT' } : t)));
+    const depois = readFormTemplates(CD).find(t => t.id === alvo.id);
+    expect(depois.description).toBe('ajustado pela RT');
+  });
+
   it('planilha NOVA do seed entra em quem já tinha cache; edição local sobrevive', () => {
     const antigas = readFormTemplates(CD).slice(0, 11)
       .map(t => t.title === 'Higienização — Padaria' ? t : { ...t, description:'editado pela loja' });
@@ -116,13 +145,63 @@ describe('seedTemplates CASA DOCE — 32 planilhas BPF (Fase A+B+C + 21 de higie
     expect(new Set(depois.map(t => t.id)).size).toBe(32);       // sem duplicar
   });
 
-  it('vetores customizado: sem Pombo, com Abelha, hint de setor', () => {
+  it('vetores customizado: sem Pombo, com Abelha', () => {
     const vet = readFormTemplates(CD).find(t => t.category === 'vetores_pragas');
-    const labels = vet.sections[0].fields.map(f => f.label);
+    const labels = vet.sections.flatMap(s => s.fields).map(f => f.label);
     expect(labels.some(l => l.includes('Pombo'))).toBe(false);
     expect(labels.some(l => l.includes('Abelha'))).toBe(true);
-    const abelha = vet.sections[0].fields.find(f => f.label.includes('Abelha'));
-    expect(abelha.hint).toMatch(/Padaria/);
+  });
+
+  // Pedidos da nutricionista (07/08). Antes destes campos não dava pra saber
+  // QUANDO, QUEM verificou nem QUAL setor/banheiro — registro inútil numa
+  // fiscalização. O setor virou lista fechada de propósito: texto livre geraria
+  // "Padaria"/"padaria" e impediria filtrar o histórico.
+  const campos = (t) => t.sections.flatMap(s => s.fields);
+  const acha = (t, id) => campos(t).find(f => f.id === id);
+
+  it('vetores, higiene pessoal e hortifrutícolas ganharam setor como LISTA', () => {
+    const tpls = readFormTemplates(CD);
+    for (const [cat, id] of [['vetores_pragas','cd-vet-setor'], ['higiene_pessoal','cd-hig-setor']]) {
+      const campo = acha(tpls.find(t => t.category === cat), id);
+      expect(campo?.type).toBe('select');
+      expect(campo.options).toContain('Padaria');
+      expect(campo.options).toContain('Garçons');
+      expect(campo.options).toHaveLength(12);
+    }
+    expect(acha(tpls.find(t => t.title.includes('Hortifrutícolas')), 'cd-hf-setor')?.type).toBe('select');
+  });
+
+  it('data e responsável presentes onde faltavam', () => {
+    const tpls = readFormTemplates(CD);
+    const higiene  = tpls.find(t => t.category === 'higiene_pessoal');
+    const vetores  = tpls.find(t => t.category === 'vetores_pragas');
+    const residuos = tpls.find(t => t.category === 'residuos');
+    const banheiro = tpls.find(t => t.title.includes('Banheiros'));
+
+    expect(acha(higiene, 'cd-hig-data')?.type).toBe('date');
+    expect(acha(higiene, 'cd-hig-resp')?.type).toBe('text');
+    expect(acha(vetores, 'cd-vet-data')?.type).toBe('date');
+    expect(acha(vetores, 'cd-vet-resp')?.type).toBe('text');
+    expect(acha(residuos, 'cd-res-data')?.type).toBe('date');
+    expect(acha(residuos, 'cd-res-resp')?.type).toBe('text');
+    expect(acha(banheiro, 'cd-ban-resp')?.type).toBe('text');
+    expect(acha(banheiro, 'cd-ban-local')?.options).toContain('Acessível / PCD');
+  });
+
+  it('higiene pessoal: avental+uniforme juntos, sapato e unhas detalhados', () => {
+    const higiene = readFormTemplates(CD).find(t => t.category === 'higiene_pessoal');
+    expect(acha(higiene, 'cd-hig-uniforme').label).toBe('Avental / uniforme');
+    expect(acha(higiene, 'cd-hig-sapato').label).toBe('Sapato fechado e antiderrapante');
+    expect(acha(higiene, 'cd-hig-unha').label).toBe('Unhas limpas, sem esmalte ou base');
+    expect(acha(higiene, 'cd-hig-avental')).toBeUndefined();   // fundido no uniforme
+  });
+
+  it('cada planilha de higienização tem responsável e mês de referência', () => {
+    const higs = readFormTemplates(CD).filter(t => t.category === 'higienizacao');
+    for (const h of higs) {
+      expect(campos(h).some(f => f.label === 'Responsável pelo setor')).toBe(true);
+      expect(campos(h).some(f => f.label === 'Mês / ano de referência')).toBe(true);
+    }
   });
 
   it('banheiros e hortifrutícolas têm bloco de não conformidade completo (desc+ação+responsável)', () => {

@@ -31,10 +31,28 @@ export const readFormTemplates = (tenant) => {
   const cache = fl(tplKey(tenant.id), null);
   const seed  = seedTemplates(tenant);
   if (!Array.isArray(cache)) { fs(tplKey(tenant.id), seed); return seed; }
-  const temos = new Set(cache.map((t) => t.id));
-  const novas = seed.filter((t) => !temos.has(t.id));
-  if (novas.length === 0) return cache;
-  const merged = [...cache, ...novas];
+
+  const porId = new Map(cache.map((t) => [t.id, t]));
+  let mudou = false;
+  for (const s of seed) {
+    const atual = porId.get(s.id);
+    if (!atual) { porId.set(s.id, s); mudou = true; continue; }
+    // Planilha do seed que MUDOU DE VERSÃO (campo novo, rótulo corrigido):
+    // substitui a definição. Sem isto, só planilha NOVA chegava — quem já
+    // rodava ficava preso na versão antiga pra sempre. Foi o que aconteceria
+    // com os ajustes que a nutricionista pediu em 07/08 (data, responsável,
+    // setor): nada apareceria pra ela.
+    //
+    // O carimbo updatedAt é essencial: o sync funde local↔nuvem por mergeByKey,
+    // que escolhe o mais RECENTE. Sem ele o seed vale epoch e qualquer linha
+    // velha da nuvem desfaria a atualização no boot seguinte.
+    if ((s.v ?? 0) > (atual.v ?? 0)) {
+      porId.set(s.id, { ...s, updatedAt: new Date().toISOString() });
+      mudou = true;
+    }
+  }
+  if (!mudou) return cache;
+  const merged = [...porId.values()];
   fs(tplKey(tenant.id), merged);
   return merged;
 };
@@ -420,10 +438,17 @@ const TPL_MANUTENCAO_DBK = () => ({
 // da nuvem (form_templates) no merge por id — sem duplicar. Novos templates da
 // CASA DOCE (Fase B) entram aqui conforme a nutricionista confirma os detalhes.
 const TPL_CASADOCE_BANHEIROS = () => ({
-  id:'c61acf39-5ff8-404e-8fae-f9f68734f1b2', category:'faxina', frequency:'daily',
+  id:'c61acf39-5ff8-404e-8fae-f9f68734f1b2', category:'faxina', frequency:'daily', v:2,
   title:'Controle de Higienização de Banheiros',
   description:'Registro diário. Marque a atividade realizada e o horário; quem preenche fica identificado (assinatura digital). Ref.: FP.HIG.001.',
   sections:[
+    // Sem isto o registro dizia "banheiro limpo" sem dizer QUAL nem POR QUEM —
+    // inútil numa fiscalização (pedido da nutricionista, 07/08).
+    { id:'cd-ban-cab', title:'Identificação', fields:[
+      { id:'cd-ban-local', label:'Qual banheiro', type:'select',
+        options:['Masculino — clientes','Feminino — clientes','Acessível / PCD','Masculino — colaboradores','Feminino — colaboradores','Vestiário'] },
+      { id:'cd-ban-resp',  label:'Responsável pela limpeza', type:'text' },
+    ]},
     { id:'cd-ban-lg', title:'Limpeza Geral', fields:[
       { id:'cd-ban-lg-feito', label:'Realizada', type:'checkbox', hint:'Limpeza geral do banheiro' },
       { id:'cd-ban-lg-hora',  label:'Horário',  type:'text', hint:'Hora em que foi feita' },
@@ -446,12 +471,15 @@ const TPL_CASADOCE_BANHEIROS = () => ({
 // "a confirmar" nas descrições — trocar 1 valor + re-rodar o SQL se ela ajustar.
 
 const TPL_CD_HORTIFRUTI = () => ({
-  id:'f565a332-b2a1-401d-b1f4-5e70825aafec', category:'faxina', frequency:'daily',
+  id:'f565a332-b2a1-401d-b1f4-5e70825aafec', category:'faxina', frequency:'daily', v:2,
   title:'Higienização de Hortifrutícolas',
   description:'Registro da higienização de hortifrutícolas (imersão em solução sanitizante). Frequência: diária (a confirmar com a RT).',
   sections:[
     { id:'cd-hf-reg', title:'Registro', fields:[
       { id:'cd-hf-data', label:'Data', type:'date_sig' },
+      // Setor de quem higienizou (pedido 07/08) — a mesma solução roda em mais
+      // de uma área e a RT precisa saber de qual veio o registro.
+      { id:'cd-hf-setor', label:'Setor', type:'select', options: CD_SETORES_EQUIPE },
       { id:'cd-hf-item', label:'Hortifrutícola', type:'text', hint:'Ex.: alface, morango' },
       { id:'cd-hf-sol',  label:'Solução utilizada', type:'text', hint:'Ex.: hipoclorito 200 ppm' },
       { id:'cd-hf-tempo',label:'Tempo de imersão (min)', type:'number' },
@@ -478,11 +506,13 @@ const TPL_CD_FILTRO_CAFE = () => ({
 });
 
 const TPL_CD_RESIDUOS = () => ({
-  id:'1197f2fd-682b-47a0-8912-d23bbe69c708', category:'residuos', frequency:'daily',
+  id:'1197f2fd-682b-47a0-8912-d23bbe69c708', category:'residuos', frequency:'daily', v:2,
   title:'Controle de Saída de Resíduos',
   description:'Pesagem/volume diário dos resíduos por categoria.',
   sections:[
     { id:'cd-res-dia', title:'Saída do dia', fields:[
+      { id:'cd-res-data', label:'Data', type:'date' },
+      { id:'cd-res-resp', label:'Responsável', type:'text' },
       { id:'cd-res-rec-kg', label:'Reciclável — Kg', type:'number' },
       { id:'cd-res-rec-l',  label:'Reciclável — Litros', type:'number' },
       { id:'cd-res-rej-kg', label:'Rejeito — Kg', type:'number' },
@@ -565,39 +595,68 @@ const TPL_CD_MANUT_PROG = () => ({
 // todos os setores, mas quer o setor de destinação anotado (Padaria/Café/
 // Gelateria/Confeitaria); Pombo sai da lista (controle já feito à parte por
 // fora), Abelha entra (já estava no genérico).
+// Setores da CASA DOCE pra os campos de seleção. Lista dada pela nutricionista
+// (07/08) — é a divisão de EQUIPE, por isso não bate 1:1 com os 21 setores de
+// higienização (que são de ÁREA FÍSICA: Câmaras, Fornos, Área de Lavagem…).
+const CD_SETORES_EQUIPE = [
+  'Gelateria', 'Padaria', 'Confeitaria', 'Café / Atendimento', 'Ilha',
+  'Bistrô', 'Salgados', 'Serviços gerais', 'Estoque', 'Garçons',
+  'Encomendas', 'Caixas',
+];
+
 const TPL_CD_HIGIENE = () => ({
-  id:'c1e7838e-1cac-4a76-a0c3-296e1bebbfdb', category:'higiene_pessoal', frequency:'daily',
+  id:'c1e7838e-1cac-4a76-a0c3-296e1bebbfdb', category:'higiene_pessoal', frequency:'daily', v:2,
   title:'Higiene Pessoal dos Colaboradores',
-  description:'Verificação diária de higiene, uniforme, comportamento e EPI. C=conforme / NC=não conforme.',
-  sections:[{ id:'cd-hig-ver', title:'Verificação', fields:[
-    { id:'cd-hig-uniforme', label:'Uniforme', type:'cnc' },
-    { id:'cd-hig-sapato',   label:'Sapato', type:'cnc' },
-    { id:'cd-hig-cabelo',   label:'Cabelo', type:'cnc' },
-    { id:'cd-hig-barba',    label:'Barba', type:'cnc' },
-    { id:'cd-hig-unha',     label:'Unha', type:'cnc' },
-    { id:'cd-hig-adorno',   label:'Adorno', type:'cnc', hint:'Remover brincos, anéis, pulseiras, colares' },
-    { id:'cd-hig-comport',  label:'Comportamento', type:'cnc', hint:'Atitudes higiênicas, não manipular objetos fora da atividade' },
-    { id:'cd-hig-avental',  label:'Avental', type:'cnc' },
-    { id:'cd-hig-perfume',  label:'Perfume', type:'cnc', hint:'Ausência de perfume forte' },
-    { id:'cd-hig-ferim',    label:'Ferimento', type:'cnc', hint:'Ferimentos devidamente cobertos' },
-    { id:'cd-hig-maos',     label:'Lavar Mãos', type:'cnc', hint:'Ao iniciar, usar banheiro, trocar atividade, colocar luvas' },
-    { id:'cd-hig-obs',      label:'Observações', type:'text' },
-  ]}],
+  description:'Verificação por SETOR: escolha o setor, registre data e quem verificou. C=conforme / NC=não conforme. Ex.: toda segunda e terça o checklist da Padaria.',
+  sections:[
+    // Cabeçalho pedido pela nutricionista (07/08): sem data/responsável/setor
+    // não dava pra saber quando, quem verificou nem qual equipe foi avaliada.
+    { id:'cd-hig-cab', title:'Identificação', fields:[
+      { id:'cd-hig-data',  label:'Data da verificação', type:'date' },
+      { id:'cd-hig-setor', label:'Setor', type:'select', options: CD_SETORES_EQUIPE },
+      { id:'cd-hig-resp',  label:'Responsável pela verificação', type:'text' },
+    ]},
+    { id:'cd-hig-ver', title:'Verificação', fields:[
+      // "Uniforme" e "Avental" eram dois campos; a nutricionista pediu juntos
+      // ("avental/uniforme"). Mantido o id cd-hig-uniforme pra não perder o
+      // histórico já registrado; cd-hig-avental sai.
+      { id:'cd-hig-uniforme', label:'Avental / uniforme', type:'cnc' },
+      { id:'cd-hig-sapato',   label:'Sapato fechado e antiderrapante', type:'cnc' },
+      { id:'cd-hig-cabelo',   label:'Cabelo', type:'cnc' },
+      { id:'cd-hig-barba',    label:'Barba', type:'cnc' },
+      { id:'cd-hig-unha',     label:'Unhas limpas, sem esmalte ou base', type:'cnc' },
+      { id:'cd-hig-adorno',   label:'Adorno', type:'cnc', hint:'Remover brincos, anéis, pulseiras, colares' },
+      { id:'cd-hig-comport',  label:'Comportamento', type:'cnc', hint:'Atitudes higiênicas, não manipular objetos fora da atividade' },
+      { id:'cd-hig-perfume',  label:'Perfume', type:'cnc', hint:'Ausência de perfume forte' },
+      { id:'cd-hig-ferim',    label:'Ferimento', type:'cnc', hint:'Ferimentos devidamente cobertos' },
+      { id:'cd-hig-maos',     label:'Lavar Mãos', type:'cnc', hint:'Ao iniciar, usar banheiro, trocar atividade, colocar luvas' },
+      { id:'cd-hig-obs',      label:'Observações', type:'text', hint:'Ex.: colaboradora com unha grande — orientada e registrada' },
+    ]},
+  ],
 });
 
 const TPL_CD_VETORES = () => ({
-  id:'96496ddc-a938-4b90-9aa5-fd5710a54fb0', category:'vetores_pragas', frequency:'daily',
+  id:'96496ddc-a938-4b90-9aa5-fd5710a54fb0', category:'vetores_pragas', frequency:'daily', v:2,
   title:'Controle Integrado de Vetores e Pragas',
   description:'Verificação diária. Registrar tipo de praga e o setor onde foi feito o controle. Anexar comprovante de dedetização.',
-  sections:[{ id:'cd-vet-ocorr', title:'Ocorrências do dia', fields:[
-    { id:'cd-vet-abelha',  label:'Abelha (A)',           type:'presence', hint:'Setor: Padaria / Café / Gelateria / Confeitaria' },
-    { id:'cd-vet-barata',  label:'Barata (B)',           type:'presence', hint:'Setor: Padaria / Café / Gelateria / Confeitaria' },
-    { id:'cd-vet-formiga', label:'Formiga (F)',          type:'presence', hint:'Setor: Padaria / Café / Gelateria / Confeitaria' },
-    { id:'cd-vet-mosca',   label:'Mosca / Mosquito (M)', type:'presence', hint:'Setor: Padaria / Café / Gelateria / Confeitaria' },
-    { id:'cd-vet-roedor',  label:'Roedor (R)',           type:'presence', hint:'Setor: Padaria / Café / Gelateria / Confeitaria' },
-    { id:'cd-vet-acao',    label:'Ação tomada', type:'text' },
-    { id:'cd-vet-obs',     label:'Observações',  type:'text' },
-  ]}],
+  sections:[
+    { id:'cd-vet-cab', title:'Identificação', fields:[
+      { id:'cd-vet-data',  label:'Data', type:'date' },
+      { id:'cd-vet-setor', label:'Setor verificado', type:'select', options: CD_SETORES_EQUIPE },
+      { id:'cd-vet-resp',  label:'Responsável pela verificação', type:'text' },
+    ]},
+    { id:'cd-vet-ocorr', title:'Ocorrências do dia', fields:[
+      // O hint de setor saiu daqui: agora o setor é campo próprio no cabeçalho.
+      // O "local" do presence continua servindo pro ponto exato da ocorrência.
+      { id:'cd-vet-abelha',  label:'Abelha (A)',           type:'presence' },
+      { id:'cd-vet-barata',  label:'Barata (B)',           type:'presence' },
+      { id:'cd-vet-formiga', label:'Formiga (F)',          type:'presence' },
+      { id:'cd-vet-mosca',   label:'Mosca / Mosquito (M)', type:'presence' },
+      { id:'cd-vet-roedor',  label:'Roedor (R)',           type:'presence' },
+      { id:'cd-vet-acao',    label:'Ação tomada', type:'text' },
+      { id:'cd-vet-obs',     label:'Observações',  type:'text' },
+    ]},
+  ],
 });
 
 const TPL_CD_DEDETIZACAO = () => ({
@@ -644,10 +703,18 @@ const TPL_CD_CALIBRACAO = () => ({
 const PER = { S:'semanal', M:'mensal', Q:'quinzenal', D:'diária', X:'frequência a definir' };
 
 const higSetor = (uuid, slug, setor, tarefas) => () => ({
-  id:uuid, category:'higienizacao', frequency:'weekly',
+  id:uuid, category:'higienizacao', frequency:'weekly', v:2,
   title:`Higienização — ${setor}`,
   description:`Higienização do setor ${setor}. Registre data e assinatura de cada tarefa concluída — o período esperado está no nome. Uma folha por semana, como no papel.`,
   sections:[
+    // Cabeçalho "Responsável / Mês-Ano" do papel. Cada tarefa já tem a sua
+    // data+assinatura, mas a nutricionista pediu também o responsável da FOLHA
+    // — é quem responde pelo setor naquela semana, mesmo que várias pessoas
+    // tenham executado tarefas diferentes.
+    { id:`cd-hig-${slug}-cab`, title:'Identificação', fields:[
+      { id:`cd-hig-${slug}-resp`, label:'Responsável pelo setor', type:'text' },
+      { id:`cd-hig-${slug}-mes`,  label:'Mês / ano de referência', type:'date' },
+    ]},
     { id:`cd-hig-${slug}-t`, title:'Tarefas', fields:tarefas.map(([nome, per], i) => (
       { id:`cd-hig-${slug}-${i}`, label:`${nome} (${PER[per]})`, type:'date_sig' }
     ))},
@@ -918,6 +985,16 @@ function FormFill({ template, record, onSave, onBack, session, tenant }) {
                   {field.type==='number'   && <input type="number" inputMode="decimal" value={responses[field.id]??''} onChange={(e) => setField(field.id,e.target.value)} placeholder="0" style={{ width:120, padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', fontSize:13, fontFamily:'inherit', fontVariantNumeric:'tabular-nums' }} />}
                   {field.type==='checkbox' && <label style={{ display:'inline-flex', alignItems:'center', gap:8, fontSize:13, cursor:'pointer' }}><input type="checkbox" checked={responses[field.id]===true} onChange={(e) => setField(field.id,e.target.checked)} style={{ width:18, height:18, accentColor:'var(--primary)' }} /> Marcar</label>}
                   {field.type==='text'     && <textarea value={responses[field.id]??''} onChange={(e) => setField(field.id,e.target.value)} placeholder="Observações…" style={{ width:'100%', padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', fontSize:13, fontFamily:'inherit', resize:'vertical', minHeight:54 }} />}
+                  {/* Lista fechada (setor, qual banheiro…). Texto livre aqui
+                      geraria "Padaria"/"padaria"/"Padria" e inviabilizaria
+                      filtrar o histórico por setor depois. */}
+                  {field.type==='select'   && (
+                    <select value={responses[field.id]??''} onChange={(e) => setField(field.id,e.target.value)}
+                      style={{ padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', fontSize:13, fontFamily:'inherit', minWidth:200 }}>
+                      <option value="">Selecione…</option>
+                      {(field.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  )}
                 </div>
               </div>
             ))}

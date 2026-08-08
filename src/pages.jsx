@@ -62,7 +62,19 @@ export { APP_VERSION };
 
 // ─── Tenant resolution ─────────────────────────────────────────────────────
 // Use onboarded tenants if available, otherwise fall back to built-in tenants
-const tenants = readOnboardingTenants() ?? defaultTenants;
+// Onboarding + seed, NÃO um ou outro. Era `readOnboardingTenants() ?? default`:
+// bastava UM tenant salvo no device (link ?token=, onboarding, setup) pra as
+// lojas embutidas sumirem inteiras. A Swiss perdia junto duas coisas que só
+// existem no seed — `supabase` (as env do build) e `usersList` —, o que
+// causava, no mesmo device: "Supabase não configurado" no login e o seletor
+// "Quem está registrando?" abrindo VAZIO. Relatado no iPhone em 07/08.
+// Onboarding tem precedência por id; o seed completa o resto.
+export function mesclaTenants(salvos, seed) {
+  if (!Array.isArray(salvos) || salvos.length === 0) return seed;
+  const ids = new Set(salvos.map((t) => t.id));
+  return [...salvos, ...seed.filter((t) => !ids.has(t.id))];
+}
+const tenants = mesclaTenants(readOnboardingTenants(), defaultTenants);
 const IS_DEMO  = !readOnboardingTenants(); // true when using default data
 export const APP_BUILD = '2026.05.19';
 
@@ -2096,8 +2108,15 @@ function TeamHub({ activeView, setActiveView, session, records, ...rest }) {
 // shouldAutoConfigSupabase devolve apply:false se já configurado/manual.
 function maybeAutoConfigSupabase(tenantId, activeTenants) {
   try {
-    const tenant = (activeTenants ?? []).find(t => t.id === tenantId);
-    if (!tenant?.supabase?.url || !tenant?.supabase?.anonKey) return false;
+    const lista = activeTenants ?? [];
+    // Tenta o tenant pedido e, se ele não trouxer credencial, QUALQUER outro
+    // que traga. Antes olhava só um: se o primeiro da lista fosse um cliente da
+    // nuvem (que não carrega `supabase`), o app ficava sem config mesmo tendo a
+    // Swiss logo ali com as env do build — e o login por e-mail respondia
+    // "Supabase não configurado".
+    const tenant = lista.find(t => t.id === tenantId && t.supabase?.url && t.supabase?.anonKey)
+                ?? lista.find(t => t.supabase?.url && t.supabase?.anonKey);
+    if (!tenant) return false;
     const existing = JSON.parse(localStorage.getItem('nutriops.supabase.config') ?? 'null');
     const decision = shouldAutoConfigSupabase(existing, tenant.supabase);
     if (!decision.apply) return false;

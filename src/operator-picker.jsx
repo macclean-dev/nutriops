@@ -29,6 +29,7 @@ export function readStaff(tenant) {
 export function OperatorPicker({ tenant, onPick, onCancel, required = false }) {
   const staff = useMemo(() => readStaff(tenant), [tenant]);
   const [busca, setBusca] = useState('');
+  const [manual, setManual] = useState('');   // saída quando a equipe não está cadastrada
   const filtrados = busca.trim()
     ? staff.filter((u) => u.name.toLowerCase().includes(busca.trim().toLowerCase()))
     : staff;
@@ -65,11 +66,23 @@ export function OperatorPicker({ tenant, onPick, onCancel, required = false }) {
 
         <div style={{ flex:1, minHeight:0, overflowY:'auto', display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px, 1fr))', gap:10 }}>
           {filtrados.length === 0 ? (
-            <p className="muted" style={{ gridColumn:'1/-1', padding:'20px 0', fontSize:13 }}>
-              {staff.length === 0
-                ? 'Nenhuma pessoa cadastrada nesta loja. Peça ao responsável para adicionar a equipe em Equipe › Usuários.'
-                : 'Nenhum nome encontrado.'}
-            </p>
+            // Lista vazia com `required` era uma tela SEM SAÍDA: o gate exige
+            // operador, não há nome pra tocar e não existe Cancelar. O turno
+            // não abria. Digitar o nome destrava — a atribuição da RDC 216
+            // continua garantida, e a lista se enche depois pelo cadastro.
+            <div style={{ gridColumn:'1/-1', padding:'12px 0' }}>
+              <p className="muted" style={{ fontSize:13, marginBottom:12 }}>
+                {staff.length === 0
+                  ? 'A equipe desta loja ainda não foi cadastrada. Digite seu nome pra continuar — o responsável cadastra a equipe depois em Equipe › Usuários.'
+                  : 'Nenhum nome encontrado. Confira a busca ou digite seu nome completo.'}
+              </p>
+              <input value={manual} onChange={(e) => setManual(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && manual.trim()) escolher(manual.trim()); }}
+                placeholder="Seu nome completo"
+                style={{ width:'100%', padding:'12px 14px', borderRadius:'var(--r)', border:'1px solid var(--border)', fontSize:15, fontFamily:'var(--font)', marginBottom:10 }} />
+              <button className="primary-action" disabled={!manual.trim()} style={{ width:'100%' }}
+                onClick={() => escolher(manual.trim())}>Continuar como {manual.trim() || '…'}</button>
+            </div>
           ) : filtrados.map((u) => (
             <button key={u.name} onClick={() => escolher(u.name)}
               style={{

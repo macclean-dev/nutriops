@@ -258,4 +258,5 @@ pré-criado).
 | 🔴 Alta | **Conectar a DBK Produção** — única loja ainda zerada na nuvem. Auto-connect + auto-backfill resolvem no próximo boot online do device dela. |
 | 🟡 Média | **Bäckerei** — no ar (18 registros), último de 04/06. Verificar no device (receita em `docs/RUNBOOK.md`). |
 | 🟡 Média | **Aparas do épico Auth+RLS** — 2 DoS de onboarding + suspensão sem enforcement + 2FA TOFU. Detalhe em `docs/HISTORICO.md`. |
+| 🟡 Média | **Etiquetas de abertura (v1.9.99): rodar `docs/etiquetas-validade.sql` ANTES do próximo deploy.** São 3 colunas novas em `products` (`opened_at/opened_until/opened_by`). Sem elas, o push de produtos falha (fica na fila offline, nada se perde, mas não sobe). As regras por categoria ficam em `nutriops.validity.rules.{tenantId}` (localStorage — configurar no device que imprime). |
 | 🟢 Baixa | Limpar a linha duplicada no `equipment_catalog` da Swiss na nuvem (o código dedupa desde a v1.9.14, mas o dado sujo continua lá). |

@@ -846,6 +846,7 @@ function productToRow(p) {
     conservation: p.conservation, unit: p.unit, min_stock: p.minStock, current_stock: p.currentStock,
     expiry_date: p.expiryDate ?? null, supplier: p.supplier, lot: p.lot,
     days_after_open: p.daysAfterOpen ?? null, is_diamond: p.isDiamond ?? false,
+    opened_at: p.openedAt ?? null, opened_until: p.openedUntil ?? null, opened_by: p.openedBy ?? null,
     created_at: p.createdAt, updated_at: p.updatedAt ?? new Date().toISOString(),
   };
 }
@@ -855,6 +856,7 @@ function productFromRow(row) {
     conservation: row.conservation, unit: row.unit, minStock: row.min_stock, currentStock: row.current_stock,
     expiryDate: row.expiry_date, supplier: row.supplier, lot: row.lot,
     daysAfterOpen: row.days_after_open, isDiamond: row.is_diamond,
+    openedAt: row.opened_at, openedUntil: row.opened_until, openedBy: row.opened_by,
     createdAt: row.created_at, updatedAt: row.updated_at,
   };
 }
@@ -1132,10 +1134,15 @@ create table if not exists products (
   conservation text, unit text, min_stock numeric, current_stock numeric,
   expiry_date date, supplier text, lot text, days_after_open integer,
   is_diamond boolean default false,
+  opened_at timestamptz, opened_until timestamptz, opened_by text,
   created_at timestamptz default now(), updated_at timestamptz default now()
 );
 create index if not exists idx_products_tenant on products(tenant_id);
 create index if not exists idx_products_expiry on products(expiry_date);
+-- Etiquetas de abertura (v1.9.99) — em base já criada, rodar:
+-- alter table products add column if not exists opened_at timestamptz;
+-- alter table products add column if not exists opened_until timestamptz;
+-- alter table products add column if not exists opened_by text;
 
 -- 5. Movimentações de estoque
 create table if not exists stock_logs (

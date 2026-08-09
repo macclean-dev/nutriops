@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { pushProduct, pushStockLog } from './repository';
+import {
+  readOpenRules, writeOpenRules, resolveOpenRule, computeOpenedUntil,
+  fmtRule, fmtDateTime, DEFAULT_OPEN_RULES,
+} from './validity-rules';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -14,10 +18,13 @@ export const writeStockLogs  = (id, v) => ss(sk('stocklogs', id), v.slice(0, 500
 
 function uid() { return crypto.randomUUID(); }
 function fmtDate(iso) { try { return new Date(iso + 'T12:00').toLocaleDateString('pt-BR'); } catch { return iso; } }
-function daysUntil(dateStr) {
+// Dias corridos entre HOJE e a data — meia-noite com meia-noite. O ceil da
+// versão antiga comparava 12:00 com 00:00 e somava 1 dia em tudo (produto
+// vencendo hoje dizia "Vence amanhã"; regra de 30 dias virava badge de 31).
+export function daysUntil(dateStr) {
   if (!dateStr) return null;
-  const diff = new Date(dateStr + 'T12:00').getTime() - new Date().setHours(0,0,0,0);
-  return Math.ceil(diff / 86400000);
+  const diff = new Date(dateStr + 'T00:00').getTime() - new Date().setHours(0,0,0,0);
+  return Math.round(diff / 86400000);
 }
 
 // ─── Validade tone ─────────────────────────────────────────────────────────
@@ -64,30 +71,36 @@ const CATEGORIES = [
 
 const CONSERVATION = ['Refrigerado', 'Congelado', 'Temperatura ambiente', 'Seco e ventilado'];
 
-// ─── PDF label generator ───────────────────────────────────────────────────
+// ─── Etiqueta 60×60mm (modelo Suflex) ──────────────────────────────────────
+// Síncrona e pura de propósito: o QR e o perfil da empresa entram por `opts`
+// (gerados pelo chamador), o que deixa o HTML testável sem canvas/browser.
 
-export function generateLabel(product, tenant, session) {
-  const today = new Date().toLocaleDateString('pt-BR');
-  const manipExp = product.daysAfterOpen && product.openedAt
-    ? new Date(new Date(product.openedAt).getTime() + product.daysAfterOpen * 86400000).toLocaleDateString('pt-BR')
-    : '—';
+export function generateLabel(product, tenant, session, opts = {}) {
+  const { qrDataUrl = null, profile = {} } = opts;
+  const aberto = Boolean(product.openedAt);
+  const respName = product.openedBy || session?.user?.name || '—';
+  const empresa = profile.razaoSocial || tenant?.name || '';
+  const rodape = [empresa, profile.cnpj ? `CNPJ ${profile.cnpj}` : '', profile.endereco || '']
+    .filter(Boolean).join(' · ');
 
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Etiqueta — ${product.name}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:Arial,sans-serif;font-size:10px;color:#001e2b}
-    .label{width:60mm;height:60mm;padding:4mm;border:1px solid #c1ccd6;border-radius:2mm;display:flex;flex-direction:column;justify-content:space-between;page-break-after:always}
-    .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #eaeef2;padding-bottom:2mm;margin-bottom:2mm}
-    .product-name{font-size:12px;font-weight:800;line-height:1.2}
-    .badge{font-size:8px;font-weight:700;padding:1px 5px;border-radius:10px;background:rgba(29,78,137,.10);color:#00684a;border:1px solid rgba(29,78,137,.4);white-space:nowrap}
-    .row{display:flex;justify-content:space-between;padding:1mm 0;border-bottom:1px solid #f9fbfa}
+    .label{width:60mm;height:60mm;padding:3.5mm;border:1px solid #c1ccd6;border-radius:2mm;display:flex;flex-direction:column;justify-content:space-between;page-break-after:always}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #eaeef2;padding-bottom:1.5mm;margin-bottom:1.5mm}
+    .product-name{font-size:12px;font-weight:800;line-height:1.2;text-transform:uppercase}
+    .badge{font-size:8px;font-weight:700;padding:1px 5px;border-radius:10px;background:#f1f5f4;color:#00684a;border:1px solid #c1ccd6;white-space:nowrap}
+    .row{display:flex;justify-content:space-between;padding:.8mm 0;border-bottom:1px solid #f9fbfa}
     .row:last-child{border-bottom:none}
     .row span{font-size:9px;color:#5c6c7a}
     .row strong{font-size:9px;font-weight:700}
-    .val-box{background:#dafbe1;border:1px solid #4ac26b;border-radius:2mm;padding:2mm;text-align:center;margin-top:2mm}
-    .val-box span{font-size:8px;color:#00a35c;display:block}
-    .val-box strong{font-size:11px;font-weight:800;color:#00a35c}
-    .footer{font-size:7px;color:#9198a1;text-align:center;padding-top:1mm;border-top:1px solid #eaeef2}
+    .val-box{background:#dafbe1;border:1.5px solid #4ac26b;border-radius:2mm;padding:1.5mm 2mm;text-align:center;margin-top:1.5mm}
+    .val-box span{font-size:8px;font-weight:700;color:#00a35c;display:block;letter-spacing:.06em}
+    .val-box strong{font-size:13px;font-weight:800;color:#007a45}
+    .footer{display:flex;align-items:center;gap:2mm;padding-top:1mm;border-top:1px solid #eaeef2}
+    .footer img{width:11mm;height:11mm;flex:none}
+    .footer div{font-size:6.5px;color:#5c6c7a;line-height:1.35;text-align:left}
     @page{size:60mm 60mm;margin:0}
   </style></head><body>
   <div class="label">
@@ -96,14 +109,18 @@ export function generateLabel(product, tenant, session) {
         <div class="product-name">${product.name}</div>
         <div class="badge">${product.conservation || 'Ambiente'}</div>
       </div>
-      <div class="row"><span>Fornecedor</span><strong>${product.supplier || '—'}</strong></div>
-      <div class="row"><span>Lote</span><strong>${product.lot || '—'}</strong></div>
-      <div class="row"><span>Validade original</span><strong>${product.expiryDate ? fmtDate(product.expiryDate) : '—'}</strong></div>
-      <div class="row"><span>Manipulado em</span><strong>${today}</strong></div>
-      <div class="row"><span>Responsável</span><strong>${session?.user?.name || '—'}</strong></div>
-      ${product.daysAfterOpen ? `<div class="val-box"><span>Validade após abertura</span><strong>${manipExp}</strong></div>` : ''}
+      <div class="row"><span>Fornecedor / Lote</span><strong>${[product.supplier, product.lot].filter(Boolean).join(' · ') || '—'}</strong></div>
+      <div class="row"><span>VAL. ORIGINAL</span><strong>${product.expiryDate ? fmtDate(product.expiryDate) : '—'}</strong></div>
+      ${aberto ? `<div class="row"><span>MANIPULAÇÃO</span><strong>${fmtDateTime(product.openedAt)}</strong></div>` : ''}
+      <div class="row"><span>RESP.</span><strong>${respName}</strong></div>
+      ${aberto && product.openedUntil
+        ? `<div class="val-box"><span>VALIDADE</span><strong>${fmtDateTime(product.openedUntil)}</strong></div>`
+        : (product.expiryDate ? `<div class="val-box"><span>VALIDADE</span><strong>${fmtDate(product.expiryDate)}</strong></div>` : '')}
     </div>
-    <div class="footer">${tenant?.name || ''} · NutriOPS · RDC 216/2004</div>
+    <div class="footer">
+      ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR">` : ''}
+      <div>${rodape ? `${rodape}<br>` : ''}NutriOPS · RDC 216/2004</div>
+    </div>
   </div>
   </body></html>`;
 }
@@ -115,7 +132,8 @@ export function generateLabel(product, tenant, session) {
 export function ValidityStockView({ activeTenant, allTenants, onTenantChange, session }) {
   const [products, setProducts] = useState(() => readProducts(activeTenant.id));
   const [logs, setLogs]         = useState(() => readStockLogs(activeTenant.id));
-  const [tab, setTab]           = useState('dashboard'); // dashboard | products | add | stock
+  const [tab, setTab]           = useState('dashboard'); // dashboard | products | add | stock | rules
+  const [rules, setRules]       = useState(() => readOpenRules(activeTenant.id));
   const [editingId, setEditingId] = useState(null);
   const [catFilter, setCatFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -140,7 +158,7 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
   const [adjType, setAdjType]       = useState('entrada');
   const [adjNote, setAdjNote]       = useState('');
 
-  useEffect(() => { setProducts(readProducts(activeTenant.id)); setLogs(readStockLogs(activeTenant.id)); setTab('dashboard'); }, [activeTenant.id]);
+  useEffect(() => { setProducts(readProducts(activeTenant.id)); setLogs(readStockLogs(activeTenant.id)); setRules(readOpenRules(activeTenant.id)); setTab('dashboard'); }, [activeTenant.id]);
   useEffect(() => { writeProducts(activeTenant.id, products); }, [activeTenant.id, products]);
   useEffect(() => { writeStockLogs(activeTenant.id, logs); }, [activeTenant.id, logs]);
 
@@ -183,14 +201,49 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
     setAdjProduct(''); setAdjQty(''); setAdjNote(''); setAdjType('entrada');
   };
 
-  const printLabel = (product) => {
+  const printLabel = async (product) => {
+    // QR com o rastreio da abertura; perfil da empresa é o mesmo dos PDFs BPF.
+    let qrDataUrl = null;
+    try {
+      const QR = (await import('qrcode')).default;
+      const trace = `nutriops:${activeTenant.id}:${product.id}:${product.openedAt ?? ''}`;
+      qrDataUrl = await QR.toDataURL(trace, { width: 120, margin: 0, errorCorrectionLevel: 'M' });
+    } catch { /* etiqueta sai sem QR */ }
+    let profile = {};
+    try { const r = localStorage.getItem(`nutriops.company.profile.${activeTenant.id}`); profile = r ? JSON.parse(r) : {}; } catch {}
     const win = window.open('', '_blank');
-    win.document.write(generateLabel(product, activeTenant, session));
+    if (!win) return;
+    win.document.write(generateLabel(product, activeTenant, session, { qrDataUrl, profile }));
     win.document.close(); setTimeout(() => win.print(), 400);
   };
 
-  // Computed
-  const withDays = products.map(p => ({ ...p, daysLeft: daysUntil(p.expiryDate), tone: validityTone(daysUntil(p.expiryDate)), lowStock: p.minStock > 0 && p.currentStock < p.minStock }));
+  // "Abrir agora": carimba data+hora, calcula a validade pela regra da
+  // categoria (ou exceção do produto) e já imprime a etiqueta. 1 clique.
+  const openNow = async (product) => {
+    if (product.openedAt) {
+      const ok = window.confirm(`"${product.name}" já teve abertura registrada em ${fmtDateTime(product.openedAt)}. Registrar uma NOVA abertura (novo pacote) e imprimir outra etiqueta?`);
+      if (!ok) return;
+    }
+    const rule = resolveOpenRule(product, rules);
+    const openedAt = new Date().toISOString();
+    const { until } = computeOpenedUntil(openedAt, rule, product.expiryDate);
+    const updated = {
+      ...product, openedAt, openedUntil: until,
+      openedBy: session?.user?.name ?? null,
+      updatedAt: new Date().toISOString(),
+    };
+    setProducts(prev => prev.map(p => p.id === product.id ? updated : p));
+    pushProduct(activeTenant.id, updated);
+    await printLabel(updated);
+  };
+
+  // Computed — a validade EFETIVA é a pós-abertura quando o produto foi
+  // aberto (por construção ela nunca passa da original de fábrica).
+  const withDays = products.map(p => {
+    const effective = p.openedUntil ? p.openedUntil.slice(0, 10) : p.expiryDate;
+    const daysLeft = daysUntil(effective);
+    return { ...p, daysLeft, tone: validityTone(daysLeft), postOpen: Boolean(p.openedUntil), lowStock: p.minStock > 0 && p.currentStock < p.minStock };
+  });
 
   const alerts = withDays.filter(p => p.tone === 'danger' || p.tone === 'expired' || p.lowStock);
   const expiringSoon = withDays.filter(p => p.daysLeft !== null && p.daysLeft >= 0 && p.daysLeft <= 7);
@@ -350,17 +403,27 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
                       </div>
                       {p.minStock > 0 && <div style={{ fontSize:10, color:'var(--text-secondary)' }}>mín: {p.minStock}</div>}
                     </td>
-                    <td style={{ fontSize:12 }}>{p.expiryDate ? fmtDate(p.expiryDate) : '—'}</td>
+                    <td style={{ fontSize:12 }}>
+                      {p.expiryDate ? fmtDate(p.expiryDate) : '—'}
+                      {p.openedAt && (
+                        <div style={{ fontSize:10, color:'var(--text-secondary)' }}>
+                          Aberto {fmtDateTime(p.openedAt)}{p.openedUntil ? ` → vence ${fmtDateTime(p.openedUntil)}` : ''}
+                        </div>
+                      )}
+                    </td>
                     <td>
                       {p.daysLeft !== null && (
-                        <span style={{ padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:700, background:c.bg, color:c.text, border:`1px solid ${c.border}` }}>
+                        <span title={p.postOpen ? 'Validade após abertura' : 'Validade original'} style={{ padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:700, background:c.bg, color:c.text, border:`1px solid ${c.border}` }}>
                           {validityLabel(p.daysLeft)}
                         </span>
                       )}
                     </td>
                     <td>
                       <div style={{ display:'flex', gap:4 }}>
-                        <button className="ghost-action" style={{ fontSize:11 }} onClick={() => printLabel(p)}>🏷️</button>
+                        <button className="ghost-action" style={{ fontSize:11, fontWeight:700, color:'var(--primary)' }}
+                          title={`Registrar abertura agora e imprimir etiqueta (regra: ${fmtRule(resolveOpenRule(p, rules))})`}
+                          onClick={() => openNow(p)}>Abrir</button>
+                        <button className="ghost-action" style={{ fontSize:11 }} title="Reimprimir etiqueta" onClick={() => printLabel(p)}>🏷️</button>
                         <button className="ghost-action" style={{ fontSize:11 }} onClick={() => startEdit(p)}>Editar</button>
                         <button className="ghost-action danger" style={{ fontSize:11 }} onClick={() => deleteProduct(p.id)}>✕</button>
                       </div>
@@ -410,7 +473,7 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
         </div>
         <div className="grid-2">
           <label>Data de validade<input type="date" value={expiryDate} onChange={e=>setExpiryDate(e.target.value)} /></label>
-          <label>Validade após abertura (dias)<input type="number" min="0" value={daysAfterOpen} onChange={e=>setDaysAfterOpen(e.target.value)} placeholder="Ex.: 3 dias" /></label>
+          <label>Validade após abertura (dias) — exceção<input type="number" min="0" value={daysAfterOpen} onChange={e=>setDaysAfterOpen(e.target.value)} placeholder={`Vazio = regra da categoria (${fmtRule(rules[category] ?? DEFAULT_OPEN_RULES[category])})`} /></label>
         </div>
         <label style={{ flexDirection:'row', alignItems:'center', gap:10, cursor:'pointer' }}>
           <input type="checkbox" checked={isDiamond} onChange={e=>setIsDiamond(e.target.checked)} />
@@ -420,6 +483,62 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
           <button className="primary-action attention" onClick={saveProduct} disabled={!name.trim()}>
             {editingId ? 'Salvar alterações' : 'Cadastrar produto'}
           </button>
+        </div>
+      </div>
+    </article>
+  );
+
+  // ─── Rules tab — validade pós-abertura por categoria ─────────────────────
+
+  const setRule = (cat, patch) => setRules(prev => ({ ...prev, [cat]: { ...prev[cat], ...patch } }));
+
+  const saveRules = () => {
+    const clean = {};
+    for (const cat of Object.keys(DEFAULT_OPEN_RULES)) {
+      const r = rules[cat] ?? DEFAULT_OPEN_RULES[cat];
+      clean[cat] = { amount: Math.max(1, Number(r.amount) || DEFAULT_OPEN_RULES[cat].amount), unit: r.unit === 'h' ? 'h' : 'd' };
+    }
+    setRules(clean);
+    writeOpenRules(activeTenant.id, clean);
+  };
+
+  const renderRules = () => (
+    <article className="management-card">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">Etiquetas de abertura</span>
+          <h2>Regras de validade após abertura</h2>
+        </div>
+      </div>
+      <div className="capture-fields">
+        <p className="muted" style={{ fontSize:13, lineHeight:1.5 }}>
+          Configure uma vez, use no dia a dia com um clique: o botão <strong>Abrir</strong> na
+          lista de produtos carimba a data e a hora da abertura, calcula a validade pela regra
+          da categoria e imprime a etiqueta. Se um produto tiver "Validade após abertura (dias)"
+          preenchida no cadastro, essa exceção vence a regra da categoria. A validade calculada
+          nunca passa da validade original do rótulo.
+        </p>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(250px,1fr))', gap:10 }}>
+          {CATEGORIES.map(c => {
+            const r = rules[c.id] ?? DEFAULT_OPEN_RULES[c.id];
+            return (
+              <div key={c.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', border:'1px solid var(--border)', borderRadius:'var(--r)', background:'var(--surface)' }}>
+                <span style={{ flex:1, fontSize:13, fontWeight:600 }}>{c.icon} {c.label}</span>
+                <input type="number" min="1" value={r.amount} onChange={e=>setRule(c.id,{ amount:e.target.value })}
+                  style={{ width:64, textAlign:'right' }} />
+                <select value={r.unit} onChange={e=>setRule(c.id,{ unit:e.target.value })} style={{ width:'auto' }}>
+                  <option value="h">horas</option>
+                  <option value="d">dias</option>
+                </select>
+              </div>
+            );
+          })}
+        </div>
+        <p className="muted" style={{ fontSize:12 }}>
+          As regras ficam salvas neste dispositivo. Configure no aparelho que imprime as etiquetas.
+        </p>
+        <div className="actions-row" style={{ justifyContent:'flex-end' }}>
+          <button className="primary-action attention" onClick={saveRules}>Salvar regras</button>
         </div>
       </div>
     </article>
@@ -499,7 +618,7 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
         background:'var(--surface-muted)', border:'1px solid var(--border-subtle)',
         borderRadius:'var(--r-lg)', overflowX:'auto',
       }}>
-        {[['dashboard','Dashboard'],['products','Produtos'],['add', editingId?'Editar':'Cadastrar'],['stock','Movimentação']].map(([key,label]) => {
+        {[['dashboard','Dashboard'],['products','Produtos'],['add', editingId?'Editar':'Cadastrar'],['stock','Movimentação'],['rules','Regras']].map(([key,label]) => {
           const isActive = tab === key;
           return (
             <button key={key} onClick={() => { if(key!=='add') { resetForm(); } setTab(key); }}
@@ -523,6 +642,7 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
       {tab === 'products'  && renderProducts()}
       {tab === 'add'       && renderForm()}
       {tab === 'stock'     && renderStock()}
+      {tab === 'rules'     && renderRules()}
     </section>
   );
 }

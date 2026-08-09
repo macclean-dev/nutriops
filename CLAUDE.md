@@ -27,6 +27,10 @@ Detalhes técnicos completos em `project_specs.md`.
 - EmailJS para transacionais
 - PWA (manifest + service worker)
 - Deploy Vercel (auto-publish no push para `main`)
+- `api/extract-template.js` (desde 09/08/v1.9.109) — única função serverless
+  do projeto, chama a Anthropic com visão pra importar planilha por foto/PDF.
+  `ANTHROPIC_API_KEY` fica só nela (nunca `VITE_`-prefixada). Fora essa rota,
+  o resto do app continua 100% estático.
 
 Se você for tentado a sugerir migrar pra Next/TS/Tailwind: **não**. Já temos
 clientes pagando. O ROI dessa reescrita é negativo agora.
@@ -78,6 +82,7 @@ obrigatório no 1º login.
 | `VITE_SB_URL` | URL do projeto Supabase compartilhado pelos tenants seed | vazio (modo local por device) |
 | `VITE_SB_ANON_KEY` | Anon key pública desse projeto | vazio (modo local por device) |
 | ~~`VITE_DEVICE_PASSWORD`~~ | **Aposentada em 09/08.** O sync agora é assinado pelo JWT da sessão (conta de loja ou admin). Pode sair da Vercel. | — |
+| `ANTHROPIC_API_KEY` | **Sem prefixo `VITE_` de propósito** — só `api/extract-template.js` (função serverless) lê isso via `process.env`. Nunca embutir com `VITE_`, senão vaza no bundle do client. | vazio (botão "Importar por IA" falha com erro claro) |
 
 Com `VITE_SB_URL` + `VITE_SB_ANON_KEY` no build, os 3 tenants seed ganham
 `tenant.supabase` automaticamente e `handleLogin` (`pages.jsx`) propaga pro
@@ -253,7 +258,7 @@ pré-criado).
 
 | Prioridade | Item |
 |------------|------|
-| 🟡 Média (custo) | **Vercel migrou de Hobby pra Pro** (resolve o antigo bloqueio de deploy — confirmado 04/08, push liberou sem erro). Ciclo atual (9/jul–9/ago): US$34,87 total, US$20,00 de crédito incluso já consumido, ~US$14,87 pago sob demanda. Maior item: **Fast Origin Transfer, US$22,02** — **confirmado 04/08: é tráfego do Nexum** (função serverless/SSR, não do NutriOPS — que é SPA estática sem rota de API no Vercel). Próximo passo, se quiser cortar esse custo: mover a Nexum pro Cloudflare Pages. |
+| 🟡 Média (custo) | **Vercel migrou de Hobby pra Pro** (resolve o antigo bloqueio de deploy — confirmado 04/08, push liberou sem erro). Ciclo atual (9/jul–9/ago): US$34,87 total, US$20,00 de crédito incluso já consumido, ~US$14,87 pago sob demanda. Maior item: **Fast Origin Transfer, US$22,02** — **confirmado 04/08: é tráfego do Nexum** (função serverless/SSR, não do NutriOPS — que até 09/08 era SPA estática sem rota de API no Vercel). **A partir de 09/08 (item 11) o NutriOPS ganhou sua PRIMEIRA função serverless** (`api/extract-template.js`, importação de planilha por IA) — baixo volume de uso esperado (só a RT, sob demanda), mas vale lembrar na próxima investigação de custo que o Fast Origin Transfer pode deixar de ser 100% Nexum. Próximo passo, se quiser cortar o custo do Nexum: mover pro Cloudflare Pages. |
 | 🔴 Alta | **Conectar a DBK Produção** — única loja ainda zerada na nuvem. Auto-connect + auto-backfill resolvem no próximo boot online do device dela. |
 | 🟡 Média | **Bäckerei** — no ar (18 registros), último de 04/06. Verificar no device (receita em `docs/RUNBOOK.md`). |
 | 🟡 Média | **Aparas do épico Auth+RLS** — 2 DoS de onboarding + suspensão sem enforcement + 2FA TOFU. Detalhe em `docs/HISTORICO.md`. |

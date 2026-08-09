@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FormKioskApp } from './kiosk';
 import { pushFormRecord } from './repository';
+import { ImportTemplateModal } from './import-template-modal';
 
 // Read company profile from localStorage
 function getProfile(tenantId) {
@@ -1390,6 +1391,15 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
     import('./repository').then(m => m.pushFormTemplate(activeTenant.id, novo)).catch(() => {});
   }, [activeTenant.id]);
 
+  const [importOpen, setImportOpen] = useState(false);
+  // Planilha nova (não edição) — pushFormTemplate já trata insert vs update
+  // pelo id não existir ainda em `existing` (repository.js).
+  const criarTemplate = useCallback((novo) => {
+    setTemplates((prev) => [novo, ...prev]);
+    setImportOpen(false);
+    import('./repository').then(m => m.pushFormTemplate(activeTenant.id, novo)).catch(() => {});
+  }, [activeTenant.id]);
+
   // De QUAL loja são os dados em memória. Sem esta marcação, os efeitos de
   // escrita abaixo (que têm activeTenant.id nas deps) rodavam no render da
   // TROCA de empresa — id JÁ é o novo, `templates`/`records` AINDA são da loja
@@ -1505,6 +1515,9 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
       {editingTpl && (
         <TaskEditorModal template={editingTpl} onSave={salvarTemplate} onClose={() => setEditingTpl(null)} />
       )}
+      {importOpen && (
+        <ImportTemplateModal onSave={criarTemplate} onClose={() => setImportOpen(false)} />
+      )}
       <div className="page-header">
         <div>
           <span className="eyebrow">Boas Práticas de Fabricação</span>
@@ -1515,6 +1528,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
           <select value={activeTenant.id} onChange={(e) => onTenantChange(e.target.value)} style={{ width:'auto' }}>
             {allTenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
+          {isRT && <button className="secondary-action" style={{ fontSize:12 }} onClick={() => setImportOpen(true)}>Importar por IA</button>}
         </div>
       </div>
 

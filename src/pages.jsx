@@ -17,6 +17,7 @@ import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
 import { resolveLimits as resolveLimitsFromCatalog, resolveTone, resolveRecordTone as resolveTemperatureTone, heuristicLimits, suggestLimits, dedupeCatalog } from './limits';
+import { receivingSuggestedResult } from './verdict';
 
 // ─── Lazy view loading ────────────────────────────────────────────────────
 // Cada chunk só baixa quando o usuário navega pra view correspondente.
@@ -1577,6 +1578,7 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
   const [conservacao, setConservacao] = useState('');
   const [checks, setChecks]         = useState({});
   const [resultado, setResultado]   = useState('');
+  const [resultadoTouched, setResultadoTouched] = useState(false);
   const [motivoRejeicao, setMotivoRejeicao] = useState('');
   const [obs, setObs]               = useState('');
   const [filter, setFilter]         = useState('all');
@@ -1586,10 +1588,20 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
   useEffect(() => { setItems(recLoad(activeTenant.id)); }, [activeTenant.id]);
   useEffect(() => { recSave(activeTenant.id, items); }, [activeTenant.id, items]);
 
-  const allChecksOk = RECEIVING_CHECKS.every((c) => checks[c.id] === 'C');
+  const sugestaoResultado = receivingSuggestedResult(checks, RECEIVING_CHECKS.map((c) => c.id));
+  const motivoObrigatorio = resultado === 'rejeitado' || resultado === 'aceito_parcial';
+
+  useEffect(() => {
+    if (sugestaoResultado && !resultadoTouched) setResultado(sugestaoResultado);
+  }, [sugestaoResultado, resultadoTouched]);
+
+  const escolherResultado = (opt) => {
+    setResultadoTouched(true);
+    setResultado((prev) => (prev === opt ? '' : opt));
+  };
 
   const handleSubmit = () => {
-    if (!fornecedor.trim() || !produto.trim() || !resultado) return;
+    if (!fornecedor.trim() || !produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim())) return;
     setSaving(true);
     const record = {
       id: crypto.randomUUID(),
@@ -1603,7 +1615,7 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
       conservacao,
       checks,
       resultado,
-      motivoRejeicao: resultado === 'rejeitado' ? motivoRejeicao.trim() : '',
+      motivoRejeicao: motivoObrigatorio ? motivoRejeicao.trim() : '',
       obs: obs.trim(),
       user: session?.user?.name ?? '—',
       role: session?.user?.role ?? '',
@@ -1613,7 +1625,7 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
     pushReceivingRecord(activeTenant.id, record);
     // Reset form
     setFornecedor(''); setNf(''); setProduto(''); setQuantidade('');
-    setValidade(''); setTemperatura(''); setConservacao(''); setChecks({}); setResultado('');
+    setValidade(''); setTemperatura(''); setConservacao(''); setChecks({}); setResultado(''); setResultadoTouched(false);
     setMotivoRejeicao(''); setObs('');
     setSaving(false); setSaved(true);
     setTimeout(() => setSaved(false), 3000);
@@ -1713,7 +1725,7 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
 
             {/* Result */}
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text-secondary)', marginBottom: 8 }}>Resultado</div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text-secondary)', marginBottom: 8 }}>Resultado{!resultadoTouched && sugestaoResultado ? ' (sugerido pelos checks)' : ''}</div>
               <div style={{ display: 'flex', gap: 8 }}>
                 {['aceito', 'rejeitado', 'aceito_parcial'].map((opt) => {
                   const labels = { aceito: '✓ Aceito', rejeitado: '✗ Rejeitado', aceito_parcial: '~ Aceito parcial' };
@@ -1721,7 +1733,7 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
                   const [bg, color, border] = colors[opt];
                   const on = resultado === opt;
                   return (
-                    <button key={opt} onClick={() => setResultado(on ? '' : opt)}
+                    <button key={opt} onClick={() => escolherResultado(opt)}
                       style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${on ? border : '#d0d7de'}`, background: on ? bg : 'white', color: on ? color : '#656d76', fontWeight: on ? 700 : 500, fontSize: 12, cursor: 'pointer', textAlign: 'center' }}>
                       {labels[opt]}
                     </button>
@@ -1730,14 +1742,14 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
               </div>
             </div>
 
-            {resultado === 'rejeitado' && (
-              <label>Motivo da rejeição<textarea value={motivoRejeicao} onChange={(e) => setMotivoRejeicao(e.target.value)} placeholder="Descreva o motivo da rejeição…" style={{ minHeight: 60 }} /></label>
+            {motivoObrigatorio && (
+              <label>Motivo da {resultado === 'rejeitado' ? 'rejeição' : 'aceitação parcial'} (obrigatório)<textarea value={motivoRejeicao} onChange={(e) => setMotivoRejeicao(e.target.value)} placeholder="Descreva o que não conformou…" style={{ minHeight: 60 }} /></label>
             )}
             <label>Observações<textarea value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Observações adicionais…" style={{ minHeight: 54 }} /></label>
 
             <div className="actions-row">
               <button className={`primary-action${resultado ? ' attention' : ''}`} onClick={handleSubmit}
-                disabled={!fornecedor.trim() || !produto.trim() || !resultado || saving}>
+                disabled={!fornecedor.trim() || !produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim()) || saving}>
                 {saving ? 'Salvando…' : 'Registrar recebimento'}
               </button>
             </div>
@@ -1776,7 +1788,7 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
                       </div>
                       <span>{r.fornecedor}{r.nf ? ` · NF ${r.nf}` : ''}</span>
                       <span>{r.quantidade}{r.validade ? ` · Val. ${r.validade}` : ''}{r.temperatura ? ` · ${r.temperatura}°C` : ''}{r.conservacao ? ` · ${{resfriado:'Resfriado',congelado:'Congelado',ambiente:'Ambiente'}[r.conservacao] ?? r.conservacao}` : ''}</span>
-                      {r.motivoRejeicao && <span style={{ color: 'var(--red)', fontSize: 11 }}>Rejeição: {r.motivoRejeicao}</span>}
+                      {r.motivoRejeicao && <span style={{ color: 'var(--red)', fontSize: 11 }}>{r.resultado === 'aceito_parcial' ? 'Ressalva' : 'Rejeição'}: {r.motivoRejeicao}</span>}
                       <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{formatCompactDateTime(r.createdAt)} · {r.user}</span>
                     </div>
                   </div>

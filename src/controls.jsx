@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { pushSpecialControl } from './repository';
 import { resolveRecordTone } from './limits';
+import { autoVerdict, verdictConflicts, thawCompliant } from './verdict';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -364,6 +365,8 @@ export function ThawControlView({ activeTenant, allTenants, onTenantChange, sess
   const [tempStart, setTempStart] = useState('');
   const [tempEnd, setTempEnd]   = useState('');
   const [resultado, setResultado] = useState('');
+  const [resultadoTouched, setResultadoTouched] = useState(false);
+  const [justificativa, setJustificativa] = useState('');
   const [obs, setObs]           = useState('');
   const [saved, setSaved]       = useState(false);
 
@@ -377,12 +380,25 @@ export function ThawControlView({ activeTenant, allTenants, onTenantChange, sess
     { id:'cozimento',    label:'Direto no cozimento',        ok:'Temperatura de cozimento' },
   ];
 
+  const compliant = thawCompliant(method, tempEnd);
+  const conflita = verdictConflicts(compliant, resultado);
+
+  useEffect(() => {
+    const auto = autoVerdict(compliant);
+    if (auto && !resultadoTouched) setResultado(auto);
+  }, [compliant, resultadoTouched]);
+
+  const escolherResultado = (val) => {
+    setResultadoTouched(true);
+    setResultado((prev) => (prev === val ? '' : val));
+  };
+
   const handleSave = () => {
-    if (!product.trim() || !resultado) return;
-    const thawRecord = { id:uid(), tenantId:activeTenant.id, product:product.trim(), weight:weight.trim(), method, startAt, endAt, tempStart, tempEnd, resultado, obs:obs.trim(), user:session?.user?.name, createdAt:new Date().toISOString() };
+    if (!product.trim() || !resultado || (conflita && !justificativa.trim())) return;
+    const thawRecord = { id:uid(), tenantId:activeTenant.id, product:product.trim(), weight:weight.trim(), method, startAt, endAt, tempStart, tempEnd, resultado, justificativa: conflita ? justificativa.trim() : '', obs:obs.trim(), user:session?.user?.name, createdAt:new Date().toISOString() };
     setRecords(prev => [thawRecord, ...prev].slice(0,200));
     pushSpecialControl('thaw', activeTenant.id, thawRecord);
-    setProduct(''); setWeight(''); setMethod('refrigerador'); setStartAt(''); setEndAt(''); setTempStart(''); setTempEnd(''); setResultado(''); setObs('');
+    setProduct(''); setWeight(''); setMethod('refrigerador'); setStartAt(''); setEndAt(''); setTempStart(''); setTempEnd(''); setResultado(''); setResultadoTouched(false); setJustificativa(''); setObs('');
     setSaved(true); setTimeout(() => setSaved(false), 3000);
   };
 
@@ -419,19 +435,29 @@ export function ThawControlView({ activeTenant, allTenants, onTenantChange, sess
               <label>Temp. no início (°C)<input inputMode="decimal" value={tempStart} onChange={e=>setTempStart(e.target.value)} placeholder="°C" /></label>
               <label>Temp. no término (°C)<input inputMode="decimal" value={tempEnd} onChange={e=>setTempEnd(e.target.value)} placeholder="°C" /></label>
             </div>
+            {compliant !== null && (
+              <div className={`submission ${compliant?'ok':'danger'}`}>
+                {compliant ? `✓ ${tempEnd}°C — dentro do critério (${METHODS.find(m=>m.id===method)?.ok}).` : `✕ ${tempEnd}°C — fora do critério (${METHODS.find(m=>m.id===method)?.ok}).`}
+              </div>
+            )}
             <div>
-              <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em', color:'var(--text-secondary)', marginBottom:8 }}>Resultado</div>
+              <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em', color:'var(--text-secondary)', marginBottom:8 }}>Resultado{!resultadoTouched && compliant!==null ? ' (sugerido pelo cálculo)' : ''}</div>
               <div style={{ display:'flex', gap:8 }}>
                 {[['conforme','✓ Conforme'],['nao_conforme','✗ Não conforme'],['descartado','⊗ Descartado']].map(([val,lbl]) => {
                   const on = resultado===val;
                   const [bg,color,border] = val==='conforme'?['#dafbe1','#00a35c','#4ac26b']:val==='descartado'?['#ffebe9','#c0392b','#ff8182']:['#fdf8e3','#8a4e00','#e3aa14'];
-                  return <button key={val} onClick={() => setResultado(on?'':val)} style={{ flex:1, padding:'8px 6px', borderRadius:8, border:`1.5px solid ${on?border:'#c1ccd6'}`, background:on?bg:'white', color:on?color:'#5c6c7a', fontWeight:on?700:500, fontSize:12, cursor:'pointer', textAlign:'center' }}>{lbl}</button>;
+                  return <button key={val} onClick={() => escolherResultado(val)} style={{ flex:1, padding:'8px 6px', borderRadius:8, border:`1.5px solid ${on?border:'#c1ccd6'}`, background:on?bg:'white', color:on?color:'#5c6c7a', fontWeight:on?700:500, fontSize:12, cursor:'pointer', textAlign:'center' }}>{lbl}</button>;
                 })}
               </div>
             </div>
+            {conflita && (
+              <label>Justificativa (obrigatória — resultado contraria o cálculo automático)
+                <textarea value={justificativa} onChange={e=>setJustificativa(e.target.value)} style={{ minHeight:48 }} placeholder="Explique por que o resultado difere do critério do método" />
+              </label>
+            )}
             <label>Observações<textarea value={obs} onChange={e=>setObs(e.target.value)} style={{ minHeight:48 }} /></label>
             <div className="actions-row">
-              <button className={`primary-action${resultado?' attention':''}`} onClick={handleSave} disabled={!product.trim()||!resultado}>Registrar</button>
+              <button className={`primary-action${resultado?' attention':''}`} onClick={handleSave} disabled={!product.trim()||!resultado||(conflita&&!justificativa.trim())}>Registrar</button>
             </div>
             {saved && <div className="submission ok">✓ Registro salvo.</div>}
           </div>
@@ -476,6 +502,8 @@ export function CoolingControlView({ activeTenant, allTenants, onTenantChange, s
   const [temp2, setTemp2]       = useState('');
   const [method, setMethod]     = useState('banho_gelo');
   const [resultado, setResultado] = useState('');
+  const [resultadoTouched, setResultadoTouched] = useState(false);
+  const [justificativa, setJustificativa] = useState('');
   const [obs, setObs]           = useState('');
   const [saved, setSaved]       = useState(false);
 
@@ -489,13 +517,26 @@ export function CoolingControlView({ activeTenant, allTenants, onTenantChange, s
     return t1 <= 10 && t2 <= 4;
   };
   const compliant = checkCompliance();
+  const conflita = verdictConflicts(compliant, resultado);
+
+  // Resultado nasce pré-selecionado pelo cálculo; para de seguir assim que o
+  // usuário mexe no botão (resultadoTouched).
+  useEffect(() => {
+    const auto = autoVerdict(compliant);
+    if (auto && !resultadoTouched) setResultado(auto);
+  }, [compliant, resultadoTouched]);
+
+  const escolherResultado = (val) => {
+    setResultadoTouched(true);
+    setResultado((prev) => (prev === val ? '' : val));
+  };
 
   const handleSave = () => {
-    if (!product.trim() || !resultado) return;
-    const coolRecord = { id:uid(), tenantId:activeTenant.id, product:product.trim(), quantity:quantity.trim(), tempHot, time1, temp1, time2, temp2, method, resultado, obs:obs.trim(), user:session?.user?.name, createdAt:new Date().toISOString() };
+    if (!product.trim() || !resultado || (conflita && !justificativa.trim())) return;
+    const coolRecord = { id:uid(), tenantId:activeTenant.id, product:product.trim(), quantity:quantity.trim(), tempHot, time1, temp1, time2, temp2, method, resultado, justificativa: conflita ? justificativa.trim() : '', obs:obs.trim(), user:session?.user?.name, createdAt:new Date().toISOString() };
     setRecords(prev => [coolRecord, ...prev].slice(0,200));
     pushSpecialControl('cool', activeTenant.id, coolRecord);
-    setProduct(''); setQuantity(''); setTempHot(''); setTime1(''); setTemp1(''); setTime2(''); setTemp2(''); setMethod('banho_gelo'); setResultado(''); setObs('');
+    setProduct(''); setQuantity(''); setTempHot(''); setTime1(''); setTemp1(''); setTime2(''); setTemp2(''); setMethod('banho_gelo'); setResultado(''); setResultadoTouched(false); setJustificativa(''); setObs('');
     setSaved(true); setTimeout(() => setSaved(false), 3000);
   };
 
@@ -544,18 +585,23 @@ export function CoolingControlView({ activeTenant, allTenants, onTenantChange, s
               </div>
             )}
             <div>
-              <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em', color:'var(--text-secondary)', marginBottom:8 }}>Resultado final</div>
+              <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em', color:'var(--text-secondary)', marginBottom:8 }}>Resultado final{!resultadoTouched && compliant!==null ? ' (sugerido pelo cálculo)' : ''}</div>
               <div style={{ display:'flex', gap:8 }}>
                 {[['conforme','✓ Conforme'],['nao_conforme','✗ Não conforme'],['descartado','⊗ Descartado']].map(([val,lbl]) => {
                   const on = resultado===val;
                   const [bg,color,border] = val==='conforme'?['#dafbe1','#00a35c','#4ac26b']:val==='descartado'?['#ffebe9','#c0392b','#ff8182']:['#fdf8e3','#8a4e00','#e3aa14'];
-                  return <button key={val} onClick={() => setResultado(on?'':val)} style={{ flex:1, padding:'8px 6px', borderRadius:8, border:`1.5px solid ${on?border:'#c1ccd6'}`, background:on?bg:'white', color:on?color:'#5c6c7a', fontWeight:on?700:500, fontSize:12, cursor:'pointer', textAlign:'center' }}>{lbl}</button>;
+                  return <button key={val} onClick={() => escolherResultado(val)} style={{ flex:1, padding:'8px 6px', borderRadius:8, border:`1.5px solid ${on?border:'#c1ccd6'}`, background:on?bg:'white', color:on?color:'#5c6c7a', fontWeight:on?700:500, fontSize:12, cursor:'pointer', textAlign:'center' }}>{lbl}</button>;
                 })}
               </div>
             </div>
+            {conflita && (
+              <label>Justificativa (obrigatória — resultado contraria o cálculo automático)
+                <textarea value={justificativa} onChange={e=>setJustificativa(e.target.value)} style={{ minHeight:48 }} placeholder="Explique por que o resultado difere do critério da RDC 216" />
+              </label>
+            )}
             <label>Observações<textarea value={obs} onChange={e=>setObs(e.target.value)} style={{ minHeight:48 }} /></label>
             <div className="actions-row">
-              <button className={`primary-action${resultado?' attention':''}`} onClick={handleSave} disabled={!product.trim()||!resultado}>Registrar</button>
+              <button className={`primary-action${resultado?' attention':''}`} onClick={handleSave} disabled={!product.trim()||!resultado||(conflita&&!justificativa.trim())}>Registrar</button>
             </div>
             {saved && <div className="submission ok">✓ Registro salvo.</div>}
           </div>
@@ -600,6 +646,8 @@ export function ThermalControlView({ activeTenant, allTenants, onTenantChange, s
   const [timeReached, setTimeReached] = useState('');
   const [holdTime, setHoldTime] = useState('');
   const [resultado, setResultado] = useState('');
+  const [resultadoTouched, setResultadoTouched] = useState(false);
+  const [justificativa, setJustificativa] = useState('');
   const [obs, setObs]           = useState('');
   const [saved, setSaved]       = useState(false);
 
@@ -607,19 +655,30 @@ export function ThermalControlView({ activeTenant, allTenants, onTenantChange, s
   useEffect(() => { writeThermal(activeTenant.id, records); }, [activeTenant.id, records]);
 
   // RDC 216: centro geométrico ≥ 70°C ou combinação tempo/temp equivalente
-  const isCompliant = Number(tempReached) >= 70;
+  const isCompliant = tempReached ? Number(tempReached) >= 70 : null;
+  const conflita = verdictConflicts(isCompliant, resultado);
+
+  useEffect(() => {
+    const auto = autoVerdict(isCompliant);
+    if (auto && !resultadoTouched) setResultado(auto);
+  }, [isCompliant, resultadoTouched]);
+
+  const escolherResultado = (val) => {
+    setResultadoTouched(true);
+    setResultado((prev) => (prev === val ? '' : val));
+  };
 
   const handleSave = () => {
-    if (!product.trim() || !resultado) return;
+    if (!product.trim() || !resultado || (conflita && !justificativa.trim())) return;
     const thermalRecord = {
       id: uid(), tenantId: activeTenant.id, product: product.trim(), quantity: quantity.trim(),
       equipment: equipment.trim(), tempTarget, tempReached, timeReached, holdTime,
-      resultado, obs: obs.trim(), user: session?.user?.name, createdAt: new Date().toISOString()
+      resultado, justificativa: conflita ? justificativa.trim() : '', obs: obs.trim(), user: session?.user?.name, createdAt: new Date().toISOString()
     };
     setRecords(prev => [thermalRecord, ...prev].slice(0, 200));
     pushSpecialControl('thermal', activeTenant.id, thermalRecord);
     setProduct(''); setQuantity(''); setEquipment(''); setTempTarget('');
-    setTempReached(''); setTimeReached(''); setHoldTime(''); setResultado(''); setObs('');
+    setTempReached(''); setTimeReached(''); setHoldTime(''); setResultado(''); setResultadoTouched(false); setJustificativa(''); setObs('');
     setSaved(true); setTimeout(() => setSaved(false), 3000);
   };
 
@@ -676,18 +735,23 @@ export function ThermalControlView({ activeTenant, allTenants, onTenantChange, s
               </div>
             )}
             <div>
-              <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em', color:'var(--text-secondary)', marginBottom:8 }}>Resultado</div>
+              <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em', color:'var(--text-secondary)', marginBottom:8 }}>Resultado{!resultadoTouched && isCompliant!==null ? ' (sugerido pelo cálculo)' : ''}</div>
               <div style={{ display:'flex', gap:8 }}>
                 {[['conforme','✓ Conforme'],['nao_conforme','✗ Não conforme'],['descartado','⊗ Descartado']].map(([val,lbl]) => {
                   const on = resultado===val;
                   const [bg,color,border] = val==='conforme'?['#dafbe1','#00a35c','#4ac26b']:val==='descartado'?['#ffebe9','#c0392b','#ff8182']:['#fdf8e3','#8a4e00','#e3aa14'];
-                  return <button key={val} onClick={() => setResultado(on?'':val)} style={{ flex:1, padding:'8px 6px', borderRadius:8, border:`1.5px solid ${on?border:'#c1ccd6'}`, background:on?bg:'white', color:on?color:'#5c6c7a', fontWeight:on?700:500, fontSize:12, cursor:'pointer', textAlign:'center' }}>{lbl}</button>;
+                  return <button key={val} onClick={() => escolherResultado(val)} style={{ flex:1, padding:'8px 6px', borderRadius:8, border:`1.5px solid ${on?border:'#c1ccd6'}`, background:on?bg:'white', color:on?color:'#5c6c7a', fontWeight:on?700:500, fontSize:12, cursor:'pointer', textAlign:'center' }}>{lbl}</button>;
                 })}
               </div>
             </div>
+            {conflita && (
+              <label>Justificativa (obrigatória — resultado contraria o cálculo automático)
+                <textarea value={justificativa} onChange={e=>setJustificativa(e.target.value)} style={{ minHeight:48 }} placeholder="Explique por que o resultado difere do critério de 70°C" />
+              </label>
+            )}
             <label>Observações<textarea value={obs} onChange={e=>setObs(e.target.value)} style={{ minHeight:48 }} /></label>
             <div className="actions-row">
-              <button className={`primary-action${resultado?' attention':''}`} onClick={handleSave} disabled={!product.trim()||!resultado}>Registrar</button>
+              <button className={`primary-action${resultado?' attention':''}`} onClick={handleSave} disabled={!product.trim()||!resultado||(conflita&&!justificativa.trim())}>Registrar</button>
             </div>
             {saved && <div className="submission ok">✓ Registro salvo.</div>}
           </div>

@@ -883,6 +883,22 @@ export async function pushProduct(tenantId, product) {
   } catch (e) { logFailAndEnqueue('products', 'upsert', productToRow({ ...product, tenantId }), e); }
 }
 
+// Busca 1 produto na nuvem por id — usado pelo leitor de etiqueta (QR) quando
+// o produto não está no cache local do device (loja ainda não sincronizada
+// aqui, ou o usuário tem acesso a mais de uma loja). O RLS já protege sozinho:
+// se o JWT de quem está lendo não cobre esse tenant, a resposta vem vazia —
+// não dá pra usar isto pra "ver se existe" um produto de loja alheia.
+export async function fetchProductById(tenantId, productId) {
+  if (!isSupabaseEnabled() || !navigator.onLine) return null;
+  try {
+    const rows = await sbFetch('products', { filter: `tenant_id=eq.${tenantId}&id=eq.${productId}&limit=1` }, tenantId);
+    return rows?.[0] ? productFromRow(rows[0]) : null;
+  } catch (e) {
+    console.warn('[repo] fetchProductById failed:', e.message);
+    return null;
+  }
+}
+
 function stockToRow(l, tenantId) {
   return {
     id: l.id, tenant_id: tenantId, product_id: l.productId,

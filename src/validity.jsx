@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { pushProduct, pushStockLog, pushValidityRules, syncValidityRules } from './repository';
 import {
   readOpenRules, resolveOpenRule, computeOpenedUntil,
-  fmtRule, fmtDateTime, DEFAULT_OPEN_RULES,
+  fmtRule, fmtDate, fmtDateTime, DEFAULT_OPEN_RULES, buildLabelTrace,
 } from './validity-rules';
+import { LabelScannerModal } from './label-scanner';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -17,7 +18,6 @@ export const readStockLogs   = (id) => sl(sk('stocklogs', id), []);
 export const writeStockLogs  = (id, v) => ss(sk('stocklogs', id), v.slice(0, 500));
 
 function uid() { return crypto.randomUUID(); }
-function fmtDate(iso) { try { return new Date(iso + 'T12:00').toLocaleDateString('pt-BR'); } catch { return iso; } }
 // Dias corridos entre HOJE e a data — meia-noite com meia-noite. O ceil da
 // versão antiga comparava 12:00 com 00:00 e somava 1 dia em tudo (produto
 // vencendo hoje dizia "Vence amanhã"; regra de 30 dias virava badge de 31).
@@ -134,6 +134,7 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
   const [logs, setLogs]         = useState(() => readStockLogs(activeTenant.id));
   const [tab, setTab]           = useState('dashboard'); // dashboard | products | add | stock | rules
   const [rules, setRules]       = useState(() => readOpenRules(activeTenant.id));
+  const [scanning, setScanning] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [catFilter, setCatFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -222,7 +223,7 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
     let qrDataUrl = null;
     try {
       const QR = (await import('qrcode')).default;
-      const trace = `nutriops:${activeTenant.id}:${product.id}:${product.openedAt ?? ''}`;
+      const trace = buildLabelTrace(activeTenant.id, product.id, product.openedAt);
       qrDataUrl = await QR.toDataURL(trace, { width: 120, margin: 0, errorCorrectionLevel: 'M' });
     } catch { /* etiqueta sai sem QR */ }
     let profile = {};
@@ -624,9 +625,17 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
           <select value={activeTenant.id} onChange={e=>onTenantChange(e.target.value)} style={{ width:'auto' }}>
             {allTenants.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
+          <button className="ghost-action" onClick={() => setScanning(true)}>📷 Escanear etiqueta</button>
           <button className="primary-action" onClick={() => { resetForm(); setTab('add'); }}>+ Produto</button>
         </div>
       </div>
+
+      {scanning && (
+        <LabelScannerModal
+          activeTenant={activeTenant} activeTenantProducts={products} allTenants={allTenants}
+          onClose={() => setScanning(false)}
+        />
+      )}
 
       {/* Tabs — mesmo visual do HubTabs do design system */}
       <div style={{

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   DEFAULT_OPEN_RULES, readOpenRules, writeOpenRules, readRulesUpdatedAt,
-  resolveOpenRule, computeOpenedUntil, fmtRule,
+  resolveOpenRule, computeOpenedUntil, fmtRule, buildLabelTrace, parseLabelTrace,
 } from './validity-rules';
 import { generateLabel, daysUntil } from './validity';
 
@@ -89,6 +89,45 @@ describe('daysUntil (off-by-one corrigido)', () => {
     expect(daysUntil(iso(amanha))).toBe(1);
     expect(daysUntil(iso(ontem))).toBe(-1);
     expect(daysUntil(null)).toBeNull();
+  });
+});
+
+describe('buildLabelTrace / parseLabelTrace (o texto dentro do QR)', () => {
+  // Bug real pego ao construir o leitor: openedAt é ISO e TEM ':' dentro
+  // ("...T13:26:42.029Z"). Um split(':') ingênuo cortaria o carimbo de hora.
+  it('round-trip com openedAt (o caso que quebraria um split ingênuo)', () => {
+    const trace = buildLabelTrace('swiss', 'a1b2c3', '2026-08-09T13:26:42.029Z');
+    expect(trace).toBe('nutriops:swiss:a1b2c3:2026-08-09T13:26:42.029Z');
+    expect(parseLabelTrace(trace)).toEqual({
+      tenantId: 'swiss', productId: 'a1b2c3', openedAt: '2026-08-09T13:26:42.029Z',
+    });
+  });
+
+  it('produto ainda não aberto: openedAt vira null, não string vazia', () => {
+    const trace = buildLabelTrace('swiss', 'a1b2c3', null);
+    expect(trace).toBe('nutriops:swiss:a1b2c3:');
+    expect(parseLabelTrace(trace)).toEqual({ tenantId: 'swiss', productId: 'a1b2c3', openedAt: null });
+  });
+
+  it('tenantId de cloud tenant (UUID) também sobrevive ao round-trip', () => {
+    const trace = buildLabelTrace('bf245c3b-2f9a-4e11-8b3c-1234567890ab', 'prod-1', '2026-01-01T00:00:00.000Z');
+    expect(parseLabelTrace(trace).tenantId).toBe('bf245c3b-2f9a-4e11-8b3c-1234567890ab');
+  });
+
+  it('texto que não é do NutriOPS → null (não quebra, não finge sucesso)', () => {
+    expect(parseLabelTrace('https://suflex.com.br/etiqueta/123')).toBeNull();
+    expect(parseLabelTrace('qualquer coisa')).toBeNull();
+    expect(parseLabelTrace('')).toBeNull();
+  });
+
+  it('entrada não-string não quebra', () => {
+    expect(parseLabelTrace(null)).toBeNull();
+    expect(parseLabelTrace(undefined)).toBeNull();
+    expect(parseLabelTrace(42)).toBeNull();
+  });
+
+  it('espaço em volta (câmera às vezes captura com \\n) é tolerado', () => {
+    expect(parseLabelTrace('  nutriops:swiss:p1:  \n')).toEqual({ tenantId: 'swiss', productId: 'p1', openedAt: null });
   });
 });
 

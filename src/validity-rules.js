@@ -86,10 +86,36 @@ export function fmtRule(rule) {
   return rule.unit === 'h' ? `${rule.amount} h` : `${rule.amount} dia${rule.amount === 1 ? '' : 's'}`;
 }
 
+export function fmtDate(iso) {
+  try { return new Date(iso + 'T12:00').toLocaleDateString('pt-BR'); } catch { return iso; }
+}
+
 export function fmtDateTime(iso) {
   try {
     return new Date(iso).toLocaleString('pt-BR', {
       day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit',
     });
   } catch { return iso ?? '—'; }
+}
+
+// ─── Texto do QR da etiqueta ────────────────────────────────────────────────
+// Não é link — é um identificador interno que só o leitor dentro do próprio
+// NutriOPS (com o usuário já logado) sabe interpretar. Câmera comum de
+// celular não vai "abrir" nada ao apontar pra ele, de propósito: os dados do
+// produto (fornecedor, quem abriu) não ficam expostos pra quem só tem a
+// câmera, só pra quem tem sessão válida na loja.
+//
+// build/parse ficam lado a lado pra nunca dessincronizar. `openedAt` é ISO
+// (contém ':'), então o parser usa regex com captura gulosa no último campo
+// em vez de `split(':')` — dividir ingenuamente cortaria o carimbo de hora.
+export function buildLabelTrace(tenantId, productId, openedAt) {
+  return `nutriops:${tenantId}:${productId}:${openedAt ?? ''}`;
+}
+
+export function parseLabelTrace(text) {
+  if (typeof text !== 'string') return null;
+  const m = /^nutriops:([^:]+):([^:]+):(.*)$/.exec(text.trim());
+  if (!m) return null;
+  const [, tenantId, productId, openedAtRaw] = m;
+  return { tenantId, productId, openedAt: openedAtRaw || null };
 }

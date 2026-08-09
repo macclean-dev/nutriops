@@ -77,7 +77,7 @@ obrigatório no 1º login.
 | `VITE_ADMIN_PASSWORD` | Senha do `/admin` **só em DEV**. Em PROD o `/admin` usa Supabase Auth (v1.9.37+). | `nutriops@admin2026` (fallback dev) |
 | `VITE_SB_URL` | URL do projeto Supabase compartilhado pelos tenants seed | vazio (modo local por device) |
 | `VITE_SB_ANON_KEY` | Anon key pública desse projeto | vazio (modo local por device) |
-| `VITE_DEVICE_PASSWORD` | Senha das contas device (`device-{tenantId}@nutriops.internal`) que assinam o sync. Aceita override por loja: `VITE_DEVICE_PASSWORD_{TENANT}`. | — |
+| ~~`VITE_DEVICE_PASSWORD`~~ | **Aposentada em 09/08.** O sync agora é assinado pelo JWT da sessão (conta de loja ou admin). Pode sair da Vercel. | — |
 
 Com `VITE_SB_URL` + `VITE_SB_ANON_KEY` no build, os 3 tenants seed ganham
 `tenant.supabase` automaticamente e `handleLogin` (`pages.jsx`) propaga pro
@@ -253,7 +253,7 @@ pré-criado).
 
 | Prioridade | Item |
 |------------|------|
-| 🔴 Alta (segurança) | **Senha dos device-tokens é pública no bundle — dá pra ler os dados de uma loja.** `VITE_DEVICE_PASSWORD` fica inlinada no JS público (o prefixo `VITE_` vira literal no build) junto com o padrão `device-{tenantId}@nutriops.internal` (`device-auth.js:31,39`). Quem baixa o bundle loga como o device de qualquer loja e recebe um JWT com `app_metadata.tenant_id` — o carimbo em que o RLS confia. Isolamento ENTRE tenants segue de pé (cross-tenant = 403), mas a confidencialidade de UMA loja não. ⚠️ A auditoria de 19/07 usou a **anon key**, não um device-token — validamos a fechadura sem testar a cópia da chave. **Paliativo:** senha distinta por loja via `VITE_DEVICE_PASSWORD_{TENANT}` (já suportado) — só evita que vazar uma entregue as outras. **Solução real ("Design 1"):** device prova posse do `access_token` da loja numa RPC que devolve JWT de curta duração. Rotação: `docs/RUNBOOK.md`. |
+| 🟡 Média (segurança) | **Device-token removido do código (09/08) — falta desativar as contas no Supabase.** O furo era a senha `VITE_DEVICE_PASSWORD` inlinada no bundle público junto com `device-{tenantId}@nutriops.internal`: quem baixasse o JS logava como o device de qualquer loja. Resolvido junto com a aposentadoria do PIN — toda sessão agora é Supabase Auth, e o RLS libera por `is_member` (loja) ou `is_admin_plataforma` (dono). `device-auth.js` apagado, bundle verificado sem o padrão, guarda em `src/sem-device-token.test.js`. **Ainda aberto:** as contas `device-*@nutriops.internal` continuam ATIVAS no Supabase — enquanto existirem, quem já copiou a senha continua entrando. Desativar/apagar em Authentication → Users e remover a env da Vercel. Vale olhar o `get_access_log` por acessos dessas contas vindos de IP desconhecido. |
 | 🟡 Média (custo) | **Vercel migrou de Hobby pra Pro** (resolve o antigo bloqueio de deploy — confirmado 04/08, push liberou sem erro). Ciclo atual (9/jul–9/ago): US$34,87 total, US$20,00 de crédito incluso já consumido, ~US$14,87 pago sob demanda. Maior item: **Fast Origin Transfer, US$22,02** — **confirmado 04/08: é tráfego do Nexum** (função serverless/SSR, não do NutriOPS — que é SPA estática sem rota de API no Vercel). Próximo passo, se quiser cortar esse custo: mover a Nexum pro Cloudflare Pages. |
 | 🔴 Alta | **Conectar a DBK Produção** — única loja ainda zerada na nuvem. Auto-connect + auto-backfill resolvem no próximo boot online do device dela. |
 | 🟡 Média | **Bäckerei** — no ar (18 registros), último de 04/06. Verificar no device (receita em `docs/RUNBOOK.md`). |

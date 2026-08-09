@@ -11,10 +11,6 @@ const SYNC_STATUS_KEY = 'nutriops.sync.status';
 export const ls = (k, fb) => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : fb; } catch { return fb; } };
 export const lw = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
-// Device-auth (Fase 2 do épico RLS) — JWT escopado por tenant, usado no lugar
-// da anon key crua quando disponível. Ver ./device-auth.js.
-import { getDeviceAccessToken, invalidateDeviceToken } from './device-auth';
-
 // ─── Supabase config ───────────────────────────────────────────────────────
 
 export function getSupabaseConfig()         { return ls(SUPABASE_KEY, { url:'', anonKey:'', enabled:false }); }
@@ -42,16 +38,22 @@ export function shouldAutoConfigSupabase(existing, tenantSupabase) {
   return { apply: false, reason: 'já configurado' };
 }
 
-// Modelo E-MAIL (Fase 3): se o usuário logado é MEMBRO deste tenant, o JWT dele
-// é o que o RLS libera (via is_member) — sem device-token nem senha pública.
-// Lê a sessão do app (nutriops.session); só devolve token se ela cobre o tenant.
-// PIN (seed) não tem sessão Supabase → getValidAccessToken null → cai no device.
+// JWT do usuário logado, quando ele tem direito a ESTE tenant. É o que o RLS
+// libera — via is_member pro membro, via is_admin_plataforma pro dono.
+//
+// Antes existia um 2º caminho aqui: o device-token, criado porque o login por
+// PIN não gerava sessão Supabase. Com o PIN aposentado (v1.9.97) toda sessão é
+// Supabase, então este é o único caminho — e some a senha pública do bundle.
 async function memberTokenFor(tenantId) {
   if (!tenantId) return null;
   try {
     const s = ls('nutriops.session', null);
     if (!s) return null;
-    const cobre = s.tenantId === tenantId
+    // Admin da plataforma alcança qualquer loja. Vem de isPlatformAdmin, que
+    // buildSession preenche a partir do app_metadata.role — nunca do
+    // user_metadata, que o próprio usuário edita via updateUser.
+    const cobre = s.isPlatformAdmin === true
+      || s.tenantId === tenantId
       || (Array.isArray(s.memberTenants) && s.memberTenants.some(m => m.id === tenantId));
     if (!cobre) return null;
     const { getValidAccessToken } = await import('./auth');
@@ -60,19 +62,14 @@ async function memberTokenFor(tenantId) {
 }
 
 // Ordem de credencial pra REST sob RLS:
-//   1. JWT do membro logado (modelo e-mail — CASA DOCE)
-//   2. device-token do tenant (modelo PIN/seed — Swiss/Bäckerei/DBK)
-//   3. anon key (fallback; sob RLS só alcança __healthcheck__)
+//   1. JWT do usuário logado (membro da loja ou admin da plataforma)
+//   2. anon key (sob RLS só alcança __healthcheck__)
 async function sbHeaders(tenantId) {
   const { anonKey } = getSupabaseConfig();
   let token = anonKey;
   if (tenantId) {
-    const memberJwt = await memberTokenFor(tenantId);
-    if (memberJwt) token = memberJwt;
-    else {
-      const deviceToken = await getDeviceAccessToken(tenantId);
-      if (deviceToken) token = deviceToken;
-    }
+    const jwt = await memberTokenFor(tenantId);
+    if (jwt) token = jwt;
   }
   return { apikey: anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 }
@@ -105,13 +102,10 @@ async function sbFetch(table, params = {}, tenantId = null) {
   const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
   if (!res.ok) {
     // 401/403 = anon key inválida ou RLS bloqueando. Marca pra UI mostrar banner.
-    if (res.status === 401 || res.status === 403) {
-      markSupabaseAuthError(res.status, table);
-      // Se havia tenant, o JWT do device pode ter sido rejeitado (revogado/
-      // rotacionado) — invalida o cache pra forçar novo login no próximo request,
-      // em vez de repetir o mesmo token ruim até ele expirar (~1h).
-      if (tenantId) invalidateDeviceToken(tenantId);
-    }
+    // Não há mais cache de token pra invalidar aqui: o JWT vem da sessão do
+    // usuário, e refreshSession já cuida de renovar/limpar quando o servidor
+    // rejeita (ver src/auth.jsx).
+    if (res.status === 401 || res.status === 403) markSupabaseAuthError(res.status, table);
     // Lê body pra incluir a mensagem do Postgres (invalid uuid, NOT NULL,
     // schema mismatch, etc) — crítico pra debug. Sem isso, status code
     // sozinho não diz qual coluna ou constraint falhou.
@@ -742,7 +736,7 @@ export async function uploadFormPhoto(tenantId, blob, meta) {
     body: blob,
   });
   if (!res.ok) {
-    if (res.status === 401 || res.status === 403) { markSupabaseAuthError(res.status, 'storage'); invalidateDeviceToken(tenantId); }
+    if (res.status === 401 || res.status === 403) markSupabaseAuthError(res.status, 'storage');
     let msg = ''; try { msg = await res.text(); } catch {}
     throw new Error(`Falha ao enviar a foto (${res.status})${msg ? ' — ' + msg.slice(0, 120) : ''}`);
   }

@@ -2670,7 +2670,7 @@ export function App() {
 
   if (!session) return (
     <Suspense fallback={<ViewLoading />}>
-      <LoginScreen onLogin={handleLogin} activeTenants={activeTenants} />
+      <LoginScreen onLogin={handleLogin} />
     </Suspense>
   );
 

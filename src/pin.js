@@ -1,6 +1,7 @@
 // PIN overrides — cada user troca o PIN no 1º login, override mora em
 // localStorage e tem precedência sobre o pin de data.js.
 
+
 const pinOverrideKey = (tenantId) => `nutriops.pin.overrides.${tenantId}`;
 
 function readOverrides(tenantId) {

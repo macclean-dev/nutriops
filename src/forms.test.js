@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { completionPct, generateFormPDF, readFormTemplates, templateSector } from './forms';
+import { completionPct, generateFormPDF, readFormTemplates, templateSector, quickSign } from './forms';
 
 // Template no formato do CASA DOCE Banheiros, exercitando os tipos novos.
 const TPL = {
@@ -15,6 +15,24 @@ const TPL = {
     ]},
   ],
 };
+
+describe('quickSign — assinatura de 1 toque (revisão de produto 09/08)', () => {
+  it('carimba hoje (formato local YYYY-MM-DD) e o nome de quem está registrando', () => {
+    const r = quickSign('Fran');
+    const hoje = new Date();
+    const esperado = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}-${String(hoje.getDate()).padStart(2,'0')}`;
+    expect(r).toEqual({ date: esperado, sig: 'Fran' });
+  });
+
+  it('sem nome disponível, não quebra — sig fica vazio (a UI decide o que fazer)', () => {
+    expect(quickSign(undefined).sig).toBe('');
+    expect(quickSign(null).sig).toBe('');
+  });
+
+  it('remove espaço em volta do nome', () => {
+    expect(quickSign('  Ana Paula  ').sig).toBe('Ana Paula');
+  });
+});
 
 describe('completionPct — tipos date e checkbox (Fase B)', () => {
   it('vazio = 0%', () => {

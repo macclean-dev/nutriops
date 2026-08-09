@@ -155,6 +155,7 @@ import { findUserByName } from './user-match';
 // Operador atual — atribuição por pessoa dentro da sessão compartilhada da loja
 import { needsOperator, applyOperatorToSession, isStoreAccountSession, readOperator } from './operator';
 import { OperatorPicker, OperatorChip } from './operator-picker';
+import { readKioskConfig, writeKioskConfig, resolveInitialKioskConfig } from './kiosk-config';
 
 // ─── Equipment utils ───────────────────────────────────────────────────────
 
@@ -2501,8 +2502,13 @@ export function App() {
   const actionCount = useMemo(() => readActions(activeTenant.id).filter((a) => a.status !== 'resolvida').length, [records, activeTenant.id]);
   const { permission: notifPermission, request: requestNotif, notify: browserNotify } = useBrowserNotifications(turns, activeTenant.id);
 
-  // Kiosk mode
-  const [kioskConfig, setKioskConfig]   = useState(null);
+  // Kiosk mode — restaura sozinho se o tablet recarregar (reload acidental,
+  // atualização do service worker) enquanto estava em modo quiosque. Antes
+  // `readKioskConfig` existia e nunca era chamada: qualquer reload devolvia o
+  // tablet pro app normal, perdendo a seleção de equipamentos configurada.
+  // Só restaura se o tenant bater — um config órfão de outra loja (ex.: a
+  // conta trocou de empresa) não deve reabrir o quiosque errado.
+  const [kioskConfig, setKioskConfig]   = useState(() => resolveInitialKioskConfig(readKioskConfig(), activeTenant.id));
   const [showKioskSetup, setShowKioskSetup] = useState(false);
   // Global search
   const [showSearch, setShowSearch]     = useState(false);
@@ -2691,7 +2697,7 @@ export function App() {
   // Kiosk mode — full screen override
   if (kioskConfig) return (
     <Suspense fallback={<ViewLoading />}>
-      <KioskApp config={kioskConfig} onExit={() => setKioskConfig(null)} />
+      <KioskApp config={kioskConfig} onExit={() => { writeKioskConfig(null); setKioskConfig(null); }} />
     </Suspense>
   );
 

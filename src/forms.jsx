@@ -257,6 +257,14 @@ export function catMeta(cat) { return CAT[cat] ?? CAT.custom; }
 
 // ─── Completion helpers ────────────────────────────────────────────────────
 
+// Carimbo de 1 toque do date_sig — hoje + quem está registrando. O sistema já
+// sabe as duas coisas (é o mesmo texto que `record.user`/`createdAt` já
+// carimbam sozinhos); antes disso o colaborador digitava as duas de novo, à
+// mão, uma vez por tarefa — 14 a 30 vezes numa planilha de higienização.
+export function quickSign(currentName) {
+  return { date: getPeriodKey('daily'), sig: (currentName ?? '').trim() };
+}
+
 export function completionPct(template, record) {
   if (!record) return 0;
   let total=0, filled=0;
@@ -1076,13 +1084,42 @@ function PresenceField({ value={}, onChange }) {
   );
 }
 
-function DateSigField({ value={}, onChange }) {
+// 1 toque carimba hoje + quem está registrando (quickSign) — o caso comum.
+// "Editar" abre os campos crus pra exceção real: tarefa feita por outra
+// pessoa, ou em outro dia (preenchimento retroativo).
+function DateSigField({ value={}, onChange, currentName }) {
+  const [editing, setEditing] = useState(false);
+  const done = Boolean(value?.date || value?.sig);
+
+  if (done && !editing) {
+    return (
+      <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+        <span style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'4px 10px', borderRadius:20, background:'#dafbe1', border:'1px solid #4ac26b', color:'#00a35c', fontSize:12, fontWeight:700 }}>
+          ✓ {value.date ? value.date.split('-').reverse().join('/') : '—'} · {value.sig || '—'}
+        </span>
+        <button type="button" onClick={() => setEditing(true)} className="ghost-action" style={{ fontSize:11, padding:'2px 8px' }}>Editar</button>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-      <input type="date" value={value?.date??''} onChange={(e) => onChange({ ...value, date:e.target.value })}
-        style={{ padding:'5px 8px', borderRadius:6, border:'1px solid #c1ccd6', fontSize:12, fontFamily:'inherit' }} />
-      <input value={value?.sig??''} onChange={(e) => onChange({ ...value, sig:e.target.value })}
-        placeholder="Responsável" style={{ flex:1, minWidth:120, padding:'5px 8px', borderRadius:6, border:'1px solid #c1ccd6', fontSize:12, fontFamily:'inherit' }} />
+    <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+      <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+        <button type="button" onClick={() => { onChange(quickSign(currentName)); setEditing(false); }}
+          style={{ padding:'6px 14px', borderRadius:8, border:'1.5px solid #4ac26b', background:'#dafbe1', color:'#00a35c', fontWeight:700, fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>
+          ✓ Feito agora{currentName ? ` — ${currentName}` : ''}
+        </button>
+        {!editing && <button type="button" onClick={() => setEditing(true)} className="ghost-action" style={{ fontSize:11 }}>Outra pessoa / outro dia</button>}
+        {editing && <button type="button" onClick={() => setEditing(false)} className="ghost-action" style={{ fontSize:11 }}>Fechar</button>}
+      </div>
+      {editing && (
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+          <input type="date" value={value?.date??''} onChange={(e) => onChange({ ...value, date:e.target.value })}
+            style={{ padding:'5px 8px', borderRadius:6, border:'1px solid #c1ccd6', fontSize:12, fontFamily:'inherit' }} />
+          <input value={value?.sig??''} onChange={(e) => onChange({ ...value, sig:e.target.value })}
+            placeholder="Responsável" style={{ flex:1, minWidth:120, padding:'5px 8px', borderRadius:6, border:'1px solid #c1ccd6', fontSize:12, fontFamily:'inherit' }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -1097,6 +1134,13 @@ function FormFill({ template, record, onSave, onBack, session, tenant }) {
   const setField = (id, val) => setResponses((prev) => ({ ...prev, [id]:val }));
 
   const handleSave = async (status) => {
+    // Antes dava pra "Confirmar preenchimento" com 7% e o card virava
+    // Concluído verde na grade — o pct exige só >0, não 100. Rascunho não
+    // pede confirmação: é exatamente pra deixar pela metade mesmo.
+    if (status === 'submitted' && pct < 100) {
+      const proceed = window.confirm(`A planilha está ${pct}% preenchida. Confirmar mesmo assim?`);
+      if (!proceed) return;
+    }
     setSaving(true);
     await onSave({ responses, status });
     setSaving(false);
@@ -1143,7 +1187,7 @@ function FormFill({ template, record, onSave, onBack, session, tenant }) {
                 <div>
                   {field.type==='cnc'      && <CNCButton value={responses[field.id]??''} onChange={(v) => setField(field.id,v)} />}
                   {field.type==='presence' && <PresenceField value={responses[field.id]} onChange={(v) => setField(field.id,v)} />}
-                  {field.type==='date_sig' && <DateSigField value={responses[field.id]} onChange={(v) => setField(field.id,v)} />}
+                  {field.type==='date_sig' && <DateSigField value={responses[field.id]} onChange={(v) => setField(field.id,v)} currentName={session?.user?.name} />}
                   {field.type==='date'     && <input type="date" value={responses[field.id]??''} onChange={(e) => setField(field.id,e.target.value)} style={{ padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', fontSize:13, fontFamily:'inherit' }} />}
                   {field.type==='number'   && <input type="number" inputMode="decimal" value={responses[field.id]??''} onChange={(e) => setField(field.id,e.target.value)} placeholder="0" style={{ width:120, padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', fontSize:13, fontFamily:'inherit', fontVariantNumeric:'tabular-nums' }} />}
                   {field.type==='checkbox' && <label style={{ display:'inline-flex', alignItems:'center', gap:8, fontSize:13, cursor:'pointer' }}><input type="checkbox" checked={responses[field.id]===true} onChange={(e) => setField(field.id,e.target.checked)} style={{ width:18, height:18, accentColor:'var(--primary)' }} /> Marcar</label>}
@@ -1372,14 +1416,20 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
         tenantName={activeTenant.name}
         userName={session?.user?.name ?? '—'}
         userRole={session?.user?.role ?? ''}
+        // `record` era lido aqui e nunca usado: o modo tablet sempre abria em
+        // branco, e como o save faz upsert por (formId, periodKey) trocando
+        // `responses` inteiro, abrir "📱 Tablet" numa planilha que já tinha
+        // rascunho/preenchimento e confirmar APAGAVA o que existia — perda de
+        // dado silenciosa numa folha semanal preenchida por várias pessoas.
+        initialResponses={record?.responses}
         onExit={() => setKioskForm(null)}
-        onSave={async (responses) => {
+        onSave={async (responses, status = 'submitted') => {
           const existing = records.find(r => r.formId === template.id && r.periodKey === periodKey);
           const updated = {
             id: existing?.id ?? crypto.randomUUID(),
             tenantId: activeTenant.id, formId: template.id, formTitle: template.title,
             category: template.category, frequency: template.frequency, periodKey,
-            responses, status: 'submitted',
+            responses, status,
             user: session?.user?.name ?? '—', role: session?.user?.role ?? '',
             createdAt: existing?.createdAt ?? new Date().toISOString(),
             updatedAt: new Date().toISOString(),

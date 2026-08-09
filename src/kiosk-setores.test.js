@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ordenarPorSetor, agruparPorSetor } from './kiosk';
+import { ordenarPorSetor, agruparPorSetor, seedSavedValuesFromToday, firstPendingIndexIfUntouched } from './kiosk';
 
 // Pedido do cliente (07/08): com 44 equipamentos numa grade única, o
 // colaborador da Padaria caçava os dele no meio dos da Gelateria. Cada um
@@ -63,5 +63,75 @@ describe('captura de temperatura agrupada por setor', () => {
   it('location só com espaços conta como sem setor', () => {
     const grupos = agruparPorSetor(ordenarPorSetor([{ label:'A', location:'   ' }]));
     expect(grupos[0].setor).toBe('Sem setor');
+  });
+});
+
+// Achado da revisão de produto (09/08): equipamento medido de manhã por
+// outra pessoa/sessão aparecia como pendente à tarde no mesmo tablet,
+// convidando duplicata. seedSavedValuesFromToday resolve isso lendo o que já
+// foi registrado hoje antes de mostrar a grade.
+describe('seedSavedValuesFromToday', () => {
+  const HOJE_10H = new Date(); HOJE_10H.setHours(10, 0, 0, 0);
+  const nowMs = HOJE_10H.getTime();
+
+  it('marca como feito o que já foi registrado hoje', () => {
+    const recs = [{ equipment: 'Freezer', value: -18, createdAt: new Date(nowMs - 3600000).toISOString() }];
+    expect(seedSavedValuesFromToday(recs, nowMs)).toEqual({ Freezer: -18 });
+  });
+
+  it('ignora leitura de ONTEM — equipamento continua pendente hoje', () => {
+    const ontem = new Date(nowMs); ontem.setDate(ontem.getDate() - 1); ontem.setHours(23, 0, 0, 0);
+    const recs = [{ equipment: 'Freezer', value: -18, createdAt: ontem.toISOString() }];
+    expect(seedSavedValuesFromToday(recs, nowMs)).toEqual({});
+  });
+
+  it('duas leituras hoje do mesmo equipamento: fica a mais recente', () => {
+    const recs = [
+      { equipment: 'Freezer', value: -18, createdAt: new Date(nowMs - 3 * 3600000).toISOString() },
+      { equipment: 'Freezer', value: -20, createdAt: new Date(nowMs - 1 * 3600000).toISOString() },
+    ];
+    expect(seedSavedValuesFromToday(recs, nowMs)).toEqual({ Freezer: -20 });
+  });
+
+  it('ordem de chegada não importa (a mais recente por timestamp vence, não a última do array)', () => {
+    const recs = [
+      { equipment: 'Freezer', value: -20, createdAt: new Date(nowMs - 1 * 3600000).toISOString() },
+      { equipment: 'Freezer', value: -18, createdAt: new Date(nowMs - 3 * 3600000).toISOString() },
+    ];
+    expect(seedSavedValuesFromToday(recs, nowMs)).toEqual({ Freezer: -20 });
+  });
+
+  it('sem registros: objeto vazio, sem quebrar', () => {
+    expect(seedSavedValuesFromToday([], nowMs)).toEqual({});
+    expect(seedSavedValuesFromToday(undefined, nowMs)).toEqual({});
+  });
+
+  it('createdAt inválido é ignorado em vez de quebrar', () => {
+    const recs = [{ equipment: 'Freezer', value: -18, createdAt: 'lixo' }];
+    expect(seedSavedValuesFromToday(recs, nowMs)).toEqual({});
+  });
+});
+
+describe('firstPendingIndexIfUntouched', () => {
+  const catalog = [{ label: 'A' }, { label: 'B' }, { label: 'C' }];
+
+  it('card 0 já feito e ninguém navegou: pula pro primeiro pendente', () => {
+    expect(firstPendingIndexIfUntouched(catalog, { A: -18 }, 0)).toBe(1);
+  });
+
+  it('card 0 ainda pendente: fica no 0', () => {
+    expect(firstPendingIndexIfUntouched(catalog, {}, 0)).toBe(0);
+  });
+
+  it('usuário já navegou pra outro card: não interfere', () => {
+    expect(firstPendingIndexIfUntouched(catalog, { A: -18 }, 2)).toBe(2);
+  });
+
+  it('tudo já feito: mantém o índice atual (a tela de "tudo concluído" assume)', () => {
+    expect(firstPendingIndexIfUntouched(catalog, { A: -18, B: -18, C: -18 }, 0)).toBe(0);
+  });
+
+  it('catálogo vazio não quebra', () => {
+    expect(firstPendingIndexIfUntouched([], {}, 0)).toBe(0);
   });
 });

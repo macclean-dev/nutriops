@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
-  DEFAULT_OPEN_RULES, readOpenRules, writeOpenRules,
+  DEFAULT_OPEN_RULES, readOpenRules, writeOpenRules, readRulesUpdatedAt,
   resolveOpenRule, computeOpenedUntil, fmtRule,
 } from './validity-rules';
 import { generateLabel, daysUntil } from './validity';
@@ -60,6 +60,24 @@ describe('computeOpenedUntil', () => {
 
   it('abertura inválida devolve null sem explodir', () => {
     expect(computeOpenedUntil('lixo', { amount: 1, unit: 'd' }, null).until).toBeNull();
+  });
+});
+
+describe('writeOpenRules / readRulesUpdatedAt (carimbo pra sync com a nuvem)', () => {
+  it('sem carimbo salvo, readRulesUpdatedAt devolve null', () => {
+    expect(readRulesUpdatedAt('t1')).toBeNull();
+  });
+
+  it('writeOpenRules estampa um updatedAt sozinha quando não recebe um', () => {
+    writeOpenRules('t1', { outros: { amount: 5, unit: 'd' } });
+    const carimbo = readRulesUpdatedAt('t1');
+    expect(carimbo).toBeTruthy();
+    expect(new Date(carimbo).toString()).not.toBe('Invalid Date');
+  });
+
+  it('writeOpenRules aceita um updatedAt explícito (usado pelo sync remoto)', () => {
+    writeOpenRules('t1', { outros: { amount: 5, unit: 'd' } }, '2026-01-01T00:00:00.000Z');
+    expect(readRulesUpdatedAt('t1')).toBe('2026-01-01T00:00:00.000Z');
   });
 });
 

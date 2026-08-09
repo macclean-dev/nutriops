@@ -2,6 +2,8 @@
 // localStorage como cache local + Supabase como fonte de verdade na nuvem.
 // Cada módulo tem suas próprias funções de leitura/escrita.
 
+import { writeOpenRules, readRulesUpdatedAt } from './validity-rules';
+
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 const SUPABASE_KEY = 'nutriops.supabase.config';
@@ -903,6 +905,52 @@ export async function pushStockLog(tenantId, log) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// VALIDITY RULES (prazo de validade pós-abertura, por categoria)
+//
+// Diferente dos módulos acima, é 1 linha por tenant (config, não histórico) —
+// quem ajusta pode estar em outro device (ex.: a nutricionista trabalhando de
+// casa) do que quem imprime a etiqueta na produção. Sem sync, a mudança fica
+// presa no device de quem editou e a produção nunca vê o valor novo.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function rulesToRow(tenantId, rules, updatedAt) {
+  return { tenant_id: tenantId, rules, updated_at: updatedAt };
+}
+
+export async function pushValidityRules(tenantId, rules) {
+  const updatedAt = new Date().toISOString();
+  writeOpenRules(tenantId, rules, updatedAt); // grava local com o mesmo carimbo que vai pra nuvem
+  const row = rulesToRow(tenantId, rules, updatedAt);
+  if (!isSupabaseEnabled() || !navigator.onLine) {
+    enqueue('validity_rules', 'upsert', row);
+    return;
+  }
+  try {
+    await sbFetch('validity_rules', { method:'POST', body:row, prefer:'resolution=merge-duplicates,return=minimal' }, tenantId);
+  } catch (e) { logFailAndEnqueue('validity_rules', 'upsert', row, e); }
+}
+
+// Nuvem só sobrescreve o local quando é mais nova — protege edição feita
+// offline neste device enquanto outro ainda não sincronizou a dele.
+export async function syncValidityRules(tenantId) {
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false, reason:'offline_or_disabled' };
+  try {
+    const rows = await sbFetch('validity_rules', { filter:`tenant_id=eq.${tenantId}&limit=1` }, tenantId);
+    if (!rows?.length) return { ok:true, applied:false };
+    const remote = rows[0];
+    const localUpdatedAt = readRulesUpdatedAt(tenantId);
+    if (!localUpdatedAt || new Date(remote.updated_at) > new Date(localUpdatedAt)) {
+      writeOpenRules(tenantId, remote.rules, remote.updated_at);
+      return { ok:true, applied:true };
+    }
+    return { ok:true, applied:false };
+  } catch (e) {
+    console.warn('[repo] syncValidityRules failed:', e.message);
+    return { ok:false, reason:e.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // SPECIAL CONTROLS (óleo, descongelamento, resfriamento, tratamento térmico)
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -960,6 +1008,7 @@ export async function syncAllModules(tenantId) {
     syncTenantStaff(tenantId),
     syncReceiving(tenantId),
     syncProducts(tenantId),
+    syncValidityRules(tenantId),
     syncSpecialControls('oil', tenantId),
     syncSpecialControls('thaw', tenantId),
     syncSpecialControls('cool', tenantId),

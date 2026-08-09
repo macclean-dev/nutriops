@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { pushProduct, pushStockLog } from './repository';
+import { pushProduct, pushStockLog, pushValidityRules, syncValidityRules } from './repository';
 import {
-  readOpenRules, writeOpenRules, resolveOpenRule, computeOpenedUntil,
+  readOpenRules, resolveOpenRule, computeOpenedUntil,
   fmtRule, fmtDateTime, DEFAULT_OPEN_RULES,
 } from './validity-rules';
 
@@ -158,7 +158,23 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
   const [adjType, setAdjType]       = useState('entrada');
   const [adjNote, setAdjNote]       = useState('');
 
-  useEffect(() => { setProducts(readProducts(activeTenant.id)); setLogs(readStockLogs(activeTenant.id)); setRules(readOpenRules(activeTenant.id)); setTab('dashboard'); }, [activeTenant.id]);
+  useEffect(() => {
+    setProducts(readProducts(activeTenant.id));
+    setLogs(readStockLogs(activeTenant.id));
+    setRules(readOpenRules(activeTenant.id));
+    setTab('dashboard');
+    // Puxa a versão mais recente das regras (pode ter sido ajustada em outro
+    // device — ex.: a nutricionista de casa) antes de mostrar a tela. Relê do
+    // local (não confia só em `applied`) porque em StrictMode/troca rápida de
+    // tenant este efeito pode rodar 2x em paralelo — o outro disparo pode ter
+    // sido quem de fato gravou; o que importa é o estado final gravado no
+    // momento em que ESTA chamada termina, não quem venceu a corrida.
+    let vivo = true;
+    syncValidityRules(activeTenant.id).then(() => {
+      if (vivo) setRules(readOpenRules(activeTenant.id));
+    });
+    return () => { vivo = false; };
+  }, [activeTenant.id]);
   useEffect(() => { writeProducts(activeTenant.id, products); }, [activeTenant.id, products]);
   useEffect(() => { writeStockLogs(activeTenant.id, logs); }, [activeTenant.id, logs]);
 
@@ -499,7 +515,7 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
       clean[cat] = { amount: Math.max(1, Number(r.amount) || DEFAULT_OPEN_RULES[cat].amount), unit: r.unit === 'h' ? 'h' : 'd' };
     }
     setRules(clean);
-    writeOpenRules(activeTenant.id, clean);
+    pushValidityRules(activeTenant.id, clean); // grava local + sobe pra nuvem (ou enfileira offline)
   };
 
   const renderRules = () => (

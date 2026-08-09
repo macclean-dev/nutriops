@@ -26,6 +26,14 @@ export const DEFAULT_OPEN_RULES = {
 };
 
 const rulesKey = (tenantId) => `nutriops.validity.rules.${tenantId}`;
+const rulesMetaKey = (tenantId) => `nutriops.validity.rules.updatedAt.${tenantId}`;
+
+// Carimbo de quando as regras deste device mudaram pela última vez — é o que
+// decide, na sincronização com a nuvem, se o local ou o remoto é o mais novo
+// (ver syncValidityRules/pushValidityRules em repository.js).
+export function readRulesUpdatedAt(tenantId) {
+  try { return localStorage.getItem(rulesMetaKey(tenantId)); } catch { return null; }
+}
 
 export function readOpenRules(tenantId) {
   let stored = {};
@@ -43,8 +51,11 @@ export function readOpenRules(tenantId) {
   return merged;
 }
 
-export function writeOpenRules(tenantId, rules) {
-  try { localStorage.setItem(rulesKey(tenantId), JSON.stringify(rules)); } catch {}
+export function writeOpenRules(tenantId, rules, updatedAt = new Date().toISOString()) {
+  try {
+    localStorage.setItem(rulesKey(tenantId), JSON.stringify(rules));
+    localStorage.setItem(rulesMetaKey(tenantId), updatedAt);
+  } catch {}
 }
 
 // Exceção do produto vence a regra da categoria.

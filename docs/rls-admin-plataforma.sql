@@ -1,26 +1,31 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- FASE 1 de 3 — Caminho do ADMIN DA PLATAFORMA no RLS
+-- Caminho do ADMIN DA PLATAFORMA no RLS — pré-requisito pra aposentar o
+-- device-token (a senha VITE_DEVICE_PASSWORD é pública no bundle).
 --
--- Pré-requisito pra aposentar o device-token (item 🔴 do CLAUDE.md: a senha
--- VITE_DEVICE_PASSWORD é pública no bundle, então qualquer um loga como o
--- device de qualquer loja e lê os dados dela).
+-- POR QUE: hoje o admin global NÃO está em tenant_members e o JWT dele não tem
+-- app_metadata.tenant_id. As policies só liberam por device-token,
+-- __healthcheck__ ou is_member — ou seja, quando o dono abre a Swiss no painel,
+-- quem busca os dados é o DEVICE-TOKEN. Sem este caminho, tirar o token
+-- trancaria o dono pra fora de todas as lojas.
 --
--- POR QUE ISTO VEM ANTES: hoje o admin global NÃO está em tenant_members e o
--- JWT dele não tem app_metadata.tenant_id. As policies atuais só liberam por
--- device-token, __healthcheck__ ou is_member — ou seja, quando o dono abre a
--- Swiss no painel, quem busca os dados é o DEVICE-TOKEN. Tirar o device-token
--- sem este caminho trancaria o dono pra fora de todas as lojas.
+-- ADITIVO: nada deixa de funcionar. O device-token segue valendo até o deploy
+-- da Fase 2 (código).
 --
--- Este script é ADITIVO: nada deixa de funcionar. O device-token continua
--- valendo até a Fase 2 (código) sair.
+-- SEGURANÇA: lê `app_metadata`, NUNCA `user_metadata` — este último é editável
+-- pelo próprio usuário via updateUser, então confiar nele deixaria qualquer
+-- conta se promover a admin. Mesma regra do isGlobalAdmin (src/permissions.js).
 --
--- SEGURANÇA: lê `app_metadata`, NUNCA `user_metadata`. user_metadata é
--- editável pelo próprio usuário via updateUser — confiar nele pra privilégio
--- seria deixar qualquer conta se promover a admin. Mesma regra que o app usa
--- em isGlobalAdmin (src/permissions.js).
+-- ⚠️ COMO RODAR: são TRÊS execuções separadas. Rode uma, confira o resultado,
+-- só então passe pra próxima. Não selecione trecho nenhum antes de clicar Run
+-- (com texto selecionado, o SQL Editor executa só a seleção — foi o que fez a
+-- primeira tentativa não aplicar nada).
 -- ═══════════════════════════════════════════════════════════════════════════
 
--- ── PARTE A — O helper ──────────────────────────────────────────────────────
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║ PASSO 1 — A função. Cole SÓ este bloco numa query nova e rode.        ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
 create or replace function public.is_admin_plataforma()
 returns boolean
 language sql stable security definer set search_path = '' as $$
@@ -30,9 +35,15 @@ $$;
 revoke execute on function public.is_admin_plataforma() from anon, public;
 grant  execute on function public.is_admin_plataforma() to authenticated;
 
+select 'passo 1 ok' as resultado, public.is_admin_plataforma() as sou_admin_agora;
+-- esperado: "passo 1 ok" | false   (false está CERTO: você é postgres aqui,
+-- não uma sessão autenticada. O que importa é a linha aparecer sem erro.)
 
--- ── PARTE B — Recria as 9 policies com o caminho novo ───────────────────────
--- Ordem das vias: device-token (sai na Fase 2) · healthcheck · membro · admin.
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║ PASSO 2 — As 9 policies + storage. Cole SÓ este bloco e rode.         ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
 do $$
 declare
   t text;
@@ -52,8 +63,6 @@ begin
   end loop;
 end $$;
 
-
--- ── PARTE C — Storage (fotos de evidência) ──────────────────────────────────
 drop policy if exists form_photos_tenant_select on storage.objects;
 create policy form_photos_tenant_select on storage.objects for select
   using (bucket_id = 'form-photos' and (
@@ -75,40 +84,50 @@ create policy form_photos_tenant_delete on storage.objects for delete
     or public.is_member((storage.foldername(name))[1])
     or public.is_admin_plataforma()));
 
-
--- ═══════════════════════════════════════════════════════════════════════════
--- CONFERÊNCIA
--- ═══════════════════════════════════════════════════════════════════════════
-
--- 1) As 9 policies existem e todas citam o admin?
 select tablename,
        case when qual like '%is_admin_plataforma%' then 'ok' else 'FALTANDO' end as tem_admin
   from pg_policies
  where schemaname = 'public' and policyname = 'tenant_isolation'
  order by tablename;
--- esperado: 9 linhas, todas "ok"
+-- esperado: 9 linhas, TODAS "ok". Qualquer "FALTANDO" → me avise.
 
--- 2) O ADMIN enxerga as lojas? (era isto que o device-token fazia)
---    Troque o e-mail se o seu admin global for outro.
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║ PASSO 3 — Conferir. Cole SÓ este bloco e rode.                        ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 3a) A SUA conta tem o carimbo de admin? Sem ele a policy nunca libera.
+select email,
+       coalesce(raw_app_meta_data ->> 'role', '(SEM ROLE — precisa corrigir)') as role_no_app_metadata
+  from auth.users
+ where email = 'maninthemirror2050@gmail.com';
+-- esperado: admin
+
+-- 3b) Simulando o admin: ele enxerga as lojas?
 begin;
 select set_config('request.jwt.claims',
   json_build_object(
     'sub', (select id::text from auth.users where email = 'maninthemirror2050@gmail.com'),
+    'role', 'authenticated',
     'app_metadata', json_build_object('role', 'admin')
   )::text, true);
 set local role authenticated;
-select 'admin ve temperaturas' as teste, count(*) from public.temperature_records;
+select auth.jwt() -> 'app_metadata' ->> 'role' as papel_lido,
+       public.is_admin_plataforma()            as funcao_diz_admin,
+       count(*)                                as temperaturas
+  from public.temperature_records;
 rollback;
--- esperado: contagem > 0 (hoje ~736 entre Swiss e Bäckerei)
+-- esperado: admin | true | mais de 700
 
--- 3) ⚠️ O MAIS IMPORTANTE: uma loja continua SEM ver a outra?
---    Se esta consulta voltar qualquer linha, PARE e me avise — significa que
---    o caminho do admin vazou pra contas comuns.
+-- 3c) ⚠️ O MAIS IMPORTANTE — uma loja continua SEM ver a outra?
 begin;
 select set_config('request.jwt.claims',
-  json_build_object('sub', (select id::text from auth.users where email = 'casadocest@gmail.com'))::text, true);
+  json_build_object(
+    'sub', (select id::text from auth.users where email = 'casadocest@gmail.com'),
+    'role', 'authenticated'
+  )::text, true);
 set local role authenticated;
-select 'casa doce vendo swiss (deve ser 0)' as teste, count(*)
+select count(*) as casa_doce_vendo_swiss
   from public.temperature_records where tenant_id = 'swiss';
 rollback;
--- esperado: 0
+-- esperado: 0. Qualquer outro número → PARE e me avise.

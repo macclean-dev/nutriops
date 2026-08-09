@@ -89,6 +89,25 @@ export function formatPeriodLabel(frequency, key) {
 
 export function freqLabel(f) { return {daily:'Diária',weekly:'Semanal',biweekly:'Quinzenal',monthly:'Mensal'}[f]??f; }
 
+// "Minha lista de hoje" (item 4 da revisão de produto) — o app cobra o
+// colaborador por temperatura mas nunca por planilha; essa informação só
+// existia dentro do relatório BPF, pra RT. Mesmo cálculo de período que
+// FormsView já usa por card, só que devolvendo direto a lista do que falta —
+// sem RT, sem UI, testável sozinho.
+export function pendingFormsForPeriod(templates, records, now = new Date()) {
+  return (templates ?? [])
+    .map((tpl) => {
+      const periodKey = getPeriodKey(tpl.frequency, now);
+      const rec = (records ?? []).find((r) => r.formId === tpl.id && r.periodKey === periodKey);
+      return {
+        id: tpl.id, title: tpl.title, category: tpl.category, periodKey,
+        periodLabel: formatPeriodLabel(tpl.frequency, periodKey),
+        status: rec?.status ?? 'missing',
+      };
+    })
+    .filter((f) => f.status !== 'submitted');
+}
+
 function uid() { return crypto.randomUUID(); }
 const f = (label, type='cnc', hint=null) => ({ id:uid(), label, type, hint });
 

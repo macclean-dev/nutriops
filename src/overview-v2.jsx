@@ -744,6 +744,23 @@ function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records
   const lastRecord = tenantRecords[0];
   const [quickRegEq, setQuickRegEq] = useState(null);
 
+  // Planilhas pendentes do período — o app já cobra temperatura, nunca cobrou
+  // planilha (item 4 da revisão de produto, 09/08). forms.jsx entra por
+  // IMPORT DINÂMICO: overview é a tela de boot de todo mundo, e forms.jsx é
+  // o chunk pesado de planilhas — carregar ele aqui sem necessidade forçaria
+  // esse peso em todo login, não só em quem abre "Planilhas BPF".
+  const [pendingForms, setPendingForms] = useState([]);
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      const { readFormTemplates, readFormRecords, pendingFormsForPeriod } = await import('./forms');
+      if (!vivo) return;
+      const list = pendingFormsForPeriod(readFormTemplates(activeTenant), readFormRecords(activeTenant.id));
+      if (vivo) setPendingForms(list);
+    })();
+    return () => { vivo = false; };
+  }, [activeTenant.id]);
+
   return (
     <div style={{ maxWidth:1000, margin:'0 auto' }}>
       <HeroGreeting session={session} activeTenant={activeTenant} lastRecord={lastRecord} />
@@ -761,6 +778,12 @@ function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records
           label="Suas leituras hoje"
           value={myToday.length}
           sub={myToday.length > 0 ? `última ${fmtRelative(myToday[0].createdAt)}` : 'comece registrando'} />
+        <MetricBig
+          count
+          label="Planilhas pendentes"
+          value={pendingForms.length}
+          sub={pendingForms.length === 0 ? 'tudo em dia' : 'do período atual'}
+          tone={pendingForms.length === 0 ? 'ok' : 'warn'} />
       </div>
 
       {/* Captura rápida — botões grandes pros pendentes */}
@@ -783,6 +806,39 @@ function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records
                 <div style={{ fontSize:11, color:'var(--text-secondary)' }}>{eq.location}</div>
               </button>
             ))}
+          </div>
+        </Section>
+      )}
+
+      {/* Planilhas do período ainda pendentes */}
+      {pendingForms.length > 0 && (
+        <Section
+          title="Planilhas do período"
+          subtitle="Toque pra abrir e preencher">
+          <div className="dash-stagger" style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
+            {pendingForms.slice(0, 8).map(f => (
+              <button key={f.id} onClick={() => onNavigate('forms')} style={{
+                flex:'1 1 200px', padding:'18px 20px',
+                background:'var(--surface)', border:'1px solid var(--border)',
+                borderRadius:'var(--r-lg)', cursor:'pointer', fontFamily:'var(--font)',
+                display:'flex', flexDirection:'column', gap:4, textAlign:'left',
+                transition:'all .15s',
+              }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor='var(--primary)'; e.currentTarget.style.background='var(--surface-muted)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.background='var(--surface)'; }}>
+                <div style={{ fontSize:15, fontWeight:600, color:'var(--text)' }}>{f.title}</div>
+                <div style={{ fontSize:11, color:'var(--text-secondary)' }}>{f.periodLabel} · {f.status === 'draft' ? 'Rascunho' : 'Pendente'}</div>
+              </button>
+            ))}
+            {pendingForms.length > 8 && (
+              <button onClick={() => onNavigate('forms')} style={{
+                flex:'1 1 200px', padding:'18px 20px', background:'transparent',
+                border:'1px dashed var(--border)', borderRadius:'var(--r-lg)', cursor:'pointer',
+                fontFamily:'var(--font)', color:'var(--text-secondary)', fontSize:13,
+              }}>
+                +{pendingForms.length - 8} planilhas — ver todas
+              </button>
+            )}
           </div>
         </Section>
       )}

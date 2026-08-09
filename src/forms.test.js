@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { completionPct, generateFormPDF, readFormTemplates, templateSector, quickSign, extractNonConformities } from './forms';
+import { completionPct, generateFormPDF, readFormTemplates, templateSector, quickSign, extractNonConformities, pendingFormsForPeriod } from './forms';
 
 // Template no formato do CASA DOCE Banheiros, exercitando os tipos novos.
 const TPL = {
@@ -94,6 +94,48 @@ describe('extractNonConformities — Central de Não-Conformidades (item 2 da re
     };
     const record = { responses: { 'cd-hig-padaria-ncdesc': 'Mofo na parede' } };
     expect(extractNonConformities(tpl, record)[0].description).toBe('Mofo na parede');
+  });
+});
+
+describe('pendingFormsForPeriod — "minha lista de hoje" (item 4 da revisão)', () => {
+  const NOW = new Date('2026-08-09T12:00:00'); // domingo, W32 (ver getPeriodKey)
+  const templates = [
+    { id: 'tpl-daily',  frequency: 'daily',  title: 'Controle diário',   category: 'faxina' },
+    { id: 'tpl-weekly', frequency: 'weekly', title: 'Higienização — Padaria', category: 'higienizacao' },
+  ];
+
+  it('template sem nenhum record: entra como "missing"', () => {
+    const out = pendingFormsForPeriod(templates, [], NOW);
+    expect(out).toHaveLength(2);
+    expect(out.find((f) => f.id === 'tpl-daily').status).toBe('missing');
+  });
+
+  it('record do período atual com status "submitted": sai da lista', () => {
+    const records = [{ formId: 'tpl-daily', periodKey: '2026-08-09', status: 'submitted' }];
+    const out = pendingFormsForPeriod(templates, records, NOW);
+    expect(out.map((f) => f.id)).toEqual(['tpl-weekly']);
+  });
+
+  it('record do período atual com status "draft": continua na lista, com o status certo', () => {
+    const records = [{ formId: 'tpl-daily', periodKey: '2026-08-09', status: 'draft' }];
+    const out = pendingFormsForPeriod(templates, records, NOW);
+    expect(out.find((f) => f.id === 'tpl-daily').status).toBe('draft');
+  });
+
+  it('record de um período ANTIGO não conta pro período atual — ainda pendente', () => {
+    const records = [{ formId: 'tpl-weekly', periodKey: '2026-W20', status: 'submitted' }];
+    const out = pendingFormsForPeriod(templates, records, NOW);
+    expect(out.map((f) => f.id)).toContain('tpl-weekly');
+  });
+
+  it('sem templates: lista vazia, não quebra', () => {
+    expect(pendingFormsForPeriod([], [], NOW)).toEqual([]);
+    expect(pendingFormsForPeriod(undefined, undefined, NOW)).toEqual([]);
+  });
+
+  it('periodLabel vem preenchido (pra exibir sem recalcular na tela)', () => {
+    const out = pendingFormsForPeriod(templates, [], NOW);
+    expect(out.find((f) => f.id === 'tpl-weekly').periodLabel).toMatch(/^Semana/);
   });
 });
 

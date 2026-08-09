@@ -11,6 +11,7 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { resolveLimits, resolveTone } from './limits';
+import { detectTrend } from './trend';
 import { EquipmentDetailModal, EquipmentChart, toneColor, toneBg } from './equipment-detail';
 import { getTemperatureRepository } from './repository';
 import CountUp from './count-up';
@@ -111,6 +112,31 @@ function MetricBig({ label, value, sub, tone = 'neutral', accent, count = false 
         <div style={{ fontSize:11, color:'var(--text-secondary)', marginTop:2 }}>{sub}</div>
       )}
     </div>
+  );
+}
+
+// ─── Sentinela de tendência (item 5 da revisão de produto) ────────────────
+
+function TrendAlertCard({ equipment, trend, onOpen }) {
+  const rising = trend.direction === 'rising';
+  const arrow = rising ? '↗' : '↘';
+  const verbo = rising ? 'subiu' : 'caiu';
+  const dias = Math.round(trend.daysToBreach);
+  return (
+    <button onClick={onOpen} style={{
+      flex:'1 1 260px', textAlign:'left', cursor:'pointer', fontFamily:'var(--font)',
+      padding:'14px 18px', borderRadius:'var(--r-lg)',
+      background:'var(--amber-light)', border:'1px solid var(--amber-border)',
+      display:'flex', flexDirection:'column', gap:4,
+    }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+        <span style={{ fontSize:16 }}>{arrow}</span>
+        <strong style={{ color:'var(--text)' }}>{equipment.label}</strong>
+      </div>
+      <div style={{ fontSize:12, color:'var(--text-secondary)' }}>
+        {verbo} {Math.abs(trend.totalChange)}°C em {Math.round(trend.spanDays)} dias — a caminho de sair da faixa em ~{dias} dia{dias === 1 ? '' : 's'}
+      </div>
+    </button>
   );
 }
 
@@ -603,6 +629,21 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
     return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
   }, [equipmentCatalog]);
 
+  // Sentinela de tendência (item 5 da revisão de produto, 09/08) — regressão
+  // linear sobre as últimas ~3 semanas de cada equipamento. Uma câmara subindo
+  // 0,4°C/dia avisa aqui semanas antes do primeiro registro fora da faixa.
+  // Calibrado pra não alarmar à toa (ver trend.js) — por isso a lista tende a
+  // ficar vazia na maior parte do tempo, o que é o comportamento certo.
+  const trendAlerts = useMemo(() => {
+    return (equipmentCatalog || [])
+      .map((eq) => {
+        const limits = resolveLimits(eq.label, eq);
+        const trend = detectTrend(equipmentHistory.get(eq.label) ?? [], limits);
+        return trend ? { equipment: eq, trend } : null;
+      })
+      .filter(Boolean);
+  }, [equipmentCatalog, equipmentHistory]);
+
   // Comparação exata (o valor vem da lista, não é digitado): com `includes`,
   // "Padaria" traria também "Padaria 2".
   const visibleEquipment = useMemo(() => {
@@ -637,6 +678,19 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
           value={lastRecord ? fmtRelative(lastRecord.createdAt) : '—'}
           sub={lastRecord ? `${lastRecord.user}` : 'sem registros'} />
       </div>
+
+      {/* Sentinela de tendência */}
+      {trendAlerts.length > 0 && (
+        <Section
+          title="Sentinela de tendência"
+          subtitle="Equipamentos indo na direção de sair da faixa — antes de estourar">
+          <div className="dash-stagger" style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
+            {trendAlerts.map(({ equipment, trend }) => (
+              <TrendAlertCard key={equipment.label} equipment={equipment} trend={trend} onOpen={() => setDrillEq(equipment)} />
+            ))}
+          </div>
+        </Section>
+      )}
 
       {/* Equipamentos — grade */}
       <Section

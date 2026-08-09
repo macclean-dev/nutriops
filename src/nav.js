@@ -3,7 +3,7 @@
 
 // Hubs agregam sub-views numa rota só (Nexum-style flat nav).
 export const CONTROLS_KEYS = ['controls', 'handwash', 'oil', 'thaw', 'cooling', 'thermal'];
-export const REPORTS_KEYS  = ['reportsHub', 'dashboard', 'charts', 'reports', 'monthly', 'audit'];
+export const REPORTS_KEYS  = ['reportsHub', 'dashboard', 'charts', 'reports', 'monthly', 'audit', 'dossie'];
 export const TEAM_KEYS     = ['team', 'users', 'turns', 'sessions'];
 
 // Destaca o item-pai do hub quando uma sub-view dele está aberta.

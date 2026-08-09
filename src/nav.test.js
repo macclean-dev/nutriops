@@ -113,8 +113,8 @@ describe('Hub key sets', () => {
     expect(CONTROLS_KEYS[0]).toBe('controls');
   });
 
-  it('reports tem 5 sub-views + o hub', () => {
-    expect(REPORTS_KEYS).toHaveLength(6);
+  it('reports tem 6 sub-views + o hub', () => {
+    expect(REPORTS_KEYS).toHaveLength(7);
     expect(REPORTS_KEYS[0]).toBe('reportsHub');
   });
 

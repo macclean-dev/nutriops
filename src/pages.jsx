@@ -31,6 +31,7 @@ const AdminLogin           = lazyView(() => import('./admin'),      'AdminLogin'
 const FormsView            = lazyView(() => import('./forms'),      'FormsView');
 const TrainingView         = lazyView(() => import('./training'),   'TrainingView');
 const ReportsView          = lazyView(() => import('./reports'),    'ReportsView');
+const DossieView           = lazyView(() => import('./dossie-view'), 'DossieView');
 const MaintenanceView      = lazyView(() => import('./maintenance'),'MaintenanceView');
 const ValidityStockView    = lazyView(() => import('./validity'),   'ValidityStockView');
 const POPsView             = lazyView(() => import('./controls'),   'POPsView');
@@ -415,6 +416,7 @@ function NavIcon({ id, size = 16 }) {
     reports:     <svg {...s}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>,
     monthly:     <svg {...s}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="17 14 11 14 11 20"/><polyline points="14 17 11 17"/></svg>,
     audit:       <svg {...s}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>,
+    dossie:      <svg {...s}><path d="M8 2h6l4 4v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M4 8v12a2 2 0 0 0 2 2h10"/><polyline points="14 2 14 6 18 6"/></svg>,
     alerts:      <svg {...s}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>,
     actions:     <svg {...s}><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>,
     rtpanel:     <svg {...s}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><path d="m16 11 2 2 4-4"/></svg>,
@@ -2113,6 +2115,7 @@ function ReportsHub({ activeView, setActiveView, session, allTenants, records, .
     { id: 'reports',   iconId: 'reports',   label: 'Relatórios' },
     { id: 'monthly',   iconId: 'monthly',   label: 'Exportação mensal' },
     { id: 'audit',     iconId: 'audit',     label: 'Auditoria' },
+    { id: 'dossie',    iconId: 'dossie',    label: 'Dossiê Fiscal' },
   ];
   const visibleTabs = TABS.filter(t => canAccess(session?.user?.role, t.id));
   const subIds = visibleTabs.map(t => t.id);
@@ -2131,6 +2134,7 @@ function ReportsHub({ activeView, setActiveView, session, allTenants, records, .
       {current === 'reports'   && <ReportsView   allTenants={allTenants} records={records} />}
       {current === 'monthly'   && <MonthlyExportView allTenants={allTenants} records={records} session={session} />}
       {current === 'audit'     && <AuditView     allTenants={allTenants} records={records} session={session} onRecordSaved={rest.onRecordSaved} />}
+      {current === 'dossie'    && <DossieView    allTenants={allTenants} records={records} />}
     </>
   );
 }

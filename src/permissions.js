@@ -8,7 +8,7 @@ const ALL_VIEWS = [
   // Hub: controles especiais
   'controls', 'handwash','oil','thaw','cooling','thermal',
   // Hub: relatórios
-  'reportsHub', 'dashboard','charts','reports','monthly','audit',
+  'reportsHub', 'dashboard','charts','reports','monthly','audit','dossie',
   'alerts','actions','rtpanel',
   // Hub: equipe
   'team', 'users','turns','sessions',
@@ -29,7 +29,7 @@ export const PERMISSIONS = {
     multiTenant: false, canSwitchTenant: true, canExport: true, canValidate: false, canManageUsers: false, canManageConfig: false, canSeeReports: true,
   },
   'Nutricionista RT': {
-    nav: ['overview','overview-v2','forms','pops','training','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','reportsHub','dashboard','charts','reports','monthly','audit','alerts','actions','rtpanel','team','users','sessions','equipment','maintenance','profile'],
+    nav: ['overview','overview-v2','forms','pops','training','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','reportsHub','dashboard','charts','reports','monthly','audit','dossie','alerts','actions','rtpanel','team','users','sessions','equipment','maintenance','profile'],
     multiTenant: true, canSwitchTenant: true, canExport: true, canValidate: true, canManageUsers: false, canManageConfig: false, canSeeReports: true,
   },
   'Administrador': {

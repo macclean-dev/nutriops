@@ -217,31 +217,87 @@ function TrainingReport({ allTenants, tenantFilter }) {
 }
 
 // ─── PDF: Relatório Fiscal Consolidado ─────────────────────────────────────
+// Cálculo e renderização exportados (não só usados aqui) pra o Dossiê
+// completo (item 10 da revisão, dossier.js) reaproveitar a mesma fonte de
+// verdade em vez de recalcular — mesma lição do item 7 (régua única).
 
-function generateFiscalPDF({ tenant, periodLabel, tempStats, bpfStats, trainingStats }) {
-  const date = new Date().toLocaleString('pt-BR');
+export function computeTempStats(records, tenantId, periodDays) {
+  const cutoff = Date.now() - periodDays * 86400000;
+  const tenantRecords = records.filter(r => r.tenantId === tenantId && new Date(r.createdAt).getTime() >= cutoff);
+  const equipMap = new Map();
+  for (const r of tenantRecords) {
+    const k = r.equipment || r.equipmentInput;
+    if (!equipMap.has(k)) equipMap.set(k, []);
+    equipMap.get(k).push(r);
+  }
+  return [...equipMap.entries()].map(([equip, recs]) => {
+    const vals = recs.map(r => Number(r.value)).filter(v => !isNaN(v));
+    const ok = recs.filter(r => resolveTemperatureTone(r) === 'ok').length;
+    return {
+      equip, total: recs.length, ok,
+      warn: recs.filter(r => resolveTemperatureTone(r) === 'warn').length,
+      danger: recs.filter(r => resolveTemperatureTone(r) === 'danger').length,
+      compliance: pct(ok, recs.length),
+      avg: vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1) : '—',
+    };
+  });
+}
 
-  const tempRows = tempStats.map(s => `<tr>
+export function computeBpfStats(tenant) {
+  const templates = readFormTemplates(tenant);
+  const formRecords = readFormRecords(tenant.id);
+  return templates.map(tpl => {
+    const tplRecs = formRecords.filter(r => r.formId === tpl.id);
+    const pk = getPeriodKey(tpl.frequency);
+    const current = tplRecs.find(r => r.periodKey === pk);
+    const validated = tplRecs.filter(r => r.validation).length;
+    return { title: tpl.title, frequency: tpl.frequency, periods: [{ status: current?.status ?? 'missing' }], validated };
+  });
+}
+
+export function computeTrainingStats(tenant) {
+  const sessions = readSessions(tenant.id);
+  const users = JSON.parse(localStorage.getItem(`nutriops.users.${tenant.id}`) ?? 'null') ?? tenant.usersList ?? [];
+  const trainingConfig = JSON.parse(localStorage.getItem(`nutriops.training.config.${tenant.id}`) ?? '{"validityMonths":12}');
+  return users.map(user => {
+    const r = employeeTrainingStatus(user.name, sessions, trainingConfig.validityMonths ?? 12);
+    return { name: user.name, role: user.role, lastDate: r.session?.date ?? null, status: r.status };
+  });
+}
+
+export function renderTempRows(tempStats) {
+  return tempStats.map(s => `<tr>
     <td>${s.equip}</td><td>${s.total}</td>
     <td style="color:${s.compliance>=90?'#00a35c':s.compliance>=70?'#8a4e00':'#c0392b'};font-weight:700">${s.compliance}%</td>
     <td>${s.avg}°C</td><td>${s.ok}</td><td>${s.warn}</td><td>${s.danger}</td>
   </tr>`).join('');
+}
 
-  const bpfRows = bpfStats.map(s => `<tr>
+export function renderBpfRows(bpfStats) {
+  return bpfStats.map(s => `<tr>
     <td>${s.title}</td><td>${freqLabel(s.frequency)}</td>
     <td style="color:${s.periods[0]?.status==='submitted'?'#00a35c':'#c0392b'};font-weight:700">
       ${s.periods[0]?.status==='submitted'?'✓ Concluído':'Pendente'}
     </td>
     <td>${s.validated ? '<span style="color:#00a35c">✓ Validado</span>' : '—'}</td>
   </tr>`).join('');
+}
 
-  const trainRows = trainingStats.map(s => `<tr>
+export function renderTrainRows(trainingStats) {
+  return trainingStats.map(s => `<tr>
     <td>${s.name}</td><td>${s.role}</td>
     <td>${s.lastDate ? formatDate(s.lastDate) : '—'}</td>
     <td style="color:${s.status==='ok'?'#00a35c':s.status==='warn'?'#8a4e00':'#c0392b'};font-weight:700">
       ${s.status==='ok'?'Em dia':s.status==='warn'?'Renovar em breve':s.status==='never'?'Nunca capacitado':'Vencido'}
     </td>
   </tr>`).join('');
+}
+
+function generateFiscalPDF({ tenant, periodLabel, tempStats, bpfStats, trainingStats }) {
+  const date = new Date().toLocaleString('pt-BR');
+  const tempRows = renderTempRows(tempStats);
+  const bpfRows = renderBpfRows(bpfStats);
+  const trainRows = renderTrainRows(trainingStats);
 
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
   <title>Relatório Fiscal — ${tenant}</title>
@@ -292,47 +348,9 @@ export function ReportsView({ allTenants, records }) {
     const tenants = tenantFilter === 'all' ? allTenants : allTenants.filter(t => t.id === tenantFilter);
 
     for (const tenant of tenants) {
-      const cutoff = Date.now() - periodDays * 86400000;
-      const tenantRecords = records.filter(r => r.tenantId === tenant.id && new Date(r.createdAt).getTime() >= cutoff);
-
-      // Temp stats per equipment
-      const equipMap = new Map();
-      for (const r of tenantRecords) {
-        const k = r.equipment || r.equipmentInput;
-        if (!equipMap.has(k)) equipMap.set(k, []);
-        equipMap.get(k).push(r);
-      }
-      const tempStats = [...equipMap.entries()].map(([equip, recs]) => {
-        const vals = recs.map(r => Number(r.value)).filter(v => !isNaN(v));
-        const ok = recs.filter(r => resolveTemperatureTone(r) === 'ok').length;
-        return {
-          equip, total: recs.length, ok,
-          warn: recs.filter(r => resolveTemperatureTone(r) === 'warn').length,
-          danger: recs.filter(r => resolveTemperatureTone(r) === 'danger').length,
-          compliance: pct(ok, recs.length),
-          avg: vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1) : '—',
-        };
-      });
-
-      // BPF stats
-      const templates = readFormTemplates(tenant);
-      const formRecords = readFormRecords(tenant.id);
-      const bpfStats = templates.map(tpl => {
-        const tplRecs = formRecords.filter(r => r.formId === tpl.id);
-        const pk = getPeriodKey(tpl.frequency);
-        const current = tplRecs.find(r => r.periodKey === pk);
-        const validated = tplRecs.filter(r => r.validation).length;
-        return { title: tpl.title, frequency: tpl.frequency, periods: [{ status: current?.status ?? 'missing' }], validated };
-      });
-
-      // Training stats
-      const sessions = readSessions(tenant.id);
-      const users = JSON.parse(localStorage.getItem(`nutriops.users.${tenant.id}`) ?? 'null') ?? tenant.usersList ?? [];
-      const trainingConfig = JSON.parse(localStorage.getItem(`nutriops.training.config.${tenant.id}`) ?? '{"validityMonths":12}');
-      const trainingStats = users.map(user => {
-        const r = employeeTrainingStatus(user.name, sessions, trainingConfig.validityMonths ?? 12);
-        return { name: user.name, role: user.role, lastDate: r.session?.date ?? null, status: r.status };
-      });
+      const tempStats = computeTempStats(records, tenant.id, periodDays);
+      const bpfStats = computeBpfStats(tenant);
+      const trainingStats = computeTrainingStats(tenant);
 
       const win = window.open('', '_blank');
       win.document.write(generateFiscalPDF({ tenant: tenant.name, periodLabel, tempStats, bpfStats, trainingStats }));

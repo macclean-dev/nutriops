@@ -8,6 +8,8 @@ import { getEffectivePin, writePinOverride, isWeakPin } from './pin';
 import { isGlobalAdmin } from './permissions';
 import { fetchAccessLog } from './tenant-sync';
 import { pushSpecialControl } from './repository';
+import { resolveRecordTone } from './limits';
+import { employeeTrainingStatus } from './training-status';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -49,31 +51,26 @@ export function RTPanelView({ allTenants, records, session }) {
     const trainSess = readSessions(tenant.id);
     const users     = sl(`nutriops.users.${tenant.id}`, tenant.usersList ?? []);
     const config    = sl(`nutriops.training.config.${tenant.id}`, { validityMonths: 12 });
-    const validity  = config.validityMonths * 30 * 86400000;
 
     // Forms pending RT validation
     const pendingForms = formRecs.filter(r => r.status === 'submitted' && !r.validation);
 
-    // Training expiring within 30 days
-    const expiringTraining = users.filter(u => {
-      const completed = trainSess
-        .filter(s => s.status === 'closed' && s.participants?.some(p => p.name === u.name && p.confirmed))
-        .sort((a,b) => new Date(b.date) - new Date(a.date));
-      if (!completed.length) return true;
-      const daysAgo = Math.floor((now - new Date(completed[0].date).getTime()) / 86400000);
-      return daysAgo >= validity * 0.85 / 86400000;
-    });
+    // Capacitação vencendo — item 7 da revisão de produto: esta conta era a
+    // única sem tolerância nenhuma e reimplementava a fórmula na mão; agora é
+    // a mesma canônica que toda outra tela usa.
+    const expiringTraining = users.filter(u =>
+      employeeTrainingStatus(u.name, trainSess, config.validityMonths ?? 12).status !== 'ok'
+    );
 
-    // Temperature out of range today
+    // Temperature out of range today — 'neutral' (min/max ausente ou
+    // inválido) não é "fora da faixa", é "não dá pra saber"; preserva o
+    // mesmo comportamento de antes de excluir esse caso.
     const todayRecords = records.filter(r => r.tenantId === tenant.id && new Date(r.createdAt).toDateString() === new Date().toDateString());
-    const outOfRange = todayRecords.filter(r => {
-      const v = Number(r.value), mn = Number(r.min), mx = Number(r.max);
-      return !isNaN(v) && !isNaN(mn) && !isNaN(mx) && (v < mn || v > mx);
-    });
+    const outOfRange = todayRecords.filter(r => !['ok', 'neutral'].includes(resolveRecordTone(r)));
 
     // Compliance this month
     const monthRecs = records.filter(r => r.tenantId === tenant.id && now - new Date(r.createdAt).getTime() <= 30 * 86400000);
-    const ok = monthRecs.filter(r => { const v=Number(r.value),mn=Number(r.min),mx=Number(r.max); return !isNaN(v)&&!isNaN(mn)&&!isNaN(mx)&&v>=mn&&v<=mx; }).length;
+    const ok = monthRecs.filter(r => resolveRecordTone(r) === 'ok').length;
     const compliance = monthRecs.length > 0 ? Math.round((ok / monthRecs.length) * 100) : null;
 
     return { tenant, pendingForms, expiringTraining, outOfRange, compliance, monthRecs: monthRecs.length };
@@ -703,7 +700,7 @@ export function MonthlyExportView({ allTenants, records, session }) {
       <td><strong>${r.equipmentInput||r.equipment||'—'}</strong></td>
       <td style="font-family:monospace;font-weight:700">${r.value}°C</td>
       <td>${r.min??'?'}–${r.max??'?'}°C</td>
-      <td style="color:${(()=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx?'#00a35c':v>=mn-3&&v<=mx+3?'#8a4e00':'#c0392b';})()};font-weight:700">${(()=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx?'Conforme':v>=mn-3&&v<=mx+3?'Desvio':'Fora da faixa';})()}</td>
+      <td style="color:${({ok:'#00a35c',warn:'#8a4e00',danger:'#c0392b',neutral:'#5c6c7a'})[resolveRecordTone(r)]};font-weight:700">${({ok:'Conforme',warn:'Desvio',danger:'Fora da faixa',neutral:'—'})[resolveRecordTone(r)]}</td>
       <td>${r.user||'—'}</td>
       <td>${r.note||'—'}</td>
     </tr>`).join('');
@@ -736,10 +733,10 @@ export function MonthlyExportView({ allTenants, records, session }) {
     <div class="meta">${tenantFilter === 'all' ? 'Todas as empresas' : allTenants.find(t=>t.id===tenantFilter)?.name} · ${monthLabel} · Gerado por ${session?.user?.name||'—'} em ${date} · RDC 216/2004</div>
     <div class="kpi-row">
       <div class="kpi"><span>Total de registros</span><strong>${monthRecords.length}</strong></div>
-      <div class="kpi"><span>Conformes</span><strong style="color:#00a35c">${monthRecords.filter(r=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx;}).length}</strong></div>
-      <div class="kpi"><span>Desvios</span><strong style="color:#8a4e00">${monthRecords.filter(r=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn-3&&v<mn||v>mx&&v<=mx+3;}).length}</strong></div>
-      <div class="kpi"><span>Críticos</span><strong style="color:#c0392b">${monthRecords.filter(r=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v<mn-3||v>mx+3;}).length}</strong></div>
-      <div class="kpi"><span>Conformidade</span><strong>${monthRecords.length>0?Math.round((monthRecords.filter(r=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx;}).length/monthRecords.length)*100):0}%</strong></div>
+      <div class="kpi"><span>Conformes</span><strong style="color:#00a35c">${monthRecords.filter(r=>resolveRecordTone(r)==='ok').length}</strong></div>
+      <div class="kpi"><span>Desvios</span><strong style="color:#8a4e00">${monthRecords.filter(r=>resolveRecordTone(r)==='warn').length}</strong></div>
+      <div class="kpi"><span>Críticos</span><strong style="color:#c0392b">${monthRecords.filter(r=>resolveRecordTone(r)==='danger').length}</strong></div>
+      <div class="kpi"><span>Conformidade</span><strong>${monthRecords.length>0?Math.round((monthRecords.filter(r=>resolveRecordTone(r)==='ok').length/monthRecords.length)*100):0}%</strong></div>
     </div>
     <h2>1. Registros de Temperatura</h2>
     ${monthRecords.length===0?'<p style="color:#5c6c7a">Nenhum registro no período.</p>':`<table><thead><tr><th>Data</th><th>Hora</th><th>Empresa</th><th>Equipamento</th><th>Temp.</th><th>Faixa</th><th>Status</th><th>Responsável</th><th>Obs.</th></tr></thead><tbody>${tempRows}</tbody></table>`}
@@ -777,7 +774,7 @@ export function MonthlyExportView({ allTenants, records, session }) {
           </div>
           <div className="audit-stats" style={{ margin:'4px 0' }}>
             <div className="audit-stat"><span>Registros no período</span><strong>{monthRecords.length}</strong></div>
-            <div className="audit-stat ok"><span>Conformes</span><strong>{monthRecords.filter(r=>{const v=Number(r.value),mn=Number(r.min),mx=Number(r.max);return v>=mn&&v<=mx;}).length}</strong></div>
+            <div className="audit-stat ok"><span>Conformes</span><strong>{monthRecords.filter(r=>resolveRecordTone(r)==='ok').length}</strong></div>
           </div>
           <button className="primary-action attention" onClick={generatePDF} disabled={generating} style={{ fontSize:14, padding:'10px' }}>
             {generating ? '⏳ Gerando PDF…' : '↓ Gerar relatório mensal PDF'}

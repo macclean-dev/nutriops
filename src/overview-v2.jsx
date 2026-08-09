@@ -12,6 +12,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { resolveLimits, resolveTone } from './limits';
 import { detectTrend } from './trend';
+import { readTurns } from './turns';
 import { EquipmentDetailModal, EquipmentChart, toneColor, toneBg } from './equipment-detail';
 import { getTemperatureRepository } from './repository';
 import CountUp from './count-up';
@@ -549,7 +550,7 @@ function Section({ title, subtitle, action, children }) {
 
 // ─── Composições por perfil ───────────────────────────────────────────────
 
-function HeroGreeting({ session, activeTenant, lastRecord, complianceToday }) {
+function HeroGreeting({ session, activeTenant, lastRecord, coverageToday }) {
   return (
     <header className="dash-in" style={{
       display:'flex', flexDirection:'column', gap:8, marginBottom:24,
@@ -570,7 +571,7 @@ function HeroGreeting({ session, activeTenant, lastRecord, complianceToday }) {
       <p style={{ fontSize:14, color:'var(--text-secondary)', margin:0 }}>
         {activeTenant.name} · {session.user.role}
         {lastRecord ? ` · última leitura ${fmtRelative(lastRecord.createdAt)}` : ' · sem leituras hoje'}
-        {complianceToday != null ? ` · conformidade ${complianceToday}%` : ''}
+        {coverageToday != null ? ` · cobertura ${coverageToday}%` : ''}
       </p>
     </header>
   );
@@ -607,9 +608,15 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
     }).length,
   [todayRecords]);
 
-  // Expected readings hoje = equipamentos × turnos. Assumir 3 turnos como base.
-  const expected = (equipmentCatalog?.length || 0) * 3;
-  const complianceToday = expected > 0
+  // Leituras esperadas hoje = equipamentos × turnos CADASTRADOS (item 7 da
+  // revisão de produto, 09/08) — antes assumia 3 turnos fixo, divergindo se a
+  // loja editasse os turnos em Equipe → Turnos (team-views.jsx) sem que este
+  // KPI soubesse. É cobertura de registro, não conformidade térmica — os dois
+  // eram confundidos pelo mesmo nome (ver `alertCount` logo abaixo, que é
+  // quem de fato mede leitura fora da faixa).
+  const turnsCount = Math.max(1, readTurns(activeTenant).length);
+  const expected = (equipmentCatalog?.length || 0) * turnsCount;
+  const coverageToday = expected > 0
     ? Math.min(100, Math.round((todayRecords.length / expected) * 100))
     : null;
 
@@ -653,20 +660,20 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
 
   return (
     <div style={{ maxWidth:1200, margin:'0 auto' }}>
-      <HeroGreeting session={session} activeTenant={activeTenant} lastRecord={lastRecord} complianceToday={complianceToday} />
+      <HeroGreeting session={session} activeTenant={activeTenant} lastRecord={lastRecord} coverageToday={coverageToday} />
 
       {/* Pulse — 3 KPIs grandes. Estado vazio é neutro (não alarmante). */}
       <div className="dash-stagger" style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
         <MetricBig
           count
-          label="Conformidade hoje"
-          value={todayRecords.length === 0 ? '—' : `${complianceToday}%`}
+          label="Cobertura de registro hoje"
+          value={todayRecords.length === 0 ? '—' : `${coverageToday}%`}
           sub={todayRecords.length === 0
             ? 'aguardando primeira leitura do dia'
             : `${todayRecords.length} de ${expected} leituras esperadas`}
           tone={todayRecords.length === 0 ? 'neutral'
-            : complianceToday >= 80 ? 'ok'
-            : complianceToday >= 50 ? 'warn' : 'danger'} />
+            : coverageToday >= 80 ? 'ok'
+            : coverageToday >= 50 ? 'warn' : 'danger'} />
         <MetricBig
           count
           label="Alertas ativos"

@@ -4,6 +4,8 @@ import { readOnboardingTenants, writeOnboardingTenants } from './onboarding-stor
 import { readAdminAuth, writeAdminAuth, clearAdminAuth, readClients } from './admin-storage';
 import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
 import { trackUsage } from './repository';
+import { employeeTrainingStatus } from './training-status';
+import { readTurns } from './turns';
 import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill, pushCorrectiveAction, syncCorrectiveActions } from './repository';
 // Central de Não-Conformidades (item 2 da revisão, 09/08) — puro, sem React;
 // `extractNonConformities` (forms.jsx) e os readers de controles especiais
@@ -14,7 +16,7 @@ import { actionSourceKey, pendingTemperatureItems, pendingReceivingItems, pendin
 import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
-import { resolveLimits as resolveLimitsFromCatalog, resolveTone, heuristicLimits, suggestLimits, dedupeCatalog } from './limits';
+import { resolveLimits as resolveLimitsFromCatalog, resolveTone, resolveRecordTone as resolveTemperatureTone, heuristicLimits, suggestLimits, dedupeCatalog } from './limits';
 
 // ─── Lazy view loading ────────────────────────────────────────────────────
 // Cada chunk só baixa quando o usuário navega pra view correspondente.
@@ -98,13 +100,6 @@ try { maybeAutoConfigSupabase(tenants[0]?.id, tenants); } catch {}
 function resolveTemperatureLimits(label = '', catalog = null) {
   return resolveLimitsFromCatalog(label, catalog);
 }
-function resolveTemperatureTone(record) {
-  const v = Number(record?.value), mn = Number(record?.min), mx = Number(record?.max);
-  if (isNaN(v) || isNaN(mn) || isNaN(mx)) return 'neutral';
-  if (v >= mn && v <= mx) return 'ok';
-  if (v >= mn - 3 && v <= mx + 3) return 'warn';
-  return 'danger';
-}
 function formatCompactDateTime(iso) {
   return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
@@ -112,7 +107,6 @@ function formatCompactDateTime(iso) {
 // ─── Storage helpers ───────────────────────────────────────────────────────
 
 const catalogKey    = (id) => `nutriops.equipment.catalog.${id}`;
-const turnsKey      = (id) => `nutriops.turns.${id}`;
 const usersKey      = (id) => `nutriops.users.${id}`;
 const actionsKey    = (id) => `nutriops.corrective_actions.${id}`;
 const SESSION_KEY   = 'nutriops.session';
@@ -138,16 +132,8 @@ function dismissAlertId(tenantId, id) {
   save(dismissedAlertsKey(tenantId), pruned);
 }
 
-const DEFAULT_TURNS = [
-  { id: 'manha', name: 'Manhã',  start: '06:00', end: '11:59' },
-  { id: 'tarde', name: 'Tarde',  start: '12:00', end: '17:59' },
-  { id: 'noite', name: 'Noite',  start: '18:00', end: '23:59' },
-];
-
 const readEquipmentCatalog  = (t)  => dedupeCatalog(load(catalogKey(t.id),  t.equipmentCatalog ?? []));
 const writeEquipmentCatalog = (id, v) => save(catalogKey(id), v);
-const readTurns             = (t)  => load(turnsKey(t.id),    DEFAULT_TURNS);
-const writeTurns            = (id, v) => save(turnsKey(id),   v);
 const readUsers             = (t)  => load(usersKey(t.id),    t.usersList ?? []);
 const writeUsers            = (id, v) => save(usersKey(id),   v);
 const readActions           = (id) => load(actionsKey(id),    []);
@@ -963,18 +949,11 @@ function OverviewView({ activeTenant, allTenants, onTenantChange, session, equip
       const sessions  = JSON.parse(localStorage.getItem(`nutriops.training.sessions.${activeTenant.id}`) ?? '[]');
       const config    = JSON.parse(localStorage.getItem(`nutriops.training.config.${activeTenant.id}`) ?? '{"validityMonths":12}');
       const users     = JSON.parse(localStorage.getItem(`nutriops.users.${activeTenant.id}`) ?? 'null') ?? activeTenant.usersList ?? [];
-      const limitDays = (config.validityMonths ?? 12) * 30;
-      const now       = Date.now();
       return users
         .filter(u => u.status !== 'Inativo')
         .map(u => {
-          const done = sessions
-            .filter(s => s.status === 'closed' && s.participants?.some(p => p.name === u.name && p.confirmed))
-            .sort((a,b) => new Date(b.date)-new Date(a.date));
-          const last     = done[0];
-          const daysAgo  = last ? Math.floor((now - new Date(last.date).getTime()) / 86400000) : null;
-          const status   = !last ? 'never' : daysAgo >= limitDays ? 'expired' : daysAgo >= limitDays * 0.85 ? 'warn' : 'ok';
-          return { name: u.name, role: u.role, status, daysAgo, lastTitle: last?.title };
+          const r = employeeTrainingStatus(u.name, sessions, config.validityMonths ?? 12);
+          return { name: u.name, role: u.role, status: r.status, daysAgo: r.daysAgo, lastTitle: r.session?.title };
         })
         .filter(u => u.status === 'warn' || u.status === 'expired' || u.status === 'never');
     } catch { return []; }

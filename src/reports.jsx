@@ -1,16 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { readFormRecords, readFormTemplates, catMeta, formatPeriodLabel, getPeriodKey, freqLabel } from './forms';
 import { readSessions } from './training';
-
-// ─── Helpers ───────────────────────────────────────────────────────────────
-
-function resolveTemperatureTone(record) {
-  const v=Number(record?.value), mn=Number(record?.min), mx=Number(record?.max);
-  if (isNaN(v)||isNaN(mn)||isNaN(mx)) return 'neutral';
-  if (v>=mn && v<=mx) return 'ok';
-  if (v>=mn-3 && v<=mx+3) return 'warn';
-  return 'danger';
-}
+import { resolveRecordTone as resolveTemperatureTone } from './limits';
+import { employeeTrainingStatus } from './training-status';
 
 function formatDate(iso) {
   try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return iso; }
@@ -176,14 +168,14 @@ function TrainingReport({ allTenants, tenantFilter }) {
     const tenants = tenantFilter === 'all' ? allTenants : allTenants.filter(t => t.id === tenantFilter);
     const rows = [];
     for (const tenant of tenants) {
-      const sessions = readSessions(tenant.id).filter(s => s.status === 'closed');
+      const sessions = readSessions(tenant.id);
+      const closedSessions = sessions.filter(s => s.status === 'closed');
       const users = JSON.parse(localStorage.getItem(`nutriops.users.${tenant.id}`) ?? 'null') ?? tenant.usersList ?? [];
+      const config = JSON.parse(localStorage.getItem(`nutriops.training.config.${tenant.id}`) ?? '{"validityMonths":12}');
       for (const user of users) {
-        const participated = sessions.filter(s => s.participants.some(p => p.name === user.name && p.confirmed));
-        const last = participated.sort((a,b) => new Date(b.date)-new Date(a.date))[0] ?? null;
-        const daysAgo = last ? Math.floor((Date.now()-new Date(last.date).getTime())/86400000) : null;
-        const status = !last ? 'never' : daysAgo <= 306 ? 'ok' : daysAgo <= 365 ? 'warn' : 'expired';
-        rows.push({ tenant: tenant.name, name: user.name, role: user.role, lastDate: last?.date ?? null, lastTitle: last?.title ?? null, daysAgo, status, totalSessions: participated.length });
+        const r = employeeTrainingStatus(user.name, sessions, config.validityMonths ?? 12);
+        const totalSessions = closedSessions.filter(s => s.participants.some(p => p.name === user.name && p.confirmed)).length;
+        rows.push({ tenant: tenant.name, name: user.name, role: user.role, lastDate: r.session?.date ?? null, lastTitle: r.session?.title ?? null, daysAgo: r.daysAgo, status: r.status, totalSessions });
       }
     }
     return rows;
@@ -334,15 +326,12 @@ export function ReportsView({ allTenants, records }) {
       });
 
       // Training stats
-      const sessions = readSessions(tenant.id).filter(s => s.status === 'closed');
+      const sessions = readSessions(tenant.id);
       const users = JSON.parse(localStorage.getItem(`nutriops.users.${tenant.id}`) ?? 'null') ?? tenant.usersList ?? [];
+      const trainingConfig = JSON.parse(localStorage.getItem(`nutriops.training.config.${tenant.id}`) ?? '{"validityMonths":12}');
       const trainingStats = users.map(user => {
-        const participated = sessions.filter(s => s.participants.some(p => p.name === user.name && p.confirmed))
-          .sort((a,b) => new Date(b.date)-new Date(a.date));
-        const last = participated[0] ?? null;
-        const daysAgo = last ? Math.floor((Date.now()-new Date(last.date).getTime())/86400000) : null;
-        const status = !last ? 'never' : daysAgo <= 306 ? 'ok' : daysAgo <= 365 ? 'warn' : 'expired';
-        return { name: user.name, role: user.role, lastDate: last?.date ?? null, status };
+        const r = employeeTrainingStatus(user.name, sessions, trainingConfig.validityMonths ?? 12);
+        return { name: user.name, role: user.role, lastDate: r.session?.date ?? null, status: r.status };
       });
 
       const win = window.open('', '_blank');

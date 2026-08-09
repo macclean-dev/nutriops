@@ -51,6 +51,14 @@ export function resolveTone(value, min, max) {
   return 'danger';
 }
 
+// Mesma conta, recebendo o registro salvo direto (já carrega value/min/max) —
+// item 7 da revisão de produto (09/08): esta fórmula vivia copiada
+// (byte-a-byte idêntica) em pages.jsx, reports-views.jsx e reports.jsx.
+// Uma só, aqui, pra sempre bater o mesmo número em toda tela.
+export function resolveRecordTone(record) {
+  return resolveTone(record?.value, record?.min, record?.max);
+}
+
 // Sugestão automática pela inteligência do nome — usado pelo formulário de
 // cadastro de equipamento pra pré-preencher os campos quando o usuário digita
 // "Freezer" ou similar.

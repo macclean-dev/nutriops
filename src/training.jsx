@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { employeeTrainingStatus } from './training-status';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -36,21 +37,11 @@ export const DEFAULT_TOPICS = [
 
 // ─── Validity helpers ──────────────────────────────────────────────────────
 
-function employeeTrainingStatus(employeeName, sessions, validityMonths) {
-  const completed = sessions
-    .filter((s) => s.status === 'closed' && s.participants.some((p) => p.name === employeeName && p.confirmed))
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
-
-  if (completed.length === 0) return { status: 'never', label: 'Nunca capacitado', lastDate: null, daysAgo: null };
-
-  const last = completed[0];
-  const daysAgo = Math.floor((Date.now() - new Date(last.date).getTime()) / 86400000);
-  const limitDays = validityMonths * 30;
-
-  if (daysAgo <= limitDays * 0.85)  return { status: 'ok',      label: 'Em dia',          lastDate: last.date, daysAgo, session: last };
-  if (daysAgo <= limitDays)         return { status: 'warn',    label: 'Renovação próxima', lastDate: last.date, daysAgo, session: last };
-  return                                   { status: 'expired', label: 'Vencido',            lastDate: last.date, daysAgo, session: last };
-}
+// Classificação canônica movida pra training-status.js (item 7 da revisão de
+// produto) — outras telas (algumas lazy-loaded, não podem importar este
+// arquivo pesado) também precisavam dela e reimplementavam cada uma a sua
+// conta, três delas divergentes da configuração real da loja.
+const STATUS_LABEL = { ok: 'Em dia', warn: 'Renovação próxima', expired: 'Vencido', never: 'Nunca capacitado' };
 
 // ─── Certificate PDF ───────────────────────────────────────────────────────
 
@@ -445,10 +436,10 @@ function SessionDetail({ session, onBack, onUpdate, session: _s, tenant, config,
 
 function EmployeeStatusPanel({ allUsers, sessions, config }) {
   const validity = config?.validityMonths ?? 12;
-  const statuses = allUsers.map((u) => ({
-    ...u,
-    ...employeeTrainingStatus(u.name, sessions, validity),
-  }));
+  const statuses = allUsers.map((u) => {
+    const r = employeeTrainingStatus(u.name, sessions, validity);
+    return { ...u, status: r.status, daysAgo: r.daysAgo, lastDate: r.session?.date ?? null, label: STATUS_LABEL[r.status] };
+  });
 
   const counts = {
     ok:      statuses.filter((s) => s.status === 'ok').length,

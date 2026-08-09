@@ -3,22 +3,14 @@ import { loginHandle } from './user-match';
 import { writePinOverride, isWeakPin } from './pin';
 import { isSupabaseEnabled as supabaseEnabled } from './repository';
 import { isGlobalAdmin } from './permissions';
+import { readTurns, writeTurns } from './turns';
 
 const catalogKey = (id) => `nutriops.equipment.catalog.${id}`;
-const turnsKey   = (id) => `nutriops.turns.${id}`;
 const usersKey   = (id) => `nutriops.users.${id}`;
 const load = (key, fallback) => { try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : fallback; } catch { return fallback; } };
 const save = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} };
 
-const DEFAULT_TURNS = [
-  { id: 'manha', name: 'Manhã',  start: '06:00', end: '11:59' },
-  { id: 'tarde', name: 'Tarde',  start: '12:00', end: '17:59' },
-  { id: 'noite', name: 'Noite',  start: '18:00', end: '23:59' },
-];
-
 const readEquipmentCatalog = (t) => load(catalogKey(t.id), t.equipmentCatalog ?? []);
-const readTurns  = (t)     => load(turnsKey(t.id), DEFAULT_TURNS);
-const writeTurns = (id, v) => save(turnsKey(id), v);
 const readUsers  = (t)     => load(usersKey(t.id), t.usersList ?? []);
 const writeUsers = (id, v) => save(usersKey(id), v);
 

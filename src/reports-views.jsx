@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useState, useMemo, useEffect } from 'react';
 import { getTemperatureRepository } from './repository';
-import { resolveLimits as resolveLimitsFromCatalog } from './limits';
+import { resolveLimits as resolveLimitsFromCatalog, resolveRecordTone as resolveTemperatureTone } from './limits';
+import { employeeTrainingStatus } from './training-status';
 import CountUp from './count-up';
 
 const EquipmentDetailModal = lazy(() => import('./equipment-detail').then(m => ({ default: m.EquipmentDetailModal })));
@@ -8,14 +9,6 @@ const EquipmentDetailModal = lazy(() => import('./equipment-detail').then(m => (
 const catalogKey = (id) => `nutriops.equipment.catalog.${id}`;
 const load = (key, fallback) => { try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : fallback; } catch { return fallback; } };
 const readEquipmentCatalog = (t) => load(catalogKey(t.id), t.equipmentCatalog ?? []);
-
-function resolveTemperatureTone(record) {
-  const v = Number(record?.value), mn = Number(record?.min), mx = Number(record?.max);
-  if (isNaN(v) || isNaN(mn) || isNaN(mx)) return 'neutral';
-  if (v >= mn && v <= mx) return 'ok';
-  if (v >= mn - 3 && v <= mx + 3) return 'warn';
-  return 'danger';
-}
 
 function formatCompactDateTime(iso) {
   return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -227,14 +220,9 @@ export function DashboardView({ allTenants, records, activeTenant, onTenantChang
       const sessions = JSON.parse(localStorage.getItem(`nutriops.training.sessions.${tenant.id}`) ?? '[]');
       const config   = JSON.parse(localStorage.getItem(`nutriops.training.config.${tenant.id}`) ?? '{"validityMonths":12}');
       const users    = JSON.parse(localStorage.getItem(`nutriops.users.${tenant.id}`) ?? 'null') ?? tenant.usersList ?? [];
-      const limitDays = (config.validityMonths ?? 12) * 30;
-      trainingAlertCount = users.filter(u => {
-        const done = sessions.filter(s => s.status==='closed' && s.participants?.some(p=>p.name===u.name&&p.confirmed)).sort((a,b)=>new Date(b.date)-new Date(a.date));
-        const last = done[0];
-        if (!last) return true;
-        const daysAgo = Math.floor((now - new Date(last.date).getTime()) / 86400000);
-        return daysAgo >= limitDays * 0.85;
-      }).length;
+      trainingAlertCount = users.filter(u =>
+        employeeTrainingStatus(u.name, sessions, config.validityMonths ?? 12).status !== 'ok'
+      ).length;
     } catch { /**/ }
 
     const storeStats = tenant.multiStore && tenant.stores?.length > 1 ? tenant.stores.map(store => {

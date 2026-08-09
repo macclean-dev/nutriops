@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { pushSpecialControl } from './repository';
+import { resolveRecordTone } from './limits';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -729,12 +730,7 @@ export function printTodayReport(activeTenant, records) {
   ).sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
 
   const date = new Date().toLocaleString('pt-BR');
-  const toneLabel = r => {
-    const t = ({ok:'Conforme',warn:'Desvio leve',danger:'Fora da faixa',neutral:'—'})[
-      (() => { const v=Number(r?.value),mn=Number(r?.min),mx=Number(r?.max); if(isNaN(v)||isNaN(mn)||isNaN(mx))return'neutral'; if(v>=mn&&v<=mx)return'ok'; if(v>=mn-3&&v<=mx+3)return'warn'; return'danger'; })()
-    ];
-    return t;
-  };
+  const toneLabel = r => ({ ok:'Conforme', warn:'Desvio leve', danger:'Fora da faixa', neutral:'—' })[resolveRecordTone(r)];
 
   const rows = todayRecords.map(r => `<tr>
     <td>${new Date(r.createdAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</td>

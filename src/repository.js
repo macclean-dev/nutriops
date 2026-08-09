@@ -967,6 +967,57 @@ export async function syncValidityRules(tenantId) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// CORRECTIVE ACTIONS — só localStorage até 09/08 (achado da revisão de
+// produto): limpar o navegador apagava a evidência de correção de um desvio,
+// exigência da própria RDC 216. Muda de status ao longo do tempo (aberta →
+// em_andamento → resolvida), por isso upsert como products, não insert puro
+// como receiving_records.
+//
+// `source`/`sourceId` generalizam o que antes era só `recordId` de
+// temperatura — a Central de Não-Conformidades abre ação a partir de 4
+// origens (temperatura, recebimento rejeitado, controle reprovado, NC de
+// planilha). Ações já existentes SEM `source` (salvas antes desta mudança)
+// continuam lidas como `source:'temperature'` por quem consome (ver
+// actionSourceKey em pages.jsx) — não precisa migrar dado antigo.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function actionToRow(a, tenantId) {
+  return {
+    id: a.id, tenant_id: tenantId,
+    source: a.source ?? 'temperature', source_id: a.sourceId ?? a.recordId ?? null,
+    source_label: a.sourceLabel ?? a.equipment ?? null,
+    source_detail: a.sourceDetail ?? (a.temperature != null ? `${a.temperature}°C` : null),
+    description: a.description, responsible: a.responsible ?? null, deadline: a.deadline ?? null,
+    status: a.status, resolution: a.resolution ?? null,
+    created_at: a.createdAt, updated_at: a.updatedAt ?? new Date().toISOString(), closed_at: a.closedAt ?? null,
+  };
+}
+function actionFromRow(row) {
+  return {
+    id: row.id, tenantId: row.tenant_id,
+    source: row.source, sourceId: row.source_id, sourceLabel: row.source_label, sourceDetail: row.source_detail,
+    description: row.description, responsible: row.responsible, deadline: row.deadline,
+    status: row.status, resolution: row.resolution,
+    createdAt: row.created_at, updatedAt: row.updated_at, closedAt: row.closed_at,
+  };
+}
+
+export async function syncCorrectiveActions(tenantId) {
+  return syncModule({ table:'corrective_actions', localKey:`nutriops.corrective_actions.${tenantId}`, tenantId, toRow:(a)=>actionToRow(a, tenantId), fromRow:actionFromRow });
+}
+
+export async function pushCorrectiveAction(tenantId, action) {
+  const row = actionToRow(action, tenantId);
+  if (!isSupabaseEnabled() || !navigator.onLine) {
+    enqueue('corrective_actions', 'upsert', row);
+    return;
+  }
+  try {
+    await sbFetch('corrective_actions', { method:'POST', body:row, prefer:'resolution=merge-duplicates,return=minimal' }, tenantId);
+  } catch (e) { logFailAndEnqueue('corrective_actions', 'upsert', row, e); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // SPECIAL CONTROLS (óleo, descongelamento, resfriamento, tratamento térmico)
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1025,10 +1076,12 @@ export async function syncAllModules(tenantId) {
     syncReceiving(tenantId),
     syncProducts(tenantId),
     syncValidityRules(tenantId),
+    syncCorrectiveActions(tenantId),
     syncSpecialControls('oil', tenantId),
     syncSpecialControls('thaw', tenantId),
     syncSpecialControls('cool', tenantId),
     syncSpecialControls('thermal', tenantId),
+    syncSpecialControls('handwash', tenantId),
   ]);
   await supabaseRepository.syncQueue();
   setSyncStatus({ lastSync: new Date().toISOString(), pending: getOfflineQueue().length });
@@ -1073,11 +1126,17 @@ export async function migrateAllToSupabase(tenants) {
     }
 
     // Special controls
-    for (const type of ['oil','thaw','cool','thermal']) {
+    for (const type of ['oil','thaw','cool','thermal','handwash']) {
       const controls = ls(`nutriops.${type}.${id}`, []);
       for (const r of controls) {
         try { await sbFetch('special_controls', { method:'POST', body:controlToRow(type, r, id), prefer:'return=minimal' }, id); pushed++; } catch { failed++; }
       }
+    }
+
+    // Corrective actions
+    const actions = ls(`nutriops.corrective_actions.${id}`, []);
+    for (const a of actions) {
+      try { await sbFetch('corrective_actions', { method:'POST', body:actionToRow(a, id), prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
     }
   }
 
@@ -1096,7 +1155,8 @@ export function countAllLocalRecords(tenants) {
       n += ls(`nutriops.forms.records.${t.id}`, []).length;
       n += ls(`nutriops.receiving.${t.id}`, []).length;
       n += ls(`nutriops.products.${t.id}`, []).length;
-      for (const type of ['oil','thaw','cool','thermal']) {
+      n += ls(`nutriops.corrective_actions.${t.id}`, []).length;
+      for (const type of ['oil','thaw','cool','thermal','handwash']) {
         n += ls(`nutriops.${type}.${t.id}`, []).length;
       }
     }

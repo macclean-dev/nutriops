@@ -7,6 +7,7 @@ import CountUp from './count-up';
 import { getEffectivePin, writePinOverride, isWeakPin } from './pin';
 import { isGlobalAdmin } from './permissions';
 import { fetchAccessLog } from './tenant-sync';
+import { pushSpecialControl } from './repository';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -556,7 +557,13 @@ export function HandwashView({ activeTenant, allTenants, onTenantChange, session
 
   const handleSave = () => {
     if (!operator.trim() || !moment || !result) return;
-    setRecords(prev => [{ id:uid(), tenantId:activeTenant.id, operator:operator.trim(), moment, technique, result, obs:obs.trim(), user:session?.user?.name, createdAt:new Date().toISOString() }, ...prev].slice(0,300));
+    const record = { id:uid(), tenantId:activeTenant.id, operator:operator.trim(), moment, technique, result, obs:obs.trim(), user:session?.user?.name, createdAt:new Date().toISOString() };
+    setRecords(prev => [record, ...prev].slice(0,300));
+    // Único dos 5 controles que não subia pra nuvem (achado da revisão de
+    // produto, 09/08) — limpar o device apagava a evidência de higienização
+    // das mãos. `special_controls` já é genérica por control_type; só faltava
+    // chamar.
+    pushSpecialControl('handwash', activeTenant.id, record);
     setMoment(''); setTechnique(''); setResult(''); setObs('');
     setSaved(true); setTimeout(() => setSaved(false), 2500);
   };

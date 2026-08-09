@@ -44,7 +44,7 @@ export function buildNavSections({
       label: 'Gestão',
       items: [
         ['alerts',     'alerts',    'Alertas',          alertCount  || null],
-        ['actions',    'actions',   'Ações corretivas', actionCount || null],
+        ['actions',    'actions',   'Não conformidades', actionCount || null],
         ['rtpanel',    'rtpanel',   'Painel RT'],
         ['reportsHub', 'dashboard', 'Relatórios'],
         ['team',       'users',     'Equipe'],

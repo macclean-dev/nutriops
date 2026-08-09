@@ -4,7 +4,13 @@ import { readOnboardingTenants, writeOnboardingTenants } from './onboarding-stor
 import { readAdminAuth, writeAdminAuth, clearAdminAuth, readClients } from './admin-storage';
 import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
 import { trackUsage } from './repository';
-import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill } from './repository';
+import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill, pushCorrectiveAction, syncCorrectiveActions } from './repository';
+// Central de Não-Conformidades (item 2 da revisão, 09/08) — puro, sem React;
+// `extractNonConformities` (forms.jsx) e os readers de controles especiais
+// (controls.jsx/extras.jsx) entram por IMPORT DINÂMICO dentro do próprio
+// componente — são chunks pesados de UI que não devem entrar no bundle
+// principal só por causa desta tela.
+import { actionSourceKey, pendingTemperatureItems, pendingReceivingItems, pendingControlItems, pendingFormItems, excludeWithAction, CONTROL_TYPES } from './nonconformities';
 import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
@@ -1045,27 +1051,82 @@ function OverviewView({ activeTenant, allTenants, onTenantChange, session, equip
 
 // ─── Corrective Actions View ───────────────────────────────────────────────
 
+const SOURCE_BADGE = { temperature: 'Temperatura', receiving: 'Recebimento', control: 'Controle', form: 'Planilha' };
+
+// Pré-preenche a descrição com o que a origem já sabe — recebimento já tem o
+// motivo digitado, controle já tem a ação/observação, planilha já tem a NC.
+// Só temperatura nasce sem texto (não existe "motivo" pra um desvio numérico).
+function defaultDescriptionFor(item) {
+  if (!item) return '';
+  if (item.source === 'receiving') return item.raw?.motivoRejeicao ?? '';
+  if (item.source === 'control')   return item.raw?.acao || item.raw?.obs || '';
+  if (item.source === 'form')      return item.raw?.description ?? '';
+  return '';
+}
+
+// Ações salvas antes de 09/08 não têm `source` — exibidas como sempre foram
+// (equipment/temperature). Não precisa migrar dado antigo pra continuar lendo.
+function actionDisplay(a) {
+  if (a.source) return { badge: SOURCE_BADGE[a.source] ?? a.source, label: a.sourceLabel, detail: a.sourceDetail };
+  return { badge: 'Temperatura', label: a.equipment, detail: a.temperature != null ? `${a.temperature}°C` : '' };
+}
+
 function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, records }) {
   const [actions, setActions]         = useState(() => readActions(activeTenant.id));
   const [statusFilter, setStatusFilter] = useState('all');
-  const [creating, setCreating]       = useState(null); // out-of-range record
+  const [creating, setCreating]       = useState(null); // item pendente normalizado (ver nonconformities.js)
   const [editingId, setEditingId]     = useState(null);
   const [description, setDescription] = useState('');
   const [responsible, setResponsible] = useState('');
   const [deadline, setDeadline]       = useState('');
   const [resolution, setResolution]   = useState('');
   const [resolvingId, setResolvingId] = useState(null);
+  // Recebimento é lido direto (mesmo arquivo); controles especiais e
+  // planilhas vêm de chunks pesados (controls.jsx/extras.jsx/forms.jsx) — só
+  // carregados sob demanda, pra não engordar o bundle principal.
+  const [otherPending, setOtherPending] = useState({ receiving: [], controls: [], forms: [] });
 
-  useEffect(() => { setActions(readActions(activeTenant.id)); setCreating(null); setEditingId(null); }, [activeTenant.id]);
+  useEffect(() => {
+    setActions(readActions(activeTenant.id)); setCreating(null); setEditingId(null);
+    let vivo = true;
+    syncCorrectiveActions(activeTenant.id).then(() => { if (vivo) setActions(readActions(activeTenant.id)); });
+    return () => { vivo = false; };
+  }, [activeTenant.id]);
   useEffect(() => { writeActions(activeTenant.id, actions); }, [activeTenant.id, actions]);
+
+  useEffect(() => {
+    let vivo = true;
+    setOtherPending((prev) => ({ ...prev, receiving: pendingReceivingItems(load(recStorageKey(activeTenant.id), [])) }));
+    (async () => {
+      const [controlsMod, extrasMod, formsMod] = await Promise.all([import('./controls'), import('./extras'), import('./forms')]);
+      if (!vivo) return;
+      const { readOil, readThaw, readCool, readThermal } = controlsMod;
+      const { readHandwash } = extrasMod;
+      const { readFormTemplates, readFormRecords, extractNonConformities } = formsMod;
+      const controls = [
+        ...pendingControlItems('oil', readOil(activeTenant.id)),
+        ...pendingControlItems('thaw', readThaw(activeTenant.id)),
+        ...pendingControlItems('cool', readCool(activeTenant.id)),
+        ...pendingControlItems('thermal', readThermal(activeTenant.id)),
+        ...pendingControlItems('handwash', readHandwash(activeTenant.id)),
+      ];
+      const forms = pendingFormItems(readFormTemplates(activeTenant), readFormRecords(activeTenant.id), extractNonConformities);
+      if (vivo) setOtherPending((prev) => ({ ...prev, controls, forms }));
+    })();
+    return () => { vivo = false; };
+  }, [activeTenant.id]);
 
   const users = readUsers(activeTenant);
 
-  const outOfRange = records.filter((r) => r.tenantId === activeTenant.id && resolveTemperatureTone(r) !== 'ok' && resolveTemperatureTone(r) !== 'neutral' && !actions.some((a) => a.recordId === r.id));
+  const temperaturePending = pendingTemperatureItems(records, activeTenant.id, resolveTemperatureTone);
+  const pending = excludeWithAction(
+    [...temperaturePending, ...otherPending.receiving, ...otherPending.controls, ...otherPending.forms],
+    actions,
+  ).sort((a, b) => new Date(b.at ?? 0) - new Date(a.at ?? 0));
 
-  const openCreate = (record) => {
-    setCreating(record); setEditingId(null);
-    setDescription(''); setResponsible(users[0]?.name ?? '');
+  const openCreate = (item) => {
+    setCreating(item); setEditingId(null);
+    setDescription(defaultDescriptionFor(item)); setResponsible(users[0]?.name ?? '');
     setDeadline(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
     setResolution('');
   };
@@ -1073,21 +1134,27 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
   const saveAction = () => {
     if (!description.trim() || !creating) return;
     const action = {
-      id: crypto.randomUUID(), tenantId: activeTenant.id, recordId: creating.id,
-      equipment: creating.equipment || creating.equipmentInput, temperature: creating.value,
-      deviation: resolveTemperatureTone(creating), description: description.trim(),
-      responsible, deadline, status: 'aberta', resolution: '',
+      id: crypto.randomUUID(), tenantId: activeTenant.id,
+      source: creating.source, sourceId: creating.sourceId,
+      sourceLabel: creating.sourceLabel, sourceDetail: creating.sourceDetail,
+      description: description.trim(), responsible, deadline, status: 'aberta', resolution: '',
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     };
-    setActions((prev) => [action, ...prev]); setCreating(null);
+    setActions((prev) => [action, ...prev]);
+    pushCorrectiveAction(activeTenant.id, action);
+    setCreating(null);
   };
 
   const advanceStatus = (id) => {
+    let toPush = null;
     setActions((prev) => prev.map((a) => {
       if (a.id !== id) return a;
       const next = a.status === 'aberta' ? 'em_andamento' : a.status === 'em_andamento' ? 'resolvida' : 'resolvida';
-      return { ...a, status: next, updatedAt: new Date().toISOString(), closedAt: next === 'resolvida' ? new Date().toISOString() : a.closedAt, resolution: resolvingId === id ? resolution : a.resolution };
+      const updated = { ...a, status: next, updatedAt: new Date().toISOString(), closedAt: next === 'resolvida' ? new Date().toISOString() : a.closedAt, resolution: resolvingId === id ? resolution : a.resolution };
+      toPush = updated;
+      return updated;
     }));
+    if (toPush) pushCorrectiveAction(activeTenant.id, toPush);
     setResolvingId(null); setResolution('');
   };
 
@@ -1103,7 +1170,7 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
   return (
     <section className="management-page">
       <div className="page-header">
-        <div><span className="eyebrow">Gestão de desvios</span><h1>Ações corretivas</h1><p className="muted">Registre e acompanhe correções para temperaturas fora da faixa.</p></div>
+        <div><span className="eyebrow">Central de não-conformidades</span><h1>Não conformidades</h1><p className="muted">Temperatura fora da faixa, recebimento rejeitado, controle reprovado e NC de planilha — tudo num lugar, com ação corretiva.</p></div>
         <div className="page-actions">
           <select value={activeTenant.id} onChange={(e) => onTenantChange(e.target.value)} style={{ width: 'auto' }}>
             {allTenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -1112,24 +1179,24 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
         </div>
       </div>
 
-      {/* Out-of-range records needing action */}
-      {outOfRange.length > 0 && (
+      {/* Itens sem ação corretiva ainda, de qualquer uma das 4 origens */}
+      {pending.length > 0 && (
         <article className="management-card" style={{ marginBottom: 16 }}>
-          <div className="card-head"><div><span className="eyebrow">Aguardando ação</span><h2>Desvios sem ação corretiva</h2></div><span className="badge danger">{outOfRange.length}</span></div>
+          <div className="card-head"><div><span className="eyebrow">Aguardando ação</span><h2>Não conformidades sem ação corretiva</h2></div><span className="badge danger">{pending.length}</span></div>
           <div className="equipment-maintenance-list">
-            {outOfRange.slice(0, 10).map((r) => {
-              const tone = resolveTemperatureTone(r);
-              return (
-                <div key={r.id} className="equipment-maintenance-row">
-                  <div>
-                    <strong>{r.equipmentInput || r.equipment}</strong>
-                    <span>{formatCompactDateTime(r.createdAt)} · {r.user}</span>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 15, fontWeight: 700, color: tone === 'danger' ? 'var(--red)' : 'var(--amber)' }}>{r.value}°C <small style={{ fontFamily: 'var(--font)', fontWeight: 400, color: 'var(--text-secondary)' }}>· faixa: {r.min}–{r.max}°C</small></span>
+            {pending.slice(0, 15).map((item) => (
+              <div key={`${item.source}::${item.sourceId}`} className="equipment-maintenance-row">
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span className="badge neutral" style={{ fontSize: 10 }}>{SOURCE_BADGE[item.source]}</span>
+                    <strong>{item.sourceLabel}</strong>
                   </div>
-                  <button className="primary-action" style={{ fontSize: 12, padding: '6px 12px' }} onClick={() => openCreate(r)}>Abrir ação</button>
+                  {item.at && <span>{formatCompactDateTime(item.at)}</span>}
+                  {item.sourceDetail && <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{item.sourceDetail}</span>}
                 </div>
-              );
-            })}
+                <button className="primary-action" style={{ fontSize: 12, padding: '6px 12px' }} onClick={() => openCreate(item)}>Abrir ação</button>
+              </div>
+            ))}
           </div>
         </article>
       )}
@@ -1138,7 +1205,7 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
       {creating && (
         <article className="management-card" style={{ marginBottom: 16, borderColor: 'var(--blue-border)', background: 'var(--blue-light)' }}>
           <div className="card-head" style={{ background: 'transparent', borderBottomColor: 'var(--blue-border)' }}>
-            <div><span className="eyebrow">Nova ação</span><h2>{creating.equipment || creating.equipmentInput} · {creating.value}°C</h2></div>
+            <div><span className="eyebrow">Nova ação · {SOURCE_BADGE[creating.source]}</span><h2>{creating.sourceLabel}</h2></div>
             <button className="ghost-action" onClick={() => setCreating(null)}>✕ Cancelar</button>
           </div>
           <div className="capture-fields">
@@ -1172,14 +1239,17 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
         </div>
         <div className="equipment-maintenance-list">
           {filtered.length === 0 ? <p className="muted" style={{ padding: '20px' }}>Nenhuma ação encontrada.</p>
-            : filtered.map((a) => (
+            : filtered.map((a) => {
+              const disp = actionDisplay(a);
+              return (
               <div key={a.id} className="equipment-maintenance-row" style={{ flexDirection: 'column', gap: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, width: '100%' }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <strong>{a.equipment}</strong>
+                      <span className="badge neutral" style={{ fontSize: 10 }}>{disp.badge}</span>
+                      <strong>{disp.label}</strong>
                       <span className={`badge ${statusTone[a.status]}`}>{statusLabel[a.status]}</span>
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 700, color: a.deviation === 'danger' ? 'var(--red)' : 'var(--amber)' }}>{a.temperature}°C</span>
+                      {disp.detail && <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{disp.detail}</span>}
                     </div>
                     <p style={{ fontSize: 13, color: 'var(--text)', marginBottom: 4 }}>{a.description}</p>
                     <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
@@ -1209,7 +1279,8 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
         </div>
       </article>
     </section>

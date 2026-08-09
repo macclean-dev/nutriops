@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { completionPct, generateFormPDF, readFormTemplates, templateSector, quickSign } from './forms';
+import { completionPct, generateFormPDF, readFormTemplates, templateSector, quickSign, extractNonConformities } from './forms';
 
 // Template no formato do CASA DOCE Banheiros, exercitando os tipos novos.
 const TPL = {
@@ -31,6 +31,69 @@ describe('quickSign — assinatura de 1 toque (revisão de produto 09/08)', () =
 
   it('remove espaço em volta do nome', () => {
     expect(quickSign('  Ana Paula  ').sig).toBe('Ana Paula');
+  });
+});
+
+describe('extractNonConformities — Central de Não-Conformidades (item 2 da revisão)', () => {
+  // Modela exatamente a convenção real (Banheiros, Hortifrutícolas, as 21 de
+  // Higienização): seção terminando em "-nc", campos -ncdesc/-ncacao/-ncresp.
+  const TPL_NC = {
+    id: 'tpl-nc', category: 'faxina', frequency: 'weekly', title: 'Teste NC',
+    sections: [
+      { id: 's-tarefas', title: 'Tarefas', fields: [{ id: 'tarefa1', label: 'Tarefa', type: 'date_sig' }] },
+      { id: 'x-nc', title: 'Não conformidade (se houver)', fields: [
+        { id: 'x-ncdesc', label: 'Não conformidade', type: 'text' },
+        { id: 'x-ncacao', label: 'Ação corretiva', type: 'text' },
+        { id: 'x-ncresp', label: 'Responsável pela correção', type: 'text' },
+      ]},
+    ],
+  };
+
+  it('sem responses: lista vazia, sem quebrar', () => {
+    expect(extractNonConformities(TPL_NC, null)).toEqual([]);
+    expect(extractNonConformities(TPL_NC, {})).toEqual([]);
+  });
+
+  it('seção de NC vazia (usuário não escreveu nada): não conta como NC', () => {
+    const record = { responses: { 'x-ncdesc': '', 'x-ncacao': '', 'x-ncresp': '' } };
+    expect(extractNonConformities(TPL_NC, record)).toEqual([]);
+  });
+
+  it('só espaço em branco também não conta', () => {
+    const record = { responses: { 'x-ncdesc': '   ' } };
+    expect(extractNonConformities(TPL_NC, record)).toEqual([]);
+  });
+
+  it('NC escrita: extrai descrição, ação e responsável', () => {
+    const record = { responses: { 'x-ncdesc': 'Piso rachado', 'x-ncacao': 'Chamado o zelador', 'x-ncresp': 'Fran' } };
+    expect(extractNonConformities(TPL_NC, record)).toEqual([
+      { sectionId: 'x-nc', description: 'Piso rachado', action: 'Chamado o zelador', responsible: 'Fran' },
+    ]);
+  });
+
+  it('NC com só a descrição (ação/responsável ainda não preenchidos)', () => {
+    const record = { responses: { 'x-ncdesc': 'Piso rachado' } };
+    expect(extractNonConformities(TPL_NC, record)).toEqual([
+      { sectionId: 'x-nc', description: 'Piso rachado', action: null, responsible: null },
+    ]);
+  });
+
+  it('template sem nenhuma seção de NC: lista vazia', () => {
+    const tplSemNc = { id: 't2', sections: [{ id: 's1', fields: [{ id: 'f1', type: 'text' }] }] };
+    expect(extractNonConformities(tplSemNc, { responses: { f1: 'qualquer coisa' } })).toEqual([]);
+  });
+
+  it('funciona com o padrão real das 21 planilhas de higienização (id gerado por slug)', () => {
+    const tpl = {
+      id: 'cd-hig-padaria',
+      sections: [{ id: 'cd-hig-padaria-nc', title: 'Não conformidade (se houver)', fields: [
+        { id: 'cd-hig-padaria-ncdesc', type: 'text' },
+        { id: 'cd-hig-padaria-ncacao', type: 'text' },
+        { id: 'cd-hig-padaria-ncresp', type: 'text' },
+      ]}],
+    };
+    const record = { responses: { 'cd-hig-padaria-ncdesc': 'Mofo na parede' } };
+    expect(extractNonConformities(tpl, record)[0].description).toBe('Mofo na parede');
   });
 });
 

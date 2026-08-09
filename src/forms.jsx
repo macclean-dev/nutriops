@@ -283,6 +283,33 @@ export function completionPct(template, record) {
   return total>0 ? Math.round((filled/total)*100) : 0;
 }
 
+// Uma NC escrita numa planilha ficava só ali dentro — a Central de
+// Não-Conformidades precisa achá-las sem conhecer cada template na mão.
+// Convenção usada em TODAS as seções de NC (Banheiros, Hortifrutícolas, as 21
+// de Higienização): a seção termina em "-nc" e tem 3 campos de texto com
+// sufixo -ncdesc/-ncacao/-ncresp. Genérico de propósito — funciona pra
+// qualquer template futuro que siga a mesma convenção, sem precisar listar ids.
+export function extractNonConformities(template, record) {
+  if (!record?.responses) return [];
+  const out = [];
+  for (const sec of template.sections ?? []) {
+    if (!sec.id?.endsWith('-nc')) continue;
+    const descField = sec.fields.find((f) => f.id.endsWith('ncdesc'));
+    if (!descField) continue;
+    const description = record.responses[descField.id];
+    if (!description || !String(description).trim()) continue; // só conta se tem o quê
+    const acaoField = sec.fields.find((f) => f.id.endsWith('ncacao'));
+    const respField = sec.fields.find((f) => f.id.endsWith('ncresp'));
+    out.push({
+      sectionId: sec.id,
+      description: String(description).trim(),
+      action: acaoField ? (record.responses[acaoField.id] ?? null) : null,
+      responsible: respField ? (record.responses[respField.id] ?? null) : null,
+    });
+  }
+  return out;
+}
+
 // ─── PDF generator for forms ───────────────────────────────────────────────
 
 export function generateFormPDF(template, record, tenant) {

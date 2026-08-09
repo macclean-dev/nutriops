@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { readFormRecords, readFormTemplates, catMeta, formatPeriodLabel, getPeriodKey, freqLabel } from './forms';
+import { readFormRecords, readFormTemplates, extractNonConformities, catMeta, formatPeriodLabel, getPeriodKey, freqLabel } from './forms';
 import { readSessions } from './training';
+import { readOil, readThaw, readCool, readThermal } from './controls';
 import { APP_VERSION } from './pages';
 import { buildCommands, matchCommands, readRecentCommandIds, pushRecentCommandId } from './commands';
 import CountUp from './count-up';
@@ -10,6 +11,7 @@ import { fetchAccessLog } from './tenant-sync';
 import { pushSpecialControl } from './repository';
 import { resolveRecordTone } from './limits';
 import { employeeTrainingStatus } from './training-status';
+import { computeWeeklySummary, summaryToText } from './weekly-summary';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -44,6 +46,24 @@ export function logSession(tenantId, user) {
 
 export function RTPanelView({ allTenants, records, session }) {
   const now = Date.now();
+  const [copiedId, setCopiedId] = useState(null);
+
+  const copiarResumo = async (weekly) => {
+    try {
+      await navigator.clipboard.writeText(summaryToText(weekly));
+      setCopiedId(weekly.tenantId);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch { /* clipboard indisponível (ex.: contexto não seguro) — só não dá feedback */ }
+  };
+
+  // mailto: em vez de disparar via EmailJS — "e-mail opcional" sem exigir um
+  // template novo configurado no dashboard deles às cegas; abre o cliente de
+  // e-mail de quem estiver logado, pra mandar pra si mesma ou pro dono da loja.
+  const mailtoHref = (weekly) => {
+    const subject = encodeURIComponent(`Resumo da semana — ${weekly.tenantName}`);
+    const body = encodeURIComponent(summaryToText(weekly));
+    return `mailto:?subject=${subject}&body=${body}`;
+  };
 
   const data = useMemo(() => allTenants.map(tenant => {
     const templates = readFormTemplates(tenant);
@@ -73,7 +93,23 @@ export function RTPanelView({ allTenants, records, session }) {
     const ok = monthRecs.filter(r => resolveRecordTone(r) === 'ok').length;
     const compliance = monthRecs.length > 0 ? Math.round((ok / monthRecs.length) * 100) : null;
 
-    return { tenant, pendingForms, expiringTraining, outOfRange, compliance, monthRecs: monthRecs.length };
+    // Resumo da semana (item 12) — "o que aconteceu" além do snapshot atual
+    // acima. controlsByType/receiving/actions não têm reader canônico fora
+    // de pages.jsx; ler pela mesma chave (sk/sl já definidos neste arquivo)
+    // é o mesmo padrão que o resto do repo usa pra esse tipo de leitura
+    // pontual (ex.: company profile duplicado em 5 lugares).
+    const receiving = sl(sk('receiving', tenant.id), []);
+    const controlsByType = {
+      oil: readOil(tenant.id), thaw: readThaw(tenant.id), cool: readCool(tenant.id),
+      thermal: readThermal(tenant.id), handwash: readHandwash(tenant.id),
+    };
+    const actions = sl(sk('corrective_actions', tenant.id), []);
+    const weekly = computeWeeklySummary({
+      tenant, records, receiving, controlsByType, templates, formRecords: formRecs,
+      actions, extractNonConformities, resolveTone: resolveRecordTone, now,
+    });
+
+    return { tenant, pendingForms, expiringTraining, outOfRange, compliance, monthRecs: monthRecs.length, weekly };
   }), [allTenants, records, now]);
 
   const totalPending = data.reduce((a, d) => a + d.pendingForms.length, 0);
@@ -112,7 +148,7 @@ export function RTPanelView({ allTenants, records, session }) {
 
       {/* Per company */}
       <div className="dash-stagger" style={{ display:'flex', flexDirection:'column', gap:12 }}>
-        {data.map(({ tenant, pendingForms, expiringTraining, outOfRange, compliance, monthRecs }) => (
+        {data.map(({ tenant, pendingForms, expiringTraining, outOfRange, compliance, monthRecs, weekly }) => (
           <article key={tenant.id} className="management-card" style={{ borderLeft:`4px solid ${tenant.brandColor}` }}>
             <div className="card-head">
               <div>
@@ -148,6 +184,21 @@ export function RTPanelView({ allTenants, records, session }) {
                 ))}
               </div>
             )}
+            <div style={{ padding:'10px 20px 14px', borderTop:'1px solid var(--border-subtle)' }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, gap:8, flexWrap:'wrap' }}>
+                <span style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em', color:'var(--text-secondary)' }}>Resumo da semana</span>
+                <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                  {copiedId === tenant.id && <span style={{ fontSize:11, color:'var(--green)' }}>Copiado!</span>}
+                  <button className="ghost-action" style={{ fontSize:11 }} onClick={() => copiarResumo(weekly)}>Copiar</button>
+                  <a className="ghost-action" style={{ fontSize:11, textDecoration:'none' }} href={mailtoHref(weekly)}>Enviar por e-mail</a>
+                </div>
+              </div>
+              <div style={{ display:'flex', gap:16, flexWrap:'wrap', fontSize:12, color:'var(--text-secondary)' }}>
+                <span>{weekly.newNonConformities.length} não conformidade{weekly.newNonConformities.length!==1?'s':''} nova{weekly.newNonConformities.length!==1?'s':''}</span>
+                <span>{weekly.actionsResolved.length} ação{weekly.actionsResolved.length!==1?'ões':''} resolvida{weekly.actionsResolved.length!==1?'s':''} · {weekly.actionsStillOpen.length} aberta{weekly.actionsStillOpen.length!==1?'s':''}</span>
+                <span>{weekly.formsValidatedThisWeek.length} planilha{weekly.formsValidatedThisWeek.length!==1?'s':''} validada{weekly.formsValidatedThisWeek.length!==1?'s':''} · {weekly.formsAwaitingValidation.length} aguardando</span>
+              </div>
+            </div>
           </article>
         ))}
       </div>

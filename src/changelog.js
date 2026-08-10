@@ -21,6 +21,9 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.120', date: '2026-08-10', items: [
+    'O app agora avisa quando a lista de equipamentos que está na tela não é a da sua unidade (antes ele mostrava uma lista de exemplo em silêncio, e dava pra registrar temperatura num equipamento que não existe). Tem um botão "Tentar de novo" no próprio aviso.',
+  ]},
   { version: '1.9.119', date: '2026-08-10', items: [
     'Correção: a nutricionista RT agora consegue convidar colaboradores de verdade (o botão aparecia mas dava erro "você não administra esta empresa").',
   ]},

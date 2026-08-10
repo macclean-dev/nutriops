@@ -43,3 +43,28 @@ export function buildEquipmentCatalog(labels) {
     location: 'Unidade principal',
   }));
 }
+
+// O catálogo "de fábrica" é real? Não — é o que `buildEquipmentCatalog` gera
+// pra uma loja recém-criada: genéricos do segmento, todos no setor inventado
+// 'Unidade principal' e sem faixa de temperatura. É um provisório à espera do
+// catálogo de verdade, que vive na TABELA equipment_catalog da nuvem.
+//
+// POR QUE detectar: quando o sync do catálogo falha, ele engole o erro e só
+// escreve no console (`syncEquipmentCatalog`, repository.js) — num tablet
+// ninguém vê console. O device fica exibindo esses genéricos como se fossem os
+// equipamentos da loja. Aconteceu na CASA DOCE (07 e 10/08): a loja tem 44
+// equipamentos em 11 setores, e um aparelho mostrava 4 falsos num setor só —
+// a nutricionista leu isso como "o app parou de agrupar", não como "não
+// sincronizou". Pior: dá pra registrar temperatura de equipamento inexistente.
+//
+// Mora aqui de propósito, ao lado do gerador: se um mudar sem o outro, o
+// detector para de reconhecer o próprio provisório que o app cria.
+export function isPlaceholderCatalog(catalog) {
+  const list = Array.isArray(catalog) ? catalog : [];
+  if (list.length === 0) return false;   // vazio é vazio — quem trata é o chamador
+  const genericos = new Set(Object.values(DEFAULT_EQUIPMENT).flat());
+  return list.every((eq) =>
+    eq?.location === 'Unidade principal' &&
+    genericos.has(eq?.label) &&
+    eq?.minTemp == null && eq?.maxTemp == null);
+}

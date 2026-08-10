@@ -19,6 +19,7 @@ import { APP_VERSION, NutriMark, BrandLockup } from './brand';
 import { getUnseenEntries } from './changelog';
 import { resolveLimits as resolveLimitsFromCatalog, resolveTone, resolveRecordTone as resolveTemperatureTone, heuristicLimits, suggestLimits, dedupeCatalog, normalizeEquipmentName, getEquipmentEntry } from './limits';
 import { receivingSuggestedResult } from './verdict';
+import { isPlaceholderCatalog } from './segments';
 
 // ─── Lazy view loading ────────────────────────────────────────────────────
 // Cada chunk só baixa quando o usuário navega pra view correspondente.
@@ -1862,6 +1863,37 @@ function SupabaseAuthErrorBanner({ session, setActiveView }) {
   );
 }
 
+// Catálogo de equipamentos preso no provisório de fábrica (ver auto-cura no
+// doSync). Sem este aviso o aparelho mostra genéricos que não existem na loja
+// como se fossem os equipamentos dela — e dá pra registrar temperatura em cima
+// deles. Linguagem de chão de loja: quem lê isso é o colaborador no tablet, não
+// o dono. Um toque em "Tentar de novo" resolve; nada de console ou Configurações.
+function CatalogStaleBanner({ onRetry, retrying }) {
+  return (
+    <div role="alert" style={{
+      display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
+      padding:'10px 16px', marginBottom:16,
+      background:'var(--amber-light)', border:'1px solid var(--amber-border)',
+      borderRadius:'var(--r-lg)', flexWrap:'wrap',
+    }}>
+      <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+        <strong style={{ color:'var(--amber)', fontSize:13 }}>
+          ⚠ Esta não é a lista de equipamentos da sua unidade
+        </strong>
+        <span style={{ color:'var(--text-secondary)', fontSize:12 }}>
+          Não consegui trazer os equipamentos da loja — o que aparece na tela é uma
+          lista de exemplo. Confira a internet e toque em “Tentar de novo”. Se continuar
+          assim, avise o suporte antes de registrar temperatura.
+        </span>
+      </div>
+      <button onClick={onRetry} disabled={retrying}
+        style={{ padding:'6px 14px', borderRadius:'var(--r)', border:'1px solid var(--amber-border)', background:'var(--amber)', color:'white', fontSize:12, fontWeight:600, cursor: retrying ? 'default' : 'pointer', opacity: retrying ? .6 : 1, fontFamily:'var(--font)' }}>
+        {retrying ? 'Tentando…' : 'Tentar de novo'}
+      </button>
+    </div>
+  );
+}
+
 function LocalModeBanner({ session, activeTenant, setActiveView }) {
   const [enabled, setEnabled] = useState(() => isSupabaseEnabled());
   const [dismissedUntil, setDismissedUntil] = useState(() => {
@@ -2419,6 +2451,10 @@ export function App() {
   // [activeTenant, activeStoreId], então a tela continuava nos 4 até um reload
   // manual. Quem já tinha o app aberto antes (o dono) via os 44 e não percebia.
   const [catalogVersion, setCatalogVersion] = useState(0);
+  // Catálogo preso no provisório de fábrica + nuvem inacessível — ver a
+  // auto-cura no doSync e o CatalogStaleBanner.
+  const [catalogStale, setCatalogStale] = useState(false);
+  const [catalogRetrying, setCatalogRetrying] = useState(false);
 
   // Equipment catalog — store-specific if multi-store
   const equipmentCatalog = useMemo(() => {
@@ -2464,6 +2500,22 @@ export function App() {
   const handleStoreChange = useCallback((storeId) => {
     setActiveStoreId(storeId);
   }, []);
+
+  // Retry de um toque do CatalogStaleBanner — sem console, sem Configurações.
+  const retryCatalogSync = useCallback(async () => {
+    if (!session?.tenantId) return;
+    setCatalogRetrying(true);
+    try {
+      const eq = await syncEquipmentCatalog(session.tenantId);
+      if (eq.ok && eq.count > 0) {
+        setCatalogVersion((v) => v + 1);
+        setCatalogStale(false);
+      }
+    } catch (e) {
+      console.warn('[NutriOPS] retry do catálogo falhou:', e?.message ?? e);
+    }
+    setCatalogRetrying(false);
+  }, [session?.tenantId]);
 
   // ─── Operador (conta de loja) ────────────────────────────────────────────
   // O nome escolhido entra em session.user.name — é assim que os 14 pontos que
@@ -2673,6 +2725,39 @@ export function App() {
         // O sync gravou catálogo/equipe direto no localStorage. Sem este bump a
         // tela segue mostrando o que leu no primeiro render (o bug dos 4).
         setCatalogVersion((v) => v + 1);
+
+        // ── Auto-cura do catálogo de equipamentos ───────────────────────────
+        // O bump acima só resolve quando o sync FUNCIONOU. Quando ele falha,
+        // `syncEquipmentCatalog` devolve {ok:false} e escreve no console — e
+        // num tablet ninguém lê console. O device fica exibindo o catálogo de
+        // fábrica (genéricos em "Unidade principal") como se fosse o da loja.
+        // Foi o que aconteceu na CASA DOCE em 10/08: 44 equipamentos em 11
+        // setores na nuvem, 4 falsos num setor só na tela — lido como "o app
+        // parou de agrupar". Aqui a gente olha o que a tela REALMENTE vai
+        // mostrar; se for o provisório, tenta de novo e, persistindo, avisa em
+        // português em vez de deixar o aparelho mentindo em silêncio.
+        const tenantAtual = activeTenants.find((t) => t.id === session.tenantId);
+        const naTela = dedupeCatalog(readEquipmentCatalog(tenantAtual ?? { id: session.tenantId }));
+        if (naTela.length === 0 || isPlaceholderCatalog(naTela)) {
+          const eq = await syncEquipmentCatalog(session.tenantId);
+          if (eq.ok && eq.count > 0) {
+            setCatalogVersion((v) => v + 1);
+            setCatalogStale(false);
+          } else if (isPlaceholderCatalog(naTela)) {
+            // Chegamos aqui de dois jeitos, e o alerta vale pros dois:
+            //  · {ok:false} — rede/credencial caiu;
+            //  · {ok:true, count:0} — o PostgREST devolve LISTA VAZIA quando o
+            //    RLS filtra tudo, não um erro. Ou seja: "não veio nada" não
+            //    prova que a loja não tem equipamento.
+            // Como a tela está no provisório de fábrica, nos dois casos a
+            // pessoa vê equipamento que não existe na unidade dela — e pode
+            // registrar temperatura em cima. Alertar é o certo.
+            console.warn(`[NutriOPS] catálogo preso no provisório — ok=${eq.ok} count=${eq.count ?? 0} ${eq.reason ?? ''}`);
+            setCatalogStale(true);
+          }
+          // Tela vazia + nuvem vazia → "nenhum equipamento" já diz a verdade
+          // sozinho. Não alarma (é a loja nova que ainda não cadastrou nada).
+        }
 
         // Auto-backfill (auto-cura sem admin): na 1ª conexão bem-sucedida do
         // device, empurra o histórico local que não passou pela fila (registros
@@ -2885,6 +2970,7 @@ export function App() {
         )}
         <LocalModeBanner session={session} activeTenant={activeTenant} setActiveView={setActiveView} />
         <SupabaseAuthErrorBanner session={session} setActiveView={setActiveView} />
+        {catalogStale && <CatalogStaleBanner onRetry={retryCatalogSync} retrying={catalogRetrying} />}
         {activeTenant.implantacao === true && (
           <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap', padding:'10px 16px', marginBottom:12, borderRadius:'var(--r-lg)', background:'rgba(0,104,74,.08)', border:'1px solid rgba(0,104,74,.25)', fontSize:13, color:'var(--text)' }}>
             <span style={{ fontWeight:700, color:'var(--primary)', letterSpacing:'.04em' }}>EM IMPLANTAÇÃO</span>

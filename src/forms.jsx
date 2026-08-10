@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FormKioskApp } from './kiosk';
 import { pushFormRecord } from './repository';
 import { ImportTemplateModal } from './import-template-modal';
+import { isFieldDue, dueFields } from './field-frequency';
 
 // Read company profile from localStorage
 function getProfile(tenantId) {
@@ -110,7 +111,10 @@ export function pendingFormsForPeriod(templates, records, now = new Date()) {
 }
 
 function uid() { return crypto.randomUUID(); }
-const f = (label, type='cnc', hint=null) => ({ id:uid(), label, type, hint });
+// frequency (opcional, item 13): sobrepõe a frequência da planilha só pra
+// essa tarefa — ex.: 'quarterly' pra "Paredes (trimestral)" numa planilha
+// weekly. Sem isso, a tarefa segue a frequência da planilha, como sempre.
+const f = (label, type='cnc', hint=null, frequency=null) => ({ id:uid(), label, type, hint, frequency });
 
 // ─── Foto de evidência ─────────────────────────────────────────────────────
 // Reduz no APARELHO antes de enviar: foto de celular vem com 3-4 MB e 4000px,
@@ -285,7 +289,7 @@ export function quickSign(currentName) {
   return { date: getPeriodKey('daily'), sig: (currentName ?? '').trim() };
 }
 
-export function completionPct(template, record) {
+export function completionPct(template, record, now = new Date()) {
   if (!record) return 0;
   let total=0, filled=0;
   for (const sec of template.sections) {
@@ -294,6 +298,10 @@ export function completionPct(template, record) {
       // opcionais por natureza. Contar a foto deixaria a planilha eternamente
       // "incompleta" nos dias em que não houve nada pra fotografar.
       if (field.type==='text' || field.type==='photo') continue;
+      // Tarefa com frequência própria mais espaçada (item 13) — "Paredes
+      // (trimestral)" numa planilha semanal não conta contra o total nas
+      // semanas em que não é devida, senão a planilha nunca bateria 100%.
+      if (!isFieldDue(field, template.frequency, now)) continue;
       total++;
       const v = record.responses?.[field.id];
       if (field.type==='checkbox') { if (v===true) filled++; continue; } // só marcado conta
@@ -561,8 +569,8 @@ const TPL_FAXINA_BACKEREI = () => ({
       f('Cadeiras: couro','date_sig'),
       f('Vidros: dois lados / Piso','date_sig'),
       f('Máquina de Gelo','date_sig'),
-      f('Mármore / Luminárias (trimestral)','date_sig'),
-      f('Toldo (anual)','date_sig'),
+      f('Mármore / Luminárias (trimestral)','date_sig',null,'quarterly'),
+      f('Toldo (anual)','date_sig',null,'annual'),
     ]},
   ],
 });
@@ -588,12 +596,12 @@ const TPL_FAXINA_SWISS = () => ({
       f('Nichos 17','date_sig'), f('Vitrine Refrigerada','date_sig'),
       f('Refrigerador Expositor','date_sig'), f('Armário 1 e 2','date_sig'),
       f('Prateleiras 1/2 e 3/4','date_sig'), f('Luminárias','date_sig'),
-      f('Mesas / Suplat','date_sig'), f('Toldo (anual)','date_sig'),
+      f('Mesas / Suplat','date_sig'), f('Toldo (anual)','date_sig',null,'annual'),
     ]},
     { id:uid(), title:'Estoque', fields:[
       f('Geladeira: grades e contentores','date_sig'), f('Freezer: grades e contentores','date_sig'),
-      f('Estante / Estrado (bimestral)','date_sig'), f('Piso / Lixeiras','date_sig'),
-      f('Paredes (trimestral)','date_sig'), f('Luminárias (trimestral)','date_sig'),
+      f('Estante / Estrado (bimestral)','date_sig',null,'bimonthly'), f('Piso / Lixeiras','date_sig'),
+      f('Paredes (trimestral)','date_sig',null,'quarterly'), f('Luminárias (trimestral)','date_sig',null,'quarterly'),
     ]},
   ],
 });
@@ -919,9 +927,15 @@ const TPL_CD_CALIBRACAO = () => ({
 // frequency/title/description/sections) e um campo solto no objeto NÃO
 // sobreviveria ao round-trip da nuvem. Mudou o formato do título? Ajuste lá.
 const PER = { S:'semanal', M:'mensal', Q:'quinzenal', D:'diária', X:'frequência a definir' };
+// Item 13 da revisão: até aqui o `per` de cada tarefa só virava texto no
+// rótulo (linha abaixo) — a folha inteira cobrava toda semana mesmo pras
+// tarefas M/Q. Agora vira `frequency` estruturado de verdade (field-frequency.js
+// decide se é devida nesta semana). X ("a definir") fica sem frequência
+// própria — não sabemos o ciclo real, então segue sempre devida, como antes.
+const PER_TO_FREQUENCY = { S:'weekly', D:'daily', Q:'biweekly', M:'monthly', X:null };
 
 const higSetor = (uuid, slug, setor, tarefas) => () => ({
-  id:uuid, category:'higienizacao', frequency:'weekly', v:2,
+  id:uuid, category:'higienizacao', frequency:'weekly', v:3,
   title:`Higienização — ${setor}`,
   description:`Higienização do setor ${setor}. Registre data e assinatura de cada tarefa concluída — o período esperado está no nome. Uma folha por semana, como no papel.`,
   sections:[
@@ -934,7 +948,7 @@ const higSetor = (uuid, slug, setor, tarefas) => () => ({
       { id:`cd-hig-${slug}-mes`,  label:'Mês / ano de referência', type:'date' },
     ]},
     { id:`cd-hig-${slug}-t`, title:'Tarefas', fields:tarefas.map(([nome, per], i) => (
-      { id:`cd-hig-${slug}-${i}`, label:`${nome} (${PER[per]})`, type:'date_sig' }
+      { id:`cd-hig-${slug}-${i}`, label:`${nome} (${PER[per]})`, type:'date_sig', frequency: PER_TO_FREQUENCY[per] ?? null }
     ))},
     { id:`cd-hig-${slug}-nc`, title:'Não conformidade (se houver)', fields:[
       { id:`cd-hig-${slug}-ncdesc`, label:'Não conformidade', type:'text' },
@@ -1225,7 +1239,7 @@ function FormFill({ template, record, onSave, onBack, session, tenant }) {
             <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'var(--text-secondary)', marginBottom:12, paddingBottom:8, borderBottom:'1px solid var(--border-subtle)' }}>{sec.title}</div>
           )}
           <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-            {sec.fields.map((field) => (
+            {dueFields(sec.fields, template.frequency).map((field) => (
               <div key={field.id} className="form-field-row">
                 <div>
                   <div style={{ fontSize:13, fontWeight:600, color:'var(--text)' }}>{field.label}</div>

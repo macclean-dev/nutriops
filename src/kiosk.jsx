@@ -496,6 +496,7 @@ export function KioskSetup({ activeTenant, equipmentCatalog, session, onLaunch, 
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { readFormTemplates, readFormRecords, writeFormRecords, completionPct, getPeriodKey, catMeta } from './forms';
+import { dueFields } from './field-frequency';
 
 function FormKioskField({ field, value, onChange, currentName }) {
   if (field.type === 'cnc') {
@@ -713,7 +714,7 @@ export function FormKioskApp({ template, tenantId, tenantName, userName, userRol
 
       {/* Fields */}
       <div style={{ padding:'20px 16px', maxWidth:680, margin:'0 auto', display:'flex', flexDirection:'column', gap:20 }}>
-        {section.fields.map(field => (
+        {dueFields(section.fields, template.frequency).map(field => (
           <div key={field.id} style={{ background:'white', borderRadius:16, padding:20, boxShadow:'0 1px 3px rgba(0,0,0,.08)' }}>
             <div style={{ fontSize:16, fontWeight:700, marginBottom:field.hint?6:14, color:'#001e2b' }}>{field.label}</div>
             {field.hint && <div style={{ fontSize:13, color:'#5c6c7a', marginBottom:12 }}>{field.hint}</div>}

@@ -692,7 +692,7 @@ const TPL_MANUTENCAO_DBK = () => ({
 // da nuvem (form_templates) no merge por id — sem duplicar. Novos templates da
 // CASA DOCE (Fase B) entram aqui conforme a nutricionista confirma os detalhes.
 const TPL_CASADOCE_BANHEIROS = () => ({
-  id:'c61acf39-5ff8-404e-8fae-f9f68734f1b2', category:'faxina', frequency:'daily', v:2,
+  id:'c61acf39-5ff8-404e-8fae-f9f68734f1b2', category:'faxina', frequency:'daily', v:3,
   title:'Controle de Higienização de Banheiros',
   description:'Registro diário. Marque a atividade realizada e o horário; quem preenche fica identificado (assinatura digital). Ref.: FP.HIG.001.',
   sections:[
@@ -700,7 +700,7 @@ const TPL_CASADOCE_BANHEIROS = () => ({
     // inútil numa fiscalização (pedido da nutricionista, 07/08).
     { id:'cd-ban-cab', title:'Identificação', fields:[
       { id:'cd-ban-local', label:'Qual banheiro', type:'select',
-        options:['Masculino — clientes','Feminino — clientes','Acessível / PCD','Masculino — colaboradores','Feminino — colaboradores','Vestiário'] },
+        options:['Masculino — clientes','Feminino — clientes','Acessível / PCD','Masculino — colaboradores','Feminino — colaboradores','Unissex 1º andar'] },
       { id:'cd-ban-resp',  label:'Responsável pela limpeza', type:'text' },
     ]},
     { id:'cd-ban-lg', title:'Limpeza Geral', fields:[

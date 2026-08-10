@@ -332,6 +332,13 @@ describe('seedTemplates CASA DOCE — 32 planilhas BPF (Fase A+B+C + 21 de higie
     expect(acha(banheiro, 'cd-ban-local')?.options).toContain('Acessível / PCD');
   });
 
+  it('opção de banheiro "Vestiário" virou "Unissex 1º andar" (pedido da nutricionista, 10/08)', () => {
+    const banheiro = readFormTemplates(CD).find(t => t.id === 'c61acf39-5ff8-404e-8fae-f9f68734f1b2');
+    const options = acha(banheiro, 'cd-ban-local')?.options;
+    expect(options).toContain('Unissex 1º andar');
+    expect(options).not.toContain('Vestiário');
+  });
+
   it('higiene pessoal: avental+uniforme juntos, sapato e unhas detalhados', () => {
     const higiene = readFormTemplates(CD).find(t => t.category === 'higiene_pessoal');
     expect(acha(higiene, 'cd-hig-uniforme').label).toBe('Avental / uniforme');

@@ -16,6 +16,7 @@ import { actionSourceKey, pendingTemperatureItems, pendingReceivingItems, pendin
 import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
+import { getUnseenEntries } from './changelog';
 import { resolveLimits as resolveLimitsFromCatalog, resolveTone, resolveRecordTone as resolveTemperatureTone, heuristicLimits, suggestLimits, dedupeCatalog, normalizeEquipmentName, getEquipmentEntry } from './limits';
 import { receivingSuggestedResult } from './verdict';
 
@@ -2211,10 +2212,52 @@ export function mergeMemberTenant(cloud, seed) {
   };
 }
 
+// ─── Novidades da versão ─────────────────────────────────────────────────
+// "O que mudou desde a última vez que você abriu" — pedido do dono (10/08),
+// inspirado no Nexum. Conteúdo puro em changelog.js; aqui só a UI.
+function ChangelogModal({ entries, onClose }) {
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:400, padding:24 }}>
+      <div className="management-card" style={{ width:'100%', maxWidth:480, maxHeight:'80vh', display:'flex', flexDirection:'column' }}>
+        <div className="card-head">
+          <div><span className="eyebrow">Novidades</span><h2>O que mudou no NutriOPS</h2></div>
+        </div>
+        <div style={{ overflowY:'auto', flex:1, minHeight:0 }}>
+          {entries.map((e) => (
+            <div key={e.version} style={{ padding:'12px 0', borderBottom:'1px solid var(--border-subtle)' }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'var(--text-secondary)', marginBottom:6 }}>
+                v{e.version} · {new Date(`${e.date}T12:00`).toLocaleDateString('pt-BR')}
+              </div>
+              <ul style={{ margin:0, paddingLeft:18, display:'flex', flexDirection:'column', gap:6 }}>
+                {e.items.map((item, i) => <li key={i} style={{ fontSize:13 }}>{item}</li>)}
+              </ul>
+            </div>
+          ))}
+        </div>
+        <div className="actions-row">
+          <button className="primary-action" onClick={onClose}>Entendi</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function App() {
   const repository = useMemo(() => getTemperatureRepository(), []);
   const [session, setSession]         = useState(() => readSession());
   const [activeTenants, setActiveTenants] = useState(() => readOnboardingTenants() ?? defaultTenants);
+
+  // Novidades da versão — só pra quem já usava o app antes (1º acesso não
+  // mostra nada, só passa a acompanhar a partir daqui). Marca como visto ao
+  // MOSTRAR, não ao fechar — evita reaparecer sozinho num reload acidental.
+  const [changelogEntries, setChangelogEntries] = useState([]);
+  useEffect(() => {
+    if (!session) return;
+    const lastSeen = localStorage.getItem('nutriops.changelog.lastSeen');
+    const unseen = getUnseenEntries(lastSeen);
+    if (unseen.length > 0) setChangelogEntries(unseen);
+    if (lastSeen !== APP_VERSION) localStorage.setItem('nutriops.changelog.lastSeen', APP_VERSION);
+  }, [session]);
 
   const handleLogin = useCallback((s, memberTenants) => {
     // Fase 3: login por e-mail de um membro traz as empresas dele (com metadata
@@ -2756,6 +2799,9 @@ export function App() {
 
   return (
     <div className="super-shell">
+      {changelogEntries.length > 0 && (
+        <ChangelogModal entries={changelogEntries} onClose={() => setChangelogEntries([])} />
+      )}
       {/* Troca voluntária de operador (pelo chip do rail) */}
       {operatorPickerOpen && (
         <OperatorPicker tenant={activeTenant}

@@ -540,20 +540,27 @@ export async function pushFormRecord(tenantId, record) {
 // FORM TEMPLATES (customizações por tenant — Vitrine Confeitaria, etc.)
 // ═══════════════════════════════════════════════════════════════════════════
 
-function tmplToRow(t, tenantId) {
+export function tmplToRow(t, tenantId) {
   return {
     id: t.id, tenant_id: tenantId,
     category: t.category, frequency: t.frequency,
     title: t.title, description: t.description ?? null,
     sections: t.sections,
+    // custom/v não iam pra nuvem — a edição da RT (custom:true) podia ser
+    // silenciosamente revertida por um sync num outro device (ou no mesmo,
+    // após um pull): sem esses dois campos, o registro que volta da nuvem
+    // parece "nunca editado" e readFormTemplates reaplica o seed por cima.
+    // Rodar docs/form-templates-custom-column.sql antes do deploy.
+    custom: t.custom ?? false, v: t.v ?? 0,
     updated_at: t.updatedAt ?? new Date().toISOString(),
   };
 }
-function tmplFromRow(row) {
+export function tmplFromRow(row) {
   return {
     id: row.id, category: row.category, frequency: row.frequency,
     title: row.title, description: row.description,
     sections: row.sections,
+    custom: row.custom ?? false, v: row.v ?? 0,
     updatedAt: row.updated_at,
   };
 }
@@ -1233,6 +1240,7 @@ create table if not exists form_templates (
   category text, frequency text,
   title text not null, description text,
   sections jsonb not null,
+  custom boolean default false, v integer default 0,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { localRepository, supabaseRepository, saveSupabaseConfig, lw } from './repository';
+import { localRepository, supabaseRepository, saveSupabaseConfig, lw, tmplToRow, tmplFromRow } from './repository';
 
 const RECORDS_KEY = 'nutriops.temperature.records';
 
@@ -78,5 +78,38 @@ describe('supabaseRepository.list — paginação do "Todos" (item 14)', () => {
     const rows = await supabaseRepository.list({ tenantId: 'swiss', days: 0 });
     expect(getCalls()).toBe(20); // MAX_PAGES
     expect(rows).toHaveLength(20000);
+  });
+});
+
+describe('tmplToRow/tmplFromRow — custom/v sobrevivem ao round-trip com a nuvem', () => {
+  it('tmplToRow inclui custom/v', () => {
+    const row = tmplToRow({ id: 't1', category: 'faxina', frequency: 'daily', title: 'X', sections: [], custom: true, v: 3 }, 'swiss');
+    expect(row.custom).toBe(true);
+    expect(row.v).toBe(3);
+  });
+
+  it('template sem custom/v (nunca editado) grava default seguro', () => {
+    const row = tmplToRow({ id: 't1', category: 'faxina', frequency: 'daily', title: 'X', sections: [] }, 'swiss');
+    expect(row.custom).toBe(false);
+    expect(row.v).toBe(0);
+  });
+
+  it('tmplFromRow devolve custom/v da linha da nuvem', () => {
+    const tpl = tmplFromRow({ id: 't1', category: 'faxina', frequency: 'daily', title: 'X', sections: [], custom: true, v: 3, updated_at: '2026-08-10T00:00:00Z' });
+    expect(tpl.custom).toBe(true);
+    expect(tpl.v).toBe(3);
+  });
+
+  it('linha antiga da nuvem (de antes da migração, sem as colunas) não quebra e assume default', () => {
+    const tpl = tmplFromRow({ id: 't1', category: 'faxina', frequency: 'daily', title: 'X', sections: [], updated_at: '2026-08-10T00:00:00Z' });
+    expect(tpl.custom).toBe(false);
+    expect(tpl.v).toBe(0);
+  });
+
+  it('round-trip completo preserva a edição da RT (regressão do bug encontrado em 10/08)', () => {
+    const editado = { id: 't1', category: 'faxina', frequency: 'daily', title: 'X', sections: [{ id: 's1', fields: [] }], custom: true, v: 4, updatedAt: '2026-08-10T00:00:00Z' };
+    const devolta = tmplFromRow(tmplToRow(editado, 'swiss'));
+    expect(devolta.custom).toBe(true);
+    expect(devolta.v).toBe(4);
   });
 });

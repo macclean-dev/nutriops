@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { completionPct, generateFormPDF, readFormTemplates, templateSector, quickSign, extractNonConformities, pendingFormsForPeriod, formatPeriodLabel, getPeriodKey } from './forms';
+import { completionPct, generateFormPDF, readFormTemplates, templateSector, quickSign, extractNonConformities, pendingFormsForPeriod, formatPeriodLabel, getPeriodKey, hasEditableTaskSection, extractSelectFields, isTemplateEditable, applySelectFieldEdits } from './forms';
 
 // Template no formato do CASA DOCE Banheiros, exercitando os tipos novos.
 const TPL = {
@@ -408,5 +408,63 @@ describe('formatPeriodLabel — período legível pra semana (item 15)', () => {
 
   it('chave malformada cai no fallback antigo em vez de quebrar', () => {
     expect(formatPeriodLabel('weekly', 'lixo')).toBe('Semana lixo');
+  });
+});
+
+describe('autonomia da RT — editar tarefas e opções de lista (10/08)', () => {
+  const comTarefaESelect = {
+    id: 'x1', category: 'faxina', v: 2,
+    sections: [
+      { id: 'x1-cab', title: 'Identificação', fields: [
+        { id: 'x1-local', label: 'Qual local', type: 'select', options: ['A', 'B'] },
+        { id: 'x1-resp', label: 'Responsável', type: 'text' },
+      ]},
+      { id: 'x1-t', title: 'Tarefas', fields: [
+        { id: 'x1-t-0', label: 'Piso', type: 'date_sig' },
+      ]},
+    ],
+  };
+  const soChecklistFixo = {
+    id: 'x2', category: 'higiene_pessoal',
+    sections: [{ id: 'x2-a', title: 'Verificação', fields: [{ id: 'x2-f1', label: 'Uniforme', type: 'cnc' }] }],
+  };
+
+  describe('hasEditableTaskSection', () => {
+    it('true quando existe seção terminada em -t', () => {
+      expect(hasEditableTaskSection(comTarefaESelect)).toBe(true);
+    });
+    it('false sem nenhuma seção -t', () => {
+      expect(hasEditableTaskSection(soChecklistFixo)).toBe(false);
+    });
+  });
+
+  describe('extractSelectFields', () => {
+    it('encontra campos select em qualquer seção, com índices corretos', () => {
+      const found = extractSelectFields(comTarefaESelect);
+      expect(found).toHaveLength(1);
+      expect(found[0]).toMatchObject({ sIdx: 0, fIdx: 0, id: 'x1-local', label: 'Qual local', options: ['A', 'B'] });
+    });
+    it('sem campo select, lista vazia', () => {
+      expect(extractSelectFields(soChecklistFixo)).toEqual([]);
+    });
+  });
+
+  describe('isTemplateEditable', () => {
+    it('editável por ter seção -t OU campo select', () => {
+      expect(isTemplateEditable(comTarefaESelect)).toBe(true);
+    });
+    it('não editável sem nenhum dos dois (checklist 100% fixo)', () => {
+      expect(isTemplateEditable(soChecklistFixo)).toBe(false);
+    });
+  });
+
+  describe('applySelectFieldEdits', () => {
+    it('aplica as opções editadas no campo certo, preservando o resto do template intacto', () => {
+      const edits = [{ sIdx: 0, fIdx: 0, options: ['A', 'B', 'C (novo)'] }];
+      const sections = applySelectFieldEdits(comTarefaESelect.sections, edits);
+      expect(sections[0].fields[0].options).toEqual(['A', 'B', 'C (novo)']);
+      expect(sections[0].fields[1]).toEqual(comTarefaESelect.sections[0].fields[1]); // campo vizinho intocado
+      expect(sections[1]).toEqual(comTarefaESelect.sections[1]); // outra seção intocada
+    });
   });
 });

@@ -216,20 +216,55 @@ function PhotoField({ value, onChange, tenantId, formId, periodKey, fieldId }) {
   );
 }
 
-// ─── Editor de tarefas de uma planilha de higienização ─────────────────────
+// ─── Autonomia da RT pra editar a própria planilha ──────────────────────────
+// Duas coisas independentes que uma planilha pode precisar: (1) lista de
+// tarefas/equipamentos (seção "-t", ex.: higienização por setor) e (2) opções
+// de um campo tipo lista suspensa (ex.: "Qual banheiro"). Puras e testáveis
+// sem React — o modal só monta a UI em cima delas.
+export function hasEditableTaskSection(template) {
+  return (template.sections ?? []).some((s) => s.id.endsWith('-t'));
+}
+
+export function extractSelectFields(template) {
+  const result = [];
+  (template.sections ?? []).forEach((sec, sIdx) => {
+    (sec.fields ?? []).forEach((f, fIdx) => {
+      if (f.type === 'select') result.push({ sIdx, fIdx, id: f.id, label: f.label, options: [...(f.options ?? [])] });
+    });
+  });
+  return result;
+}
+
+export function isTemplateEditable(template) {
+  return hasEditableTaskSection(template) || extractSelectFields(template).length > 0;
+}
+
+export function applySelectFieldEdits(sections, edits) {
+  return edits.reduce((secs, edit) => secs.map((s, i) => i !== edit.sIdx ? s : {
+    ...s, fields: s.fields.map((f, j) => j !== edit.fIdx ? f : { ...f, options: edit.options }),
+  }), sections);
+}
+
+// ─── Editor de tarefas + opções de lista suspensa ───────────────────────────
 // A RT cadastra equipamento novo (temperatura) mas não conseguia incluí-lo na
-// planilha de higienização do setor — pedido dela em 07/08. Mexe SÓ na seção
-// de tarefas; o cabeçalho e o bloco de não conformidade ficam intactos.
+// planilha de higienização do setor — pedido dela em 07/08. Depois (10/08),
+// pediu pra ajustar sozinha as opções de "Qual banheiro" sem precisar de mim
+// pra trocar uma palavra — mesma ideia, alcance maior: qualquer campo `select`
+// do template, não só a lista de tarefas.
 //
 // Planilha editada vira `custom:true` e para de receber atualização automática
 // do seed (readFormTemplates pula), senão o próximo ajuste meu apagaria o que
 // ela cadastrou. É a troca certa: quem edita assume o conteúdo.
 export function TaskEditorModal({ template, onSave, onClose }) {
-  const secId  = template.sections.find((s) => s.id.endsWith('-t'))?.id ?? template.sections[0]?.id;
-  const secIdx = template.sections.findIndex((s) => s.id === secId);
-  const [tarefas, setTarefas] = useState(() => template.sections[secIdx]?.fields ?? []);
+  const secId  = template.sections.find((s) => s.id.endsWith('-t'))?.id ?? null;
+  const secIdx = secId ? template.sections.findIndex((s) => s.id === secId) : -1;
+  const hasTaskSection = secIdx !== -1;
+  const [tarefas, setTarefas] = useState(() => hasTaskSection ? template.sections[secIdx].fields : []);
   const [nome, setNome] = useState('');
   const [per,  setPer]  = useState('semanal');
+
+  const [selectFields, setSelectFields] = useState(() => extractSelectFields(template));
+  const [novaOpcao, setNovaOpcao] = useState({});
 
   const add = () => {
     const t = nome.trim();
@@ -241,51 +276,92 @@ export function TaskEditorModal({ template, onSave, onClose }) {
   };
   const remover = (id) => setTarefas((prev) => prev.filter((f) => f.id !== id));
 
+  const updateOption = (fieldId, idx, value) => setSelectFields((prev) => prev.map((sf) => sf.id !== fieldId ? sf : { ...sf, options: sf.options.map((o, i) => i === idx ? value : o) }));
+  const removeOption = (fieldId, idx) => setSelectFields((prev) => prev.map((sf) => sf.id !== fieldId ? sf : { ...sf, options: sf.options.filter((_, i) => i !== idx) }));
+  const addOption = (fieldId) => {
+    const texto = (novaOpcao[fieldId] ?? '').trim();
+    if (!texto) return;
+    setSelectFields((prev) => prev.map((sf) => sf.id !== fieldId ? sf : { ...sf, options: [...sf.options, texto] }));
+    setNovaOpcao((prev) => ({ ...prev, [fieldId]: '' }));
+  };
+
+  const semOpcoes = selectFields.some((sf) => sf.options.length === 0);
+
   const salvar = () => {
-    const sections = template.sections.map((s, i) => i === secIdx ? { ...s, fields: tarefas } : s);
-    onSave({ ...template, sections, custom:true, updatedAt:new Date().toISOString() });
+    if (semOpcoes) return;
+    let sections = hasTaskSection
+      ? template.sections.map((s, i) => i === secIdx ? { ...s, fields: tarefas } : s)
+      : template.sections;
+    sections = applySelectFieldEdits(sections, selectFields);
+    onSave({ ...template, sections, custom:true, v:(template.v ?? 0) + 1, updatedAt:new Date().toISOString() });
   };
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:300, padding:24 }}>
       <div className="management-card" style={{ width:'100%', maxWidth:560, maxHeight:'85vh', display:'flex', flexDirection:'column' }}>
         <div className="card-head">
-          <div><span className="eyebrow">Editar tarefas</span><h2>{template.title}</h2></div>
-          <span className="badge neutral">{tarefas.length}</span>
+          <div><span className="eyebrow">Editar planilha</span><h2>{template.title}</h2></div>
+          {hasTaskSection && <span className="badge neutral">{tarefas.length}</span>}
         </div>
-        <div className="capture-fields" style={{ borderBottom:'1px solid var(--border-subtle)', paddingBottom:14 }}>
-          <label>Nova tarefa / equipamento
-            <input value={nome} onChange={(e) => setNome(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
-              placeholder="Ex.: Refrigerador vertical R.20" />
-          </label>
-          <div className="grid-2">
-            <label>Período
-              <select value={per} onChange={(e) => setPer(e.target.value)}>
-                {['diária','semanal','quinzenal','mensal'].map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </label>
-            <div style={{ display:'flex', alignItems:'flex-end' }}>
-              <button className="primary-action" onClick={add} disabled={!nome.trim()} style={{ width:'100%' }}>Adicionar</button>
-            </div>
-          </div>
-        </div>
-        <div className="equipment-maintenance-list" style={{ overflowY:'auto', flex:1, minHeight:0 }}>
-          {tarefas.length === 0
-            ? <p className="muted" style={{ padding:'16px 20px' }}>Nenhuma tarefa. Adicione ao menos uma.</p>
-            : tarefas.map((f) => (
-              <div key={f.id} className="equipment-maintenance-row">
-                <div><strong>{f.label}</strong></div>
-                <button className="ghost-action danger" style={{ fontSize:11 }} onClick={() => remover(f.id)}>Remover</button>
+        <div style={{ overflowY:'auto', flex:1, minHeight:0, display:'flex', flexDirection:'column' }}>
+          {hasTaskSection && (
+            <>
+              <div className="capture-fields" style={{ borderBottom:'1px solid var(--border-subtle)', paddingBottom:14 }}>
+                <label>Nova tarefa / equipamento
+                  <input value={nome} onChange={(e) => setNome(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+                    placeholder="Ex.: Refrigerador vertical R.20" />
+                </label>
+                <div className="grid-2">
+                  <label>Período
+                    <select value={per} onChange={(e) => setPer(e.target.value)}>
+                      {['diária','semanal','quinzenal','mensal'].map((p) => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </label>
+                  <div style={{ display:'flex', alignItems:'flex-end' }}>
+                    <button className="primary-action" onClick={add} disabled={!nome.trim()} style={{ width:'100%' }}>Adicionar</button>
+                  </div>
+                </div>
               </div>
-            ))}
+              <div className="equipment-maintenance-list">
+                {tarefas.length === 0
+                  ? <p className="muted" style={{ padding:'16px 20px' }}>Nenhuma tarefa. Adicione ao menos uma.</p>
+                  : tarefas.filter((f) => f.type === 'date_sig').map((f) => (
+                    <div key={f.id} className="equipment-maintenance-row">
+                      <div><strong>{f.label}</strong></div>
+                      <button className="ghost-action danger" style={{ fontSize:11 }} onClick={() => remover(f.id)}>Remover</button>
+                    </div>
+                  ))}
+              </div>
+            </>
+          )}
+          {selectFields.map((sf) => (
+            <div key={sf.id} className="capture-fields" style={{ borderTop:'1px solid var(--border-subtle)', paddingTop:14 }}>
+              <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em', color:'var(--text-secondary)' }}>Opções — {sf.label}</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                {sf.options.map((opt, idx) => (
+                  <div key={idx} style={{ display:'flex', gap:6, alignItems:'center' }}>
+                    <input value={opt} onChange={(e) => updateOption(sf.id, idx, e.target.value)} style={{ flex:1 }} />
+                    <button className="ghost-action danger" style={{ fontSize:11 }} onClick={() => removeOption(sf.id, idx)}>Remover</button>
+                  </div>
+                ))}
+                {sf.options.length === 0 && <p className="muted" style={{ fontSize:11 }}>Nenhuma opção — adicione ao menos uma antes de salvar.</p>}
+              </div>
+              <div style={{ display:'flex', gap:6 }}>
+                <input value={novaOpcao[sf.id] ?? ''} onChange={(e) => setNovaOpcao((prev) => ({ ...prev, [sf.id]: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOption(sf.id); } }}
+                  placeholder="Nova opção" style={{ flex:1 }} />
+                <button className="secondary-action" onClick={() => addOption(sf.id)} disabled={!(novaOpcao[sf.id] ?? '').trim()}>Adicionar</button>
+              </div>
+            </div>
+          ))}
         </div>
         <p className="muted" style={{ fontSize:11, padding:'10px 0 0' }}>
           Ao salvar, esta planilha passa a ser sua: deixa de receber atualizações automáticas do NutriOPS.
         </p>
         <div className="actions-row">
           <button className="secondary-action" onClick={onClose}>Cancelar</button>
-          <button className="primary-action" onClick={salvar}>Salvar planilha</button>
+          <button className="primary-action" onClick={salvar} disabled={semOpcoes}>Salvar planilha</button>
         </div>
       </div>
     </div>
@@ -1662,13 +1738,16 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
                       {histId===tpl.id?'Fechar':'Histórico'}
                     </button>
                     <div style={{ display:'flex', gap:6 }}>
-                      {/* Só higienização: são as planilhas cuja lista é de
-                          equipamentos/áreas e muda quando entra equipamento
-                          novo. As de checklist fixo (higiene pessoal, vetores)
-                          têm conteúdo normativo e não se editam por aqui. */}
-                      {isRT && tpl.category === 'higienizacao' && (
+                      {/* Higienização: lista de equipamentos/áreas que muda
+                          quando entra equipamento novo. Ou qualquer planilha
+                          com campo de lista suspensa (ex.: "Qual banheiro",
+                          "Setor") — pedido da nutricionista (10/08) pra
+                          ajustar essas opções sozinha, sem precisar de
+                          mudança de código. Planilha sem nenhum dos dois
+                          (checklist 100% fixo) não tem o que editar por aqui. */}
+                      {isRT && isTemplateEditable(tpl) && (
                         <button className="ghost-action" style={{ fontSize:11 }}
-                          title="Adicionar ou remover equipamentos desta planilha"
+                          title="Ajustar tarefas ou opções desta planilha"
                           onClick={() => setEditingTpl(tpl)}>Editar</button>
                       )}
                       {isDone && (

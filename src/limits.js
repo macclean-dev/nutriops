@@ -84,3 +84,23 @@ export function dedupeCatalog(catalog) {
   }
   return out;
 }
+
+// Casa o texto digitado (case-insensitive, por label OU alias) contra um
+// equipamento já cadastrado — sem bater, devolve o texto como veio. Extraído
+// de pages.jsx (registro de temperatura) pra ser reaproveitado em qualquer
+// campo "Equipamento" de texto livre (controls.jsx) sem duplicar a lógica de
+// casamento — "Fritadeira 1" e "fritadeira1" viram o MESMO label cadastrado
+// em vez de fragmentar o histórico em registros separados pro mesmo equipamento.
+export function normalizeEquipmentName(input, catalog = []) {
+  const raw = String(input ?? '').trim(), lower = raw.toLowerCase();
+  for (const item of catalog) {
+    if (item.label.toLowerCase() === lower) return item.label;
+    if (item.aliases?.some((a) => a.toLowerCase() === lower)) return item.label;
+  }
+  return raw || 'Equipamento sem nome';
+}
+
+export function getEquipmentEntry(catalog = [], label = '') {
+  const lower = String(label ?? '').toLowerCase();
+  return catalog.find((item) => item.label.toLowerCase() === lower || item.aliases?.some((a) => a.toLowerCase() === lower)) ?? null;
+}

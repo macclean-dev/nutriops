@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { pushSpecialControl } from './repository';
-import { resolveRecordTone } from './limits';
+import { resolveRecordTone, normalizeEquipmentName } from './limits';
 import { autoVerdict, verdictConflicts, thawCompliant, oilResultForAcidLevel, suggestionConflicts } from './verdict';
+import { readCatalog } from './maintenance';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -266,6 +267,12 @@ const OIL_ACID_LEVELS = [
 export function OilControlView({ activeTenant, allTenants, onTenantChange, session }) {
   const todayISO = () => new Date().toISOString().slice(0, 10);
   const [records, setRecords] = useState(() => readOil(activeTenant.id));
+  // Catálogo de equipamentos (mesmo do registro de temperatura) — o dono
+  // notou (10/08) que texto livre aqui fragmentava o histórico ("Fritadeira 1"
+  // vs "fritadeira1" viravam registros diferentes). Combobox input+datalist
+  // (mesmo padrão de pages.jsx): sugere os cadastrados, mas não bloqueia
+  // digitar um equipamento novo que ainda não está no catálogo.
+  const catalog = useMemo(() => readCatalog(activeTenant), [activeTenant]);
   const [equipment, setEquipment] = useState('');
   const [date, setDate]           = useState(todayISO);
   const [responsavel, setResponsavel] = useState(() => session?.user?.name ?? '');
@@ -328,7 +335,10 @@ export function OilControlView({ activeTenant, allTenants, onTenantChange, sessi
         <article className="management-card">
           <div className="card-head"><div><span className="eyebrow">Novo registro</span><h2>Avaliação do óleo</h2></div></div>
           <div className="capture-fields">
-            <label>Equipamento / Fritadeira<input value={equipment} onChange={e=>setEquipment(e.target.value)} placeholder="Ex.: Fritadeira 1, Tacho" /></label>
+            <label>Equipamento / Fritadeira
+              <input list={`oil-eq-${activeTenant.id}`} value={equipment} onChange={e=>setEquipment(normalizeEquipmentName(e.target.value, catalog))} placeholder="Ex.: Fritadeira 1, Tacho" />
+              <datalist id={`oil-eq-${activeTenant.id}`}>{catalog.map(i => <option key={i.label} value={i.label} />)}</datalist>
+            </label>
             <div className="grid-2">
               <label>Data<input type="date" value={date} onChange={e=>setDate(e.target.value)} /></label>
               <label>Responsável<input value={responsavel} onChange={e=>setResponsavel(e.target.value)} placeholder="Quem fez o teste" /></label>
@@ -685,6 +695,7 @@ export const writeThermal = (id, v) => ss(sk('thermal', id), v);
 
 export function ThermalControlView({ activeTenant, allTenants, onTenantChange, session }) {
   const [records, setRecords]   = useState(() => readThermal(activeTenant.id));
+  const catalog = useMemo(() => readCatalog(activeTenant), [activeTenant]);
   const [product, setProduct]   = useState('');
   const [quantity, setQuantity] = useState('');
   const [equipment, setEquipment] = useState('');
@@ -765,7 +776,10 @@ export function ThermalControlView({ activeTenant, allTenants, onTenantChange, s
               <label>Produto / Preparação<input value={product} onChange={e=>setProduct(e.target.value)} placeholder="Ex.: Frango assado, Molho" /></label>
               <label>Quantidade<input value={quantity} onChange={e=>setQuantity(e.target.value)} placeholder="Ex.: 2 kg, 5 L" /></label>
             </div>
-            <label>Equipamento<input value={equipment} onChange={e=>setEquipment(e.target.value)} placeholder="Ex.: Forno combinado, Fogão, Fritadeira" /></label>
+            <label>Equipamento
+              <input list={`thermal-eq-${activeTenant.id}`} value={equipment} onChange={e=>setEquipment(normalizeEquipmentName(e.target.value, catalog))} placeholder="Ex.: Forno combinado, Fogão, Fritadeira" />
+              <datalist id={`thermal-eq-${activeTenant.id}`}>{catalog.map(i => <option key={i.label} value={i.label} />)}</datalist>
+            </label>
             <div className="grid-2">
               <label>Temperatura alvo (°C)<input inputMode="decimal" value={tempTarget} onChange={e=>setTempTarget(e.target.value)} placeholder="Ex.: 180°C (forno)" /></label>
               <label>Horário de início<input type="time" value={timeReached} onChange={e=>setTimeReached(e.target.value)} /></label>

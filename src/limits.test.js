@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { heuristicLimits, resolveLimits, resolveTone, suggestLimits, dedupeCatalog } from './limits';
+import { heuristicLimits, resolveLimits, resolveTone, suggestLimits, dedupeCatalog, normalizeEquipmentName, getEquipmentEntry } from './limits';
 
 describe('heuristicLimits', () => {
   it('freezer/congelado → -25/-18', () => {
@@ -134,5 +134,40 @@ describe('dedupeCatalog — remove equipamento duplicado (bug Swiss)', () => {
     expect(dedupeCatalog([])).toEqual([]);
     const semLabel = [{ label: '' }, { location: 'x' }];
     expect(dedupeCatalog(semLabel)).toHaveLength(2); // não colapsa vazios
+  });
+});
+
+describe('normalizeEquipmentName', () => {
+  const catalog = [
+    { label: 'Fritadeira 1', aliases: ['fritadeira um', 'fryer 1'] },
+    { label: 'Forno Combinado', aliases: [] },
+  ];
+
+  it('casa por label exato (case-insensitive) e devolve o label canônico', () => {
+    expect(normalizeEquipmentName('fritadeira 1', catalog)).toBe('Fritadeira 1');
+    expect(normalizeEquipmentName('FRITADEIRA 1', catalog)).toBe('Fritadeira 1');
+  });
+  it('casa por alias e devolve o label canônico — evita fragmentar o histórico', () => {
+    expect(normalizeEquipmentName('fritadeira um', catalog)).toBe('Fritadeira 1');
+    expect(normalizeEquipmentName('Fryer 1', catalog)).toBe('Fritadeira 1');
+  });
+  it('sem casar com nada do catálogo, devolve o texto digitado como veio (trim)', () => {
+    expect(normalizeEquipmentName('  Tacho novo  ', catalog)).toBe('Tacho novo');
+  });
+  it('texto vazio vira "Equipamento sem nome"', () => {
+    expect(normalizeEquipmentName('', catalog)).toBe('Equipamento sem nome');
+    expect(normalizeEquipmentName('   ', catalog)).toBe('Equipamento sem nome');
+  });
+});
+
+describe('getEquipmentEntry', () => {
+  const catalog = [{ label: 'Freezer 1', aliases: ['freezer um'], minTemp: -25, maxTemp: -18 }];
+
+  it('encontra por label ou alias, case-insensitive', () => {
+    expect(getEquipmentEntry(catalog, 'freezer 1')?.maxTemp).toBe(-18);
+    expect(getEquipmentEntry(catalog, 'Freezer Um')?.maxTemp).toBe(-18);
+  });
+  it('sem casar, devolve null', () => {
+    expect(getEquipmentEntry(catalog, 'Inexistente')).toBe(null);
   });
 });

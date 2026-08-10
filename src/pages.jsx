@@ -16,7 +16,7 @@ import { actionSourceKey, pendingTemperatureItems, pendingReceivingItems, pendin
 import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
-import { resolveLimits as resolveLimitsFromCatalog, resolveTone, resolveRecordTone as resolveTemperatureTone, heuristicLimits, suggestLimits, dedupeCatalog } from './limits';
+import { resolveLimits as resolveLimitsFromCatalog, resolveTone, resolveRecordTone as resolveTemperatureTone, heuristicLimits, suggestLimits, dedupeCatalog, normalizeEquipmentName, getEquipmentEntry } from './limits';
 import { receivingSuggestedResult } from './verdict';
 
 // ─── Lazy view loading ────────────────────────────────────────────────────
@@ -150,21 +150,6 @@ import { findUserByName } from './user-match';
 import { needsOperator, applyOperatorToSession, isStoreAccountSession, readOperator } from './operator';
 import { OperatorPicker, OperatorChip } from './operator-picker';
 import { readKioskConfig, writeKioskConfig, resolveInitialKioskConfig } from './kiosk-config';
-
-// ─── Equipment utils ───────────────────────────────────────────────────────
-
-function normalizeEquipmentName(input, catalog = []) {
-  const raw = String(input ?? '').trim(), lower = raw.toLowerCase();
-  for (const item of catalog) {
-    if (item.label.toLowerCase() === lower) return item.label;
-    if (item.aliases?.some((a) => a.toLowerCase() === lower)) return item.label;
-  }
-  return raw || 'Equipamento sem nome';
-}
-function getEquipmentEntry(catalog = [], label = '') {
-  const lower = String(label ?? '').toLowerCase();
-  return catalog.find((item) => item.label.toLowerCase() === lower || item.aliases?.some((a) => a.toLowerCase() === lower)) ?? null;
-}
 
 // ─── Alert computation ─────────────────────────────────────────────────────
 

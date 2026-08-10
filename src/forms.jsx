@@ -79,10 +79,39 @@ export function getPeriodKey(frequency, date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+// Item 15 da revisão: "Semana 2026 W33" não diz nada pro colaborador sem
+// decifrar o número da semana. Reconstrói o intervalo de datas real da
+// semana chamando getPeriodKey de novo (não reimplementa a conta) — evita
+// duas fórmulas de semana divergindo se o algoritmo mudar um dia.
+function weekRangeFromKey(key) {
+  const m = /^(\d{4})-W(\d{2})$/.exec(key);
+  if (!m) return null;
+  const year = Number(m[1]);
+  let start = null, end = null;
+  for (let i = 0; i < 380; i++) {
+    const cur = new Date(year, 0, 1 + i);
+    if (getPeriodKey('weekly', cur) === key) {
+      if (!start) start = cur;
+      end = cur;
+    } else if (start) {
+      break;
+    }
+  }
+  return start ? { start, end } : null;
+}
+
 export function formatPeriodLabel(frequency, key) {
   try {
     if (frequency === 'daily')    return new Date(key+'T12:00').toLocaleDateString('pt-BR',{weekday:'short',day:'numeric',month:'short'});
-    if (frequency === 'weekly')   return `Semana ${key.replace('-',' ')}`;
+    if (frequency === 'weekly') {
+      const range = weekRangeFromKey(key);
+      if (!range) return `Semana ${key.replace('-',' ')}`;
+      const { start, end } = range;
+      const sameMonth = start.getMonth() === end.getMonth();
+      if (sameMonth) return `${start.getDate()}–${end.getDate()} de ${end.toLocaleDateString('pt-BR',{month:'long'})}`;
+      const shortMonth = (d) => d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','');
+      return `${start.getDate()} ${shortMonth(start)} – ${end.getDate()} ${shortMonth(end)}`;
+    }
     if (frequency === 'biweekly') { const [y,mo,h]=key.split('-'); const mn=new Date(`${y}-${mo}-01T12:00`).toLocaleDateString('pt-BR',{month:'long'}); return `${h==='A'?'1ª quinzena':'2ª quinzena'} de ${mn}`; }
     if (frequency === 'monthly')  return new Date(key+'-01T12:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
   } catch { /**/ }

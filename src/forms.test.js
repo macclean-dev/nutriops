@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { completionPct, generateFormPDF, readFormTemplates, templateSector, quickSign, extractNonConformities, pendingFormsForPeriod } from './forms';
+import { completionPct, generateFormPDF, readFormTemplates, templateSector, quickSign, extractNonConformities, pendingFormsForPeriod, formatPeriodLabel, getPeriodKey } from './forms';
 
 // Template no formato do CASA DOCE Banheiros, exercitando os tipos novos.
 const TPL = {
@@ -133,9 +133,10 @@ describe('pendingFormsForPeriod — "minha lista de hoje" (item 4 da revisão)',
     expect(pendingFormsForPeriod(undefined, undefined, NOW)).toEqual([]);
   });
 
-  it('periodLabel vem preenchido (pra exibir sem recalcular na tela)', () => {
+  it('periodLabel vem preenchido com o intervalo de datas legível (item 15), não "Semana Wnn"', () => {
     const out = pendingFormsForPeriod(templates, [], NOW);
-    expect(out.find((f) => f.id === 'tpl-weekly').periodLabel).toMatch(/^Semana/);
+    expect(out.find((f) => f.id === 'tpl-weekly').periodLabel).toMatch(/de \w+$/);
+    expect(out.find((f) => f.id === 'tpl-weekly').periodLabel).not.toMatch(/^Semana/);
   });
 });
 
@@ -383,4 +384,22 @@ describe('generateFormPDF — não quebra com date/checkbox e formata certo', ()
   it('gera HTML sem lançar', () => { expect(typeof html).toBe('string'); expect(html.length).toBeGreaterThan(100); });
   it('checkbox marcado vira ✓ SIM', () => { expect(html).toContain('SIM'); });
   it('date vira DD/MM/AAAA', () => { expect(html).toContain('28/07/2026'); });
+});
+
+describe('formatPeriodLabel — período legível pra semana (item 15)', () => {
+  it('semana dentro de um mês só: "D–D de mês"', () => {
+    const key = getPeriodKey('weekly', new Date(2026, 7, 9)); // domingo 9/ago/2026
+    expect(key).toBe('2026-W33');
+    expect(formatPeriodLabel('weekly', key)).toBe('9–15 de agosto');
+  });
+
+  it('semana cruzando dois meses: "D mês – D mês"', () => {
+    const key = getPeriodKey('weekly', new Date(2026, 7, 30)); // domingo 30/ago/2026
+    expect(key).toBe('2026-W36');
+    expect(formatPeriodLabel('weekly', key)).toBe('30 ago – 5 set');
+  });
+
+  it('chave malformada cai no fallback antigo em vez de quebrar', () => {
+    expect(formatPeriodLabel('weekly', 'lixo')).toBe('Semana lixo');
+  });
 });

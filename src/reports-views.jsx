@@ -503,6 +503,29 @@ export function AuditView({ allTenants, records, session, onRecordSaved }) {
   const [correctionReason, setCorrectionReason] = useState('');
   const [correctionSaving, setCorrectionSaving] = useState(false);
 
+  // Item 14: `records` (prop) vem cortado em 90 dias por refreshRecords
+  // (pages.jsx) — "Todos" prometia o histórico completo mas só mostrava o
+  // que coube nesse teto upstream. Só busca sob demanda quando "Todos" é
+  // escolhido; qualquer outro período (1/7/30/90 dias) já cabe na prop.
+  const [extraRecords, setExtraRecords] = useState(null);
+  const [loadingExtra, setLoadingExtra] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    if (periodFilter !== '0') { setExtraRecords(null); return; }
+    setLoadingExtra(true);
+    const tenantsToLoad = tenantFilter === 'all' ? allTenants : allTenants.filter((t) => t.id === tenantFilter);
+    Promise.all(tenantsToLoad.map(async (t) => {
+      const items = await repository.list({ tenantId: t.id, days: 0 });
+      return items.map((r) => ({ ...r, tenantName: r.tenantName ?? t.name }));
+    })).then((all) => {
+      if (!cancelled) { setExtraRecords(all.flat()); setLoadingExtra(false); }
+    }).catch(() => { if (!cancelled) setLoadingExtra(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodFilter, tenantFilter, allTenants, repository]);
+
+  const effectiveRecords = extraRecords ?? records;
+
   const isRT = ['Nutricionista RT','Administrador','Super-admin'].includes(session?.user?.role);
 
   const startCorrection = (r) => { setCorrectingId(r.id); setCorrectionValue(String(r.value)); setCorrectionReason(''); };
@@ -534,7 +557,7 @@ export function AuditView({ allTenants, records, session, onRecordSaved }) {
 
   const filtered = useMemo(() => {
     const now = Date.now(), days = Number(periodFilter);
-    return records.filter((r) => {
+    return effectiveRecords.filter((r) => {
       if (tenantFilter !== 'all' && r.tenantId !== tenantFilter) return false;
       if (days > 0 && now - new Date(r.createdAt).getTime() > days * 86400000) return false;
       if (statusFilter !== 'all' && resolveTemperatureTone(r) !== statusFilter) return false;
@@ -542,7 +565,7 @@ export function AuditView({ allTenants, records, session, onRecordSaved }) {
       if (searchFilter && ![r.tenantName, r.equipment, r.equipmentInput, r.user, r.note].join(' ').toLowerCase().includes(searchFilter.toLowerCase())) return false;
       return true;
     });
-  }, [records, tenantFilter, periodFilter, statusFilter, equipFilter, searchFilter]);
+  }, [effectiveRecords, tenantFilter, periodFilter, statusFilter, equipFilter, searchFilter]);
 
   const stats = useMemo(() => ({ total: filtered.length, ok: filtered.filter((r) => resolveTemperatureTone(r) === 'ok').length, warn: filtered.filter((r) => resolveTemperatureTone(r) === 'warn').length, danger: filtered.filter((r) => resolveTemperatureTone(r) === 'danger').length }), [filtered]);
 
@@ -551,14 +574,14 @@ export function AuditView({ allTenants, records, session, onRecordSaved }) {
     const norm = s => String(s || '').toLowerCase()
       .normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
     const target = norm(drillEq.equipment.label);
-    return records
+    return effectiveRecords
       .filter(r => r.tenantId === drillEq.tenantId)
       .filter(r => {
         const cands = [r.equipment, r.equipmentInput, r.equipmentKey].filter(Boolean);
         return cands.some(c => norm(c) === target);
       })
       .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-  }, [records, drillEq]);
+  }, [effectiveRecords, drillEq]);
 
   const exportCSV = async () => {
     const csv = await repository.exportCsv(filtered);
@@ -618,6 +641,7 @@ export function AuditView({ allTenants, records, session, onRecordSaved }) {
           ))}
         </div>
       )}
+      {loadingExtra && <p className="muted" style={{ fontSize:11 }}>Buscando histórico completo…</p>}
       <div className="audit-stats">
         <div className="audit-stat"><span>Registros</span><strong>{stats.total}</strong></div>
         <div className="audit-stat ok"><span>Conformes</span><strong>{stats.ok}</strong></div>

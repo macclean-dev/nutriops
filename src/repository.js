@@ -313,18 +313,41 @@ export const localRepository = {
 
 export const supabaseRepository = {
   async list({ tenantId, days = 90 } = {}) {
-    const from   = new Date(Date.now() - (days > 0 ? days * 86400000 : 0)).toISOString();
-    const filter = [
-      tenantId ? `tenant_id=eq.${tenantId}` : null,
-      days > 0  ? `created_at=gte.${from}` : null,
-      'order=created_at.desc', 'limit=1000',
-    ].filter(Boolean).join('&');
-    const rows = await sbFetch('temperature_records', { filter }, tenantId);
-    // Merge into local cache
+    if (days > 0) {
+      const from   = new Date(Date.now() - days * 86400000).toISOString();
+      const filter = [
+        tenantId ? `tenant_id=eq.${tenantId}` : null,
+        `created_at=gte.${from}`,
+        'order=created_at.desc', 'limit=1000',
+      ].filter(Boolean).join('&');
+      const rows = await sbFetch('temperature_records', { filter }, tenantId);
+      const local = ls(RECORDS_KEY, []);
+      const merged = mergeByKey([...local, ...rows.map(tempFromRow)], 'id');
+      lw(RECORDS_KEY, merged.slice(0, 1000));
+      return rows.map(tempFromRow);
+    }
+    // days<=0 = "Todos" (item 14). Sem o filtro de data o servidor ainda
+    // limitava a 1000 linhas — um tenant com mais de 1000 registros no total
+    // continuava mentindo em "Todos", só que por CONTAGEM em vez de por
+    // data. Pagina por offset até uma página vir incompleta (<1000, sinal
+    // padrão do REST de "acabou" — não precisa de Content-Range/count).
+    // MAX_PAGES é só um limite de segurança contra paginação infinita, bem
+    // acima de qualquer tenant real hoje (Swiss: ~630 registros/90d).
+    const MAX_PAGES = 20;
+    let allRows = [];
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const filter = [
+        tenantId ? `tenant_id=eq.${tenantId}` : null,
+        'order=created_at.desc', 'limit=1000', `offset=${page * 1000}`,
+      ].filter(Boolean).join('&');
+      const rows = await sbFetch('temperature_records', { filter }, tenantId);
+      allRows = allRows.concat(rows);
+      if (rows.length < 1000) break;
+    }
     const local = ls(RECORDS_KEY, []);
-    const merged = mergeByKey([...local, ...rows.map(tempFromRow)], 'id');
-    lw(RECORDS_KEY, merged.slice(0, 1000));
-    return rows.map(tempFromRow);
+    const merged = mergeByKey([...local, ...allRows.map(tempFromRow)], 'id');
+    lw(RECORDS_KEY, merged.slice(0, Math.max(1000, allRows.length)));
+    return allRows.map(tempFromRow);
   },
   async create(input) {
     if (!navigator.onLine) {

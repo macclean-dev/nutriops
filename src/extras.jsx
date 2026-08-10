@@ -8,7 +8,7 @@ import CountUp from './count-up';
 import { getEffectivePin, writePinOverride, isWeakPin } from './pin';
 import { isGlobalAdmin } from './permissions';
 import { fetchAccessLog } from './tenant-sync';
-import { pushSpecialControl } from './repository';
+import { pushSpecialControl, getTemperatureRepository } from './repository';
 import { resolveRecordTone } from './limits';
 import { employeeTrainingStatus } from './training-status';
 import { computeWeeklySummary, summaryToText } from './weekly-summary';
@@ -730,14 +730,38 @@ export function MonthlyExportView({ allTenants, records, session }) {
   const monthStart = new Date(year, month-1, 1).getTime();
   const monthEnd   = new Date(year, month, 0, 23, 59, 59).getTime();
 
-  const monthRecords = records.filter(r => {
+  const tenants = tenantFilter === 'all' ? allTenants : allTenants.filter(t => t.id === tenantFilter);
+
+  // Item 14: `records` (prop) vem de refreshRecords em pages.jsx, sempre
+  // cortado em 90 dias — mês mais antigo que isso saía do PDF como "sem
+  // registros" mesmo tendo dado real na nuvem/local. Mês dentro da janela
+  // segura usa a prop de sempre (sem chamada extra); mês mais antigo busca
+  // sob demanda com o alcance exato.
+  const [extraRecords, setExtraRecords] = useState(null);
+  const [loadingExtra, setLoadingExtra] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const daysNeeded = Math.ceil((Date.now() - monthStart) / 86400000) + 2;
+    if (daysNeeded <= 90) { setExtraRecords(null); return; }
+    setLoadingExtra(true);
+    const repo = getTemperatureRepository();
+    Promise.all(tenants.map(async (t) => {
+      const items = await repo.list({ tenantId: t.id, days: daysNeeded });
+      return items.map((r) => ({ ...r, tenantName: r.tenantName ?? t.name }));
+    })).then((all) => {
+      if (!cancelled) { setExtraRecords(all.flat()); setLoadingExtra(false); }
+    }).catch(() => { if (!cancelled) setLoadingExtra(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMonth, tenantFilter, allTenants]);
+
+  const effectiveRecords = extraRecords ?? records;
+  const monthRecords = effectiveRecords.filter(r => {
     const t = new Date(r.createdAt).getTime();
     if (t < monthStart || t > monthEnd) return false;
     if (tenantFilter !== 'all' && r.tenantId !== tenantFilter) return false;
     return true;
   });
-
-  const tenants = tenantFilter === 'all' ? allTenants : allTenants.filter(t => t.id === tenantFilter);
 
   const generatePDF = () => {
     setGenerating(true);
@@ -823,11 +847,12 @@ export function MonthlyExportView({ allTenants, records, session }) {
               </select>
             </label>
           </div>
+          {loadingExtra && <p className="muted" style={{ fontSize:11 }}>Buscando histórico mais antigo que 90 dias…</p>}
           <div className="audit-stats" style={{ margin:'4px 0' }}>
             <div className="audit-stat"><span>Registros no período</span><strong>{monthRecords.length}</strong></div>
             <div className="audit-stat ok"><span>Conformes</span><strong>{monthRecords.filter(r=>resolveRecordTone(r)==='ok').length}</strong></div>
           </div>
-          <button className="primary-action attention" onClick={generatePDF} disabled={generating} style={{ fontSize:14, padding:'10px' }}>
+          <button className="primary-action attention" onClick={generatePDF} disabled={generating || loadingExtra} style={{ fontSize:14, padding:'10px' }}>
             {generating ? '⏳ Gerando PDF…' : '↓ Gerar relatório mensal PDF'}
           </button>
           <p className="muted" style={{ fontSize:11 }}>O relatório inclui: registros de temperatura, planilhas BPF, resumo de conformidade e campos de assinatura para o RT e responsável pela operação.</p>

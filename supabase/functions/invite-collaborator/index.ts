@@ -13,13 +13,18 @@
 //   'reset_password' — redefine a senha de um membro JÁ vinculado a essa loja
 //                      (ex.: dono esqueceu a senha que definiu no convite).
 //
-// FLUXO comum aos dois:
-//   1. Recebe o JWT do dono da loja (tenant_admin) + tenantId.
-//   2. AUTORIZA: confirma que quem chamou é tenant_admin DAQUELA loja (ou admin
-//      global) — senão 403. Um dono não mexe em loja que não é dele.
-//   3. 'invite': cria a conta (email_confirm=true → já pode logar) + vincula.
-//      'reset_password': confere que o ALVO pertence a essa loja (evita reset
-//      cross-tenant por um tenant_admin mal-intencionado) e troca a senha.
+// AUTORIZAÇÃO (10/08 — pedido da RT da CASA DOCE, que via o botão convidar no
+// app mas tomava 403 aqui: o app já achava que RT podia, o servidor não sabia):
+//   'invite'         — dono da loja (tenant_admin), Nutricionista RT, ou admin
+//                      global. RT não pode atribuir papel 'tenant_admin' (não
+//                      cria outro dono) nem criar conta de loja (isStoreAccount).
+//   'reset_password' — só dono da loja ou admin global (poder sensível demais
+//                      pra dar pra RT: troca a senha de QUALQUER membro).
+//
+// FLUXO: 1) valida o JWT de quem chamou (Supabase Auth). 2) autoriza conforme
+// acima. 3) 'invite' cria a conta (email_confirm=true → já pode logar) +
+// vincula; 'reset_password' confere que o ALVO pertence a essa loja (evita
+// reset cross-tenant por um chamador mal-intencionado) e troca a senha.
 //
 // Segurança: papel restrito a um allowlist (não dá pra criar admin GLOBAL nem
 // tenant_admin de outra loja); service_role só no servidor.
@@ -64,17 +69,24 @@ Deno.serve(async (req) => {
 
     const admin = createClient(url, serviceKey);
 
-    // 2) AUTORIZAÇÃO (comum às duas ações) — o chamador tem que ser tenant_admin
-    // DESTA loja (ou admin global).
+    // 2) AUTORIZAÇÃO — quem pode chamar isto.
     const { data: membership } = await admin
       .from('tenant_members').select('role')
       .eq('user_id', caller.id).eq('tenant_id', tenantId).maybeSingle();
     const isGlobalAdmin = (caller.app_metadata as Record<string, unknown> | null)?.role === 'admin';
-    if (membership?.role !== 'tenant_admin' && !isGlobalAdmin) {
-      return json({ error: 'você não administra esta empresa' }, 403);
-    }
+    const isOwner = membership?.role === 'tenant_admin';
+    // A Nutricionista RT também administra a equipe da própria loja (convida
+    // colaboradores) — pedido da RT da CASA DOCE (10/08), que via o botão no
+    // app mas tomava 403 aqui. Ela NÃO pode redefinir senha de terceiros nem
+    // criar outro dono da loja (checagens abaixo) — só o dono/admin global.
+    const isRT = membership?.role === 'Nutricionista RT';
 
     if (action === 'reset_password') {
+      // Redefinir a senha de qualquer membro é poder sensível demais pra dar
+      // pra RT — fica só com quem já podia antes (dono da loja/admin global).
+      if (!isOwner && !isGlobalAdmin) {
+        return json({ error: 'você não administra esta empresa' }, 403);
+      }
       const userId = String(body.userId ?? '').trim();
       if (!userId) return json({ error: 'usuário é obrigatório' }, 400);
       if (password.length < 8) return json({ error: 'a senha precisa de no mínimo 8 caracteres' }, 400);
@@ -94,6 +106,10 @@ Deno.serve(async (req) => {
     }
 
     // ── action === 'invite' (default) ──────────────────────────────────────
+    if (!isOwner && !isRT && !isGlobalAdmin) {
+      return json({ error: 'você não administra esta empresa' }, 403);
+    }
+
     const email = String(body.email ?? '').trim().toLowerCase();
     const name = String(body.name ?? '').trim();
     const role = String(body.role ?? 'Colaborador');
@@ -101,11 +117,18 @@ Deno.serve(async (req) => {
     // pessoa, é o login compartilhado do aparelho do balcão. buildSession
     // (src/auth.jsx) lê este carimbo do user_metadata e é ele que liga a tela
     // "Quem está registrando?" — sem isto a conta loga normal e nunca pede
-    // operador, silenciosamente.
+    // operador, silenciosamente. Decisão estrutural: só admin da PLATAFORMA cria.
     const isStoreAccount = body.isStoreAccount === true;
+    if (isStoreAccount && !isGlobalAdmin) {
+      return json({ error: 'só o admin da plataforma cria conta de loja' }, 403);
+    }
 
     if (!email) return json({ error: 'e-mail é obrigatório' }, 400);
     if (!ALLOWED_ROLES.includes(role)) return json({ error: 'papel inválido' }, 400);
+    // RT convida a própria equipe, mas não cria outro dono da loja.
+    if (isRT && !isOwner && !isGlobalAdmin && role === 'tenant_admin') {
+      return json({ error: 'só o administrador da loja pode atribuir este papel' }, 403);
+    }
     if (password.length < 8) return json({ error: 'a senha inicial precisa de no mínimo 8 caracteres' }, 400);
 
     // 3) Cria a conta com a senha inicial (já confirmada → loga na hora).

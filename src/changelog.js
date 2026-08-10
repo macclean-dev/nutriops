@@ -21,6 +21,9 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.119', date: '2026-08-10', items: [
+    'Correção: a nutricionista RT agora consegue convidar colaboradores de verdade (o botão aparecia mas dava erro "você não administra esta empresa").',
+  ]},
   { version: '1.9.118', date: '2026-08-10', items: [
     'Correção importante: nas planilhas com pergunta de "ocorrência" (ex.: vetores e pragas), o botão "Sem ocorrência" não ficava mais marcado por engano antes de alguém realmente tocar nele — agora fica claro quando a pergunta ainda não foi respondida.',
   ]},

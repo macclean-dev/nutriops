@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { autoVerdict, verdictConflicts, thawCompliant, receivingSuggestedResult } from './verdict';
+import { autoVerdict, verdictConflicts, thawCompliant, receivingSuggestedResult, oilResultForAcidLevel, suggestionConflicts } from './verdict';
 
 describe('autoVerdict', () => {
   it('retorna null quando não há cálculo ainda', () => {
@@ -71,5 +71,32 @@ describe('receivingSuggestedResult', () => {
   });
   it('marcados parcialmente mas todos C (checks pendentes): sem sugestão ainda', () => {
     expect(receivingSuggestedResult({ temp: 'C' }, ids)).toBe(null);
+  });
+});
+
+describe('oilResultForAcidLevel', () => {
+  it('mapeia os 4 níveis confirmados pela CASA DOCE (10/08)', () => {
+    expect(oilResultForAcidLevel('2')).toBe('aprovado');
+    expect(oilResultForAcidLevel('3.5')).toBe('observacao');
+    expect(oilResultForAcidLevel('5.5')).toBe('observacao');
+    expect(oilResultForAcidLevel('7')).toBe('reprovado');
+  });
+  it('sem nível selecionado ou nível desconhecido, sem sugestão', () => {
+    expect(oilResultForAcidLevel('')).toBe(null);
+    expect(oilResultForAcidLevel(undefined)).toBe(null);
+    expect(oilResultForAcidLevel('10')).toBe(null);
+  });
+});
+
+describe('suggestionConflicts', () => {
+  it('sem sugestão ou sem escolha, nunca conflita', () => {
+    expect(suggestionConflicts(null, 'aprovado')).toBe(false);
+    expect(suggestionConflicts('aprovado', '')).toBe(false);
+  });
+  it('escolha igual à sugestão não conflita', () => {
+    expect(suggestionConflicts('observacao', 'observacao')).toBe(false);
+  });
+  it('escolha diferente da sugestão conflita', () => {
+    expect(suggestionConflicts('reprovado', 'aprovado')).toBe(true);
   });
 });

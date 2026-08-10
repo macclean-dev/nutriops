@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { pushSpecialControl } from './repository';
 import { resolveRecordTone } from './limits';
-import { autoVerdict, verdictConflicts, thawCompliant } from './verdict';
+import { autoVerdict, verdictConflicts, thawCompliant, oilResultForAcidLevel, suggestionConflicts } from './verdict';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -256,14 +256,29 @@ export function POPsView({ activeTenant, allTenants, onTenantChange, session }) 
 // 3. CONTROLE DE ÓLEO DE FRITURA
 // ═══════════════════════════════════════════════════════════════════════════
 
+const OIL_ACID_LEVELS = [
+  { value: '2',   label: '2%' },
+  { value: '3.5', label: '3,5%' },
+  { value: '5.5', label: '5,5%' },
+  { value: '7',   label: '7%' },
+];
+
 export function OilControlView({ activeTenant, allTenants, onTenantChange, session }) {
+  const todayISO = () => new Date().toISOString().slice(0, 10);
   const [records, setRecords] = useState(() => readOil(activeTenant.id));
   const [equipment, setEquipment] = useState('');
+  const [date, setDate]           = useState(todayISO);
+  const [responsavel, setResponsavel] = useState(() => session?.user?.name ?? '');
+  // Ácidos graxos livres, lido no teste da fita — CASA DOCE pediu (10/08)
+  // pra trocar o check genérico C/NC por essa medida real, igual à planilha
+  // de papel deles. resultado nasce sugerido pelo nível (verdict.js).
   const [acidez, setAcidez]       = useState('');
   const [cor, setCor]             = useState('');
   const [odor, setOdor]           = useState('');
   const [espuma, setEspuma]       = useState('');
   const [resultado, setResultado] = useState('');
+  const [resultadoTouched, setResultadoTouched] = useState(false);
+  const [justificativa, setJustificativa] = useState('');
   const [acao, setAcao]           = useState('');
   const [obs, setObs]             = useState('');
   const [saved, setSaved]         = useState(false);
@@ -271,16 +286,29 @@ export function OilControlView({ activeTenant, allTenants, onTenantChange, sessi
   useEffect(() => { setRecords(readOil(activeTenant.id)); }, [activeTenant.id]);
   useEffect(() => { writeOil(activeTenant.id, records); }, [activeTenant.id, records]);
 
+  const acidSuggestion = oilResultForAcidLevel(acidez);
+  const conflita = suggestionConflicts(acidSuggestion, resultado);
+
+  useEffect(() => {
+    if (acidSuggestion && !resultadoTouched) setResultado(acidSuggestion);
+  }, [acidSuggestion, resultadoTouched]);
+
+  const escolherResultado = (val) => {
+    setResultadoTouched(true);
+    setResultado((prev) => (prev === val ? '' : val));
+  };
+
   const handleSave = () => {
-    if (!equipment.trim() || !resultado) return;
+    if (!equipment.trim() || !resultado || (conflita && !justificativa.trim())) return;
     const record = {
-      id: uid(), tenantId: activeTenant.id, equipment: equipment.trim(),
-      acidez, cor, odor, espuma, resultado, acao: acao.trim(), obs: obs.trim(),
+      id: uid(), tenantId: activeTenant.id, equipment: equipment.trim(), date, responsavel: responsavel.trim(),
+      acidez, cor, odor, espuma, resultado, justificativa: conflita ? justificativa.trim() : '', acao: acao.trim(), obs: obs.trim(),
       user: session?.user?.name, createdAt: new Date().toISOString(),
     };
     setRecords(prev => [record, ...prev].slice(0, 200));
     pushSpecialControl('oil', activeTenant.id, record);
-    setResultado(''); setAcao(''); setObs('');
+    setDate(todayISO()); setResponsavel(session?.user?.name ?? ''); setAcidez('');
+    setResultado(''); setResultadoTouched(false); setJustificativa(''); setAcao(''); setObs('');
     setSaved(true); setTimeout(() => setSaved(false), 3000);
   };
 
@@ -301,8 +329,21 @@ export function OilControlView({ activeTenant, allTenants, onTenantChange, sessi
           <div className="card-head"><div><span className="eyebrow">Novo registro</span><h2>Avaliação do óleo</h2></div></div>
           <div className="capture-fields">
             <label>Equipamento / Fritadeira<input value={equipment} onChange={e=>setEquipment(e.target.value)} placeholder="Ex.: Fritadeira 1, Tacho" /></label>
+            <div className="grid-2">
+              <label>Data<input type="date" value={date} onChange={e=>setDate(e.target.value)} /></label>
+              <label>Responsável<input value={responsavel} onChange={e=>setResponsavel(e.target.value)} placeholder="Quem fez o teste" /></label>
+            </div>
+            <div>
+              <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em', color:'var(--text-secondary)', marginBottom:8 }}>Ácidos graxos livres (teste da fita)</div>
+              <div style={{ display:'flex', gap:8 }}>
+                {OIL_ACID_LEVELS.map(({ value, label }) => {
+                  const on = acidez === value;
+                  return <button key={value} onClick={() => setAcidez(on?'':value)} style={{ flex:1, padding:'8px 6px', borderRadius:8, border:`1.5px solid ${on?'var(--blue-border)':'#c1ccd6'}`, background:on?'var(--blue-light)':'white', color:on?'var(--blue)':'#5c6c7a', fontWeight:on?700:500, fontSize:12, cursor:'pointer', textAlign:'center' }}>{label}</button>;
+                })}
+              </div>
+            </div>
             <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-              {[['Acidez / coloração escura', acidez, setAcidez], ['Cor (escurecimento excessivo)', cor, setCor], ['Odor (ranço ou estranho)', odor, setOdor], ['Formação de espuma', espuma, setEspuma]].map(([lbl, val, setter]) => (
+              {[['Cor (escurecimento excessivo)', cor, setCor], ['Odor (ranço ou estranho)', odor, setOdor], ['Formação de espuma', espuma, setEspuma]].map(([lbl, val, setter]) => (
                 <div key={lbl} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 0', borderBottom:'1px solid var(--border-subtle)' }}>
                   <span style={{ fontSize:13 }}>{lbl}</span>
                   <div style={{ display:'flex', gap:6 }}>
@@ -313,19 +354,24 @@ export function OilControlView({ activeTenant, allTenants, onTenantChange, sessi
               ))}
             </div>
             <div>
-              <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em', color:'var(--text-secondary)', marginBottom:8 }}>Resultado</div>
+              <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em', color:'var(--text-secondary)', marginBottom:8 }}>Resultado{!resultadoTouched && acidSuggestion ? ' (sugerido pelo grau de acidez)' : ''}</div>
               <div style={{ display:'flex', gap:8 }}>
                 {[['aprovado','✓ Aprovado'],['reprovado','✗ Trocar óleo'],['observacao','⚠ Em observação']].map(([val,lbl]) => {
                   const on = resultado===val;
                   const [bg,color,border] = val==='aprovado'?['#dafbe1','#00a35c','#4ac26b']:val==='reprovado'?['#ffebe9','#c0392b','#ff8182']:['#fdf8e3','#8a4e00','#e3aa14'];
-                  return <button key={val} onClick={() => setResultado(on?'':val)} style={{ flex:1, padding:'8px 6px', borderRadius:8, border:`1.5px solid ${on?border:'#c1ccd6'}`, background:on?bg:'white', color:on?color:'#5c6c7a', fontWeight:on?700:500, fontSize:12, cursor:'pointer', textAlign:'center' }}>{lbl}</button>;
+                  return <button key={val} onClick={() => escolherResultado(val)} style={{ flex:1, padding:'8px 6px', borderRadius:8, border:`1.5px solid ${on?border:'#c1ccd6'}`, background:on?bg:'white', color:on?color:'#5c6c7a', fontWeight:on?700:500, fontSize:12, cursor:'pointer', textAlign:'center' }}>{lbl}</button>;
                 })}
               </div>
             </div>
+            {conflita && (
+              <label>Justificativa (obrigatória — resultado contraria o grau de acidez medido)
+                <textarea value={justificativa} onChange={e=>setJustificativa(e.target.value)} style={{ minHeight:48 }} placeholder="Explique por que o resultado difere do sugerido" />
+              </label>
+            )}
             {resultado === 'reprovado' && <label>Ação realizada<input value={acao} onChange={e=>setAcao(e.target.value)} placeholder="Ex.: Óleo descartado e substituído" /></label>}
             <label>Observações<textarea value={obs} onChange={e=>setObs(e.target.value)} placeholder="Observações adicionais…" style={{ minHeight:48 }} /></label>
             <div className="actions-row">
-              <button className={`primary-action${resultado?' attention':''}`} onClick={handleSave} disabled={!equipment.trim()||!resultado}>Registrar</button>
+              <button className={`primary-action${resultado?' attention':''}`} onClick={handleSave} disabled={!equipment.trim()||!resultado||(conflita&&!justificativa.trim())}>Registrar</button>
             </div>
             {saved && <div className="submission ok">✓ Registro salvo.</div>}
           </div>
@@ -337,9 +383,10 @@ export function OilControlView({ activeTenant, allTenants, onTenantChange, sessi
               : records.slice(0,10).map(r => {
                 const tone = r.resultado==='aprovado'?'ok':r.resultado==='reprovado'?'danger':'warn';
                 const lbl  = {aprovado:'Aprovado',reprovado:'Trocar óleo',observacao:'Em observação'}[r.resultado];
+                const acidLbl = OIL_ACID_LEVELS.find(l => l.value === r.acidez)?.label;
                 return (
                   <div key={r.id} className="equipment-maintenance-row" style={{ borderLeft:`3px solid var(--${tone==='ok'?'green':tone==='danger'?'red':'amber'}-border)` }}>
-                    <div><strong>{r.equipment}</strong><span>{fmtDT(r.createdAt)} · {r.user}</span>{r.acao&&<span style={{ fontSize:11, color:'var(--text-secondary)' }}>{r.acao}</span>}</div>
+                    <div><strong>{r.equipment}</strong><span>{r.date?fmtDate(r.date+'T12:00'):fmtDT(r.createdAt)} · {r.responsavel||r.user}</span>{acidLbl&&<span style={{ fontSize:11, color:'var(--text-secondary)' }}>Acidez: {acidLbl}</span>}{r.acao&&<span style={{ fontSize:11, color:'var(--text-secondary)' }}>{r.acao}</span>}</div>
                     <span className={`badge ${tone}`}>{lbl}</span>
                   </div>
                 );

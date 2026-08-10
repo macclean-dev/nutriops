@@ -40,3 +40,23 @@ export function receivingSuggestedResult(checks, checkIds) {
   if (marked.includes('NC')) return 'aceito_parcial';
   return null;
 }
+
+// Óleo de fritura: o resultado não vem de um cálculo booleano como os outros
+// controles — vem do grau de acidez lido no teste de fita (a cor indica o
+// nível). Mapeamento confirmado pela CASA DOCE em 10/08 a partir da legenda
+// da própria planilha de papel deles: 2% ainda é uso normal (só sinaliza que
+// o óleo começou a degradar); 3,5%/5,5% restringem o uso a alimentos mais
+// sensíveis/resistentes (fica em observação); 7% não serve pra nenhum
+// alimento — troca obrigatória.
+const OIL_ACID_RESULT = { '2': 'aprovado', '3.5': 'observacao', '5.5': 'observacao', '7': 'reprovado' };
+
+export function oilResultForAcidLevel(level) {
+  return OIL_ACID_RESULT[level] ?? null;
+}
+
+// Generaliza verdictConflicts pra resultados de mais de 2 valores (aprovado/
+// observação/reprovado) em vez de só conforme/não-conforme.
+export function suggestionConflicts(suggested, chosen) {
+  if (!suggested || !chosen) return false;
+  return chosen !== suggested;
+}

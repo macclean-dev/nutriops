@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { completionPct, generateFormPDF, readFormTemplates, templateSector, quickSign, extractNonConformities, pendingFormsForPeriod, formatPeriodLabel, getPeriodKey, hasEditableTaskSection, extractSelectFields, isTemplateEditable, applySelectFieldEdits } from './forms';
+import { completionPct, generateFormPDF, readFormTemplates, templateSector, quickSign, extractNonConformities, pendingFormsForPeriod, formatPeriodLabel, getPeriodKey, hasEditableTaskSection, extractSelectFields, isTemplateEditable, applySelectFieldEdits, isPresenceAnswered } from './forms';
 
 // Template no formato do CASA DOCE Banheiros, exercitando os tipos novos.
 const TPL = {
@@ -466,5 +466,40 @@ describe('autonomia da RT — editar tarefas e opções de lista (10/08)', () =>
       expect(sections[0].fields[1]).toEqual(comTarefaESelect.sections[0].fields[1]); // campo vizinho intocado
       expect(sections[1]).toEqual(comTarefaESelect.sections[1]); // outra seção intocada
     });
+  });
+});
+
+describe('isPresenceAnswered — bug real de produção (CASA DOCE, 10/08)', () => {
+  it('nunca tocado (undefined/null) não conta como respondido', () => {
+    expect(isPresenceAnswered(undefined)).toBe(false);
+    expect(isPresenceAnswered(null)).toBe(false);
+  });
+  it('respondido "sem ocorrência" (detected:false) conta como respondido', () => {
+    expect(isPresenceAnswered({ detected: false })).toBe(true);
+  });
+  it('respondido "detectado" conta como respondido', () => {
+    expect(isPresenceAnswered({ detected: true, location: 'Salão' })).toBe(true);
+  });
+});
+
+describe('completionPct + campo presence — reproduz o bug relatado pela CASA DOCE', () => {
+  const TPL_VETORES_MIN = {
+    frequency: 'daily',
+    sections: [{ id: 's1', fields: [
+      { id: 'abelha', label: 'Abelha (A)', type: 'presence' },
+      { id: 'barata', label: 'Barata (B)', type: 'presence' },
+    ]}],
+  };
+
+  it('planilha nunca tocada fica em 0%, mesmo o botão "parecendo" já respondido na UI', () => {
+    expect(completionPct(TPL_VETORES_MIN, { responses: {} })).toBe(0);
+  });
+  it('respondendo explicitamente "sem ocorrência" nos dois campos, vai a 100%', () => {
+    const responses = { abelha: { detected: false }, barata: { detected: false } };
+    expect(completionPct(TPL_VETORES_MIN, { responses })).toBe(100);
+  });
+  it('misto: só um respondido fica em 50%', () => {
+    const responses = { abelha: { detected: false } };
+    expect(completionPct(TPL_VETORES_MIN, { responses })).toBe(50);
   });
 });

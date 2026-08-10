@@ -1234,15 +1234,30 @@ function CNCButton({ value, onChange }) {
   );
 }
 
-function PresenceField({ value={}, onChange }) {
+// Bug real de produção (CASA DOCE, 10/08): com `value={}` de default, o botão
+// mostrava "Sem ocorrência" já com a cara de "respondido" ANTES de qualquer
+// toque — completionPct ficava em 0%/57% mesmo com a planilha "toda
+// preenchida" na tela, porque `responses[field.id]` continuava `undefined`.
+// `isPresenceAnswered` distingue "nunca tocado" de "respondido: sem
+// ocorrência" — os dois botões ficam neutros até um clique real escolher um.
+export function isPresenceAnswered(value) {
+  return value !== undefined && value !== null;
+}
+
+function PresenceField({ value, onChange }) {
+  const answered = isPresenceAnswered(value);
   const detected = value?.detected ?? false;
   return (
     <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-      <button onClick={() => onChange({ ...value, detected:!detected })}
-        style={{ padding:'5px 14px', borderRadius:6, border:`1.5px solid ${detected?'#ff8182':'#4ac26b'}`, background:detected?'#ffebe9':'#dafbe1', color:detected?'#c0392b':'#00a35c', fontWeight:700, fontSize:12, cursor:'pointer' }}>
-        {detected ? 'Detectado' : 'Sem ocorrência'}
+      <button onClick={() => onChange({ ...value, detected:false })}
+        style={{ padding:'5px 14px', borderRadius:6, border:`1.5px solid ${answered && !detected?'#4ac26b':'#c1ccd6'}`, background:answered && !detected?'#dafbe1':'white', color:answered && !detected?'#00a35c':'#5c6c7a', fontWeight:answered && !detected?700:500, fontSize:12, cursor:'pointer' }}>
+        ✓ Sem ocorrência
       </button>
-      {detected && (
+      <button onClick={() => onChange({ ...value, detected:true })}
+        style={{ padding:'5px 14px', borderRadius:6, border:`1.5px solid ${answered && detected?'#ff8182':'#c1ccd6'}`, background:answered && detected?'#ffebe9':'white', color:answered && detected?'#c0392b':'#5c6c7a', fontWeight:answered && detected?700:500, fontSize:12, cursor:'pointer' }}>
+        ✕ Detectado
+      </button>
+      {answered && detected && (
         <input value={value?.location??''} onChange={(e) => onChange({ ...value, location:e.target.value })}
           placeholder="Local" style={{ width:130, padding:'5px 8px', borderRadius:6, border:'1px solid #c1ccd6', fontSize:12, fontFamily:'inherit' }} />
       )}

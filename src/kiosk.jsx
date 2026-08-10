@@ -495,7 +495,7 @@ export function KioskSetup({ activeTenant, equipmentCatalog, session, onLaunch, 
 // FORM KIOSK — Tablet mode for BPF forms
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { readFormTemplates, readFormRecords, writeFormRecords, completionPct, getPeriodKey, catMeta } from './forms';
+import { readFormTemplates, readFormRecords, writeFormRecords, completionPct, getPeriodKey, catMeta, isPresenceAnswered } from './forms';
 import { dueFields } from './field-frequency';
 
 function FormKioskField({ field, value, onChange, currentName }) {
@@ -516,20 +516,24 @@ function FormKioskField({ field, value, onChange, currentName }) {
     );
   }
   if (field.type === 'presence') {
+    // Mesmo bug do desktop (forms.jsx PresenceField), corrigido junto: sem
+    // `answered`, os dois botões ficavam com cara de "já respondido" (um
+    // sempre destacado) antes de qualquer toque real.
+    const answered = isPresenceAnswered(value);
     const detected = value?.detected ?? false;
     return (
       <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
         <div style={{ display:'flex', gap:12 }}>
           <button onClick={() => onChange({ ...value, detected:true })}
-            style={{ flex:1, height:60, borderRadius:14, border:`2.5px solid ${detected?'#ff8182':'#c1ccd6'}`, background:detected?'#ffebe9':'white', color:detected?'#c0392b':'#94a3b8', fontWeight:700, fontSize:16, cursor:'pointer' }}>
+            style={{ flex:1, height:60, borderRadius:14, border:`2.5px solid ${answered && detected?'#ff8182':'#c1ccd6'}`, background:answered && detected?'#ffebe9':'white', color:answered && detected?'#c0392b':'#94a3b8', fontWeight:700, fontSize:16, cursor:'pointer' }}>
             ✕ Detectado
           </button>
           <button onClick={() => onChange({ ...value, detected:false })}
-            style={{ flex:1, height:60, borderRadius:14, border:`2.5px solid ${!detected?'#4ac26b':'#c1ccd6'}`, background:!detected?'#dafbe1':'white', color:!detected?'#00a35c':'#94a3b8', fontWeight:700, fontSize:16, cursor:'pointer' }}>
+            style={{ flex:1, height:60, borderRadius:14, border:`2.5px solid ${answered && !detected?'#4ac26b':'#c1ccd6'}`, background:answered && !detected?'#dafbe1':'white', color:answered && !detected?'#00a35c':'#94a3b8', fontWeight:700, fontSize:16, cursor:'pointer' }}>
             ✓ Sem ocorrência
           </button>
         </div>
-        {detected && (
+        {answered && detected && (
           <input value={value?.location??''} onChange={e=>onChange({ ...value, location:e.target.value })}
             placeholder="Local (ex.: D=Distribuição)" style={{ width:'100%', padding:'14px', borderRadius:10, border:'1.5px solid #c1ccd6', fontSize:16, fontFamily:'inherit' }} />
         )}

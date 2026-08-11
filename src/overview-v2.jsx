@@ -11,6 +11,7 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { resolveLimits, resolveTone } from './limits';
+import { ordenarPorSetor, agruparPorSetor } from './setores';
 import { detectTrend } from './trend';
 import { readTurns } from './turns';
 import { EquipmentDetailModal, EquipmentChart, toneColor, toneBg } from './equipment-detail';
@@ -805,6 +806,14 @@ function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records
   const lastRecord = tenantRecords[0];
   const [quickRegEq, setQuickRegEq] = useState(null);
 
+  // Mesma regra do quiosque (setores.js). Com 44 equipamentos numa lista
+  // corrida, quem é da Padaria caçava os dele no meio dos da Gelateria — e a
+  // divergência entre esta tela e o quiosque foi lida pela nutricionista da
+  // CASA DOCE (10/08) como "num aparelho agrupa, no outro não".
+  const gruposPendentes = useMemo(
+    () => agruparPorSetor(ordenarPorSetor(pending)),
+    [pending]);
+
   // Planilhas pendentes do período — o app já cobra temperatura, nunca cobrou
   // planilha (item 4 da revisão de produto, 09/08). forms.jsx entra por
   // IMPORT DINÂMICO: overview é a tela de boot de todo mundo, e forms.jsx é
@@ -852,22 +861,36 @@ function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records
         <Section
           title="Registrar agora"
           subtitle="Toque no equipamento pra abrir a tela de captura">
-          <div className="dash-stagger" style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
-            {pending.map(eq => (
-              <button key={eq.label} onClick={() => setQuickRegEq(eq)} style={{
-                flex:'1 1 200px', padding:'18px 20px',
-                background:'var(--surface)', border:'1px solid var(--border)',
-                borderRadius:'var(--r-lg)', cursor:'pointer', fontFamily:'var(--font)',
-                display:'flex', flexDirection:'column', gap:4, textAlign:'left',
-                transition:'all .15s',
-              }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor='var(--primary)'; e.currentTarget.style.background='var(--surface-muted)'; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.background='var(--surface)'; }}>
-                <div style={{ fontSize:15, fontWeight:600, color:'var(--text)' }}>{eq.label}</div>
-                <div style={{ fontSize:11, color:'var(--text-secondary)' }}>{eq.location}</div>
-              </button>
-            ))}
-          </div>
+          {gruposPendentes.map(grupo => (
+            <div key={grupo.chave} style={{ marginBottom:14 }}>
+              {/* Cabeçalho só quando há mais de um setor — com um só, o título
+                  vira ruído (mesma regra do quiosque). */}
+              {gruposPendentes.length > 1 && (
+                <div style={{
+                  fontSize:10, fontWeight:700, letterSpacing:'.12em', textTransform:'uppercase',
+                  color:'var(--text-secondary)', marginBottom:8,
+                }}>
+                  {grupo.setor} · {grupo.itens.length}
+                </div>
+              )}
+              <div className="dash-stagger" style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
+                {grupo.itens.map(({ item: eq }) => (
+                  <button key={eq.label} onClick={() => setQuickRegEq(eq)} style={{
+                    flex:'1 1 200px', padding:'18px 20px',
+                    background:'var(--surface)', border:'1px solid var(--border)',
+                    borderRadius:'var(--r-lg)', cursor:'pointer', fontFamily:'var(--font)',
+                    display:'flex', flexDirection:'column', gap:4, textAlign:'left',
+                    transition:'all .15s',
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor='var(--primary)'; e.currentTarget.style.background='var(--surface-muted)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.background='var(--surface)'; }}>
+                    <div style={{ fontSize:15, fontWeight:600, color:'var(--text)' }}>{eq.label}</div>
+                    <div style={{ fontSize:11, color:'var(--text-secondary)' }}>{eq.location}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
         </Section>
       )}
 

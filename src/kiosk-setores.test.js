@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { ordenarPorSetor, agruparPorSetor, seedSavedValuesFromToday, firstPendingIndexIfUntouched } from './kiosk';
+import { ordenarPorSetor, agruparPorSetor } from './setores';
+import { seedSavedValuesFromToday, firstPendingIndexIfUntouched } from './kiosk';
 
 // Pedido do cliente (07/08): com 44 equipamentos numa grade única, o
 // colaborador da Padaria caçava os dele no meio dos da Gelateria. Cada um

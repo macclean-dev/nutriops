@@ -5,6 +5,7 @@ import { readOperator } from './operator';
 import { OperatorPicker, readStaff } from './operator-picker';
 import { BrandLockup } from './brand';
 import { writeKioskConfig } from './kiosk-config';
+import { ordenarPorSetor, agruparPorSetor } from './setores';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -71,58 +72,6 @@ function Numpad({ value, onChange, onConfirm, label, hint, tone }) {
   );
 }
 
-// ─── Agrupamento por setor ─────────────────────────────────────────────────
-// Com 44 equipamentos numa grade única (CASA DOCE), o colaborador da Padaria
-// precisava caçar os dele no meio dos da Gelateria. Cada um cuida da própria
-// área, então a lista de captura segue a mesma lógica das planilhas BPF.
-//
-// ORDENAR antes de agrupar não é cosmético: o quiosque navega por ÍNDICE do
-// catálogo (activeIdx) e o "próximo equipamento" após salvar é o próximo índice
-// não registrado. Se a ordem do array não bater com a da tela, o cursor pula
-// de setor a cada leitura.
-export function ordenarPorSetor(list) {
-  const cmp = (a, b) => a.localeCompare(b, 'pt-BR', { sensitivity:'base' });
-  return [...list].sort((a, b) => {
-    // Compara pela CHAVE normalizada, não pela grafia crua: "Confeitaria" e
-    // "confeitaria" são strings diferentes mas o mesmo setor. Comparando cru,
-    // o desempate por nome nunca rodava entre elas (localeCompare base devolve
-    // 0) e os equipamentos do setor saíam fora de ordem.
-    const ka = chaveSetor(a.location), kb = chaveSetor(b.location);
-    if (Boolean(ka) !== Boolean(kb)) return ka ? -1 : 1;   // sem setor por último
-    return ka !== kb ? cmp(ka, kb) : cmp(a.label ?? '', b.label ?? '');
-  });
-}
-
-// Chave de comparação de setor: sem caixa e sem acento. Os 44 equipamentos da
-// CASA DOCE foram digitados à mão, então "Confeitaria", "confeitaria" e
-// "CONFEITARIA" convivem — comparando cru, o mesmo setor vira três blocos
-// separados na tela. O ROTULO exibido é a primeira grafia encontrada (a
-// ordenação é estável, então é a que vier primeiro no alfabeto).
-const chaveSetor = (s) => (s ?? '').trim().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-
-// Quebra a lista JÁ ORDENADA em blocos, preservando o índice original de cada
-// item — é por ele que o quiosque seleciona o equipamento.
-export function agruparPorSetor(list) {
-  const grupos = [];
-  list.forEach((item, i) => {
-    const bruto = (item.location ?? '').trim();
-    const setor = bruto || 'Sem setor';
-    const chave = bruto ? chaveSetor(bruto) : ' sem-setor';
-    const ultimo = grupos[grupos.length - 1];
-    if (ultimo && ultimo.chave === chave) { ultimo.itens.push({ item, i }); ultimo.grafias.push(bruto); }
-    else grupos.push({ setor, chave, itens: [{ item, i }], grafias: [bruto] });
-  });
-  // Rotulo = grafia MAIS FREQUENTE do setor (empate: a primeira, porque sort e
-  // estavel). Se 12 equipamentos dizem "Confeitaria" e um diz "confeitaria",
-  // exibir a minuscula so por ela ter caido primeiro pareceria erro do app.
-  for (const g of grupos) {
-    const conta = new Map();
-    for (const s of g.grafias) if (s) conta.set(s, (conta.get(s) ?? 0) + 1);
-    if (conta.size) g.setor = [...conta.entries()].sort((a, b) => b[1] - a[1])[0][0];
-    delete g.grafias;
-  }
-  return grupos;
-}
 
 // ─── Semear leituras do dia (evita duplicata no quiosque) ──────────────────
 // Puro e testável de propósito: sem isso, um equipamento medido de manhã por

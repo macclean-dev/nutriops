@@ -21,6 +21,9 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.122', date: '2026-08-10', items: [
+    'Corrigido: no gráfico de temperatura, os rótulos "máx"/"mín" cortavam na borda do card pra equipamentos com faixa negativa (freezers).',
+  ]},
   { version: '1.9.121', date: '2026-08-10', items: [
     'O "Registrar agora" da tela inicial agora separa os equipamentos por setor, igual ao modo quiosque — antes vinham todos numa lista corrida, e quem cuida de uma área só precisava caçar os dela no meio das outras.',
   ]},

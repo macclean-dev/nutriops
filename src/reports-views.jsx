@@ -44,7 +44,10 @@ function TempLineChart({ records, equipment, height = 180 }) {
   const allY   = [...values, limits.min - 3, limits.max + 3];
   const minY   = Math.min(...allY), maxY = Math.max(...allY), rangeY = maxY - minY || 1;
   const W = 560, H = height;
-  const pad = { top: 20, right: 16, bottom: 30, left: 38 };
+  // right:16 não bastava pro rótulo "mín -25°" de equipamentos de congelamento —
+  // o card tem overflow:hidden (.chart-card), então o texto cortava na borda em
+  // vez de só ficar feio. 54 cobre 2 dígitos negativos com folga.
+  const pad = { top: 20, right: 54, bottom: 30, left: 38 };
   const cW = W - pad.left - pad.right, cH = H - pad.top - pad.bottom;
   const sx = (i) => (i / (data.length - 1)) * cW;
   const sy = (v) => cH - ((v - minY) / rangeY) * cH;
@@ -60,8 +63,8 @@ function TempLineChart({ records, equipment, height = 180 }) {
         <rect x={0} y={bandTop} width={cW} height={Math.max(0, bandBot - bandTop)} fill="rgba(26,127,55,.07)" rx={2} />
         <line x1={0} y1={bandTop} x2={cW} y2={bandTop} stroke="#4ac26b" strokeDasharray="4 3" strokeWidth={1} opacity={.7} />
         <line x1={0} y1={bandBot} x2={cW} y2={bandBot} stroke="#4ac26b" strokeDasharray="4 3" strokeWidth={1} opacity={.7} />
-        <text x={cW + 4} y={bandTop} fontSize={9} fill="#1a7f37" dominantBaseline="middle">máx {limits.max}°</text>
-        <text x={cW + 4} y={bandBot} fontSize={9} fill="#1a7f37" dominantBaseline="middle">mín {limits.min}°</text>
+        <text x={cW + 4} y={bandTop} fontSize={9} fill="#1a7f37" fontFamily="monospace" dominantBaseline="middle">máx {limits.max}°</text>
+        <text x={cW + 4} y={bandBot} fontSize={9} fill="#1a7f37" fontFamily="monospace" dominantBaseline="middle">mín {limits.min}°</text>
         <path className="chart-area" d={areaPath} fill="#1d4e89" fillOpacity={.06} />
         <path className="chart-line-draw" pathLength={1} d={linePath} fill="none" stroke="#1d4e89" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
         {pts.map((p, i) => {

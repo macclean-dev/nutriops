@@ -59,3 +59,34 @@ Não exige deploy de código:
 
 ⚠️ Isso é paliativo — qualquer segredo usado por app client-side é público. Ver
 a pendência de segurança aberta no `CLAUDE.md`.
+
+---
+
+## Testar etiqueta de validade na Zebra real (ZD220/GC420)
+
+Mecanismo: `window.print()` puro com CSS `@page{size:60mm 60mm}`
+(`printLabel`/`generateLabel` em `src/validity.jsx`) — mesmo padrão que já
+funciona pros PDFs de BPF, mas nunca foi confirmado nessa impressora física.
+Rolo confirmado 60×60mm, impressora Ethernet com driver padrão de Windows.
+
+1. **No computador/notebook da rede da loja** (caminho com maior chance de
+   funcionar de cara):
+   - NutriOPS → **Validades e Estoque** → aba **Produtos**
+   - Em qualquer produto, clicar no botão **🏷️** ("Reimprimir etiqueta") — não
+     precisa clicar em "Abrir": reimprime sem criar abertura nova no histórico
+   - Abre aba nova com a etiqueta e chama a caixa de impressão sozinha depois
+     de ~400ms → selecionar a Zebra na lista do sistema operacional
+2. **Conferir na etiqueta impressa:**
+   - Tamanho bateu com o rolo físico (60×60mm), sem cortar borda
+   - QR legível — testar escaneando em **Validades e Estoque → Escanear
+     etiqueta**, dentro do próprio app
+   - Nome do produto, VAL. ORIGINAL, RESP. e rodapé da empresa corretos
+3. **Repetir no tablet Android** — é o ponto incerto. A Zebra em rede fala
+   ZPL/EPL nativamente; o tablet precisa do app **"Zebra Print Service
+   Plugin"** instalado pra aparecer como impressora do sistema pro
+   `window.print()` do navegador enxergar. Sem o plugin, o tablet
+   provavelmente nem lista a impressora.
+
+Se travar no passo 3: plano B é imprimir sempre pelo computador da loja (já
+resolve o caso de uso original — produção corrida, mas com etiqueta rápida de
+tirar do PC) e reavaliar depois se vale investir num caminho pro tablet.

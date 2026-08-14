@@ -21,6 +21,9 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.123', date: '2026-08-13', items: [
+    'Modo Quiosque: botões "Todos"/"Nenhum" pra montar a seleção de equipamentos rápido, e o "marcar/desmarcar setor" ficou mais visível (agora é um botão, não só um textinho sublinhado).',
+  ]},
   { version: '1.9.122', date: '2026-08-10', items: [
     'Corrigido: no gráfico de temperatura, os rótulos "máx"/"mín" cortavam na borda do card pra equipamentos com faixa negativa (freezers).',
   ]},

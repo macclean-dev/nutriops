@@ -389,7 +389,24 @@ export function KioskSetup({ activeTenant, equipmentCatalog, session, onLaunch, 
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200, padding:24 }}>
       <div style={{ background:'white', borderRadius:16, padding:28, width:'100%', maxWidth:480, maxHeight:'85vh', display:'flex', flexDirection:'column', boxShadow:'0 24px 48px rgba(0,0,0,.2)' }}>
         <h2 style={{ fontSize:20, fontWeight:800, letterSpacing:'-.03em', marginBottom:6 }}>Modo Quiosque</h2>
-        <p style={{ fontSize:13, color:'#5c6c7a', marginBottom:20 }}>Interface simplificada para tablet na loja. Selecione os equipamentos a registrar.</p>
+        <p style={{ fontSize:13, color:'#5c6c7a', marginBottom:8 }}>Interface simplificada para tablet na loja. Selecione os equipamentos a registrar.</p>
+
+        {/* Catálogo grande (44 da CASA DOCE) + querer só 1 setor = "desmarcar todos
+            os OUTROS 11" era mais rápido que "marcar 1 a 1", mas ainda dolorido —
+            pedido real da RT (13/08). "Nenhum" + "marcar setor" no setor desejado
+            vira 2 toques pra isolar uma área. */}
+        {equipmentCatalog.length > 0 && (
+          <div style={{ display:'flex', justifyContent:'flex-end', gap:14, marginBottom:14 }}>
+            <button onClick={() => setSelectedEquips(equipmentCatalog.map(e => e.label))}
+              style={{ background:'none', border:'none', padding:0, fontSize:12, fontWeight:700, color:'#00684a', cursor:'pointer', fontFamily:'inherit', textDecoration:'underline' }}>
+              Todos
+            </button>
+            <button onClick={() => setSelectedEquips([])}
+              style={{ background:'none', border:'none', padding:0, fontSize:12, fontWeight:700, color:'#00684a', cursor:'pointer', fontFamily:'inherit', textDecoration:'underline' }}>
+              Nenhum
+            </button>
+          </div>
+        )}
 
         {/* Lista rola por dentro (flex:1 + minHeight:0) — sem isso, catálogos
             grandes (ex.: 44 equip. da CASA DOCE) empurram os botões "Cancelar"/
@@ -403,7 +420,7 @@ export function KioskSetup({ activeTenant, equipmentCatalog, session, onLaunch, 
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', margin:'10px 0 6px' }}>
                     <span style={{ fontSize:12, fontWeight:800, color:'#001e2b' }}>{setor} <span style={{ fontWeight:600, color:'#5c6c7a' }}>({marcados}/{itens.length})</span></span>
                     <button onClick={() => toggleSetor(itens)}
-                      style={{ background:'none', border:'none', padding:0, fontSize:11, fontWeight:700, color:'#00684a', cursor:'pointer', fontFamily:'inherit', textDecoration:'underline' }}>
+                      style={{ background:'#f1f5f4', border:'1px solid #c1ccd6', borderRadius:20, padding:'3px 10px', fontSize:11, fontWeight:700, color:'#00684a', cursor:'pointer', fontFamily:'inherit' }}>
                       {marcados === itens.length ? 'desmarcar setor' : 'marcar setor'}
                     </button>
                   </div>

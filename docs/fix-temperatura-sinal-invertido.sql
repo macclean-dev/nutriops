@@ -105,3 +105,32 @@ select created_at::date as dia, equipment_input,
 -- Os aparelhos pegam a correção sozinhos no próximo carregamento: o merge do
 -- app (mergeByKey, repository.js) desempata pela data e o registro da nuvem
 -- vence o cache local — não precisa limpar nada no tablet dela.
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║ PASSO 4 — O QUE SOBROU. Toda leitura POSITIVA em equipamento de       ║
+-- ║ congelamento, corrigida ou não. O Passo 2 é conservador de propósito  ║
+-- ║ (só inverte quando inverter conserta), então aqui aparece o que ficou ║
+-- ║ de fora e precisa de decisão humana: ou é desvio real (freezer que    ║
+-- ║ de fato esquentou) ou é digitação errada de outro tipo.               ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+select tenant_id,
+       equipment_input,
+       created_at::date as dia,
+       value,
+       min_value, max_value,
+       user_name,
+       note,
+       case when corrected_at is not null then 'já corrigido no passo 2'
+            else '⚠ NÃO corrigido — revisar' end as status
+  from public.temperature_records
+ where max_value < 0        -- só equipamento que nunca deveria ler positivo
+   and value > 0
+ order by created_at desc;
+
+-- Linhas "⚠ NÃO corrigido — revisar": confira uma a uma com a nutricionista.
+-- Se for erro de digitação de outra natureza (ex.: 5°C que era -25°C), a
+-- correção certa é pelo app — tela de Auditoria, botão de corrigir registro,
+-- que já pede motivo e guarda o valor original. Não corrija essas no SQL:
+-- pelo app a trilha sai com o nome de quem corrigiu, não "suporte NutriOPS".

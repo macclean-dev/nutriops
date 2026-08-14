@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { heuristicLimits, resolveLimits, resolveTone, suggestLimits, dedupeCatalog, normalizeEquipmentName, getEquipmentEntry } from './limits';
+import { heuristicLimits, resolveLimits, resolveTone, suggestLimits, dedupeCatalog, normalizeEquipmentName, getEquipmentEntry, suspectMissingMinus } from './limits';
 
 describe('heuristicLimits', () => {
   it('freezer/congelado → -25/-18', () => {
@@ -169,5 +169,50 @@ describe('getEquipmentEntry', () => {
   });
   it('sem casar, devolve null', () => {
     expect(getEquipmentEntry(catalog, 'Inexistente')).toBe(null);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bug real (14/08): a nutricionista da CASA DOCE digitava -18 no freezer e
+// gravava +18 — `inputMode="decimal"` não tem tecla de menos no celular.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('suspectMissingMinus', () => {
+  const FREEZER = [-25, -18];   // Bancada congelada — F.2, o caso reportado
+
+  it('pega o caso reportado: +18 num freezer -25/-18', () => {
+    expect(suspectMissingMinus(18, ...FREEZER)).toBe(true);
+  });
+
+  it('pega outros valores plausíveis do mesmo freezer', () => {
+    expect(suspectMissingMinus(20, ...FREEZER)).toBe(true);
+    expect(suspectMissingMinus(22, ...FREEZER)).toBe(true);
+  });
+
+  it('valor já negativo não é suspeito', () => {
+    expect(suspectMissingMinus(-18, ...FREEZER)).toBe(false);
+    expect(suspectMissingMinus(-30, ...FREEZER)).toBe(false); // desvio real, não sinal
+  });
+
+  it('freezer REALMENTE quebrado a +5 não vira -5 — negar não conserta', () => {
+    expect(suspectMissingMinus(5, ...FREEZER)).toBe(false);
+  });
+
+  it('equipamento que aceita positivo nunca acusa (geladeira 0-5)', () => {
+    expect(suspectMissingMinus(18, 0, 5)).toBe(false);
+    expect(suspectMissingMinus(3, 0, 5)).toBe(false);
+  });
+
+  it('banho-maria (60-85) nunca acusa — max positivo', () => {
+    expect(suspectMissingMinus(70, 60, 85)).toBe(false);
+  });
+
+  it('valor dentro/perto da faixa não acusa mesmo em freezer', () => {
+    expect(suspectMissingMinus(0, ...FREEZER)).toBe(false);
+  });
+
+  it('não quebra com entrada inválida', () => {
+    expect(suspectMissingMinus('', -25, -18)).toBe(false);
+    expect(suspectMissingMinus(18, null, undefined)).toBe(false);
+    expect(suspectMissingMinus(NaN, -25, -18)).toBe(false);
   });
 });

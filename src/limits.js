@@ -59,6 +59,30 @@ export function resolveRecordTone(record) {
   return resolveTone(record?.value, record?.min, record?.max);
 }
 
+// "Faltou o sinal de menos?" — bug real relatado pela nutricionista da CASA
+// DOCE em 14/08: ela digitava -18 num freezer (faixa -25/-18) e o registro
+// saía +18, para TODOS os equipamentos de congelamento.
+//
+// CAUSA: `inputMode="decimal"` não oferece tecla de menos no teclado de
+// celular/tablet (nem iOS nem boa parte do Android). Fisicamente não dava pra
+// digitar o negativo. O guard que existia era um window.confirm genérico
+// ("confira se não é erro de digitação") — dá pra dispensar no reflexo, e foi
+// o que aconteceu 5 vezes seguidas.
+//
+// Esta função identifica o caso com precisão, em vez de só desconfiar de
+// "valor alto": só acusa quando o equipamento NÃO aceita positivo (max < 0),
+// o valor digitado está fora de faixa, e o mesmo valor NEGADO seria aceitável.
+// Um freezer realmente quebrado a +5°C (faixa -25/-18) não cai aqui: -5
+// continuaria fora de faixa, então não é erro de sinal — é desvio real.
+export function suspectMissingMinus(value, min, max) {
+  const v = Number(value), mn = Number(min), mx = Number(max);
+  if (!Number.isFinite(v) || !Number.isFinite(mn) || !Number.isFinite(mx)) return false;
+  if (v <= 0) return false;   // já veio negativo (ou zero): nada a sugerir
+  if (mx >= 0) return false;  // faixa aceita positivo — +18 pode ser leitura real
+  if (resolveTone(v, mn, mx) !== 'danger') return false;   // como está já serve
+  return resolveTone(-v, mn, mx) !== 'danger';             // negado, vira plausível
+}
+
 // Sugestão automática pela inteligência do nome — usado pelo formulário de
 // cadastro de equipamento pra pré-preencher os campos quando o usuário digita
 // "Freezer" ou similar.

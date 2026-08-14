@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { resolveLimits, resolveTone } from './limits';
+import { resolveLimits, resolveTone, suspectMissingMinus } from './limits';
 import { ordenarPorSetor, agruparPorSetor } from './setores';
 import { detectTrend } from './trend';
 import { readTurns } from './turns';
@@ -221,6 +221,7 @@ function QuickRegisterModal({ equipment, activeTenant, session, onClose, onSaved
   const [value, setValue] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const [insistiuPositivo, setInsistiuPositivo] = useState(false);
   const inputRef = useRef(null);
   const repository = useMemo(() => getTemperatureRepository(), []);
   const limits = resolveLimits(equipment.label, equipment);
@@ -235,13 +236,20 @@ function QuickRegisterModal({ equipment, activeTenant, session, onClose, onSaved
   const numericValue = Number(value);
   const hasValue = value !== '' && !isNaN(numericValue);
   const tone = hasValue ? resolveTone(numericValue, limits.min, limits.max) : 'neutral';
+  // "Faltou o menos?" — o teclado de celular não tem tecla de menos com
+  // inputMode="decimal", e o confirm genérico que existia aqui era dispensado
+  // no reflexo (gravou 5 leituras de freezer como +18 na CASA DOCE, 14/08).
+  const faltouMenos = hasValue && suspectMissingMinus(numericValue, limits.min, limits.max);
+  const trocarSinal = () => {
+    setInsistiuPositivo(false);
+    setValue((v) => (v.startsWith('-') ? v.slice(1) : v.trim() ? `-${v.trim()}` : v));
+  };
 
   const save = async () => {
     if (!hasValue || saving) return;
-    if (tone === 'danger') {
-      const proceed = window.confirm(`${numericValue}°C está bem fora da faixa esperada (${limits.min}° a ${limits.max}°C).\n\nConfira se não é erro de digitação (ex.: sinal de negativo esquecido). Confirma o registro assim mesmo?`);
-      if (!proceed) return;
-    }
+    // Bloqueia enquanto a suspeita de sinal não for resolvida — ou corrige
+    // pelo botão, ou confirma explicitamente que o positivo é real.
+    if (faltouMenos && !insistiuPositivo) return;
     setSaving(true);
     try {
       await repository.create({
@@ -281,16 +289,44 @@ function QuickRegisterModal({ equipment, activeTenant, session, onClose, onSaved
 
         <label style={{ display:'flex', flexDirection:'column', gap:6 }}>
           <span style={{ fontSize:11, fontWeight:600, color:'var(--text-secondary)', textTransform:'uppercase', letterSpacing:'.06em' }}>Temperatura (°C)</span>
-          <input ref={inputRef} inputMode="decimal" value={value}
-            onChange={e => setValue(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') save(); }}
-            placeholder={`${limits.min} a ${limits.max}`}
-            style={{
-              padding:'10px 14px', borderRadius:'var(--r)', fontSize:20, fontFamily:'var(--mono)',
-              border:`1.5px solid ${tone==='danger'?'var(--red)':tone==='warn'?'var(--amber)':'var(--border)'}`,
-              color:'var(--text)', background:'var(--surface)',
-            }} />
+          <div style={{ display:'flex', gap:8, alignItems:'stretch' }}>
+            <input ref={inputRef} inputMode="decimal" value={value}
+              onChange={e => { setValue(e.target.value); setInsistiuPositivo(false); }}
+              onKeyDown={e => { if (e.key === 'Enter') save(); }}
+              placeholder={`${limits.min} a ${limits.max}`}
+              style={{
+                flex:1, minWidth:0,
+                padding:'10px 14px', borderRadius:'var(--r)', fontSize:20, fontFamily:'var(--mono)',
+                border:`1.5px solid ${tone==='danger'?'var(--red)':tone==='warn'?'var(--amber)':'var(--border)'}`,
+                color:'var(--text)', background:'var(--surface)',
+              }} />
+            {/* O teclado numérico do celular não tem tecla de menos — sem este
+                botão, temperatura de congelados é impossível de digitar. */}
+            <button type="button" onClick={trocarSinal} title="Trocar sinal (+/−)"
+              style={{ width:52, borderRadius:'var(--r)', border:'1.5px solid var(--border)', background:'var(--surface-muted)', color:'var(--text)', fontSize:20, fontWeight:700, fontFamily:'var(--mono)', cursor:'pointer', flexShrink:0 }}>
+              ±
+            </button>
+          </div>
         </label>
+
+        {faltouMenos && (
+          <div role="alert" style={{ padding:'10px 12px', borderRadius:'var(--r)', background:'var(--amber-light)', border:'1px solid var(--amber-border)', display:'flex', flexDirection:'column', gap:8 }}>
+            <strong style={{ fontSize:13, color:'var(--amber)' }}>Faltou o sinal de menos?</strong>
+            <span style={{ fontSize:12, color:'var(--text-secondary)' }}>
+              {equipment.label} trabalha entre {limits.min}° e {limits.max}°C. Você quis dizer <strong>−{numericValue}°C</strong>?
+            </span>
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+              <button onClick={trocarSinal}
+                style={{ padding:'7px 14px', borderRadius:'var(--r)', border:'none', background:'var(--primary)', color:'white', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)' }}>
+                Sim, corrigir para −{numericValue}°C
+              </button>
+              <button onClick={() => setInsistiuPositivo(true)}
+                style={{ padding:'7px 14px', borderRadius:'var(--r)', border:'1px solid var(--amber-border)', background:'transparent', color:'var(--amber)', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'var(--font)' }}>
+                Não, foi +{numericValue}°C mesmo
+              </button>
+            </div>
+          </div>
+        )}
 
         <label style={{ display:'flex', flexDirection:'column', gap:6 }}>
           <span style={{ fontSize:11, fontWeight:600, color:'var(--text-secondary)', textTransform:'uppercase', letterSpacing:'.06em' }}>Observação (opcional)</span>

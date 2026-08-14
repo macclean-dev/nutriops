@@ -17,7 +17,7 @@ import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
 import { getUnseenEntries } from './changelog';
-import { resolveLimits as resolveLimitsFromCatalog, resolveTone, resolveRecordTone as resolveTemperatureTone, heuristicLimits, suggestLimits, dedupeCatalog, normalizeEquipmentName, getEquipmentEntry } from './limits';
+import { resolveLimits as resolveLimitsFromCatalog, resolveTone, resolveRecordTone as resolveTemperatureTone, heuristicLimits, suggestLimits, dedupeCatalog, normalizeEquipmentName, getEquipmentEntry, suspectMissingMinus } from './limits';
 import { receivingSuggestedResult } from './verdict';
 import { isPlaceholderCatalog } from './segments';
 
@@ -813,6 +813,25 @@ function TemperatureCapture({ activeTenant, session, equipmentCatalog, onRecordS
     // escreve o que vai fazer, só depois confirma que o número é real. Some
     // sozinho assim que a observação for preenchida (não é um modal, é o
     // próprio campo ficando em foco).
+    // Sinal trocado (bug da CASA DOCE, 14/08): antes de qualquer outra coisa,
+    // se um valor positivo só faz sentido negativo pra aquele equipamento,
+    // corrige na hora em vez de gravar +18°C num freezer. Diferente do confirm
+    // genérico que existia (dispensável no reflexo), aqui a correção é a ação.
+    const sinalTrocado = toSave.filter((item) => {
+      const lim = resolveTemperatureLimits(item.label, equipmentCatalog);
+      return suspectMissingMinus(item.val, lim.min, lim.max);
+    });
+    if (sinalTrocado.length) {
+      const detalhe = sinalTrocado.map((i) => `• ${i.label}: ${i.val}°C → −${i.val}°C`).join('\n');
+      const corrigir = window.confirm(`Faltou o sinal de menos?\n\n${detalhe}\n\nEsses equipamentos só trabalham em temperatura negativa. Corrigir o sinal antes de registrar?`);
+      if (corrigir) {
+        for (const item of sinalTrocado) {
+          if (item.label === activeEquipment) setValue(`-${item.val}`);
+          persistDraft(item.label, { value: `-${item.val}` });
+        }
+        return;   // volta pra tela com os valores corrigidos, pra ela conferir
+      }
+    }
     const missingNote = outOfRange.filter((item) => !item.nt?.trim());
     if (missingNote.length) {
       const target = missingNote[0].label;
@@ -892,10 +911,20 @@ function TemperatureCapture({ activeTenant, session, equipmentCatalog, onRecordS
           </div>
           <label className="textarea-block field-box">
             <span className="field-head"><span>Temperatura (°C)</span>{flowComplete && <small className="field-check">✓✓</small>}</span>
-            <input ref={temperatureRef} inputMode="decimal" value={value}
-              onChange={(e) => { setValue(e.target.value); setSubmissionState('idle'); persistDraft(activeEquipment, { value: e.target.value }); }}
-              placeholder={`${limits.min} a ${limits.max}`}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (hasValue) { const idx = visibleChips.findIndex((c) => c.label === activeEquipment); const next = visibleChips[idx + 1]; if (next) selectEquipment(next.label); else noteRef.current?.focus(); } else noteRef.current?.focus(); } }} />
+            <div style={{ display:'flex', gap:8, alignItems:'stretch' }}>
+              <input ref={temperatureRef} inputMode="decimal" value={value} style={{ flex:1, minWidth:0 }}
+                onChange={(e) => { setValue(e.target.value); setSubmissionState('idle'); persistDraft(activeEquipment, { value: e.target.value }); }}
+                placeholder={`${limits.min} a ${limits.max}`}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (hasValue) { const idx = visibleChips.findIndex((c) => c.label === activeEquipment); const next = visibleChips[idx + 1]; if (next) selectEquipment(next.label); else noteRef.current?.focus(); } else noteRef.current?.focus(); } }} />
+              {/* O teclado numérico do celular/tablet não tem tecla de menos com
+                  inputMode="decimal" — sem este botão, temperatura de congelados
+                  é impossível de digitar (bug da CASA DOCE, 14/08). */}
+              <button type="button" title="Trocar sinal (+/−)"
+                onClick={() => { const novo = value.startsWith('-') ? value.slice(1) : (value.trim() ? `-${value.trim()}` : value); setValue(novo); setSubmissionState('idle'); persistDraft(activeEquipment, { value: novo }); }}
+                style={{ width:52, borderRadius:'var(--r)', border:'1px solid var(--border)', background:'var(--surface-muted)', color:'var(--text)', fontSize:18, fontWeight:700, fontFamily:'var(--mono)', cursor:'pointer', flexShrink:0 }}>
+                ±
+              </button>
+            </div>
           </label>
         </div>
         <div className="range-panel">

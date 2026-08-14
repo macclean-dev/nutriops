@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getTemperatureRepository } from './repository';
-import { resolveLimits as resolveTemperatureLimits, resolveTone as resolveTemperatureTone } from './limits';
+import { resolveLimits as resolveTemperatureLimits, resolveTone as resolveTemperatureTone, suspectMissingMinus } from './limits';
 import { readOperator } from './operator';
 import { OperatorPicker, readStaff } from './operator-picker';
 import { BrandLockup } from './brand';
@@ -19,7 +19,11 @@ function Numpad({ value, onChange, onConfirm, label, hint, tone, confirmDisabled
   const handleKey = (k) => {
     if (k === '⌫') { onChange(value.slice(0, -1)); return; }
     if (k === '.' && value.includes('.')) return;
-    if (k === '-' && value.length > 0) return;
+    // O menos vira ALTERNADOR de sinal, em vez de só valer com o campo vazio.
+    // Antes, quem digitasse "18" e depois tentasse o menos não conseguia mais:
+    // a tecla era ignorada em silêncio e a leitura ia positiva pro banco
+    // (bug da CASA DOCE, 14/08 — freezer gravado como +18°C).
+    if (k === '-') { onChange(value.startsWith('-') ? value.slice(1) : `-${value}`); return; }
     if (value.length >= 6) return;
     onChange(value + k);
   };
@@ -156,6 +160,7 @@ export function KioskApp({ config, onExit }) {
   // revisão). Reseta a cada equipamento pra não vazar nota de um card pro
   // outro; ok/warn continuam salvando note:'' como sempre salvaram.
   const [note, setNote]           = useState('');
+  const [insistiuPositivo, setInsistiuPositivo] = useState(false);
   const [savedValues, setSavedValues] = useState({});
   const [saving, setSaving]       = useState(false);
   const [successData, setSuccessData] = useState(null);
@@ -215,9 +220,15 @@ export function KioskApp({ config, onExit }) {
   const tone   = value ? resolveTemperatureTone(value, limits.min, limits.max) : 'neutral';
   const noteRequired = tone === 'danger';
   const noteMissing   = noteRequired && !note.trim();
+  // Sinal trocado: a tecla − existia mas só valia com o campo vazio, então
+  // "18" + − ficava +18 e ia pro banco (CASA DOCE, 14/08). Aqui a leitura
+  // trava até resolver — corrigir num toque ou confirmar que o positivo é real.
+  const faltouMenos = value !== '' && suspectMissingMinus(Number(value), limits.min, limits.max);
+  const bloqueadoPeloSinal = faltouMenos && !insistiuPositivo;
 
   const handleConfirm = useCallback(async () => {
     if (!value || !active || saving) return;
+    if (suspectMissingMinus(Number(value), limits.min, limits.max) && !insistiuPositivo) return;
     const currentTone = resolveTemperatureTone(value, limits.min, limits.max);
     // RDC 216 espera a ação anotada quando o desvio é crítico (item 16 da
     // revisão) — o botão ✓ já vem desabilitado nesse caso (Numpad
@@ -248,9 +259,9 @@ export function KioskApp({ config, onExit }) {
       // (automático ou por toque) — um só relógio, não dois desencontrados.
       const next = catalog.findIndex((eq, i) => i > activeIdx && !savedValues[eq.label]);
       setSuccessData({ temperature: value, equipment: active.label, tone: currentTone, next: next === -1 ? null : next });
-      setValue(''); setNote('');
+      setValue(''); setNote(''); setInsistiuPositivo(false);
     } finally { setSaving(false); }
-  }, [value, note, active, saving, config, limits, repository, catalog, activeIdx, savedValues, autorAtual]);
+  }, [value, note, insistiuPositivo, active, saving, config, limits, repository, catalog, activeIdx, savedValues, autorAtual]);
 
   const allSaved = catalog.every(eq => savedValues[eq.label]);
   const savedCount = Object.keys(savedValues).length;
@@ -336,7 +347,7 @@ export function KioskApp({ config, onExit }) {
                   )}
                   <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px,1fr))', gap:10 }}>
                     {itens.map(({ item, i }) => (
-                      <EquipmentCard key={item.label} item={item} saved={Boolean(savedValues[item.label])} active={i===activeIdx} onClick={() => { setActiveIdx(i); setValue(''); setNote(''); }} />
+                      <EquipmentCard key={item.label} item={item} saved={Boolean(savedValues[item.label])} active={i===activeIdx} onClick={() => { setActiveIdx(i); setValue(''); setNote(''); setInsistiuPositivo(false); }} />
                     ))}
                   </div>
                 </div>
@@ -356,8 +367,26 @@ export function KioskApp({ config, onExit }) {
               label={active?.label ?? '—'}
               hint={`Faixa: ${limits.min}°C a ${limits.max}°C${active?.location ? ` · ${active.location}` : ''}`}
               tone={tone}
-              confirmDisabled={noteMissing}
+              confirmDisabled={noteMissing || bloqueadoPeloSinal}
             />
+            {faltouMenos && (
+              <div role="alert" style={{ marginTop:12, padding:'12px 14px', borderRadius:10, background:'#fdf8e3', border:'1.5px solid #e3aa14' }}>
+                <strong style={{ fontSize:14, color:'#8a4e00', display:'block', marginBottom:4 }}>Faltou o sinal de menos?</strong>
+                <span style={{ fontSize:13, color:'#5c6c7a', display:'block', marginBottom:10 }}>
+                  {active?.label} trabalha entre {limits.min}° e {limits.max}°C. Você quis dizer <strong>−{value}°C</strong>?
+                </span>
+                <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                  <button onClick={() => { setValue(`-${value}`); setInsistiuPositivo(false); }}
+                    style={{ flex:'1 1 auto', padding:'12px 16px', borderRadius:10, border:'none', background:'#00684a', color:'white', fontSize:15, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+                    Sim, corrigir para −{value}°C
+                  </button>
+                  <button onClick={() => setInsistiuPositivo(true)}
+                    style={{ flex:'1 1 auto', padding:'12px 16px', borderRadius:10, border:'1.5px solid #e3aa14', background:'transparent', color:'#8a4e00', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
+                    Não, foi +{value}°C mesmo
+                  </button>
+                </div>
+              </div>
+            )}
             {/* Fora da faixa exige a ação anotada (item 16 da revisão) — só
                 aparece quando precisa, pra não pesar a leitura ok/warn, que é
                 a maioria da rodada. */}

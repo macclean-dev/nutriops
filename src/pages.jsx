@@ -244,7 +244,7 @@ function BottomNav({ activeView, setActiveView, session, alertCount, actionCount
 
 // ─── Mobile Drawer ─────────────────────────────────────────────────────────
 
-function MobileDrawer({ open, onClose, activeView, setActiveView, session, activeTenant, allTenants, onTenantChange, onLogout, alertCount, actionCount, maintAlertCount = 0, switchableTenants = [], onRequestTenantSwitch }) {
+function MobileDrawer({ open, onClose, activeView, setActiveView, session, activeTenant, allTenants, onTenantChange, onLogout, alertCount, actionCount, maintAlertCount = 0, switchableTenants = [], onRequestTenantSwitch, onChangeOperator }) {
   const validityAlertCount = useMemo(() => {
     try {
       const products = JSON.parse(localStorage.getItem(`nutriops.products.${activeTenant.id}`) ?? '[]');
@@ -283,6 +283,12 @@ function MobileDrawer({ open, onClose, activeView, setActiveView, session, activ
             </select>
           )}
         </div>
+        {/* Operador — só na conta de loja. Existia só no RailNav (desktop/tablet);
+            no celular não tinha NENHUM jeito de trocar fora da abertura de turno
+            (item 17 da revisão de produto). */}
+        {isStoreAccountSession(session) && (
+          <OperatorChip tenantId={activeTenant.id} onChange={() => { onClose(); onChangeOperator?.(); }} />
+        )}
         {/* Nav items */}
         <div style={{ flex:1, overflowY:'auto', padding:'8px' }}>
           {SECTIONS.map((section, sIdx) => {
@@ -802,6 +808,26 @@ function TemperatureCapture({ activeTenant, session, equipmentCatalog, onRecordS
       const lim = resolveTemperatureLimits(item.label, equipmentCatalog);
       return resolveTone(item.val, lim.min, lim.max) === 'danger';
     });
+    // RDC 216 espera a ação anotada quando o desvio é crítico (item 16 da
+    // revisão) — bloqueia ANTES do confirm de digitação abaixo: primeiro
+    // escreve o que vai fazer, só depois confirma que o número é real. Some
+    // sozinho assim que a observação for preenchida (não é um modal, é o
+    // próprio campo ficando em foco).
+    const missingNote = outOfRange.filter((item) => !item.nt?.trim());
+    if (missingNote.length) {
+      const target = missingNote[0].label;
+      if (target === activeEquipment) {
+        // Já é o card aberto — foca direto, sem disputar frame com nada.
+        noteRef.current?.focus();
+      } else {
+        // selectEquipment tem seu próprio foco adiado (vai pro campo de
+        // temperatura do card que abre) — o nosso precisa vencer o dele,
+        // por isso espera um frame a mais.
+        selectEquipment(target);
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => noteRef.current?.focus()));
+      }
+      return;
+    }
     if (outOfRange.length) {
       const detail = outOfRange.map((item) => {
         const lim = resolveTemperatureLimits(item.label, equipmentCatalog);
@@ -894,8 +920,13 @@ function TemperatureCapture({ activeTenant, session, equipmentCatalog, onRecordS
           )}
         </div>
         <label className="textarea-block field-box">
-          <span className="field-head"><span>Observação</span></span>
-          <textarea ref={noteRef} value={note} onChange={(e) => { setNote(e.target.value); setSubmissionState('idle'); persistDraft(activeEquipment, { note: e.target.value }); }} placeholder="Opcional." style={{ minHeight: 54 }} />
+          <span className="field-head">
+            <span>Observação</span>
+            {statusTone === 'danger' && <small style={{ color: 'var(--red)', fontWeight: 700 }}>Obrigatório — fora da faixa</small>}
+          </span>
+          <textarea ref={noteRef} value={note} onChange={(e) => { setNote(e.target.value); setSubmissionState('idle'); persistDraft(activeEquipment, { note: e.target.value }); }}
+            placeholder={statusTone === 'danger' ? 'Descreva a ação tomada.' : 'Opcional.'}
+            style={{ minHeight: 54, ...(statusTone === 'danger' && !note.trim() ? { borderColor: 'var(--red-border)' } : {}) }} />
         </label>
         <div className="actions-row">
           <button className="secondary-action" onClick={() => { setValue(''); setNote(''); setSubmissionState('idle'); }}>Limpar</button>
@@ -1024,12 +1055,15 @@ const SOURCE_BADGE = { temperature: 'Temperatura', receiving: 'Recebimento', con
 
 // Pré-preenche a descrição com o que a origem já sabe — recebimento já tem o
 // motivo digitado, controle já tem a ação/observação, planilha já tem a NC.
-// Só temperatura nasce sem texto (não existe "motivo" pra um desvio numérico).
+// Temperatura crítica também: item 16 da revisão passou a exigir observação
+// na captura quando o desvio é fora da faixa (`note` chega preenchido); desvio
+// leve segue sem texto (não existe "motivo" obrigatório pra um `warn`).
 function defaultDescriptionFor(item) {
   if (!item) return '';
-  if (item.source === 'receiving') return item.raw?.motivoRejeicao ?? '';
-  if (item.source === 'control')   return item.raw?.acao || item.raw?.obs || '';
-  if (item.source === 'form')      return item.raw?.description ?? '';
+  if (item.source === 'receiving')   return item.raw?.motivoRejeicao ?? '';
+  if (item.source === 'control')     return item.raw?.acao || item.raw?.obs || '';
+  if (item.source === 'form')        return item.raw?.description ?? '';
+  if (item.source === 'temperature') return item.raw?.note ?? '';
   return '';
 }
 
@@ -2947,6 +2981,7 @@ export function App() {
         session={session} activeTenant={activeTenant} allTenants={visibleTenants}
         onTenantChange={handleTenantChange} onLogout={handleLogout}
         switchableTenants={switchableTenants} onRequestTenantSwitch={requestTenantSwitch}
+        onChangeOperator={() => setOperatorPickerOpen(true)}
         alertCount={alertCount} actionCount={actionCount} maintAlertCount={maintAlertCount} />
 
       {/* Desktop rail */}

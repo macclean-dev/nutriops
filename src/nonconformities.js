@@ -34,7 +34,7 @@ export function pendingTemperatureItems(records, tenantId, resolveTone) {
     .map((r) => ({
       source: 'temperature', sourceId: r.id,
       sourceLabel: r.equipmentInput || r.equipment || '—',
-      sourceDetail: `${r.value}°C · faixa ${r.min}–${r.max}°C`,
+      sourceDetail: `${r.value}°C · faixa ${r.min}–${r.max}°C${r.note ? ` · ${r.note}` : ''}`,
       at: r.createdAt, raw: r,
     }));
 }

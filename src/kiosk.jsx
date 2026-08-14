@@ -15,7 +15,7 @@ function fmtTime() {
 
 // ─── Numpad ────────────────────────────────────────────────────────────────
 
-function Numpad({ value, onChange, onConfirm, label, hint, tone }) {
+function Numpad({ value, onChange, onConfirm, label, hint, tone, confirmDisabled = false }) {
   const handleKey = (k) => {
     if (k === '⌫') { onChange(value.slice(0, -1)); return; }
     if (k === '.' && value.includes('.')) return;
@@ -46,13 +46,15 @@ function Numpad({ value, onChange, onConfirm, label, hint, tone }) {
           if (k === '') return <div key={i} />;
           const isConfirm = k === '✓';
           const isClear   = k === '⌫';
+          const confirmBlocked = isConfirm && confirmDisabled;
           return (
-            <button key={i} onClick={() => k === '✓' ? onConfirm() : handleKey(k)}
+            <button key={i} onClick={() => { if (k === '✓') { if (!confirmDisabled) onConfirm(); } else handleKey(k); }}
               style={{
-                height: 68, borderRadius: 14, border: 'none', cursor: 'pointer',
+                height: 68, borderRadius: 14, border: 'none',
+                cursor: confirmBlocked ? 'not-allowed' : 'pointer',
                 fontSize: isConfirm ? 28 : isClear ? 22 : 28,
                 fontWeight: 700,
-                background: isConfirm ? '#00a35c' : isClear ? '#ffebe9' : 'white',
+                background: confirmBlocked ? '#c1ccd6' : isConfirm ? '#00a35c' : isClear ? '#ffebe9' : 'white',
                 color: isConfirm ? 'white' : isClear ? '#c0392b' : '#001e2b',
                 boxShadow: '0 2px 4px rgba(0,0,0,.08)',
                 transition: 'transform .1s, background .1s',
@@ -150,6 +152,10 @@ export function KioskApp({ config, onExit }) {
   const catalog = useMemo(() => ordenarPorSetor(config.equipmentCatalog ?? []), [config.equipmentCatalog]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [value, setValue]         = useState('');
+  // Observação — só existe/importa quando a leitura é 'danger' (item 16 da
+  // revisão). Reseta a cada equipamento pra não vazar nota de um card pro
+  // outro; ok/warn continuam salvando note:'' como sempre salvaram.
+  const [note, setNote]           = useState('');
   const [savedValues, setSavedValues] = useState({});
   const [saving, setSaving]       = useState(false);
   const [successData, setSuccessData] = useState(null);
@@ -207,12 +213,21 @@ export function KioskApp({ config, onExit }) {
   const active = catalog[activeIdx];
   const limits = resolveTemperatureLimits(active?.label ?? '', active);
   const tone   = value ? resolveTemperatureTone(value, limits.min, limits.max) : 'neutral';
+  const noteRequired = tone === 'danger';
+  const noteMissing   = noteRequired && !note.trim();
 
   const handleConfirm = useCallback(async () => {
     if (!value || !active || saving) return;
+    const currentTone = resolveTemperatureTone(value, limits.min, limits.max);
+    // RDC 216 espera a ação anotada quando o desvio é crítico (item 16 da
+    // revisão) — o botão ✓ já vem desabilitado nesse caso (Numpad
+    // confirmDisabled), isto aqui é só a segunda trava de segurança.
+    if (currentTone === 'danger' && !note.trim()) return;
     // Guarda contra erro de digitação (ex.: freezer a -19°C lançado como 19°C):
     // valor bem fora da faixa cadastrada pede confirmação antes de gravar.
-    if (resolveTemperatureTone(value, limits.min, limits.max) === 'danger') {
+    // Vem DEPOIS da observação de propósito — primeiro escreve o que
+    // aconteceu, só depois confirma que o número em si é real.
+    if (currentTone === 'danger') {
       const proceed = window.confirm(`${value}°C está bem fora da faixa esperada para ${active.label} (${limits.min}° a ${limits.max}°C).\n\nConfira se não é erro de digitação (ex.: sinal de negativo esquecido). Confirma o registro assim mesmo?`);
       if (!proceed) return;
     }
@@ -224,19 +239,18 @@ export function KioskApp({ config, onExit }) {
         equipmentLocation: active.location ?? null,
         user: autorAtual, role: config.userRole ?? 'Colaborador',
         equipment: active.label, measuredAt: fmtTime(), controlMode: 'routine',
-        value: Number(value), note: '',
+        value: Number(value), note: currentTone === 'danger' ? note.trim() : '',
         min: limits.min, max: limits.max,
       };
       await repository.create(payload);
-      const tone = resolveTemperatureTone(value, limits.min, limits.max);
       setSavedValues(prev => ({ ...prev, [active.label]: value }));
       // O avanço pro próximo pendente acontece junto do dismiss do overlay
       // (automático ou por toque) — um só relógio, não dois desencontrados.
       const next = catalog.findIndex((eq, i) => i > activeIdx && !savedValues[eq.label]);
-      setSuccessData({ temperature: value, equipment: active.label, tone, next: next === -1 ? null : next });
-      setValue('');
+      setSuccessData({ temperature: value, equipment: active.label, tone: currentTone, next: next === -1 ? null : next });
+      setValue(''); setNote('');
     } finally { setSaving(false); }
-  }, [value, active, saving, config, limits, repository, catalog, activeIdx, savedValues, autorAtual]);
+  }, [value, note, active, saving, config, limits, repository, catalog, activeIdx, savedValues, autorAtual]);
 
   const allSaved = catalog.every(eq => savedValues[eq.label]);
   const savedCount = Object.keys(savedValues).length;
@@ -322,7 +336,7 @@ export function KioskApp({ config, onExit }) {
                   )}
                   <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px,1fr))', gap:10 }}>
                     {itens.map(({ item, i }) => (
-                      <EquipmentCard key={item.label} item={item} saved={Boolean(savedValues[item.label])} active={i===activeIdx} onClick={() => { setActiveIdx(i); setValue(''); }} />
+                      <EquipmentCard key={item.label} item={item} saved={Boolean(savedValues[item.label])} active={i===activeIdx} onClick={() => { setActiveIdx(i); setValue(''); setNote(''); }} />
                     ))}
                   </div>
                 </div>
@@ -342,7 +356,21 @@ export function KioskApp({ config, onExit }) {
               label={active?.label ?? '—'}
               hint={`Faixa: ${limits.min}°C a ${limits.max}°C${active?.location ? ` · ${active.location}` : ''}`}
               tone={tone}
+              confirmDisabled={noteMissing}
             />
+            {/* Fora da faixa exige a ação anotada (item 16 da revisão) — só
+                aparece quando precisa, pra não pesar a leitura ok/warn, que é
+                a maioria da rodada. */}
+            {noteRequired && (
+              <div style={{ marginTop:12 }}>
+                <label style={{ fontSize:12, fontWeight:700, color:'#c0392b', display:'block', marginBottom:4 }}>
+                  Observação — obrigatório, fora da faixa
+                </label>
+                <textarea value={note} onChange={(e) => setNote(e.target.value)}
+                  placeholder="Descreva a ação tomada…"
+                  style={{ width:'100%', minHeight:60, padding:'10px 12px', borderRadius:10, border:'1.5px solid #ff8182', fontFamily:'inherit', fontSize:14, resize:'vertical' }} />
+              </div>
+            )}
             {saving && <div style={{ textAlign:'center', marginTop:12, fontSize:13, color:'#5c6c7a' }}>Salvando…</div>}
           </div>
         </div>

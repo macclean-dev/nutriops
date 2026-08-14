@@ -35,6 +35,24 @@ describe('pendingTemperatureItems', () => {
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ source: 'temperature', sourceId: 't1', sourceLabel: 'Freezer', sourceDetail: '38°C · faixa -18–0°C' });
   });
+
+  // Item 16: a observação obrigatória do registro crítico precisa chegar na
+  // Central de NCs, não só ficar presa no registro bruto.
+  it('anexa a observação no sourceDetail quando existe (item 16)', () => {
+    const records = [
+      { id: 't1', tenantId: 'swiss', value: 38, min: -18, max: 0, equipment: 'Freezer', note: 'Porta ficou aberta, já fechada e chamado o técnico.', createdAt: 'x' },
+    ];
+    const out = pendingTemperatureItems(records, 'swiss', tone);
+    expect(out[0].sourceDetail).toBe('38°C · faixa -18–0°C · Porta ficou aberta, já fechada e chamado o técnico.');
+  });
+
+  it('sem observação, sourceDetail fica igual a antes (compat com registros antigos)', () => {
+    const records = [
+      { id: 't1', tenantId: 'swiss', value: 38, min: -18, max: 0, equipment: 'Freezer', createdAt: 'x' },
+    ];
+    const out = pendingTemperatureItems(records, 'swiss', tone);
+    expect(out[0].sourceDetail).toBe('38°C · faixa -18–0°C');
+  });
 });
 
 describe('pendingReceivingItems', () => {

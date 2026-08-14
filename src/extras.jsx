@@ -866,6 +866,19 @@ export function MonthlyExportView({ allTenants, records, session }) {
 // 6. HISTÓRICO DE SESSÕES (Admin)
 // ═══════════════════════════════════════════════════════════════════════════
 
+// CSV do log da nuvem — pura pra ser testável sem canvas/browser. Colunas
+// cruas (sem formatação pt-BR) de propósito: quem exporta aqui é Admin/
+// Super-admin (única audiência que hoje recebe dado real desta RPC — ver
+// docs/access-log-filtros-e-rt.sql), perfil que já lida com timestamp ISO em
+// outras telas técnicas do app.
+export function accessLogToCsv(rows) {
+  const cols = ['at', 'email', 'action', 'ipAddress'];
+  const esc = (v) => `"${String(v ?? '').replaceAll('"', '""')}"`;
+  return [cols.join(','), ...(rows ?? []).map((r) => cols.map((k) => esc(r[k])).join(','))].join('\n');
+}
+
+const ACCESS_LOG_PERIODS = { '7': '7 dias', '30': '30 dias', '90': '90 dias', all: 'Tudo' };
+
 export function SessionHistoryView({ activeTenant, allTenants, onTenantChange, session }) {
   const sessions = readSessions2(activeTenant.id);
   const isSuper = isGlobalAdmin(session);
@@ -874,16 +887,37 @@ export function SessionHistoryView({ activeTenant, allTenants, onTenantChange, s
 
   const [cloudLog, setCloudLog] = useState([]);
   const [cloudLoading, setCloudLoading] = useState(false);
+  const [periodDays, setPeriodDays] = useState('30');
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (!showCloudLog) return;
     let cancelled = false;
     setCloudLoading(true);
-    fetchAccessLog(isSuper ? null : activeTenant.id).then((rows) => {
+    // O filtro de período vai NA CHAMADA (p_since), não só na lista já
+    // trazida — a RPC trava em 500 linhas sem paginar, então filtrar em
+    // cima do que já veio podia mostrar "vazio" só porque o período nem
+    // chegou a entrar na janela (item 18 da revisão).
+    const since = periodDays === 'all' ? null : new Date(Date.now() - Number(periodDays) * 86400000).toISOString();
+    fetchAccessLog(isSuper ? null : activeTenant.id, { since }).then((rows) => {
       if (!cancelled) { setCloudLog(rows); setCloudLoading(false); }
     });
     return () => { cancelled = true; };
-  }, [showCloudLog, isSuper, activeTenant.id]);
+  }, [showCloudLog, isSuper, activeTenant.id, periodDays]);
+
+  const searchLower = search.trim().toLowerCase();
+  const filteredCloudLog = searchLower ? cloudLog.filter((l) => l.email?.toLowerCase().includes(searchLower)) : cloudLog;
+  const filteredSessions = searchLower ? sessions.filter((s) => s.user?.toLowerCase().includes(searchLower)) : sessions;
+
+  const exportCsv = () => {
+    const csv = accessLogToCsv(filteredCloudLog);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `acessos-${activeTenant.id}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <section className="management-page">
@@ -896,16 +930,32 @@ export function SessionHistoryView({ activeTenant, allTenants, onTenantChange, s
         </div>
       </div>
 
+      <div className="page-actions" style={{ marginBottom: 16, justifyContent: 'flex-start', gap: 10 }}>
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filtrar por usuário…" style={{ width: 220 }} />
+        {showCloudLog && (
+          <select value={periodDays} onChange={(e) => setPeriodDays(e.target.value)} style={{ width: 'auto' }}>
+            {Object.entries(ACCESS_LOG_PERIODS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+          </select>
+        )}
+      </div>
+
       {showCloudLog && (
         <article className="management-card" style={{ marginBottom: 16 }}>
           <div className="card-head">
             <div><span className="eyebrow">IP + horário + usuário</span><h2>{isSuper ? 'Acessos na nuvem — todas as lojas' : `Acessos na nuvem — ${activeTenant.name}`}</h2></div>
-            <span className="badge neutral">{cloudLog.length}</span>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span className="badge neutral">{filteredCloudLog.length}</span>
+              <button className="secondary-action" style={{ fontSize: 12 }} onClick={exportCsv} disabled={filteredCloudLog.length === 0}>Exportar CSV</button>
+            </div>
           </div>
           <div className="equipment-maintenance-list">
             {cloudLoading ? <p className="muted" style={{ padding:'20px' }}>Carregando…</p>
-              : cloudLog.length === 0 ? <p className="muted" style={{ padding:'20px' }}>Nenhum acesso registrado ainda. Só cobre contas de e-mail (convidadas) — logins por PIN não passam pelo Supabase Auth.</p>
-              : cloudLog.map((l, i) => (
+              : filteredCloudLog.length === 0 ? <p className="muted" style={{ padding:'20px' }}>
+                  {cloudLog.length === 0
+                    ? 'Nenhum acesso registrado ainda. Só cobre contas de e-mail (convidadas) — logins por PIN não passam pelo Supabase Auth.'
+                    : 'Nenhum acesso bate com o filtro de usuário.'}
+                </p>
+              : filteredCloudLog.map((l, i) => (
                 <div key={i} className="equipment-maintenance-row">
                   <div>
                     <strong>{l.email}</strong>
@@ -922,10 +972,10 @@ export function SessionHistoryView({ activeTenant, allTenants, onTenantChange, s
       )}
 
       <article className="management-card">
-        <div className="card-head"><div><span className="eyebrow">Acessos por PIN (device)</span><h2>{activeTenant.name}</h2></div><span className="badge neutral">{sessions.length}</span></div>
+        <div className="card-head"><div><span className="eyebrow">Acessos por PIN (device)</span><h2>{activeTenant.name}</h2></div><span className="badge neutral">{filteredSessions.length}</span></div>
         <div className="equipment-maintenance-list">
-          {sessions.length === 0 ? <p className="muted" style={{ padding:'20px' }}>Nenhum acesso registrado ainda.</p>
-            : sessions.map(s => (
+          {filteredSessions.length === 0 ? <p className="muted" style={{ padding:'20px' }}>{sessions.length === 0 ? 'Nenhum acesso registrado ainda.' : 'Nenhum acesso bate com o filtro de usuário.'}</p>
+            : filteredSessions.map(s => (
               <div key={s.id} className="equipment-maintenance-row">
                 <div>
                   <strong>{s.user}</strong>

@@ -21,6 +21,9 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.125', date: '2026-08-13', items: [
+    'Histórico de Acessos: agora dá pra filtrar por usuário e por período (7/30/90 dias ou tudo), e exportar em CSV.',
+  ]},
   { version: '1.9.124', date: '2026-08-13', items: [
     'Registrar temperatura: quando a leitura fica bem fora da faixa, agora pede pra descrever a ação tomada antes de salvar (no computador e no quiosque) — vira parte do registro e aparece na Central de Não-conformidades.',
     'Trocar quem está registrando (conta de loja) agora também funciona pelo celular — antes só dava pra trocar no computador/tablet.',

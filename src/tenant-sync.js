@@ -273,7 +273,10 @@ export async function fetchTenantMembers(tenantId) {
 
 // Log de acessos (IP + horário + e-mail) — modelo e-mail só. p_tenant_id null
 // só funciona pro admin global (get_access_log barra o resto no servidor).
-export async function fetchAccessLog(tenantId, limit = 200) {
+// since/until (ISO ou Date) filtram NO SERVIDOR, antes do limit — a função já
+// trava em 500 linhas sem paginar, então filtrar só no client sobre essas
+// linhas mentiria pro usuário (item 18 da revisão, ver docs/access-log-filtros-e-rt.sql).
+export async function fetchAccessLog(tenantId, { limit = 200, since = null, until = null } = {}) {
   if (!isTenantSyncEnabled()) return [];
   try {
     const { getValidAccessToken } = await import('./auth');
@@ -282,7 +285,11 @@ export async function fetchAccessLog(tenantId, limit = 200) {
     const res = await fetch(`${sbBase()}/rpc/get_access_log`, {
       method: 'POST',
       headers: { apikey: SB_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ p_tenant_id: tenantId ?? null, p_limit: limit }),
+      body: JSON.stringify({
+        p_tenant_id: tenantId ?? null, p_limit: limit,
+        p_since: since instanceof Date ? since.toISOString() : since,
+        p_until: until instanceof Date ? until.toISOString() : until,
+      }),
     });
     if (!res.ok) return [];
     const rows = await res.json();

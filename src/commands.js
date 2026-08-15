@@ -37,7 +37,7 @@ export function buildCommands(ctx, callbacks) {
     { view: 'overview-v2', label: 'Ir pra Visão Geral v2',       keywords: 'home dashboard novo beta' },
     { view: 'forms',       label: 'Ir pras Planilhas BPF',       keywords: 'planilhas bpf forms checklist' },
     { view: 'receiving',   label: 'Ir pro Recebimento',          keywords: 'recebimento entrada nf' },
-    { view: 'validity',    label: 'Ir pras Validades',           keywords: 'validade estoque produtos vencimento' },
+    { view: 'validity',    label: 'Ir pras Validades',           keywords: 'validade produtos vencimento etiqueta' },
     { view: 'handwash',    label: 'Ir pra Higiene das mãos',     keywords: 'higiene mao mãos handwash' },
     { view: 'oil',         label: 'Ir pro Controle de óleo',     keywords: 'oleo fritura controle' },
     { view: 'thaw',        label: 'Ir pro Descongelamento',      keywords: 'descongelamento thaw' },

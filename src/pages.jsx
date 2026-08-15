@@ -213,7 +213,7 @@ function BottomNav({ activeView, setActiveView, session, alertCount, actionCount
       return products.filter(p => {
         if (!p.expiryDate) return false;
         const days = Math.ceil((new Date(p.expiryDate + 'T12:00').getTime() - now) / 86400000);
-        return days <= 3 || days < 0 || (p.minStock > 0 && p.currentStock < p.minStock);
+        return days <= 3 || days < 0;
       }).length;
     } catch { return 0; }
   }, [session?.tenantId]);
@@ -252,7 +252,7 @@ function MobileDrawer({ open, onClose, activeView, setActiveView, session, activ
       return products.filter(p => {
         if (!p.expiryDate) return false;
         const days = Math.ceil((new Date(p.expiryDate + 'T12:00').getTime() - now) / 86400000);
-        return days <= 3 || days < 0 || (p.minStock > 0 && p.currentStock < p.minStock);
+        return days <= 3 || days < 0;
       }).length;
     } catch { return 0; }
   }, [activeTenant?.id]);
@@ -442,7 +442,7 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
       return products.filter(p => {
         if (!p.expiryDate) return false;
         const days = Math.ceil((new Date(p.expiryDate + 'T12:00').getTime() - now) / 86400000);
-        return days <= 3 || days < 0 || (p.minStock > 0 && p.currentStock < p.minStock);
+        return days <= 3 || days < 0;
       }).length;
     } catch { return 0; }
   }, [activeTenant.id]);

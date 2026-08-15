@@ -21,6 +21,9 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.129', date: '2026-08-15', items: [
+    'A tela "Validades e Estoque" virou só "Validades". O controle de estoque (entrada/saída, estoque mínimo) saiu do NutriOPS — quem faz isso é o Nexum, e manter os dois pedindo o mesmo número só garantia que os dois ficassem errados. Continua tudo de validade: vencimentos, validade pós-abertura, regras por categoria e as etiquetas.',
+  ]},
   { version: '1.9.128', date: '2026-08-15', items: [
     'Corrigido: esta telinha de novidades sumia sozinha logo depois de uma atualização, antes de dar tempo de ler. Agora ela só fecha quando você toca em "Entendi".',
   ]},

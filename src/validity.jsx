@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { pushProduct, pushStockLog, pushValidityRules, syncValidityRules } from './repository';
+import { pushProduct, pushValidityRules, syncValidityRules } from './repository';
 import {
   readOpenRules, resolveOpenRule, computeOpenedUntil,
   fmtRule, fmtDate, fmtDateTime, DEFAULT_OPEN_RULES, buildLabelTrace,
@@ -126,13 +126,12 @@ export function generateLabel(product, tenant, session, opts = {}) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// VALIDADES E ESTOQUE — MAIN VIEW
+// VALIDADES — MAIN VIEW
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function ValidityStockView({ activeTenant, allTenants, onTenantChange, session }) {
   const [products, setProducts] = useState(() => readProducts(activeTenant.id));
-  const [logs, setLogs]         = useState(() => readStockLogs(activeTenant.id));
-  const [tab, setTab]           = useState('dashboard'); // dashboard | products | add | stock | rules
+  const [tab, setTab]           = useState('dashboard'); // dashboard | products | add | rules
   const [rules, setRules]       = useState(() => readOpenRules(activeTenant.id));
   const [scanning, setScanning] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -144,24 +143,14 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
   const [name, setName]           = useState('');
   const [category, setCategory]   = useState('outros');
   const [conservation, setConservation] = useState('Temperatura ambiente');
-  const [unit, setUnit]           = useState('kg');
-  const [minStock, setMinStock]   = useState('');
-  const [currentStock, setCurrentStock] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [supplier, setSupplier]   = useState('');
   const [lot, setLot]             = useState('');
   const [daysAfterOpen, setDaysAfterOpen] = useState('');
   const [isDiamond, setIsDiamond] = useState(false);
 
-  // Stock adjustment
-  const [adjProduct, setAdjProduct] = useState('');
-  const [adjQty, setAdjQty]         = useState('');
-  const [adjType, setAdjType]       = useState('entrada');
-  const [adjNote, setAdjNote]       = useState('');
-
   useEffect(() => {
     setProducts(readProducts(activeTenant.id));
-    setLogs(readStockLogs(activeTenant.id));
     setRules(readOpenRules(activeTenant.id));
     setTab('dashboard');
     // Puxa a versão mais recente das regras (pode ter sido ajustada em outro
@@ -177,13 +166,11 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
     return () => { vivo = false; };
   }, [activeTenant.id]);
   useEffect(() => { writeProducts(activeTenant.id, products); }, [activeTenant.id, products]);
-  useEffect(() => { writeStockLogs(activeTenant.id, logs); }, [activeTenant.id, logs]);
 
-  const resetForm = () => { setName(''); setCategory('outros'); setConservation('Temperatura ambiente'); setUnit('kg'); setMinStock(''); setCurrentStock(''); setExpiryDate(''); setSupplier(''); setLot(''); setDaysAfterOpen(''); setIsDiamond(false); setEditingId(null); };
+  const resetForm = () => { setName(''); setCategory('outros'); setConservation('Temperatura ambiente'); setExpiryDate(''); setSupplier(''); setLot(''); setDaysAfterOpen(''); setIsDiamond(false); setEditingId(null); };
 
   const startEdit = (p) => {
-    setName(p.name); setCategory(p.category); setConservation(p.conservation); setUnit(p.unit);
-    setMinStock(String(p.minStock ?? '')); setCurrentStock(String(p.currentStock ?? ''));
+    setName(p.name); setCategory(p.category); setConservation(p.conservation);
     setExpiryDate(p.expiryDate ?? ''); setSupplier(p.supplier ?? ''); setLot(p.lot ?? '');
     setDaysAfterOpen(String(p.daysAfterOpen ?? '')); setIsDiamond(p.isDiamond ?? false);
     setEditingId(p.id); setTab('add');
@@ -191,12 +178,16 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
 
   const saveProduct = () => {
     if (!name.trim()) return;
+    const anterior = editingId ? products.find(p => p.id === editingId) : null;
     const product = {
-      id: editingId ?? uid(), name: name.trim(), category, conservation, unit,
-      minStock: Number(minStock) || 0, currentStock: Number(currentStock) || 0,
+      // Preserva o que veio do produto existente (inclusive campos de estoque
+      // de antes da v1.9.129, que saíram da UI mas continuam no dado) — editar
+      // um produto antigo não pode apagar histórico em silêncio.
+      ...(anterior ?? {}),
+      id: editingId ?? uid(), name: name.trim(), category, conservation,
       expiryDate: expiryDate || null, supplier: supplier.trim(), lot: lot.trim(),
       daysAfterOpen: Number(daysAfterOpen) || null, isDiamond,
-      createdAt: editingId ? (products.find(p=>p.id===editingId)?.createdAt ?? new Date().toISOString()) : new Date().toISOString(),
+      createdAt: anterior?.createdAt ?? new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
     setProducts(prev => editingId ? prev.map(p => p.id===editingId ? product : p) : [...prev, product]);
@@ -205,18 +196,6 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
   };
 
   const deleteProduct = (id) => { if (!window.confirm('Remover produto?')) return; setProducts(prev => prev.filter(p => p.id !== id)); };
-
-  const saveAdjustment = () => {
-    if (!adjProduct || !adjQty) return;
-    const qty = Number(adjQty);
-    if (isNaN(qty) || qty <= 0) return;
-    const delta = adjType === 'entrada' ? qty : -qty;
-    setProducts(prev => prev.map(p => p.id === adjProduct ? { ...p, currentStock: Math.max(0, (p.currentStock || 0) + delta), updatedAt: new Date().toISOString() } : p));
-    const stockLog = { id:uid(), productId:adjProduct, productName:products.find(p=>p.id===adjProduct)?.name, type:adjType, qty, note:adjNote.trim(), user:session?.user?.name, createdAt:new Date().toISOString() };
-    setLogs(prev => [stockLog, ...prev]);
-    pushStockLog(activeTenant.id, stockLog);
-    setAdjProduct(''); setAdjQty(''); setAdjNote(''); setAdjType('entrada');
-  };
 
   const printLabel = async (product) => {
     // QR com o rastreio da abertura; perfil da empresa é o mesmo dos PDFs BPF.
@@ -259,19 +238,17 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
   const withDays = products.map(p => {
     const effective = p.openedUntil ? p.openedUntil.slice(0, 10) : p.expiryDate;
     const daysLeft = daysUntil(effective);
-    return { ...p, daysLeft, tone: validityTone(daysLeft), postOpen: Boolean(p.openedUntil), lowStock: p.minStock > 0 && p.currentStock < p.minStock };
+    return { ...p, daysLeft, tone: validityTone(daysLeft), postOpen: Boolean(p.openedUntil) };
   });
 
-  const alerts = withDays.filter(p => p.tone === 'danger' || p.tone === 'expired' || p.lowStock);
+  const alerts = withDays.filter(p => p.tone === 'danger' || p.tone === 'expired');
   const expiringSoon = withDays.filter(p => p.daysLeft !== null && p.daysLeft >= 0 && p.daysLeft <= 7);
   const diamonds = withDays.filter(p => p.isDiamond);
-  const lowStockItems = withDays.filter(p => p.lowStock);
 
   const filtered = withDays.filter(p => {
     if (catFilter !== 'all' && p.category !== catFilter) return false;
     if (statusFilter === 'expiring' && (p.daysLeft === null || p.daysLeft > 7)) return false;
     if (statusFilter === 'expired'  && (p.daysLeft === null || p.daysLeft >= 0)) return false;
-    if (statusFilter === 'low'      && !p.lowStock) return false;
     if (statusFilter === 'diamond'  && !p.isDiamond) return false;
     if (search && !p.name.toLowerCase().includes(search.toLowerCase()) && !p.supplier.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
@@ -286,7 +263,6 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
         <div className="audit-stat"><span>Produtos cadastrados</span><strong>{products.length}</strong></div>
         <div className={`audit-stat ${expiringSoon.length>0?'warn':'ok'}`}><span>Vencendo em 7 dias</span><strong>{expiringSoon.length}</strong></div>
         <div className={`audit-stat ${withDays.filter(p=>p.daysLeft!==null&&p.daysLeft<0).length>0?'danger':'ok'}`}><span>Vencidos</span><strong>{withDays.filter(p=>p.daysLeft!==null&&p.daysLeft<0).length}</strong></div>
-        <div className={`audit-stat ${lowStockItems.length>0?'warn':'ok'}`}><span>Estoque baixo</span><strong>{lowStockItems.length}</strong></div>
         <div className="audit-stat"><span>💎 Diamantes</span><strong>{diamonds.length}</strong></div>
       </div>
 
@@ -294,22 +270,20 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
       {alerts.length > 0 && (
         <article className="management-card" style={{ borderColor:'var(--red-border)' }}>
           <div className="card-head" style={{ background:'var(--red-light)', borderBottomColor:'var(--red-border)' }}>
-            <div><span className="eyebrow" style={{ color:'var(--red)' }}>Atenção imediata</span><h2>Alertas de estoque e validade</h2></div>
+            <div><span className="eyebrow" style={{ color:'var(--red)' }}>Atenção imediata</span><h2>Alertas de validade</h2></div>
             <span className="badge danger">{alerts.length}</span>
           </div>
           <div className="equipment-maintenance-list">
             {alerts.slice(0,8).map(p => {
-              const c = TONE_COLOR[p.lowStock && (p.tone==='ok'||p.tone==='neutral') ? 'warn' : p.tone];
+              const c = TONE_COLOR[p.tone];
               return (
                 <div key={p.id} className="equipment-maintenance-row" style={{ borderLeft:`3px solid ${c.border}` }}>
                   <div>
                     <div style={{ display:'flex', gap:8, alignItems:'center' }}>
                       <strong>{p.name}</strong>
                       {p.isDiamond && <span>💎</span>}
-                      {p.lowStock && <span className="badge warn" style={{ fontSize:10 }}>Estoque baixo</span>}
                     </div>
                     <span>{CATEGORIES.find(c=>c.id===p.category)?.label} · {p.conservation}</span>
-                    {p.currentStock !== undefined && <span>Estoque: <strong>{p.currentStock} {p.unit}</strong>{p.minStock > 0 ? ` (mín: ${p.minStock})` : ''}</span>}
                   </div>
                   <div style={{ textAlign:'right' }}>
                     {p.daysLeft !== null && <div style={{ fontSize:14, fontWeight:800, color:c.text, fontFamily:'var(--mono)' }}>{validityLabel(p.daysLeft)}</div>}
@@ -328,16 +302,14 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
           <div className="card-head"><div><span className="eyebrow">Itens prioritários</span><h2>💎 Seus Diamantes</h2></div><span className="badge neutral">{diamonds.length}</span></div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))', gap:10, padding:'14px 20px' }}>
             {diamonds.map(p => {
-              const c = TONE_COLOR[p.lowStock?'warn':p.tone];
+              const c = TONE_COLOR[p.tone];
               return (
                 <div key={p.id} style={{ padding:'12px 14px', borderRadius:'var(--r)', border:`1.5px solid ${c.border}`, background:c.bg }}>
                   <div style={{ fontSize:14, fontWeight:700, marginBottom:4, color:c.text }}>{p.name}</div>
                   <div style={{ fontSize:12, color:'var(--text-secondary)', marginBottom:6 }}>{p.conservation}</div>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                    <span style={{ fontSize:12 }}>Estoque: <strong>{p.currentStock} {p.unit}</strong></span>
+                  <div style={{ display:'flex', justifyContent:'flex-end', alignItems:'center' }}>
                     {p.daysLeft !== null && <span style={{ fontSize:11, fontWeight:700, color:c.text }}>{validityLabel(p.daysLeft)}</span>}
                   </div>
-                  {p.lowStock && <div style={{ fontSize:11, color:'var(--amber)', marginTop:4, fontWeight:600 }}>⚠ Repor — abaixo do mínimo</div>}
                 </div>
               );
             })}
@@ -388,7 +360,6 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
             <option value="all">Todos</option>
             <option value="expiring">Vencendo em 7 dias</option>
             <option value="expired">Vencidos</option>
-            <option value="low">Estoque baixo</option>
             <option value="diamond">💎 Diamantes</option>
           </select>
         </label>
@@ -398,11 +369,11 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
           <table className="table">
             <thead><tr>
               <th>Produto</th><th>Categoria</th><th>Conservação</th>
-              <th>Estoque</th><th>Validade</th><th>Dias</th><th></th>
+              <th>Validade</th><th>Dias</th><th></th>
             </tr></thead>
             <tbody>
               {filtered.map(p => {
-                const c = TONE_COLOR[p.lowStock&&(p.tone==='ok'||p.tone==='neutral')?'warn':p.tone];
+                const c = TONE_COLOR[p.tone];
                 return (
                   <tr key={p.id}>
                     <td>
@@ -414,12 +385,6 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
                     </td>
                     <td>{CATEGORIES.find(c=>c.id===p.category)?.icon} {CATEGORIES.find(c=>c.id===p.category)?.label}</td>
                     <td><span className="badge neutral" style={{ fontSize:10 }}>{p.conservation}</span></td>
-                    <td>
-                      <div style={{ fontFamily:'var(--mono)', fontWeight:700, color:p.lowStock?'var(--amber)':'var(--text)' }}>
-                        {p.currentStock} {p.unit}
-                      </div>
-                      {p.minStock > 0 && <div style={{ fontSize:10, color:'var(--text-secondary)' }}>mín: {p.minStock}</div>}
-                    </td>
                     <td style={{ fontSize:12 }}>
                       {p.expiryDate ? fmtDate(p.expiryDate) : '—'}
                       {p.openedAt && (
@@ -481,15 +446,10 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
           </label>
         </div>
         <div className="grid-2">
-          <label>Unidade de medida<input value={unit} onChange={e=>setUnit(e.target.value)} placeholder="kg, L, un, cx…" /></label>
           <label>Lote<input value={lot} onChange={e=>setLot(e.target.value)} placeholder="Número do lote" /></label>
-        </div>
-        <div className="grid-2">
-          <label>Estoque atual<input type="number" min="0" value={currentStock} onChange={e=>setCurrentStock(e.target.value)} placeholder="0" /></label>
-          <label>Estoque mínimo (alerta)<input type="number" min="0" value={minStock} onChange={e=>setMinStock(e.target.value)} placeholder="Ex.: 2" /></label>
-        </div>
-        <div className="grid-2">
           <label>Data de validade<input type="date" value={expiryDate} onChange={e=>setExpiryDate(e.target.value)} /></label>
+        </div>
+        <div className="grid-2">
           <label>Validade após abertura (dias) — exceção<input type="number" min="0" value={daysAfterOpen} onChange={e=>setDaysAfterOpen(e.target.value)} placeholder={`Vazio = regra da categoria (${fmtRule(rules[category] ?? DEFAULT_OPEN_RULES[category])})`} /></label>
         </div>
         <label style={{ flexDirection:'row', alignItems:'center', gap:10, cursor:'pointer' }}>
@@ -561,65 +521,13 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
     </article>
   );
 
-  // ─── Stock movement tab ──────────────────────────────────────────────────
-
-  const renderStock = () => (
-    <div className="management-grid">
-      <article className="management-card">
-        <div className="card-head"><div><span className="eyebrow">Movimentação</span><h2>Entrada / Saída de estoque</h2></div></div>
-        <div className="capture-fields">
-          <label>Produto
-            <select value={adjProduct} onChange={e=>setAdjProduct(e.target.value)}>
-              <option value="">Selecione o produto…</option>
-              {products.map(p=><option key={p.id} value={p.id}>{p.name} ({p.currentStock} {p.unit})</option>)}
-            </select>
-          </label>
-          <div style={{ display:'flex', gap:8 }}>
-            {[['entrada','▲ Entrada'],['saida','▼ Saída'],['ajuste','⟳ Ajuste']].map(([val,lbl]) => {
-              const on = adjType===val;
-              const color = val==='entrada'?'var(--green)':val==='saida'?'var(--red)':'var(--blue)';
-              return <button key={val} onClick={()=>setAdjType(val)} style={{ flex:1, padding:'8px', borderRadius:8, border:`1.5px solid ${on?color:'var(--border)'}`, background:on?`${color}22`:'white', color:on?color:'var(--text-secondary)', fontWeight:on?700:500, fontSize:13, cursor:'pointer', fontFamily:'var(--font)' }}>{lbl}</button>;
-            })}
-          </div>
-          <label>Quantidade<input type="number" min="0" step="0.1" value={adjQty} onChange={e=>setAdjQty(e.target.value)} placeholder="Ex.: 2.5" /></label>
-          <label>Observação<input value={adjNote} onChange={e=>setAdjNote(e.target.value)} placeholder="Ex.: Recebimento nota 123, Quebra operacional…" /></label>
-          <button className="primary-action attention" onClick={saveAdjustment} disabled={!adjProduct||!adjQty}>Registrar movimentação</button>
-        </div>
-      </article>
-      <article className="management-card">
-        <div className="card-head"><div><span className="eyebrow">Histórico</span><h2>Últimas movimentações</h2></div><span className="badge neutral">{logs.length}</span></div>
-        <div className="equipment-maintenance-list">
-          {logs.length === 0 ? <p className="muted" style={{ padding:'20px' }}>Nenhuma movimentação registrada.</p>
-            : logs.slice(0,15).map(l => {
-              const isIn = l.type==='entrada';
-              return (
-                <div key={l.id} className="equipment-maintenance-row" style={{ borderLeft:`3px solid ${isIn?'var(--green-border)':'var(--red-border)'}` }}>
-                  <div>
-                    <strong>{l.productName}</strong>
-                    <span>{new Date(l.createdAt).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} · {l.user}</span>
-                    {l.note && <span style={{ fontSize:11, color:'var(--text-secondary)' }}>{l.note}</span>}
-                  </div>
-                  <div style={{ textAlign:'right' }}>
-                    <div style={{ fontFamily:'var(--mono)', fontWeight:700, fontSize:16, color:isIn?'var(--green)':'var(--red)' }}>
-                      {isIn?'+':'-'}{l.qty}
-                    </div>
-                    <span className={`badge ${isIn?'ok':'danger'}`} style={{ fontSize:10 }}>{l.type==='entrada'?'Entrada':l.type==='saida'?'Saída':'Ajuste'}</span>
-                  </div>
-                </div>
-              );
-            })}
-        </div>
-      </article>
-    </div>
-  );
-
   return (
     <section className="management-page">
       <div className="page-header">
         <div>
           <span className="eyebrow">Controle de insumos</span>
-          <h1>Validades e Estoque</h1>
-          <p className="muted">Controle de vencimentos, estoque mínimo e etiquetas digitais.</p>
+          <h1>Validades</h1>
+          <p className="muted">Controle de vencimentos, validade pós-abertura e etiquetas digitais.</p>
         </div>
         <div className="page-actions">
           <select value={activeTenant.id} onChange={e=>onTenantChange(e.target.value)} style={{ width:'auto' }}>
@@ -643,7 +551,7 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
         background:'var(--surface-muted)', border:'1px solid var(--border-subtle)',
         borderRadius:'var(--r-lg)', overflowX:'auto',
       }}>
-        {[['dashboard','Dashboard'],['products','Produtos'],['add', editingId?'Editar':'Cadastrar'],['stock','Movimentação'],['rules','Regras']].map(([key,label]) => {
+        {[['dashboard','Dashboard'],['products','Produtos'],['add', editingId?'Editar':'Cadastrar'],['rules','Regras']].map(([key,label]) => {
           const isActive = tab === key;
           return (
             <button key={key} onClick={() => { if(key!=='add') { resetForm(); } setTab(key); }}
@@ -666,7 +574,6 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
       {tab === 'dashboard' && renderDashboard()}
       {tab === 'products'  && renderProducts()}
       {tab === 'add'       && renderForm()}
-      {tab === 'stock'     && renderStock()}
       {tab === 'rules'     && renderRules()}
     </section>
   );

@@ -2276,19 +2276,19 @@ function ChangelogModal({ entries, onClose }) {
         <div className="card-head">
           <div><span className="eyebrow">Novidades</span><h2>O que mudou no NutriOPS</h2></div>
         </div>
-        <div style={{ overflowY:'auto', flex:1, minHeight:0 }}>
+        <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'4px 20px' }}>
           {entries.map((e) => (
             <div key={e.version} style={{ padding:'12px 0', borderBottom:'1px solid var(--border-subtle)' }}>
               <div style={{ fontSize:11, fontWeight:700, color:'var(--text-secondary)', marginBottom:6 }}>
                 v{e.version} · {new Date(`${e.date}T12:00`).toLocaleDateString('pt-BR')}
               </div>
               <ul style={{ margin:0, paddingLeft:18, display:'flex', flexDirection:'column', gap:6 }}>
-                {e.items.map((item, i) => <li key={i} style={{ fontSize:13 }}>{item}</li>)}
+                {e.items.map((item, i) => <li key={i} style={{ fontSize:13, lineHeight:1.5 }}>{item}</li>)}
               </ul>
             </div>
           ))}
         </div>
-        <div className="actions-row">
+        <div className="actions-row" style={{ padding:'12px 20px', borderTop:'1px solid var(--border-subtle)' }}>
           <button className="primary-action" onClick={onClose}>Entendi</button>
         </div>
       </div>

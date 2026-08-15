@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.130', date: '2026-08-15', items: [
+    'Nova tela "Prontidão" (menu Gestão): responde "se a vigilância chegasse agora, esta loja passaria?". Cada empresa ganha um veredito ao vivo — PRONTA, PRONTA COM RESSALVAS ou EM RISCO — com a lista do que falta e um botão que leva direto pra tela que resolve cada item.',
+    'As pendências vêm separadas por gravidade: o grupo A é o que gera auto de infração na hora (produto vencido, temperatura sem registro no turno, capacitação vencida, não conformidade sem ação, dedetização fora do prazo). Só pendência do grupo A pinta a loja de EM RISCO.',
+    'Quando o app ainda não tem como saber (higienização do reservatório, ASO dos manipuladores, Manual de Boas Práticas), a tela diz "sem dado" em vez de fingir que está tudo certo — e explica o que falta capturar.',
+  ]},
   { version: '1.9.129', date: '2026-08-15', items: [
     'A tela "Validades e Estoque" virou só "Validades". O controle de estoque (entrada/saída, estoque mínimo) saiu do NutriOPS — quem faz isso é o Nexum, e manter os dois pedindo o mesmo número só garantia que os dois ficassem errados. Continua tudo de validade: vencimentos, validade pós-abertura, regras por categoria e as etiquetas.',
   ]},

@@ -34,6 +34,7 @@ const FormsView            = lazyView(() => import('./forms'),      'FormsView')
 const TrainingView         = lazyView(() => import('./training'),   'TrainingView');
 const ReportsView          = lazyView(() => import('./reports'),    'ReportsView');
 const DossieView           = lazyView(() => import('./dossie-view'), 'DossieView');
+const ReadinessView        = lazyView(() => import('./readiness-view'), 'ReadinessView');
 const MaintenanceView      = lazyView(() => import('./maintenance'),'MaintenanceView');
 const ValidityStockView    = lazyView(() => import('./validity'),   'ValidityStockView');
 const POPsView             = lazyView(() => import('./controls'),   'POPsView');
@@ -118,23 +119,10 @@ const SESSION_KEY   = 'nutriops.session';
 const load = (key, fallback) => { try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : fallback; } catch { return fallback; } };
 const save = (key, val)      => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} };
 
-// ─── Dismiss de alertas de turno ("dar ciência") ─────────────────────────────
-// Map { alertId: 'dow mon dd yyyy' }. Um alerta fica dispensado só HOJE — no
-// dia seguinte, se ainda estiver pendente, reaparece. Poda entradas antigas.
-const dismissedAlertsKey = (tenantId) => `nutriops.alerts.dismissed.${tenantId}`;
-function readDismissedAlertIds(tenantId) {
-  const today = new Date().toDateString();
-  const map = load(dismissedAlertsKey(tenantId), {});
-  return new Set(Object.keys(map).filter(id => map[id] === today));
-}
-function dismissAlertId(tenantId, id) {
-  const today = new Date().toDateString();
-  const map = load(dismissedAlertsKey(tenantId), {});
-  // poda entradas de dias anteriores + marca esta como dispensada hoje
-  const pruned = {}; for (const k of Object.keys(map)) if (map[k] === today) pruned[k] = today;
-  pruned[id] = today;
-  save(dismissedAlertsKey(tenantId), pruned);
-}
+// Alertas de turno + "dar ciência" foram pra ./turn-alerts (Fatia 1 da tela de
+// Prontidão, 15/08): a nova view precisa calcular pendência de turno de TODAS
+// as lojas visíveis, e ela é lazy — importar daqui seria circular.
+import { computeTurnAlerts, dismissAlertId } from './turn-alerts';
 
 const readEquipmentCatalog  = (t)  => dedupeCatalog(load(catalogKey(t.id),  t.equipmentCatalog ?? []));
 const writeEquipmentCatalog = (id, v) => save(catalogKey(id), v);
@@ -152,38 +140,6 @@ import { findUserByName } from './user-match';
 import { needsOperator, applyOperatorToSession, isStoreAccountSession, readOperator } from './operator';
 import { OperatorPicker, OperatorChip } from './operator-picker';
 import { readKioskConfig, writeKioskConfig, resolveInitialKioskConfig } from './kiosk-config';
-
-// ─── Alert computation ─────────────────────────────────────────────────────
-
-function computeTurnAlerts(turns, records, equipCatalog, tenantId, emImplantacao) {
-  // Modo implantação: enquanto a loja treina a equipe, não cobra pendências de
-  // turno (senão vira uma enxurrada de "atrasados" falsos — 44 equip × turnos).
-  // Só afeta lojas com a flag (CASA DOCE); seeds operacionais não têm → seguem.
-  if (emImplantacao) return [];
-  equipCatalog = dedupeCatalog(equipCatalog); // catálogo pode chegar com dupe (nuvem) → alerta em dobro
-  if (!turns?.length || !equipCatalog?.length) return [];
-  const now = new Date(), todayStr = now.toDateString(), nowMin = now.getHours() * 60 + now.getMinutes();
-  const alerts = [];
-  for (const turn of turns) {
-    const [sh, sm] = turn.start.split(':').map(Number), [eh, em] = turn.end.split(':').map(Number);
-    const startMin = sh * 60 + sm, endMin = eh * 60 + em;
-    const isActive = nowMin >= startMin && nowMin <= endMin, isPast = nowMin > endMin;
-    if (!isActive && !isPast) continue;
-    for (const eq of equipCatalog) {
-      const hasRecord = records.some((r) => {
-        if (r.tenantId !== tenantId) return false;
-        if ((r.equipment || r.equipmentInput) !== eq.label) return false;
-        const rd = new Date(r.createdAt); if (rd.toDateString() !== todayStr) return false;
-        const rMin = rd.getHours() * 60 + rd.getMinutes();
-        return rMin >= startMin && rMin <= endMin;
-      });
-      if (!hasRecord) alerts.push({ id: `${turn.id}-${eq.label}`, turn: turn.name, equipment: eq.label, level: isActive ? 'warn' : 'danger', message: isActive ? `Pendente no turno ${turn.name}` : `Sem registro no turno ${turn.name} (encerrado)` });
-    }
-  }
-  // Remove os que o usuário já deu ciência HOJE (some da lista E do badge).
-  const dismissed = readDismissedAlertIds(tenantId);
-  return dismissed.size ? alerts.filter(a => !dismissed.has(a.id)) : alerts;
-}
 
 // ─── PDF generator ─────────────────────────────────────────────────────────
 
@@ -411,6 +367,9 @@ function NavIcon({ id, size = 16 }) {
     audit:       <svg {...s}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>,
     dossie:      <svg {...s}><path d="M8 2h6l4 4v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M4 8v12a2 2 0 0 0 2 2h10"/><polyline points="14 2 14 6 18 6"/></svg>,
     alerts:      <svg {...s}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>,
+    // Escudo com check: "a loja está protegida?" — não reusa o de auditoria
+    // (lupa) nem o de alertas (sino), que já significam outra coisa no rail.
+    readiness:   <svg {...s}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 11.5 11.5 14 15 10"/></svg>,
     actions:     <svg {...s}><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>,
     rtpanel:     <svg {...s}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><path d="m16 11 2 2 4-4"/></svg>,
     turns:       <svg {...s}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
@@ -3090,6 +3049,7 @@ export function App() {
               allTenants={visibleTenants} records={records} session={session} onRecordSaved={handleRecordSaved} {...sharedProps} />
           )}
 
+          {activeView === 'readiness'  && <ReadinessView allTenants={visibleTenants} records={records} session={session} onNavigate={setActiveView} />}
           {activeView === 'alerts'     && <AlertsView {...sharedProps} records={records} onAlertsChanged={() => setAlertsTick(t => t + 1)} />}
           {activeView === 'actions'    && <CorrectiveActionsView {...sharedProps} records={records} />}
           {activeView === 'rtpanel'    && <RTPanelView allTenants={visibleTenants} records={records} session={session} />}
@@ -3114,7 +3074,7 @@ export function App() {
           {![
             'overview','overview-v2','forms','pops','training','receiving','validity',
             ...CONTROLS_KEYS, ...REPORTS_KEYS, ...TEAM_KEYS,
-            'alerts','actions','rtpanel','equipment','profile','maintenance','settings','superadmin',
+            'alerts','actions','readiness','rtpanel','equipment','profile','maintenance','settings','superadmin',
           ].includes(activeView) && <NoPermission onBack={() => setActiveView('overview')} />}
           </div>
         </Suspense>

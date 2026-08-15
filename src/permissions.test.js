@@ -40,6 +40,14 @@ describe('permissions', () => {
     }
   });
 
+  it('Prontidão é pra quem responde por conformidade — não pro colaborador', () => {
+    expect(canAccess('Nutricionista RT', 'readiness')).toBe(true);
+    expect(canAccess('Supervisor', 'readiness')).toBe(true);
+    expect(canAccess('Administrador', 'readiness')).toBe(true);
+    expect(canAccess('Super-admin', 'readiness')).toBe(true);
+    expect(canAccess('Colaborador', 'readiness')).toBe(false);
+  });
+
   it('canAccess de view inexistente retorna false', () => {
     expect(canAccess('Administrador', 'inventada')).toBe(false);
   });

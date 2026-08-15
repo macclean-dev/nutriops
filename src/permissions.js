@@ -9,7 +9,7 @@ const ALL_VIEWS = [
   'controls', 'handwash','oil','thaw','cooling','thermal',
   // Hub: relatórios
   'reportsHub', 'dashboard','charts','reports','monthly','audit','dossie',
-  'alerts','actions','rtpanel',
+  'alerts','actions','rtpanel','readiness',
   // Hub: equipe
   'team', 'users','turns','sessions',
   'equipment','maintenance','profile','settings',
@@ -23,13 +23,13 @@ export const PERMISSIONS = {
     multiTenant: false, canSwitchTenant: false, canExport: false, canValidate: false, canManageUsers: false, canManageConfig: false, canSeeReports: false,
   },
   'Supervisor': {
-    nav: ['overview','overview-v2','forms','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','alerts','reportsHub','audit','equipment','maintenance','profile'],
+    nav: ['overview','overview-v2','forms','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','alerts','readiness','reportsHub','audit','equipment','maintenance','profile'],
     // multiTenant=false: vê só a própria empresa nos relatórios. canSwitchTenant=true:
     // pode TROCAR de empresa via relogin (PIN da empresa-alvo). São coisas distintas.
     multiTenant: false, canSwitchTenant: true, canExport: true, canValidate: false, canManageUsers: false, canManageConfig: false, canSeeReports: true,
   },
   'Nutricionista RT': {
-    nav: ['overview','overview-v2','forms','pops','training','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','reportsHub','dashboard','charts','reports','monthly','audit','dossie','alerts','actions','rtpanel','team','users','sessions','equipment','maintenance','profile'],
+    nav: ['overview','overview-v2','forms','pops','training','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','reportsHub','dashboard','charts','reports','monthly','audit','dossie','alerts','actions','readiness','rtpanel','team','users','sessions','equipment','maintenance','profile'],
     multiTenant: true, canSwitchTenant: true, canExport: true, canValidate: true, canManageUsers: false, canManageConfig: false, canSeeReports: true,
   },
   'Administrador': {

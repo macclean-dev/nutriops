@@ -43,6 +43,9 @@ export function buildNavSections({
     {
       label: 'Gestão',
       items: [
+        // Primeiro item do grupo de propósito: é a pergunta que a RT faz
+        // antes de qualquer outra ("a loja passaria numa fiscalização hoje?").
+        ['readiness',  'readiness', 'Prontidão'],
         ['alerts',     'alerts',    'Alertas',          alertCount  || null],
         ['actions',    'actions',   'Não conformidades', actionCount || null],
         ['rtpanel',    'rtpanel',   'Painel RT'],

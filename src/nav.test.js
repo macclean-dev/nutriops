@@ -54,6 +54,12 @@ describe('buildNavSections', () => {
     expect(keys).not.toContain('oil');
   });
 
+  it('Prontidão é o PRIMEIRO item de Gestão (é a pergunta que vem antes das outras)', () => {
+    const gestao = buildNavSections().find(s => s.label === 'Gestão');
+    expect(gestao.items[0][0]).toBe('readiness');
+    expect(gestao.items[0][2]).toBe('Prontidão');
+  });
+
   it('badges aparecem no item correto quando count > 0', () => {
     const sections = buildNavSections({ validityAlertCount: 3, alertCount: 5 });
     const ops = sections.find(s => s.label === 'Operação');

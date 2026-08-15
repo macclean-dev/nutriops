@@ -2343,16 +2343,39 @@ export function App() {
   const [activeTenants, setActiveTenants] = useState(() => readOnboardingTenants() ?? defaultTenants);
 
   // Novidades da versão — só pra quem já usava o app antes (1º acesso não
-  // mostra nada, só passa a acompanhar a partir daqui). Marca como visto ao
-  // MOSTRAR, não ao fechar — evita reaparecer sozinho num reload acidental.
+  // mostra nada, só passa a acompanhar a partir daqui).
+  //
+  // Marca como visto ao FECHAR, não ao mostrar. A versão anterior gravava no
+  // momento em que o modal aparecia, e isso batia de frente com o reload
+  // automático do service worker: sw.js chama skipWaiting() no install →
+  // clients.claim() dispara controllerchange → main.jsx recarrega a página
+  // 100ms depois. Ou seja, logo depois de um deploy o modal abria, o
+  // localStorage já era gravado, o reload vinha por cima e as novidades
+  // sumiam PRA SEMPRE sem ninguém ter lido (relatado pelo dono em 15/08:
+  // "aparece e some rapidamente sem que eu dê um clique").
+  //
+  // Reaparecer num reload acidental (o receio do comentário antigo) é o
+  // problema menor: se não foi fechado, não foi lido.
   const [changelogEntries, setChangelogEntries] = useState([]);
   useEffect(() => {
     if (!session) return;
     const lastSeen = localStorage.getItem('nutriops.changelog.lastSeen');
+    // 1º acesso: não despeja o histórico inteiro em quem acabou de chegar —
+    // só crava o ponto de partida. Esta escrita PRECISA continuar aqui: sem
+    // ela o lastSeen ficaria null pra sempre e o usuário novo nunca mais
+    // veria novidade nenhuma (getUnseenEntries devolve [] pra null).
+    if (!lastSeen) {
+      try { localStorage.setItem('nutriops.changelog.lastSeen', APP_VERSION); } catch {}
+      return;
+    }
     const unseen = getUnseenEntries(lastSeen);
     if (unseen.length > 0) setChangelogEntries(unseen);
-    if (lastSeen !== APP_VERSION) localStorage.setItem('nutriops.changelog.lastSeen', APP_VERSION);
   }, [session]);
+
+  const dismissChangelog = useCallback(() => {
+    try { localStorage.setItem('nutriops.changelog.lastSeen', APP_VERSION); } catch {}
+    setChangelogEntries([]);
+  }, []);
 
   const handleLogin = useCallback((s, memberTenants) => {
     // Fase 3: login por e-mail de um membro traz as empresas dele (com metadata
@@ -2948,7 +2971,7 @@ export function App() {
   return (
     <div className="super-shell">
       {changelogEntries.length > 0 && (
-        <ChangelogModal entries={changelogEntries} onClose={() => setChangelogEntries([])} />
+        <ChangelogModal entries={changelogEntries} onClose={dismissChangelog} />
       )}
       {/* Troca voluntária de operador (pelo chip do rail) */}
       {operatorPickerOpen && (

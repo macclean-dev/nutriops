@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { heuristicLimits, resolveLimits, resolveTone, suggestLimits, dedupeCatalog, normalizeEquipmentName, getEquipmentEntry, suspectMissingMinus } from './limits';
+import { heuristicLimits, resolveLimits, resolveTone, suggestLimits, dedupeCatalog, normalizeEquipmentName, getEquipmentEntry, suspectMissingMinus, conformityStats, byWorstConformity } from './limits';
 
 describe('heuristicLimits', () => {
   it('freezer/congelado → -25/-18', () => {
@@ -214,5 +214,48 @@ describe('suspectMissingMinus', () => {
     expect(suspectMissingMinus('', -25, -18)).toBe(false);
     expect(suspectMissingMinus(18, null, undefined)).toBe(false);
     expect(suspectMissingMinus(NaN, -25, -18)).toBe(false);
+  });
+});
+
+// Pedido da RT (15/08): com 40+ equipamentos, achar quem está fora de
+// conformidade virava caça ao tesouro na lista.
+describe('conformityStats', () => {
+  const rec = (value, min = -25, max = -18) => ({ value, min, max });
+
+  it('conta ok/desvio/crítico e calcula a %', () => {
+    const s = conformityStats([rec(-20), rec(-20), rec(-16), rec(30)]);
+    expect(s).toEqual({ total: 4, ok: 2, warn: 1, danger: 1, pct: 50 });
+  });
+
+  it('tudo dentro da faixa = 100%', () => {
+    expect(conformityStats([rec(-20), rec(-22)]).pct).toBe(100);
+  });
+
+  it('sem leitura devolve pct null, NÃO zero — ausência de dado não é 0%', () => {
+    expect(conformityStats([])).toEqual({ total: 0, ok: 0, warn: 0, danger: 0, pct: null });
+    expect(conformityStats(undefined).pct).toBe(null);
+  });
+});
+
+describe('byWorstConformity', () => {
+  const eq = (pct, danger = 0) => ({ pct, danger });
+
+  it('pior conformidade primeiro', () => {
+    const out = [eq(100), eq(25), eq(67)].sort(byWorstConformity).map(e => e.pct);
+    expect(out).toEqual([25, 67, 100]);
+  });
+
+  it('empate no % desempata por mais críticos', () => {
+    const out = [eq(50, 1), eq(50, 4)].sort(byWorstConformity).map(e => e.danger);
+    expect(out).toEqual([4, 1]);
+  });
+
+  it('sem leitura (null) vai pro FIM, não pro topo', () => {
+    const out = [eq(null), eq(100), eq(25)].sort(byWorstConformity).map(e => e.pct);
+    expect(out).toEqual([25, 100, null]);
+  });
+
+  it('só nulls não quebra a ordenação', () => {
+    expect([eq(null), eq(null)].sort(byWorstConformity)).toHaveLength(2);
   });
 });

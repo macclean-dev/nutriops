@@ -21,6 +21,9 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.127', date: '2026-08-15', items: [
+    'Em Relatórios → Gráficos dá pra ordenar por "Pior conformidade primeiro" — os equipamentos com problema sobem pro topo em vez de ficarem escondidos no meio da lista. Uma linha no topo já diz quantos estão fora de 100% e quantos estão sem leitura no período.',
+  ]},
   { version: '1.9.126', date: '2026-08-14', items: [
     'Correção importante: agora dá pra digitar temperatura negativa no celular e no tablet. O teclado numérico do aparelho não tem tecla de menos, então leituras de freezer estavam sendo gravadas positivas (-18 virava +18). Cada campo de temperatura ganhou um botão ± ao lado.',
     'Se mesmo assim um valor positivo for digitado num equipamento de congelamento, o app pergunta "Faltou o sinal de menos?" e corrige num toque, em vez de deixar passar.',

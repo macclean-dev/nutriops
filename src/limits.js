@@ -59,6 +59,35 @@ export function resolveRecordTone(record) {
   return resolveTone(record?.value, record?.min, record?.max);
 }
 
+// Conformidade de um equipamento a partir das leituras dele no período.
+// Extraída de dentro da ChartsView (onde vivia inline) pra poder ORDENAR a
+// lista por ela — pedido da RT da CASA DOCE (15/08): com 40+ equipamentos,
+// achar quem está fora de conformidade virou caça ao tesouro.
+// `pct` é null (não 0) quando não houve leitura: "sem medição" não é 0% de
+// conformidade, é ausência de dado — categoria diferente, tratada à parte.
+export function conformityStats(records = []) {
+  let ok = 0, warn = 0, danger = 0;
+  for (const r of records) {
+    const t = resolveRecordTone(r);
+    if (t === 'ok') ok++;
+    else if (t === 'warn') warn++;
+    else if (t === 'danger') danger++;
+  }
+  const total = records.length;
+  return { total, ok, warn, danger, pct: total > 0 ? Math.round((ok / total) * 100) : null };
+}
+
+// Ordena "pior primeiro" pra quem está caçando problema. Equipamento sem
+// leitura nenhuma vai pro FIM de propósito: não é o pior em conformidade, é
+// outro problema (ninguém mediu), e esse já é cobrado pelos alertas de turno.
+export function byWorstConformity(a, b) {
+  if (a.pct === null && b.pct === null) return 0;
+  if (a.pct === null) return 1;
+  if (b.pct === null) return -1;
+  if (a.pct !== b.pct) return a.pct - b.pct;
+  return b.danger - a.danger;   // empate no %: mais críticos primeiro
+}
+
 // "Faltou o sinal de menos?" — bug real relatado pela nutricionista da CASA
 // DOCE em 14/08: ela digitava -18 num freezer (faixa -25/-18) e o registro
 // saía +18, para TODOS os equipamentos de congelamento.

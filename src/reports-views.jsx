@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useState, useMemo, useEffect } from 'react';
 import { getTemperatureRepository } from './repository';
-import { resolveLimits as resolveLimitsFromCatalog, resolveRecordTone as resolveTemperatureTone } from './limits';
+import { resolveLimits as resolveLimitsFromCatalog, resolveRecordTone as resolveTemperatureTone, conformityStats, byWorstConformity } from './limits';
 import { employeeTrainingStatus } from './training-status';
 import CountUp from './count-up';
 
@@ -385,6 +385,7 @@ export function ChartsView({ activeTenant, allTenants, onTenantChange, records }
   const [selectedEquipment, setSelectedEquipment] = useState(catalog[0]?.label ?? '');
   const [periodDays, setPeriodDays] = useState('30');
   const [drillEq, setDrillEq] = useState(null);
+  const [sortMode, setSortMode] = useState('catalogo');
 
   useEffect(() => { setSelectedEquipment(readEquipmentCatalog(activeTenant)[0]?.label ?? ''); }, [activeTenant.id]);
 
@@ -400,6 +401,20 @@ export function ChartsView({ activeTenant, allTenants, onTenantChange, records }
       .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   }, [tenantRecords, drillEq]);
 
+  // Uma conta só por equipamento, consumida pelos chips E pelos cards — antes
+  // cada um refazia o próprio filtro/contagem sobre a mesma lista.
+  const equipStats = useMemo(() => catalog.map((eq) => ({
+    eq,
+    ...conformityStats(tenantRecords.filter((r) => (r.equipment || r.equipmentInput) === eq.label)),
+  })), [catalog, tenantRecords]);
+
+  const ordered = useMemo(
+    () => (sortMode === 'pior' ? [...equipStats].sort(byWorstConformity) : equipStats),
+    [equipStats, sortMode],
+  );
+  const foraDeConformidade = equipStats.filter((s) => s.pct !== null && s.pct < 100).length;
+  const semLeitura = equipStats.filter((s) => s.pct === null).length;
+
   return (
     <section className="management-page">
       <div className="page-header">
@@ -411,14 +426,31 @@ export function ChartsView({ activeTenant, allTenants, onTenantChange, records }
           <select value={periodDays} onChange={(e) => setPeriodDays(e.target.value)} style={{ width: 'auto' }}>
             <option value="7">7 dias</option><option value="30">30 dias</option><option value="90">90 dias</option>
           </select>
+          <select value={sortMode} onChange={(e) => setSortMode(e.target.value)} style={{ width: 'auto' }}>
+            <option value="catalogo">Ordem do catálogo</option>
+            <option value="pior">Pior conformidade primeiro</option>
+          </select>
         </div>
       </div>
 
+      {/* Placar do período: diz de cara quantos precisam de atenção, pra não
+          depender de varrer 40+ cards no olho. */}
+      <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+        {foraDeConformidade === 0 && semLeitura === 0
+          ? `${equipStats.length} equipamentos, todos 100% no período.`
+          : [
+              `${foraDeConformidade} fora de 100%`,
+              semLeitura > 0 ? `${semLeitura} sem leitura` : null,
+              `de ${equipStats.length} equipamentos`,
+            ].filter(Boolean).join(' · ')}
+        {sortMode === 'catalogo' && foraDeConformidade > 0 && ' — ordene por "Pior conformidade primeiro" pra trazê-los ao topo.'}
+      </p>
+
       <div className="chip-row" style={{ marginBottom: 16 }}>
-        {catalog.map((eq) => (
+        {ordered.map(({ eq, total, pct }) => (
           <button key={eq.label} className={`quick-chip ${selectedEquipment === eq.label ? 'active' : ''}`} onClick={() => setSelectedEquipment(eq.label)}>
             <strong>{eq.label}</strong>
-            <span>{tenantRecords.filter((r) => (r.equipment || r.equipmentInput) === eq.label).length} registros</span>
+            <span>{total} registros{pct !== null && pct < 100 ? ` · ${pct}%` : ''}</span>
           </button>
         ))}
       </div>
@@ -444,13 +476,8 @@ export function ChartsView({ activeTenant, allTenants, onTenantChange, records }
       )}
 
       <div className="dashboard-grid fade-stagger" style={{ marginTop: 16 }}>
-        {catalog.map((eq) => {
-          const er = tenantRecords.filter((r) => (r.equipment || r.equipmentInput) === eq.label);
-          const eOk = er.filter((r) => resolveTemperatureTone(r) === 'ok').length;
-          const eWarn = er.filter((r) => resolveTemperatureTone(r) === 'warn').length;
-          const eDanger = er.filter((r) => resolveTemperatureTone(r) === 'danger').length;
-          const pct = er.length > 0 ? Math.round((eOk / er.length) * 100) : null;
-          const last = er[0];
+        {ordered.map(({ eq, total, ok: eOk, warn: eWarn, danger: eDanger, pct }) => {
+          const last = tenantRecords.find((r) => (r.equipment || r.equipmentInput) === eq.label);
           return (
             <article key={eq.label} className={`dash-card ${selectedEquipment === eq.label ? 'active' : ''}`} style={{ borderTopColor: pct === null ? 'var(--border)' : pct >= 90 ? 'var(--green)' : pct >= 70 ? 'var(--amber)' : 'var(--red)', cursor: 'pointer' }} onClick={() => setDrillEq(eq)} title="Abrir histórico completo">
               <div className="dash-card-head">
@@ -461,7 +488,7 @@ export function ChartsView({ activeTenant, allTenants, onTenantChange, records }
                 </div>
               </div>
               <div className="dash-stats">
-                <div className="dash-stat"><span>Total</span><strong>{er.length}</strong></div>
+                <div className="dash-stat"><span>Total</span><strong>{total}</strong></div>
                 <div className="dash-stat ok"><span>OK</span><strong>{eOk}</strong></div>
                 <div className="dash-stat warn"><span>Desvio</span><strong>{eWarn}</strong></div>
                 <div className="dash-stat danger"><span>Crítico</span><strong>{eDanger}</strong></div>

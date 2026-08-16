@@ -32,7 +32,10 @@ import { employeeTrainingStatus } from './training-status';
 // vira configurável por loja; até lá, uma constante honesta e comentada é
 // melhor que um número escondido no meio de um `if`.
 export const READINESS_DEFAULTS = {
-  dedetizacaoMeses: 6,        // suposição §4.1 — sem tela de config nesta fatia
+  dedetizacaoMeses: 6,        // suposição §4.1 — a loja sobrepõe em Configurações
+  // Este NÃO é suposição: a RDC 216 §4.4 fixa o intervalo máximo de 6 meses
+  // pra higienização do reservatório. Fica aqui só pra não espalhar o número.
+  reservatorioMeses: 6,
   dedetizacaoAvisoDias: 30,   // avisa antes de vencer, em vez de só no dia
   ncWindowDays: 30,           // §4.11 manda reter registro por ≥30 dias
   cicloDias: 30,              // "ciclo" dos controles especiais
@@ -107,6 +110,55 @@ export function popMatchesRequirement(pop, requirement) {
 
 export function missingRequiredPOPs(pops = []) {
   return REQUIRED_POPS.filter((req) => !(pops ?? []).some((pop) => popMatchesRequirement(pop, req)));
+}
+
+// Como reconhecer a planilha certa. Casamento por SEMÂNTICA, não pelo uuid do
+// seed: uma planilha equivalente criada pela própria RT conta igual, e o
+// motor não fica acoplado a um id que só existe em forms.jsx.
+// ⚠️ Reservatório precisa da frequência junto: `potabilidade` também é a
+// categoria da planilha quinzenal de troca de filtros — sem o `semiannual`,
+// uma troca de filtro contaria como higienização de reservatório.
+export const EH_DEDETIZACAO = (t) => t?.category === 'dedetizacao';
+export const EH_RESERVATORIO = (t) => t?.category === 'potabilidade' && t?.frequency === 'semiannual';
+
+// "Qual foi o último comprovante entregue desse tipo, e ele venceu?"
+// Compartilhado por A5 (dedetização) e A6 (reservatório) — mesma pergunta,
+// prazos diferentes.
+//
+// Data = `createdAt` (quando o comprovante foi lançado), NUNCA `updatedAt`: a
+// validação da RT reescreve `updatedAt` sem tocar no conteúdo (forms.jsx
+// `handleValidate`), então um comprovante de 8 meses atrás "rejuvenescia" no
+// dia em que a RT carimbasse a planilha — justo o vencimento que estes checks
+// existem pra pegar.
+//
+// Limitação conhecida: a data REAL do serviço é um campo dentro das respostas,
+// e o id desse campo varia por seed. Lançamento retroativo conta pela data do
+// lançamento.
+export function ultimoComprovante(formTemplates, formRecords, ehDoTipo) {
+  const ids = new Set((formTemplates ?? []).filter(ehDoTipo).map((t) => t.id));
+  if (ids.size === 0) return { temPlanilha: false, ultimo: null };
+  const regs = (formRecords ?? [])
+    .filter((r) => ids.has(r.formId) && r.status === 'submitted')
+    .sort((x, y) => new Date(y.createdAt) - new Date(x.createdAt));
+  return { temPlanilha: true, ultimo: regs[0] ?? null };
+}
+
+function checkComprovante({ id, label, formTemplates, formRecords, ehDoTipo, meses, cfg, now, semPlanilha, semRegistro, nome }) {
+  const { temPlanilha, ultimo } = ultimoComprovante(formTemplates, formRecords, ehDoTipo);
+  if (!temPlanilha) return chk(id, label, 'unknown', semPlanilha, 'critical', 'forms');
+  if (!ultimo)      return chk(id, label, 'unknown', semRegistro, 'critical', 'forms');
+
+  const dias = diasDesde(ultimo.createdAt, now);
+  const limite = meses * 30;
+  const restam = limite - dias;
+  return chk(id, label,
+    dias > limite ? 'fail' : restam <= cfg.dedetizacaoAvisoDias ? 'warn' : 'ok',
+    dias > limite
+      ? `Última ${nome} registrada há ${dias} dias — passou do prazo de ${meses} meses.`
+      : restam <= cfg.dedetizacaoAvisoDias
+        ? `Última ${nome} há ${dias} dias; pela régua de ${meses} meses, vence em ${restam} dia(s). Vale agendar a próxima.`
+        : `Última ${nome} registrada há ${dias} dias, dentro da régua de ${meses} meses.`,
+    'critical', 'forms');
 }
 
 // Equipamentos com desvio CRÍTICO recorrente na janela. Reaproveita
@@ -283,45 +335,34 @@ export function computeReadiness(inputs = {}) {
       'critical', 'training'));
   }
 
-  // A5 · Dedetização vencida (prazo = suposição, ver READINESS_DEFAULTS)
-  const tplDedetizacao = new Set((formTemplates ?? []).filter((t) => t.category === 'dedetizacao').map((t) => t.id));
-  // Data = `createdAt` (quando o comprovante foi lançado), NUNCA `updatedAt`:
-  // a validação da RT reescreve `updatedAt` sem tocar no conteúdo
-  // (forms.jsx `handleValidate`), então uma dedetização de 8 meses atrás
-  // "rejuvenescia" no dia em que a RT carimbasse a planilha — justo o
-  // vencimento que este check existe pra pegar.
-  // Limitação conhecida: a data REAL da dedetização é um campo dentro das
-  // respostas, e o id desse campo muda por seed. Lançamento retroativo
-  // continua contando pela data do lançamento. Fica pra Fatia 2.
-  const regsDedetizacao = tplDedetizacao.size === 0 ? [] : (formRecords ?? [])
-    .filter((r) => tplDedetizacao.has(r.formId) && r.status === 'submitted')
-    .sort((x, y) => new Date(y.createdAt) - new Date(x.createdAt));
-  if (tplDedetizacao.size === 0) {
-    a.push(chk('a5-dedetizacao', 'Comprovante de dedetização', 'unknown',
-      'Esta loja não tem planilha de dedetização cadastrada — não dá pra afirmar nada sobre o controle de pragas por empresa especializada.',
-      'critical', 'forms'));
-  } else if (regsDedetizacao.length === 0) {
-    a.push(chk('a5-dedetizacao', 'Comprovante de dedetização', 'unknown',
-      'Nenhum comprovante de dedetização preenchido até agora. A planilha existe, mas nunca foi entregue — sem registro, o app não sabe se a loja está em dia.',
-      'critical', 'forms'));
-  } else {
-    const ultimo = regsDedetizacao[0];
-    const dias = diasDesde(ultimo.createdAt, now);
-    const limite = cfg.dedetizacaoMeses * 30;
-    a.push(chk('a5-dedetizacao', 'Comprovante de dedetização',
-      dias > limite ? 'fail' : (limite - dias) <= cfg.dedetizacaoAvisoDias ? 'warn' : 'ok',
-      dias > limite
-        ? `Última dedetização registrada há ${dias} dias — passou do prazo de ${cfg.dedetizacaoMeses} meses adotado como régua.`
-        : (limite - dias) <= cfg.dedetizacaoAvisoDias
-          ? `Última dedetização há ${dias} dias; pela régua de ${cfg.dedetizacaoMeses} meses, vence em ${limite - dias} dia(s). Vale agendar a próxima.`
-          : `Última dedetização registrada há ${dias} dias, dentro da régua de ${cfg.dedetizacaoMeses} meses.`,
-      'critical', 'forms'));
-  }
+  // A5 · Dedetização vencida — prazo configurável por loja desde a Fatia 2a.
+  // O default de 6 meses segue sendo SUPOSIÇÃO (auditoria §4.1): a RDC não fixa
+  // prazo, quem manda é o contrato e a VISA local. Agora a loja pode ajustar em
+  // Configurações sem depender de deploy.
+  const mesesDedetizacao = Number(companyProfile.dedetizacaoMeses) > 0
+    ? Number(companyProfile.dedetizacaoMeses) : cfg.dedetizacaoMeses;
+  a.push(checkComprovante({
+    id: 'a5-dedetizacao', label: 'Comprovante de dedetização',
+    formTemplates, formRecords, ehDoTipo: EH_DEDETIZACAO, meses: mesesDedetizacao, cfg, now,
+    semPlanilha: 'Esta loja não tem planilha de dedetização cadastrada — não dá pra afirmar nada sobre o controle de pragas por empresa especializada.',
+    semRegistro: 'Nenhum comprovante de dedetização preenchido até agora. A planilha existe, mas nunca foi entregue — sem registro, o app não sabe se a loja está em dia.',
+    nome: 'dedetização',
+  }));
 
-  // A6/A7 · Sem captura no app até a Fatia 2 — `unknown` honesto + o caminho.
-  a.push(chk('a6-reservatorio', 'Higienização semestral do reservatório', 'unknown',
-    'O app ainda não captura este registro (auditoria §3.7). A RDC 216 exige higienização do reservatório em intervalo máximo de 6 meses, COM registro — hoje isso vive no papel da loja. Entra na Fatia 2.',
-    'critical'));
+  // A6 · Higienização semestral do reservatório — RDC 216 §4.4. Deixou de ser
+  // `unknown` fixo na Fatia 2a: a planilha semestral existe (TPL_RESERVATORIO,
+  // forms.jsx) e este check lê o último comprovante entregue nela.
+  // Casa por SEMÂNTICA (potabilidade + semestral), não pelo uuid do seed: uma
+  // planilha equivalente criada pela própria RT também conta.
+  a.push(checkComprovante({
+    id: 'a6-reservatorio', label: 'Higienização semestral do reservatório',
+    formTemplates, formRecords, ehDoTipo: EH_RESERVATORIO, meses: cfg.reservatorioMeses, cfg, now,
+    semPlanilha: 'Esta loja ainda não tem a planilha semestral do reservatório. Ela chega sozinha na próxima abertura das Planilhas BPF — se não aparecer, avise.',
+    semRegistro: 'A planilha semestral do reservatório existe, mas nunca foi entregue. A RDC 216 exige a higienização a cada 6 meses COM registro — o fiscal pede o laudo da empresa que fez.',
+    nome: 'higienização do reservatório',
+  }));
+
+  // A7 · Sem captura no app até a Fatia 2b — `unknown` honesto + o caminho.
   a.push(chk('a7-aso', 'Controle de saúde dos manipuladores (ASO)', 'unknown',
     'O app ainda não captura este registro (auditoria §3.4). É item clássico de autuação: o fiscal pede ASO/exames válidos por colaborador. Entra na Fatia 2.',
     'critical'));

@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.134', date: '2026-08-15', items: [
+    'Nova planilha "Higienização do Reservatório de Água", semestral, em todas as lojas. A RDC 216 exige a limpeza do reservatório a cada 6 meses com registro, e até agora o app não tinha onde guardar isso — na tela de Prontidão esse item vivia como "sem dado". Agora ele responde de verdade.',
+    'O comprovante de dedetização agora aceita foto ou PDF do laudo. Antes a planilha pedia "anexar comprovante" mas só tinha campo de texto — o documento em si nunca era anexado.',
+    'Em Configurações dá pra ajustar a validade da dedetização da loja (padrão 6 meses). A norma não fixa esse prazo: quem manda é o contrato da empresa de controle de pragas e a vigilância do município.',
+  ]},
   { version: '1.9.133', date: '2026-08-15', items: [
     'Correção importante: as planilhas BPF da Swiss, da Bäckerei e da DBK estavam se duplicando sozinhas — cada tela aberta criava mais uma cópia de cada planilha. Agora para de duplicar. As cópias que já existem continuam na lista por enquanto: apagá-las exige decidir o que fazer com o que já foi preenchido dentro de cada uma, e isso vai ser tratado à parte.',
   ]},

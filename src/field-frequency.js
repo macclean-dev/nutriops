@@ -11,7 +11,7 @@
 // definição (dia ≤15 / >15) que `getPeriodKey` já usa, por consistência.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const FREQUENCY_DAYS = { daily: 1, weekly: 7, biweekly: 15, monthly: 30, bimonthly: 60, quarterly: 90, annual: 365 };
+const FREQUENCY_DAYS = { daily: 1, weekly: 7, biweekly: 15, monthly: 30, bimonthly: 60, quarterly: 90, semiannual: 180, annual: 365 };
 
 function bucketKey(frequency, date) {
   const y = date.getFullYear();
@@ -23,6 +23,7 @@ function bucketKey(frequency, date) {
     case 'monthly':   return `${y}-${m}`;
     case 'bimonthly': return `${y}-${Math.floor(m / 2)}`;
     case 'quarterly': return `${y}-${Math.floor(m / 3)}`;
+    case 'semiannual': return `${y}-${Math.floor(m / 6)}`;
     case 'annual':    return `${y}`;
     default:          return `${y}-${m}-${date.getDate()}`;
   }

@@ -103,6 +103,11 @@ export function getPeriodKey(frequency, date = new Date()) {
   if (frequency === 'weekly')   { const j = new Date(y,0,1); const w = Math.ceil(((date-j)/86400000+j.getDay()+1)/7); return `${y}-W${String(w).padStart(2,'0')}`; }
   if (frequency === 'biweekly') return `${y}-${m}-${date.getDate()<=15?'A':'B'}`;
   if (frequency === 'monthly')  return `${y}-${m}`;
+  // Semestral (v1.9.134): a RDC 216 §4.4 exige higienização do reservatório em
+  // intervalo máximo de 6 MESES, e não havia frequência de planilha que
+  // representasse isso — mensal cobraria 6× a mais e mancharia a tela de
+  // Prontidão de pendência falsa.
+  if (frequency === 'semiannual') return `${y}-S${date.getMonth() < 6 ? 1 : 2}`;
   return `${y}-${m}-${d}`;
 }
 
@@ -141,11 +146,12 @@ export function formatPeriodLabel(frequency, key) {
     }
     if (frequency === 'biweekly') { const [y,mo,h]=key.split('-'); const mn=new Date(`${y}-${mo}-01T12:00`).toLocaleDateString('pt-BR',{month:'long'}); return `${h==='A'?'1ª quinzena':'2ª quinzena'} de ${mn}`; }
     if (frequency === 'monthly')  return new Date(key+'-01T12:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+    if (frequency === 'semiannual') { const [y,s]=key.split('-S'); return `${s==='1'?'1º':'2º'} semestre de ${y}`; }
   } catch { /**/ }
   return key;
 }
 
-export function freqLabel(f) { return {daily:'Diária',weekly:'Semanal',biweekly:'Quinzenal',monthly:'Mensal'}[f]??f; }
+export function freqLabel(f) { return {daily:'Diária',weekly:'Semanal',biweekly:'Quinzenal',monthly:'Mensal',semiannual:'Semestral'}[f]??f; }
 
 // "Minha lista de hoje" (item 4 da revisão de produto) — o app cobra o
 // colaborador por temperatura mas nunca por planilha; essa informação só
@@ -645,8 +651,13 @@ const TPL_VETORES = (areas='D=Distribuição S=Salão E=Externa') => ({
   }],
 });
 
+// v:1 (Fatia 2a) — ganhou o campo de FOTO do comprovante. A auditoria já
+// apontava: a planilha pedia "anexar comprovante" na descrição, mas só tinha
+// campo de texto; o laudo em si nunca era anexado. O v-bump é o que faz o
+// campo novo alcançar quem já roda (readFormTemplates), preservando o id da
+// planilha existente e, com ele, todo o histórico já preenchido.
 const TPL_DEDETIZACAO = () => ({
-  id:uid(), category:'dedetizacao', frequency:'monthly',
+  id:uid(), category:'dedetizacao', frequency:'monthly', v:1,
   title:'Controle de Dedetização',
   description:'Registrar empresa, data, serviço e produto. Anexar comprovante.',
   sections:[{ id:uid(), title:'Registro do serviço',
@@ -656,6 +667,7 @@ const TPL_DEDETIZACAO = () => ({
       f('Serviço executado','text'),
       f('Produto utilizado','text'),
       f('Número do certificado','text'),
+      f('Comprovante de dedetização (foto ou PDF)','photo'),
       f('Observações','text'),
     ],
   }],
@@ -674,6 +686,32 @@ const TPL_POTABILIDADE = () => ({
       f('Observações','text'),
     ],
   }],
+});
+
+// Higienização semestral do reservatório — RDC 216 §4.4 (Fatia 2a, 15/08).
+// Era um dos 5 DESCOBERTOS da auditoria: exigência clássica de fiscalização
+// sem NENHUMA captura no app. O check A6 da tela de Prontidão respondia
+// "sem dado" desde a Fatia 1 justamente esperando por isto.
+//
+// IDS FIXOS, não uid(): a v1.9.133 estancou a duplicação causada por seeds de
+// id sorteado, e uma planilha nova nascendo com uid() reabriria o buraco.
+// Vale pra qualquer seed daqui pra frente.
+//
+// `photo` no comprovante porque é o que o fiscal pede de verdade — o laudo da
+// empresa executora. O motor de planilhas já suporta o tipo desde a v1.9.x.
+const TPL_RESERVATORIO = () => ({
+  id:'8f2b1c04-6d3a-4e57-9b18-2a7c5e0d4f91', category:'potabilidade', frequency:'semiannual', v:1,
+  title:'Higienização do Reservatório de Água',
+  description:'Obrigatória a cada 6 meses (RDC 216). Registrar empresa executora, data e anexar o comprovante/laudo.',
+  sections:[{ id:'res-servico', title:'Registro da higienização', fields:[
+    { id:'res-data',   label:'Data da higienização', type:'date' },
+    { id:'res-emp',    label:'Empresa executora / responsável', type:'text' },
+    { id:'res-metodo', label:'Produto e método utilizados', type:'text' },
+    { id:'res-cert',   label:'Número do certificado / laudo', type:'text' },
+    { id:'res-lacre',  label:'Reservatório tampado e lacrado após o serviço?', type:'cnc' },
+    { id:'res-foto',   label:'Comprovante / laudo (foto ou PDF)', type:'photo' },
+    { id:'res-obs',    label:'Observações', type:'text' },
+  ]}],
 });
 
 const TPL_FAXINA_BACKEREI = () => ({
@@ -1018,7 +1056,7 @@ const TPL_CD_VETORES = () => ({
 });
 
 const TPL_CD_DEDETIZACAO = () => ({
-  id:'17ce4089-0e51-48a7-991a-bdde090a33e9', category:'dedetizacao', frequency:'monthly',
+  id:'17ce4089-0e51-48a7-991a-bdde090a33e9', category:'dedetizacao', frequency:'monthly', v:1,
   title:'Controle de Dedetização',
   description:'Registrar empresa, data, serviço e produto. Anexar comprovante.',
   sections:[{ id:'cd-ded-reg', title:'Registro do serviço', fields:[
@@ -1027,6 +1065,7 @@ const TPL_CD_DEDETIZACAO = () => ({
     { id:'cd-ded-serv', label:'Serviço executado', type:'text' },
     { id:'cd-ded-prod', label:'Produto utilizado', type:'text' },
     { id:'cd-ded-cert', label:'Número do certificado', type:'text' },
+    { id:'cd-ded-foto', label:'Comprovante de dedetização (foto ou PDF)', type:'photo' },
     { id:'cd-ded-obs',  label:'Observações', type:'text' },
   ]}],
 });
@@ -1230,16 +1269,19 @@ const TPL_CD_HIG = [
 function seedTemplates(tenant) {
   const id = (tenant.id ?? '').toLowerCase();
   const name = (tenant.name ?? '').toLowerCase();
-  if (id.includes('swiss'))                          return [TPL_HIGIENE_PESSOAL(), TPL_VETORES('C=Cozinha D=Distribuição S=Salão E=Externa'), TPL_DEDETIZACAO(), TPL_FAXINA_SWISS()];
-  if (id.includes('backerei')||id.includes('bäck')) return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_FAXINA_BACKEREI(), TPL_POTABILIDADE()];
-  if (id.includes('dbk'))                            return [TPL_FAXINA_DBK(), TPL_MANUTENCAO_DBK(), TPL_VETORES()];
+  // TPL_RESERVATORIO vai pra TODAS as lojas: a exigência da RDC 216 §4.4 não
+  // depende do segmento — quem tem reservatório de água precisa comprovar a
+  // higienização semestral, e isso é toda cozinha industrial.
+  if (id.includes('swiss'))                          return [TPL_HIGIENE_PESSOAL(), TPL_VETORES('C=Cozinha D=Distribuição S=Salão E=Externa'), TPL_DEDETIZACAO(), TPL_FAXINA_SWISS(), TPL_RESERVATORIO()];
+  if (id.includes('backerei')||id.includes('bäck')) return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_FAXINA_BACKEREI(), TPL_POTABILIDADE(), TPL_RESERVATORIO()];
+  if (id.includes('dbk'))                            return [TPL_FAXINA_DBK(), TPL_MANUTENCAO_DBK(), TPL_VETORES(), TPL_RESERVATORIO()];
   if (id.includes('bf245c3b') || name.includes('casa doce')) return [
     TPL_CASADOCE_BANHEIROS(), TPL_CD_HORTIFRUTI(), TPL_CD_FILTRO_CAFE(), TPL_CD_RESIDUOS(),
     TPL_CD_CARRINHOS(), TPL_CD_CLIMATIZACAO(), TPL_CD_MANUT_PROG(), TPL_CD_CALIBRACAO(),
-    TPL_CD_HIGIENE(), TPL_CD_VETORES(), TPL_CD_DEDETIZACAO(),
+    TPL_CD_HIGIENE(), TPL_CD_VETORES(), TPL_CD_DEDETIZACAO(), TPL_RESERVATORIO(),
     ...TPL_CD_HIG.map((mk) => mk()),
   ];
-  return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO()];
+  return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_RESERVATORIO()];
 }
 
 // ─── Field components ──────────────────────────────────────────────────────

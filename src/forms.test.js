@@ -140,6 +140,36 @@ describe('pendingFormsForPeriod — "minha lista de hoje" (item 4 da revisão)',
   });
 });
 
+// Frequência de PLANILHA semestral (v1.9.134): a RDC 216 §4.4 exige
+// higienização do reservatório a cada 6 meses, e não havia como representar
+// isso — mensal cobraria 6× a mais e mancharia a Prontidão de pendência falsa.
+describe('frequência semestral', () => {
+  it('1º semestre vai até junho; julho já é o 2º', () => {
+    expect(getPeriodKey('semiannual', new Date('2026-01-01T12:00'))).toBe('2026-S1');
+    expect(getPeriodKey('semiannual', new Date('2026-06-30T12:00'))).toBe('2026-S1');
+    expect(getPeriodKey('semiannual', new Date('2026-07-01T12:00'))).toBe('2026-S2');
+    expect(getPeriodKey('semiannual', new Date('2026-12-31T12:00'))).toBe('2026-S2');
+  });
+
+  it('vira semestre novo na virada do ano', () => {
+    expect(getPeriodKey('semiannual', new Date('2027-01-02T12:00'))).toBe('2027-S1');
+  });
+
+  it('rótulo sai legível pro colaborador, não "2026-S2"', () => {
+    expect(formatPeriodLabel('semiannual', '2026-S1')).toBe('1º semestre de 2026');
+    expect(formatPeriodLabel('semiannual', '2026-S2')).toBe('2º semestre de 2026');
+  });
+
+  it('entrega feita no semestre atual tira a planilha da lista de pendências', () => {
+    const NOW = new Date('2026-08-15T12:00:00');   // 2º semestre
+    const tpl = [{ id: 'res', frequency: 'semiannual', title: 'Reservatório', category: 'potabilidade' }];
+    expect(pendingFormsForPeriod(tpl, [], NOW)).toHaveLength(1);
+    expect(pendingFormsForPeriod(tpl, [{ formId: 'res', periodKey: '2026-S2', status: 'submitted' }], NOW)).toHaveLength(0);
+    // entrega do semestre PASSADO não vale pro atual
+    expect(pendingFormsForPeriod(tpl, [{ formId: 'res', periodKey: '2026-S1', status: 'submitted' }], NOW)).toHaveLength(1);
+  });
+});
+
 describe('completionPct — tipos date e checkbox (Fase B)', () => {
   it('vazio = 0%', () => {
     expect(completionPct(TPL, { responses:{} })).toBe(0);
@@ -167,7 +197,7 @@ describe('readFormTemplates — seed de id sorteado não pode duplicar', () => {
 
   it('ler várias vezes mantém a MESMA quantidade de planilhas', () => {
     const n1 = readFormTemplates(SWISS).length;
-    expect(n1).toBe(4);
+    expect(n1).toBe(5);   // 4 do seed original + reservatório (Fatia 2a)
     expect(readFormTemplates(SWISS)).toHaveLength(n1);
     expect(readFormTemplates(SWISS)).toHaveLength(n1);
   });
@@ -194,7 +224,7 @@ describe('readFormTemplates — seed de id sorteado não pode duplicar', () => {
       JSON.stringify(atuais.map(t => t.id === ded.id ? antiga : t)));
 
     const depois = readFormTemplates(SWISS);
-    expect(depois).toHaveLength(4);
+    expect(depois).toHaveLength(5);
     const atualizada = depois.find(t => t.category === 'dedetizacao');
     expect(atualizada.id).toBe(ded.id);                      // id preservado
     expect(atualizada.sections[0].title).toBe('Registro do serviço'); // conteúdo novo
@@ -208,20 +238,20 @@ describe('readFormTemplates — seed de id sorteado não pode duplicar', () => {
       JSON.stringify(atuais.map(t => t.id === ded.id ? editada : t)));
 
     const depois = readFormTemplates(SWISS);
-    expect(depois).toHaveLength(4);
+    expect(depois).toHaveLength(5);
     expect(depois.find(t => t.category === 'dedetizacao').sections[0].title).toBe('Do jeito dela');
   });
 });
 
-describe('seedTemplates CASA DOCE — 32 planilhas BPF (Fase A+B+C + 21 de higienização)', () => {
+describe('seedTemplates CASA DOCE — 33 planilhas BPF (Fase A+B+C + 21 de higienização + reservatório)', () => {
   beforeEach(() => localStorage.clear());
   const CD = { id:'bf245c3b-2f9', name:'CASA DOCE' };
 
-  it('retorna 32 templates com ids uuid únicos', () => {
+  it('retorna 33 templates com ids uuid únicos', () => {
     const tpls = readFormTemplates(CD);
-    expect(tpls).toHaveLength(32);
+    expect(tpls).toHaveLength(33);
     const ids = tpls.map(t => t.id);
-    expect(new Set(ids).size).toBe(32);                        // sem colisão de uuid
+    expect(new Set(ids).size).toBe(33);                        // sem colisão de uuid
     for (const id of ids) expect(id).toMatch(/^[0-9a-f-]{36}$/);
   });
 
@@ -281,7 +311,7 @@ describe('seedTemplates CASA DOCE — 32 planilhas BPF (Fase A+B+C + 21 de higie
   // estes, planilha nova NUNCA alcança loja que já rodava.
   it('CACHE VAZIO ([] é truthy!) não impede o seed', () => {
     localStorage.setItem('nutriops.forms.templates.bf245c3b-2f9', '[]');
-    expect(readFormTemplates(CD)).toHaveLength(32);
+    expect(readFormTemplates(CD)).toHaveLength(33);
   });
 
   // Sem isto, TODO ajuste pedido pela nutricionista (07/08) ficaria invisível
@@ -339,10 +369,10 @@ describe('seedTemplates CASA DOCE — 32 planilhas BPF (Fase A+B+C + 21 de higie
     localStorage.setItem('nutriops.forms.templates.bf245c3b-2f9', JSON.stringify(antigas));
 
     const depois = readFormTemplates(CD);
-    expect(depois).toHaveLength(32);                            // as 21 chegaram
+    expect(depois).toHaveLength(33);                            // as 21 chegaram
     // O que a loja editou não foi sobrescrito pelo seed.
     expect(depois.find(t => t.id === antigas[0].id).description).toBe('editado pela loja');
-    expect(new Set(depois.map(t => t.id)).size).toBe(32);       // sem duplicar
+    expect(new Set(depois.map(t => t.id)).size).toBe(33);       // sem duplicar
   });
 
   it('vetores customizado: sem Pombo, com Abelha', () => {

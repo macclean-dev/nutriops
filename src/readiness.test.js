@@ -258,22 +258,81 @@ describe('computeReadiness — grupo A manda no veredito', () => {
     expect(check(r, 'a5-dedetizacao').status).toBe('unknown');
   });
 
-  // Fatia 1 lê só o que já existe — estes dois não têm captura nenhuma ainda.
-  it('reservatório e ASO são sempre "sem dado" nesta fatia, com o caminho pra Fatia 2', () => {
+  // ASO segue sem captura até a Fatia 2b.
+  it('ASO é sempre "sem dado" nesta fatia, com o caminho pra Fatia 2b', () => {
     const r = computeReadiness(lojaOk());
-    for (const id of ['a6-reservatorio', 'a7-aso']) {
-      expect(check(r, id).status).toBe('unknown');
-      expect(check(r, id).detail).toContain('Fatia 2');
-      expect(check(r, id).navTarget).toBeNull();
-    }
+    expect(check(r, 'a7-aso').status).toBe('unknown');
+    expect(check(r, 'a7-aso').detail).toContain('Fatia 2');
+    expect(check(r, 'a7-aso').navTarget).toBeNull();
   });
 
-  // Consequência assumida da regra acima — vale um teste pra ninguém "consertar"
-  // isso por engano depois.
-  it('enquanto reservatório/ASO não tiverem captura, nenhuma loja lê PRONTA', () => {
+  // Consequência assumida — vale um teste pra ninguém "consertar" por engano.
+  it('enquanto o ASO não tiver captura, nenhuma loja lê PRONTA', () => {
     const r = computeReadiness(lojaOk());
     expect(r.verdict).toBe('attention');
     expect(VERDICT_LABEL[r.verdict]).toBe('PRONTA COM RESSALVAS');
+  });
+
+  // ─── A6 · Reservatório (Fatia 2a: deixou de ser `unknown` fixo) ──────────
+  const RES_TPL = { id: 'res', category: 'potabilidade', frequency: 'semiannual', title: 'Higienização do Reservatório de Água' };
+  const comReservatorio = (over = {}) => lojaOk({
+    formTemplates: [...lojaOk().formTemplates, RES_TPL],
+    ...over,
+  });
+
+  it('sem a planilha de reservatório ⇒ "sem dado" (ela chega no próximo boot)', () => {
+    const r = computeReadiness(lojaOk());
+    expect(check(r, 'a6-reservatorio').status).toBe('unknown');
+    expect(check(r, 'a6-reservatorio').navTarget).toBe('forms');
+  });
+
+  it('planilha existe mas nunca foi entregue ⇒ "sem dado", não pendência', () => {
+    const r = computeReadiness(comReservatorio());
+    expect(check(r, 'a6-reservatorio').status).toBe('unknown');
+    expect(check(r, 'a6-reservatorio').detail).toContain('nunca foi entregue');
+  });
+
+  it('higienização dentro dos 6 meses ⇒ em ordem', () => {
+    const r = computeReadiness(comReservatorio({
+      formTemplates: [...lojaOk().formTemplates, RES_TPL],
+      formRecords: [...lojaOk().formRecords, { id: 'rr', formId: 'res', status: 'submitted', createdAt: iso(60) }],
+    }));
+    expect(check(r, 'a6-reservatorio').status).toBe('ok');
+  });
+
+  it('higienização há mais de 6 meses ⇒ EM RISCO (§4.4 fixa o intervalo)', () => {
+    const r = computeReadiness(comReservatorio({
+      formTemplates: [...lojaOk().formTemplates, RES_TPL],
+      formRecords: [...lojaOk().formRecords, { id: 'rr', formId: 'res', status: 'submitted', createdAt: iso(200) }],
+    }));
+    expect(check(r, 'a6-reservatorio').status).toBe('fail');
+    expect(r.verdict).toBe('risk');
+  });
+
+  // A planilha QUINZENAL de troca de filtros também é category 'potabilidade'.
+  // Sem exigir a frequência semestral, uma troca de filtro contaria como
+  // higienização de reservatório — e a loja passaria sem ter feito.
+  it('troca de filtro (potabilidade quinzenal) NÃO conta como reservatório', () => {
+    const filtro = { id: 'filtro', category: 'potabilidade', frequency: 'biweekly', title: 'Controle da Potabilidade da Água' };
+    const r = computeReadiness(lojaOk({
+      formTemplates: [...lojaOk().formTemplates, filtro],
+      formRecords: [...lojaOk().formRecords, { id: 'rf', formId: 'filtro', status: 'submitted', createdAt: iso(1) }],
+    }));
+    expect(check(r, 'a6-reservatorio').status).toBe('unknown');
+  });
+
+  it('prazo de dedetização configurado pela loja vence o default de 6 meses', () => {
+    const reg = { id: 'r1', formId: 'ded', status: 'submitted', createdAt: iso(100) };
+    // 100 dias: dentro de 6 meses (180d), mas fora de 3 meses (90d)
+    const padrao = computeReadiness(lojaOk({ formRecords: [reg] }));
+    expect(check(padrao, 'a5-dedetizacao').status).toBe('ok');
+
+    const apertado = computeReadiness(lojaOk({
+      formRecords: [reg],
+      companyProfile: { ...lojaOk().companyProfile, dedetizacaoMeses: 3 },
+    }));
+    expect(check(apertado, 'a5-dedetizacao').status).toBe('fail');
+    expect(check(apertado, 'a5-dedetizacao').detail).toContain('3 meses');
   });
 });
 

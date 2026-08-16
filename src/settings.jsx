@@ -214,6 +214,18 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
               <input value={profile.alvara ?? ''} onChange={e=>setProfileField('alvara', e.target.value)} placeholder="Número do alvará" />
             </label>
           </div>
+          {/* Fatia 2a: a RDC não fixa prazo de dedetização — quem manda é o
+              contrato da loja e a VISA do município. Antes eram 6 meses
+              cravados no código; agora a régua da tela de Prontidão é daqui. */}
+          <div className="grid-2">
+            <label>Validade da dedetização (meses)
+              <input type="number" min="1" max="36" value={profile.dedetizacaoMeses ?? 6}
+                onChange={e=>setProfileField('dedetizacaoMeses', Number(e.target.value))} />
+            </label>
+          </div>
+          <p className="muted" style={{ fontSize:11 }}>
+            A tela de Prontidão usa esse prazo pra avisar quando a dedetização está vencendo. O padrão de 6 meses é o contrato típico — ajuste conforme o contrato da loja e a exigência da vigilância local.
+          </p>
           <div className="actions-row" style={{ justifyContent:'flex-end' }}>
             <button className="primary-action attention" onClick={handleSaveProfile}>Salvar dados do estabelecimento</button>
           </div>

@@ -1,3 +1,16 @@
+-- ⛔ NÃO RODE ESTE ARQUIVO — SUPERSEDIDO EM 16/08/2026
+--
+-- As policies aqui têm a regra ANTIGA (2 caminhos: sem is_member e sem is_admin_plataforma).
+-- Rodar este arquivo REBAIXA o banco e tranca as lojas que entram por vínculo
+-- (tenant_members). Foi exatamente o que aconteceu com a CASA DOCE: 108
+-- registros intactos no banco, tela mostrando zero, console alagado de
+-- 401/42501, horas pra diagnosticar porque o erro parecia "chave inválida".
+--
+-- ⭐ FONTE DE VERDADE: docs/rls-policies.sql
+--
+-- Mantido só como registro histórico da migração.
+-- ─────────────────────────────────────────────────────────────────────────────
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- NutriOPS · RLS FASE 3 — policies corrigidas (app_metadata) + rollout
 --

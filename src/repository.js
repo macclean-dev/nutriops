@@ -1653,11 +1653,22 @@ create index if not exists idx_special_type   on special_controls(control_type);
 -- docs/security-tenants-lockdown.sql (fecha o alerta do Advisor de access_token/
 -- setup_pin_hash expostos). Nunca rode 'disable' nela.
 
--- 8. Policies de isolamento por tenant. Fonte de verdade: docs/rls-fase3-policies.sql
+-- 8. Policies de isolamento por tenant.
 --
--- Regra por linha:
---   tenant_id = auth.jwt()->'app_metadata'->>'tenant_id'  → o device só a sua loja
---   OR tenant_id = '__healthcheck__'                      → deixa o testWrite do boot passar
+-- ⭐ FONTE DE VERDADE: docs/rls-policies.sql — rode AQUELE arquivo.
+--
+-- As policies abaixo cobrem os 4 caminhos de acesso:
+--   1. tenant_id = app_metadata.tenant_id  → conta presa a uma loja
+--   2. tenant_id = '__healthcheck__'       → o testWrite do boot
+--   3. is_member(tenant_id)                → login por e-mail com vínculo
+--   4. is_admin_plataforma()               → admin da NutriOPS
+--
+-- ⚠️ O caminho 3 FALTAVA aqui até 16/08/2026, e este bloco é exibido na tela
+-- de Configurações pro usuário copiar. Quem copiasse e rodasse REBAIXAVA as
+-- policies do banco pra 2 caminhos — foi assim que a temperature_records ficou
+-- pra trás e a CASA DOCE perdeu acesso aos próprios 108 registros (a tela
+-- mostrava zero, o console alagava de 401/42501, e o dado estava intacto o
+-- tempo todo). Se mexer aqui, mexa também em docs/rls-policies.sql.
 --
 -- Usa app_metadata, NUNCA user_metadata: user_metadata é editável pelo próprio
 -- usuário (updateUser), então policy que confia nele é forjável — dava pra virar
@@ -1672,50 +1683,68 @@ create index if not exists idx_special_type   on special_controls(control_type);
 -- security-definer gated por app_metadata.role='admin', não por policy.
 -- drop policy if exists = idempotente, pode rodar este script de novo à vontade.
 
+-- As duas funções de apoio (idempotentes — o script pode rodar em base nova).
+create or replace function public.is_member(p_tenant_id text)
+returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.tenant_members m
+                  where m.user_id = auth.uid() and m.tenant_id = p_tenant_id)
+$$;
+revoke execute on function public.is_member(text) from anon, public;
+grant  execute on function public.is_member(text) to authenticated;
+
+create or replace function public.is_admin_plataforma()
+returns boolean
+language sql stable security definer set search_path = '' as $$
+  select coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'admin'
+$$;
+revoke execute on function public.is_admin_plataforma() from anon, public;
+grant  execute on function public.is_admin_plataforma() to authenticated;
+
 drop policy if exists tenant_isolation on temperature_records;
 create policy tenant_isolation on temperature_records for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
 
 drop policy if exists tenant_isolation on form_records;
 create policy tenant_isolation on form_records for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
 
 drop policy if exists tenant_isolation on form_templates;
 create policy tenant_isolation on form_templates for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
 
 drop policy if exists tenant_isolation on equipment_catalog;
 create policy tenant_isolation on equipment_catalog for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
 
 drop policy if exists tenant_isolation on tenant_staff;
 create policy tenant_isolation on tenant_staff for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
 
 drop policy if exists tenant_isolation on receiving_records;
 create policy tenant_isolation on receiving_records for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
 
 drop policy if exists tenant_isolation on products;
 create policy tenant_isolation on products for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
 
 drop policy if exists tenant_isolation on stock_logs;
 create policy tenant_isolation on stock_logs for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
 
 drop policy if exists tenant_isolation on special_controls;
 create policy tenant_isolation on special_controls for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__')
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__');
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
 
 -- 9. LIGAR o RLS — só DEPOIS das policies acima existirem.
 -- Rollback de emergência (1 comando por tabela): alter table X disable row level security;

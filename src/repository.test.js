@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { localRepository, supabaseRepository, saveSupabaseConfig, lw, ls, tmplToRow, tmplFromRow, syncProducts, getSupabaseAuthError, countAllLocalRecords, migrateAllToSupabase } from './repository';
+import { localRepository, supabaseRepository, saveSupabaseConfig, lw, ls, tmplToRow, tmplFromRow, syncProducts, getSupabaseAuthError, countAllLocalRecords, migrateAllToSupabase, SUPABASE_SQL } from './repository';
 
 const RECORDS_KEY = 'nutriops.temperature.records';
 
@@ -231,5 +231,42 @@ describe('migrateAllToSupabase — só empurra as lojas recebidas (isolamento)',
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(r.pushed).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUPABASE_SQL — o bloco que a tela de Configurações exibe pro usuário COPIAR
+// e rodar no Supabase. Até 16/08/2026 ele trazia a policy de 2 caminhos: quem
+// copiasse e rodasse REBAIXAVA o banco, trancando as lojas que entram por
+// vínculo (tenant_members). Foi assim que a CASA DOCE perdeu acesso aos
+// próprios 108 registros — dado intacto, tela zerada, 401/42501 em loop.
+// Fonte de verdade: docs/rls-policies.sql.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('SUPABASE_SQL — não pode rebaixar as policies do banco', () => {
+  it('toda policy tenant_isolation tem os 4 caminhos de acesso', () => {
+    const criacoes = SUPABASE_SQL.split('create policy tenant_isolation').slice(1);
+    expect(criacoes.length).toBeGreaterThanOrEqual(8);   // as tabelas do núcleo
+    for (const bloco of criacoes) {
+      const corpo = bloco.split(';')[0];
+      expect(corpo).toContain('app_metadata');            // 1. conta presa à loja
+      expect(corpo).toContain('__healthcheck__');         // 2. testWrite do boot
+      expect(corpo).toContain('is_member');               // 3. login por vínculo ⚠️
+      expect(corpo).toContain('is_admin_plataforma');     // 4. admin da plataforma
+    }
+  });
+
+  it('define as funções de apoio antes de usá-las (base nova não quebra)', () => {
+    const posFuncoes = SUPABASE_SQL.indexOf('function public.is_member');
+    const posUso     = SUPABASE_SQL.indexOf('create policy tenant_isolation');
+    expect(posFuncoes).toBeGreaterThan(-1);
+    expect(posFuncoes).toBeLessThan(posUso);
+  });
+
+  it('NUNCA lê user_metadata no SQL executável — seria forjável via updateUser', () => {
+    // Só as linhas de código: os comentários MENCIONAM user_metadata de
+    // propósito, pra explicar por que ele não pode ser usado.
+    const executavel = SUPABASE_SQL
+      .split('\n').filter((l) => !l.trim().startsWith('--')).join('\n');
+    expect(executavel).not.toContain('user_metadata');
   });
 });

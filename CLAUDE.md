@@ -222,12 +222,27 @@ em bundle antigo + pushes com no-op silencioso):
   pro `if (!enabled) return`.
 - **Service worker força update** via toast + `controllerchange` (`main.jsx`).
 - **Auto-config sobrescreve** se URL/anonKey mudaram (`handleLogin`, `pages.jsx`).
-- **RLS ligado nas 8 tabelas + `tenants` fechada** (épico concluído 19/07). O
-  sync usa device-token por tenant (`app_metadata.tenant_id`). **Nunca** escrever
+- **RLS ligado nas 17 tabelas de tenant + `tenants` fechada.** **Nunca** escrever
   policy que leia `user_metadata` (editável pelo próprio usuário via `updateUser`
-  → forjável); só `app_metadata`. Fonte de verdade: `docs/rls-fase3-policies.sql`,
-  espelhada no `SUPABASE_SQL` do `repository.js` (que a UI de Configurações exibe
-  pro usuário copiar — manter os dois em sincronia, ordem policy→enable).
+  → forjável); só `app_metadata`.
+
+  ⭐ **Fonte de verdade única: `docs/rls-policies.sql`.** Mexeu em policy, mexe
+  lá — e espelhe no `SUPABASE_SQL` do `repository.js` (a UI de Configurações
+  exibe esse bloco pro usuário copiar). `src/repository.test.js` trava os dois:
+  toda policy tem que ter os **4 caminhos** (`app_metadata.tenant_id` ·
+  `__healthcheck__` · `is_member` · `is_admin_plataforma`).
+
+  ⚠️ **Tabela nova = acrescentar o nome na lista do `rls-policies.sql` e rodar
+  de novo.** É idempotente.
+
+  **Por que a fonte é única agora (incidente 16/08):** a mesma policy vivia em 4
+  arquivos com regras diferentes, e todos fazem `drop`+`create` — o último a
+  rodar vencia, em silêncio. A `temperature_records` acabou com a regra de 2
+  caminhos, sem `is_member`; a CASA DOCE entra por VÍNCULO, então o banco
+  recusou leitura e escrita dela. 108 registros intactos, tela mostrando zero,
+  console alagado de 401 com código 42501 — e o erro parecia "chave inválida".
+  Os arquivos antigos (`rls-fase3-policies.sql`, `auth-fase1-tenant-members.sql`,
+  `tenant-staff.sql`) ganharam ⛔ no topo: são histórico, não devem rodar.
 
 ---
 

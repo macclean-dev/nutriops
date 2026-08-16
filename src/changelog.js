@@ -21,6 +21,9 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.137', date: '2026-08-16', items: [
+    'Corrigido: uma loja com acesso só à própria unidade (login por e-mail) ficava tentando sincronizar as OUTRAS lojas do sistema sem parar, gerando erros de permissão em loop no fundo — nunca aparecia pro usuário, mas consumia rede à toa e enchia o console de avisos. Agora cada aparelho só tenta sincronizar o que a sessão dele alcança.',
+  ]},
   { version: '1.9.136', date: '2026-08-16', items: [
     'Corrigido: o aviso vermelho "chave do Supabase inválida" aparecia sozinho e sumia sozinho, sem a chave ter problema nenhum. O que acontecia era a sessão sendo renovada — várias telas pediam a renovação ao mesmo tempo e atrapalhavam umas às outras. Agora a renovação é uma só, e ninguém é desconectado por causa disso.',
     'Quando o aviso realmente precisar aparecer, ele passa a dizer a causa certa: "sua sessão não está sendo renovada" (é só sair e entrar de novo) ou "chave inválida" (aí sim é configuração). E não alarma mais na primeira falha passageira.',

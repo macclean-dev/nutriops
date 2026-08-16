@@ -2819,6 +2819,17 @@ export function App() {
         // antigos). Roda 1x por device — depois o push/fila normal cuida do dia
         // a dia. Idempotente (merge-duplicates). Assim NINGUÉM precisa logar
         // como admin nem ir até a máquina pra migrar.
+        //
+        // ⚠️ SÓ AS LOJAS QUE A SESSÃO ALCANÇA (16/08). Até aqui usava
+        // `activeTenants` — TODAS as lojas do device (Swiss/Bäckerei/DBK/CASA
+        // DOCE), sem filtrar por quem está logado. Uma sessão de loja única
+        // (a CASA DOCE, por e-mail) tentava empurrar as OUTRAS três também;
+        // RLS recusa (42501 — corretamente, é isolamento entre lojas
+        // funcionando), o backfill nunca fecha com `failed === 0`, nunca marca
+        // `done`, e repete a cada boot pra sempre. Sintoma em produção: POST
+        // temperature_records 401 em loop no console da CASA DOCE (15/08).
+        // `visibleTenants` já é a lista certa — a mesma que a tela de
+        // Prontidão usa pra não vazar dado entre lojas.
         if (trigger === 'boot') {
           // v2 (Fatia 3, 15/08): POPs/capacitação/validações RT entraram no
           // migrate. O bump faz devices que já backfillaram na v1 rodarem UMA
@@ -2826,13 +2837,15 @@ export function App() {
           // precisar apertar "migrar". Idempotente (merge-duplicates).
           // v3 (Fatia 2b): perfil do estabelecimento e documentos de
           // conformidade entraram no migrate.
-          const BACKFILL_KEY = 'nutriops.autobackfill.v3';
+          // v4 (16/08): escopo corrigido pra visibleTenants — bump necessário
+          // pra devices presos no loop da v3 pararem de tentar as lojas alheias.
+          const BACKFILL_KEY = 'nutriops.autobackfill.v4';
           const alreadyDone = localStorage.getItem(BACKFILL_KEY) === 'done';
-          const localCount = countAllLocalRecords(activeTenants);
+          const localCount = countAllLocalRecords(visibleTenants);
           if (shouldAutoBackfill({ enabled: isSupabaseEnabled(), online: navigator.onLine, alreadyDone, localCount })) {
             console.info(`[NutriOPS] auto-backfill — ${localCount} registros locais, enviando…`);
             try {
-              const mig = await migrateAllToSupabase(activeTenants);
+              const mig = await migrateAllToSupabase(visibleTenants);
               if (mig.ok && mig.failed === 0) {
                 localStorage.setItem(BACKFILL_KEY, 'done');
                 console.info(`[NutriOPS] auto-backfill ok — ${mig.pushed} registros enviados`);

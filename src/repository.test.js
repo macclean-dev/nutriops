@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { localRepository, supabaseRepository, saveSupabaseConfig, lw, tmplToRow, tmplFromRow, syncProducts, getSupabaseAuthError } from './repository';
+import { localRepository, supabaseRepository, saveSupabaseConfig, lw, ls, tmplToRow, tmplFromRow, syncProducts, getSupabaseAuthError, countAllLocalRecords, migrateAllToSupabase } from './repository';
 
 const RECORDS_KEY = 'nutriops.temperature.records';
 
@@ -168,5 +168,68 @@ describe('markSupabaseAuthError — separa sessão expirando de chave podre', ()
     const [, opts] = fetchMock.mock.calls[0];
     expect(opts.headers).not.toHaveProperty('_comJwt');
     expect(opts.headers.apikey).toBe('anon123');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Escopo do auto-backfill — incidente CASA DOCE (16/08, 01h). O CALL SITE em
+// pages.jsx passava `activeTenants` (TODAS as lojas do device) em vez da
+// lista que a sessão alcança. Uma sessão de loja única tentava empurrar dado
+// das outras três; RLS recusava (42501 — corretamente, é isolamento entre
+// lojas), o backfill nunca fechava com failed:0, nunca marcava "done", e
+// repetia a cada boot pra sempre — POST 401 em loop no console.
+//
+// migrateAllToSupabase/countAllLocalRecords em si sempre respeitaram o array
+// recebido; estes testes travam esse contrato pra que um call site futuro não
+// reintroduza o mesmo bug passando a lista errada.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('countAllLocalRecords — só conta o que está na lista recebida', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('ignora dado local de tenant que NÃO está na lista passada', () => {
+    lw('nutriops.forms.records.swiss', [{ id: 'a' }, { id: 'b' }]);
+    lw('nutriops.forms.records.casadoce', [{ id: 'c' }]);
+    // só a CASA DOCE alcançável — Swiss existe no device mas não na sessão
+    expect(countAllLocalRecords([{ id: 'casadoce' }])).toBe(1);
+  });
+
+  it('lista vazia (sessão sem nenhuma loja alcançável) conta 0, não estoura', () => {
+    lw('nutriops.forms.records.swiss', [{ id: 'a' }]);
+    expect(countAllLocalRecords([])).toBe(0);
+    expect(countAllLocalRecords(undefined)).toBe(0);
+  });
+});
+
+describe('migrateAllToSupabase — só empurra as lojas recebidas (isolamento)', () => {
+  beforeEach(() => { localStorage.clear(); saveSupabaseConfig({ url: 'https://x.test', anonKey: 'anon123', enabled: true }); });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  it('não tenta gravar tenant_id de fora da lista, mesmo com dado local presente', async () => {
+    lw('nutriops.temperature.records', [
+      { id: 't1', tenantId: 'casadoce', createdAt: '2026-08-01T10:00:00.000Z' },
+      { id: 't2', tenantId: 'swiss',    createdAt: '2026-08-01T10:00:00.000Z' },
+    ]);
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('null') }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    // sessão só alcança CASA DOCE — mesmo cenário do incidente
+    const r = await migrateAllToSupabase([{ id: 'casadoce', name: 'CASA DOCE' }]);
+
+    expect(r.pushed).toBe(1);                 // só o registro da CASA DOCE
+    const tenantIdsEnviados = fetchMock.mock.calls.map(([, opts]) => JSON.parse(opts.body).tenant_id);
+    expect(tenantIdsEnviados).not.toContain('swiss');   // ✅ nunca tentou a Swiss
+  });
+
+  it('lista vazia não faz nenhuma chamada de rede — sem loop de 401', async () => {
+    lw('nutriops.temperature.records', [{ id: 't1', tenantId: 'swiss', createdAt: '2026-08-01T10:00:00.000Z' }]);
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('null') }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const r = await migrateAllToSupabase([]);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(r.pushed).toBe(0);
   });
 });

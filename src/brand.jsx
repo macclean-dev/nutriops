@@ -5,7 +5,7 @@
 
 import React from 'react';
 
-export const APP_VERSION = '1.9.132';
+export const APP_VERSION = '1.9.133';
 
 // ─── Logomark: N-termômetro ────────────────────────────────────────────────
 // O stem esquerdo do N é um termômetro: coluna de mercúrio verde subindo dentro

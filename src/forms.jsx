@@ -25,20 +25,42 @@ const fs = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch
 //   2. Planilha NOVA no seed nunca alcançava quem já tinha cache. As 21 de
 //      higienização da CASA DOCE (Fase D) chegaram depois das 11 primeiras:
 //      sem o merge, a loja continuaria vendo só as 11.
-// Merge por id (os ids do seed são FIXOS — é essa a razão da convenção) e só
-// ACRESCENTA: edição local de uma planilha existente é preservada. Não há
-// exclusão de planilha na UI, então não há risco de ressuscitar algo apagado
-// de propósito — se um dia houver, isto precisa de tombstone.
+// Merge por id (os ids do seed DEVERIAM ser fixos — é essa a razão da
+// convenção) e só ACRESCENTA: edição local de uma planilha existente é
+// preservada. Não há exclusão de planilha na UI, então não há risco de
+// ressuscitar algo apagado de propósito — se um dia houver, isto precisa de
+// tombstone.
+//
+// ⚠️ SEGUNDA CHAVE, por categoria+título (v1.9.133, 15/08). Os seeds de
+// Swiss/Bäckerei/DBK usam `id: uid()` e portanto sorteiam um UUID NOVO a cada
+// execução — o merge por id nunca reconhecia o que já estava no cache e
+// anexava as planilhas de novo. Medido: 4 → 8 → 12 em três leituras, e são 11
+// call sites (Planilhas, Dossiê, Relatórios, Painel RT, Prontidão…), então
+// cada tela aberta multiplicava. A CASA DOCE escapou porque os ids dela são
+// fixos. Bug vivo desde a v1.9.93 (f3d1aa9), quando este merge nasceu.
+//
+// A chave secundária estanca sem tocar em dado: o seed sorteado casa com a
+// cópia que já existe e nada é acrescentado. As duplicatas JÁ criadas
+// continuam lá de propósito — limpar exige decidir o que fazer com os
+// registros presos em cada cópia (cada um aponta pro formId em que foi
+// preenchido), e isso é conversa à parte.
+const chaveTitulo = (t) => `${t?.category ?? ''}::${String(t?.title ?? '').trim().toLowerCase()}`;
+
 export const readFormTemplates = (tenant) => {
   const cache = fl(tplKey(tenant.id), null);
   const seed  = seedTemplates(tenant);
   if (!Array.isArray(cache)) { fs(tplKey(tenant.id), seed); return seed; }
 
   const porId = new Map(cache.map((t) => [t.id, t]));
+  // 1ª ocorrência vence: é a cópia mais antiga, aquela pra onde os registros
+  // históricos apontam.
+  const porTitulo = new Map();
+  for (const t of cache) if (!porTitulo.has(chaveTitulo(t))) porTitulo.set(chaveTitulo(t), t);
+
   let mudou = false;
   for (const s of seed) {
-    const atual = porId.get(s.id);
-    if (!atual) { porId.set(s.id, s); mudou = true; continue; }
+    const atual = porId.get(s.id) ?? porTitulo.get(chaveTitulo(s));
+    if (!atual) { porId.set(s.id, s); porTitulo.set(chaveTitulo(s), s); mudou = true; continue; }
     // Planilha do seed que MUDOU DE VERSÃO (campo novo, rótulo corrigido):
     // substitui a definição. Sem isto, só planilha NOVA chegava — quem já
     // rodava ficava preso na versão antiga pra sempre. Foi o que aconteceria
@@ -53,7 +75,12 @@ export const readFormTemplates = (tenant) => {
     // cadastrou na planilha.
     if (atual.custom) continue;
     if ((s.v ?? 0) > (atual.v ?? 0)) {
-      porId.set(s.id, { ...s, updatedAt: new Date().toISOString() });
+      // Mantém o ID DE QUEM JÁ ESTAVA, não o do seed: quando o casamento veio
+      // pelo título (seeds de id sorteado), gravar em `s.id` criaria uma
+      // entrada nova em vez de atualizar — a duplicação outra vez, agora por
+      // outro caminho. E os registros já preenchidos apontam pro id antigo:
+      // trocá-lo órfãos todo o histórico daquela planilha.
+      porId.set(atual.id, { ...s, id: atual.id, updatedAt: new Date().toISOString() });
       mudou = true;
     }
   }

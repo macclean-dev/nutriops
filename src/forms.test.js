@@ -157,6 +157,62 @@ describe('completionPct — tipos date e checkbox (Fase B)', () => {
   });
 });
 
+// Bug de produção achado em 15/08 e vivo desde a v1.9.93: os seeds de
+// Swiss/Bäckerei/DBK usam `id: uid()`, então sorteavam um UUID novo a cada
+// leitura e o merge por id anexava as planilhas de novo. 4 → 8 → 12 em três
+// leituras, ×11 call sites. A CASA DOCE escapou por ter ids fixos.
+describe('readFormTemplates — seed de id sorteado não pode duplicar', () => {
+  beforeEach(() => localStorage.clear());
+  const SWISS = { id:'swiss', name:'Swiss' };
+
+  it('ler várias vezes mantém a MESMA quantidade de planilhas', () => {
+    const n1 = readFormTemplates(SWISS).length;
+    expect(n1).toBe(4);
+    expect(readFormTemplates(SWISS)).toHaveLength(n1);
+    expect(readFormTemplates(SWISS)).toHaveLength(n1);
+  });
+
+  it('não cria título repetido (era 3 cópias de "Controle de Dedetização")', () => {
+    readFormTemplates(SWISS); readFormTemplates(SWISS); readFormTemplates(SWISS);
+    const titulos = readFormTemplates(SWISS).map(t => t.title);
+    expect(new Set(titulos).size).toBe(titulos.length);
+  });
+
+  it('o id da 1ª leitura sobrevive — é pra ele que os registros já preenchidos apontam', () => {
+    const idOriginal = readFormTemplates(SWISS).find(t => t.category === 'dedetizacao').id;
+    readFormTemplates(SWISS); readFormTemplates(SWISS);
+    expect(readFormTemplates(SWISS).find(t => t.category === 'dedetizacao').id).toBe(idOriginal);
+  });
+
+  // Sem preservar o id de quem já estava, o v-bump viraria uma duplicata nova
+  // pelo outro caminho — e órfãos todo o histórico daquela planilha.
+  it('v-bump casado por título atualiza no lugar, sem trocar o id', () => {
+    const atuais = readFormTemplates(SWISS);
+    const ded = atuais.find(t => t.category === 'dedetizacao');
+    const antiga = { ...ded, v: -1, sections: [{ id:'velha', title:'Antiga', fields:[] }] };
+    localStorage.setItem('nutriops.forms.templates.swiss',
+      JSON.stringify(atuais.map(t => t.id === ded.id ? antiga : t)));
+
+    const depois = readFormTemplates(SWISS);
+    expect(depois).toHaveLength(4);
+    const atualizada = depois.find(t => t.category === 'dedetizacao');
+    expect(atualizada.id).toBe(ded.id);                      // id preservado
+    expect(atualizada.sections[0].title).toBe('Registro do serviço'); // conteúdo novo
+  });
+
+  it('planilha custom da RT continua intocada mesmo casando por título', () => {
+    const atuais = readFormTemplates(SWISS);
+    const ded = atuais.find(t => t.category === 'dedetizacao');
+    const editada = { ...ded, custom: true, title: ded.title, sections: [{ id:'dela', title:'Do jeito dela', fields:[] }] };
+    localStorage.setItem('nutriops.forms.templates.swiss',
+      JSON.stringify(atuais.map(t => t.id === ded.id ? editada : t)));
+
+    const depois = readFormTemplates(SWISS);
+    expect(depois).toHaveLength(4);
+    expect(depois.find(t => t.category === 'dedetizacao').sections[0].title).toBe('Do jeito dela');
+  });
+});
+
 describe('seedTemplates CASA DOCE — 32 planilhas BPF (Fase A+B+C + 21 de higienização)', () => {
   beforeEach(() => localStorage.clear());
   const CD = { id:'bf245c3b-2f9', name:'CASA DOCE' };

@@ -21,6 +21,9 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.133', date: '2026-08-15', items: [
+    'Correção importante: as planilhas BPF da Swiss, da Bäckerei e da DBK estavam se duplicando sozinhas — cada tela aberta criava mais uma cópia de cada planilha. Agora para de duplicar. As cópias que já existem continuam na lista por enquanto: apagá-las exige decidir o que fazer com o que já foi preenchido dentro de cada uma, e isso vai ser tratado à parte.',
+  ]},
   { version: '1.9.132', date: '2026-08-15', items: [
     'POPs e Capacitação agora ficam guardados na nuvem, como as planilhas e as temperaturas. Antes viviam só no aparelho de quem cadastrou — trocar ou limpar o celular apagava certificados de treinamento e POPs sem aviso. Agora eles voltam sozinhos em qualquer aparelho da loja.',
     'A validade do treinamento configurada (ex.: 24 meses) também sincroniza — um aparelho novo não volta mais pro padrão de 12 meses por conta própria.',

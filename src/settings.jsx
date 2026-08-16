@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { APP_VERSION } from './brand';
 import { getEffectivePin, writePinOverride, isWeakPin } from './pin';
 import { isGlobalAdmin } from './permissions';
@@ -82,6 +82,120 @@ function ManualBpCard({ tenantId }) {
           <button className="primary-action attention" onClick={salvar} disabled={!data}>Registrar manual</button>
         </div>
         {salvo && <div className="submission ok">✓ Manual registrado. A tela de Prontidão já reconhece.</div>}
+      </div>
+    </article>
+  );
+}
+
+// ─── Limpeza das planilhas BPF duplicadas ──────────────────────────────────
+// Até a v1.9.133 os seeds de Swiss/Bäckerei/DBK sorteavam id novo a cada
+// leitura e as planilhas se multiplicavam. A v1.9.133 estancou; este card
+// limpa o que já ficou pra trás.
+//
+// MOSTRA O PLANO ANTES DE APLICAR — de propósito. Cada form_record aponta pro
+// formId da cópia em que foi preenchido; apagar cópia sem reconectar deixa o
+// registro órfão, e órfão é INVISÍVEL na Central de Não-Conformidades. Numa
+// ferramenta de conformidade sanitária isso é destruir evidência, então quem
+// aperta o botão vê antes o que vai acontecer.
+function LimpezaPlanilhasCard({ tenantId, tenantNome }) {
+  const [plano, setPlano] = useState(null);
+  const [erro, setErro] = useState(null);
+  const [aplicando, setAplicando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+
+  const calcular = useCallback(async () => {
+    setErro(null); setResultado(null);
+    try {
+      const [{ planejarDedupe }, { readFormTemplates, readFormRecords }] = await Promise.all([
+        import('./forms-dedupe'), import('./forms'),
+      ]);
+      const templates = readFormTemplates({ id: tenantId, name: tenantNome });
+      const records = readFormRecords(tenantId);
+      setPlano({ ...planejarDedupe(templates, records), templates, records });
+    } catch (e) { setErro(e?.message ?? 'Não consegui montar o plano.'); }
+  }, [tenantId, tenantNome]);
+
+  useEffect(() => { setPlano(null); setResultado(null); calcular(); }, [calcular]);
+
+  const aplicar = async () => {
+    const r = plano.resumo;
+    const ok = window.confirm(
+      `Limpar as planilhas de ${tenantNome}?\n\n`
+      + `• ${r.templatesAntes} planilhas viram ${r.templatesDepois}\n`
+      + `• ${r.orfaosRecuperados} registro(s) voltam a aparecer na Central de Não-conformidades\n`
+      + `• ${r.registrosPreservados} registros preservados — nenhum é apagado\n\n`
+      + 'Pode ser feito de novo se algo ficar pra trás.'
+    );
+    if (!ok) return;
+    setAplicando(true); setErro(null);
+    try {
+      const [{ aplicarDedupe }, { aplicarLimpezaFormularios }] = await Promise.all([
+        import('./forms-dedupe'), import('./repository'),
+      ]);
+      const limpo = aplicarDedupe(plano.templates, plano.records, plano);
+      const out = await aplicarLimpezaFormularios(tenantId, {
+        templates: limpo.templates, records: limpo.records,
+        apagar: plano.apagar, remapear: plano.remapear,
+      });
+      setResultado(out);
+      await calcular();                       // recalcula: deve sobrar nada
+    } catch (e) { setErro(e?.message ?? 'Falha ao aplicar a limpeza.'); }
+    finally { setAplicando(false); }
+  };
+
+  const r = plano?.resumo;
+  const temTrabalho = r && (r.copiasExcedentes > 0 || r.orfaosRecuperados > 0);
+  const temColisao = r && r.colisoesDePeriodo > 0;
+
+  return (
+    <article className="management-card">
+      <div className="card-head">
+        <div><span className="eyebrow">Manutenção de dados</span><h2>Planilhas BPF duplicadas</h2></div>
+        {r && <span className={`badge ${temTrabalho ? 'warn' : 'ok'}`}>{temTrabalho ? 'Há o que limpar' : 'Limpo'}</span>}
+      </div>
+      <div className="capture-fields">
+        {!plano && !erro && <p className="muted">Analisando as planilhas de {tenantNome}…</p>}
+        {erro && <div className="submission danger">✕ {erro}</div>}
+
+        {r && (
+          <>
+            <div className="grid-2">
+              <div className="info-box"><span>Planilhas</span><strong>{r.templatesAntes} → {r.templatesDepois}</strong></div>
+              <div className="info-box"><span>Registros preservados</span><strong>{r.registrosPreservados}</strong></div>
+            </div>
+            {r.orfaosRecuperados > 0 && (
+              <div className="submission ok" style={{ fontSize: 12 }}>
+                ✓ {r.orfaosRecuperados} registro(s) estão hoje INVISÍVEIS na Central de Não-conformidades (apontam pra uma cópia que não existe mais) e voltam a aparecer com a limpeza.
+              </div>
+            )}
+            {r.orfaosSemDestino > 0 && (
+              <p className="muted" style={{ fontSize: 11 }}>
+                {r.orfaosSemDestino} registro(s) são de planilha que não existe mais no sistema — ficam como estão, nenhum é apagado.
+              </p>
+            )}
+            {temColisao && (
+              <div className="submission danger" style={{ fontSize: 12 }}>
+                ✕ {r.colisoesDePeriodo} registro(s) do mesmo período em cópias diferentes. A limpeza automática está bloqueada aqui pra não escolher sozinha qual vale — me chame antes de seguir.
+              </div>
+            )}
+            {!temTrabalho && <p className="muted">Nada duplicado nesta empresa. Nenhuma ação necessária.</p>}
+          </>
+        )}
+
+        {resultado && (
+          <div className="submission ok">
+            ✓ Limpeza aplicada. {resultado.apagados} cópia(s) removida(s) da nuvem, {resultado.subidos} registro(s) reconectado(s).
+            {resultado.falhasApagar > 0 && ` ${resultado.falhasApagar} cópia(s) não puderam ser removidas da nuvem — rode de novo com internet.`}
+          </div>
+        )}
+
+        <div className="actions-row" style={{ justifyContent:'flex-end' }}>
+          <button className="secondary-action" onClick={calcular} disabled={aplicando}>Recalcular</button>
+          <button className="primary-action attention" onClick={aplicar}
+            disabled={!temTrabalho || temColisao || aplicando}>
+            {aplicando ? 'Limpando…' : 'Limpar duplicatas'}
+          </button>
+        </div>
       </div>
     </article>
   );
@@ -316,6 +430,11 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
       </article>
 
       <ManualBpCard tenantId={activeTenant?.id ?? 'global'} />
+
+      {/* Só admin: mexe no acervo de planilhas da loja inteira. */}
+      {isSuper && activeTenant?.id && (
+        <LimpezaPlanilhasCard tenantId={activeTenant.id} tenantNome={activeTenant.name ?? activeTenant.id} />
+      )}
 
       {isSuper && (<>
       <div className="management-grid">

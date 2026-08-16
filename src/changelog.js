@@ -21,6 +21,10 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.139', date: '2026-08-16', items: [
+    'Novo em Configurações: "Planilhas BPF duplicadas". Mostra quantas cópias repetidas a loja acumulou e limpa com um clique — sempre mostrando antes o que vai acontecer, e sem apagar nenhum registro preenchido.',
+    'Correção importante junto: registros de planilha que tinham ficado "soltos" (apontavam pra uma cópia que não existe mais) voltam a aparecer na Central de Não-conformidades. Na Swiss eram 35 de 41 registros invisíveis — o histórico estava lá, mas nenhuma tela mostrava.',
+  ]},
   { version: '1.9.137', date: '2026-08-16', items: [
     'Corrigido: uma loja com acesso só à própria unidade (login por e-mail) ficava tentando sincronizar as OUTRAS lojas do sistema sem parar, gerando erros de permissão em loop no fundo — nunca aparecia pro usuário, mas consumia rede à toa e enchia o console de avisos. Agora cada aparelho só tenta sincronizar o que a sessão dele alcança.',
   ]},

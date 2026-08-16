@@ -592,6 +592,47 @@ export async function syncFormTemplates(tenantId) {
   });
 }
 
+// Apagar template na nuvem — online-only, mesmo motivo do deletePOPCloud: a
+// fila offline replaya tudo como POST merge-duplicates, então um DELETE
+// enfileirado ressuscitaria a cópia que a limpeza acabou de matar.
+export async function deleteFormTemplateCloud(tenantId, templateId) {
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false, reason:'offline_or_disabled' };
+  try {
+    await sbFetch('form_templates', { method:'DELETE', filter:`tenant_id=eq.${tenantId}&id=eq.${templateId}` }, tenantId);
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// Aplica a limpeza de planilhas duplicadas (ver src/forms-dedupe.js).
+//
+// ORDEM IMPORTA: grava local primeiro (o dado do usuário fica seguro mesmo se
+// a rede cair no meio), depois reconcilia a nuvem. Se o delete remoto falhar,
+// a cópia volta no próximo sync — chato, mas não destrutivo, e o botão pode
+// ser clicado de novo.
+//
+// Só os registros REMAPEADOS sobem: os outros já estão corretos na nuvem, e
+// empurrar 41 linhas pra corrigir 35 seria desperdício.
+export async function aplicarLimpezaFormularios(tenantId, { templates, records, apagar = [], remapear = [] }) {
+  lw(`nutriops.forms.templates.${tenantId}`, templates);
+  lw(`nutriops.forms.records.${tenantId}`, records);
+
+  let apagados = 0, falhasApagar = 0;
+  for (const id of apagar) {
+    const r = await deleteFormTemplateCloud(tenantId, id);
+    if (r.ok) apagados++; else falhasApagar++;
+  }
+
+  const paraSubir = new Set(remapear.map((r) => r.recordId));
+  let subidos = 0;
+  for (const rec of records) {
+    if (!paraSubir.has(rec.id)) continue;
+    await pushFormRecord(tenantId, rec);   // enfileira sozinho se estiver offline
+    subidos++;
+  }
+
+  return { ok:true, apagados, falhasApagar, subidos };
+}
+
 export async function pushFormTemplate(tenantId, template) {
   const localKey = `nutriops.forms.templates.${tenantId}`;
   const existing = ls(localKey, []);

@@ -21,6 +21,12 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.135', date: '2026-08-15', items: [
+    'Nova aba "Saúde (ASO)" dentro de Capacitação: registre o exame de cada colaborador com data e validade, e veja num painel quem está em dia, quem vence em breve e quem está sem exame. O ASO é item clássico de autuação e até agora o app não tinha onde anotar.',
+    'O alvará sanitário agora tem data de validade. A tela de Prontidão avisa quando ele está vencendo — renovação de alvará costuma demorar, e antes o app guardava só o número.',
+    'Em Configurações dá pra registrar o Manual de Boas Práticas (versão, data e quem elaborou). O NutriOPS não guarda o arquivo: guarda o registro de que ele existe, que é o que faltava pra tela de Prontidão parar de responder "sem dado".',
+    'Com isso, uma loja realmente em dia agora consegue ler PRONTA na tela de Prontidão. Até esta versão o veredito máximo era "PRONTA COM RESSALVAS", porque faltavam capturas no app.',
+  ]},
   { version: '1.9.134', date: '2026-08-15', items: [
     'Nova planilha "Higienização do Reservatório de Água", semestral, em todas as lojas. A RDC 216 exige a limpeza do reservatório a cada 6 meses com registro, e até agora o app não tinha onde guardar isso — na tela de Prontidão esse item vivia como "sem dado". Agora ele responde de verdade.',
     'O comprovante de dedetização agora aceita foto ou PDF do laudo. Antes a planilha pedia "anexar comprovante" mas só tinha campo de texto — o documento em si nunca era anexado.',

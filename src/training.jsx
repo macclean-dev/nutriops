@@ -3,7 +3,11 @@ import { employeeTrainingStatus } from './training-status';
 // Fatia 3 (15/08): sessões e config sobem pra nuvem — antes viviam só no
 // localStorage do device da RT, e um wipe apagava os comprovantes de
 // capacitação da rede inteira (auditoria RDC §3.5).
-import { pushTrainingSession, pushTrainingConfig } from './repository';
+import { pushTrainingSession, pushTrainingConfig, pushComplianceDoc, deleteComplianceDoc } from './repository';
+// ASO mora aqui e não numa tela própria porque a RDC 216 trata capacitação e
+// controle de saúde no MESMO §4.6 — pra RT são as duas metades da mesma
+// pergunta ("este manipulador está apto?").
+import { DOC_TYPES, COMPLIANCE_DEFAULTS, ASO_STATUS_LABEL, teamAsoSummary, validadeEfetiva } from './compliance';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -438,6 +442,136 @@ function SessionDetail({ session, onBack, onUpdate, session: _s, tenant, config,
 
 // ─── Employee Status Overview ──────────────────────────────────────────────
 
+// ─── ASO — controle de saúde dos manipuladores (Fatia 2b) ─────────────────
+// Era um dos 5 DESCOBERTOS da auditoria (§3.4): item de autuação clássico e o
+// app não tinha nem onde anotar. Guarda o ATESTADO (data, validade, resultado)
+// — não o arquivo do exame.
+const complianceKey = (id) => `nutriops.compliance.${id}`;
+const lerCompliance = (id) => tl(complianceKey(id), []);
+
+function AsoPanel({ tenant, allUsers }) {
+  const [docs, setDocs]   = useState(() => lerCompliance(tenant.id));
+  const [editando, setEditando] = useState(null);   // nome do colaborador
+  const [emissao, setEmissao]   = useState('');
+  const [validade, setValidade] = useState('');
+  const [resultado, setResultado] = useState('apto');
+  const [obs, setObs] = useState('');
+
+  useEffect(() => { setDocs(lerCompliance(tenant.id)); setEditando(null); }, [tenant.id]);
+
+  const resumo = teamAsoSummary(allUsers, docs, COMPLIANCE_DEFAULTS.asoValidadeMeses);
+
+  const abrir = (nome) => {
+    const atual = docs.filter((d) => d.docType === DOC_TYPES.ASO && d.subject === nome)
+      .sort((a, b) => new Date(b.issuedAt ?? 0) - new Date(a.issuedAt ?? 0))[0];
+    setEditando(nome);
+    setEmissao(atual?.issuedAt ?? '');
+    setValidade(atual?.validUntil ?? '');
+    setResultado(atual?.resultado ?? 'apto');
+    setObs(atual?.obs ?? '');
+  };
+
+  const salvar = () => {
+    if (!emissao) return;
+    const doc = {
+      id: uid(), docType: DOC_TYPES.ASO, subject: editando,
+      issuedAt: emissao,
+      // Validade em branco = deriva de emissão + a régua (12 meses). Guardar
+      // a data derivada em vez de recalcular toda hora deixa explícito na
+      // nuvem até quando aquele exame vale.
+      validUntil: validade || validadeEfetiva({ issuedAt: emissao }, COMPLIANCE_DEFAULTS.asoValidadeMeses),
+      resultado, obs: obs.trim(),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    };
+    const proximos = [doc, ...docs];
+    setDocs(proximos);
+    ts(complianceKey(tenant.id), proximos);
+    pushComplianceDoc(tenant.id, doc);
+    setEditando(null);
+  };
+
+  const remover = (docId) => {
+    if (!window.confirm('Remover este registro de ASO?')) return;
+    const proximos = docs.filter((d) => d.id !== docId);
+    setDocs(proximos);
+    ts(complianceKey(tenant.id), proximos);
+    deleteComplianceDoc(tenant.id, docId);
+  };
+
+  const tone = { ok:'ok', warn:'warn', expired:'danger', never:'neutral' };
+
+  return (
+    <article className="management-card">
+      <div className="card-head">
+        <div><span className="eyebrow">RDC 216 · §4.6</span><h2>Controle de saúde (ASO) por colaborador</h2></div>
+        <span className="badge neutral">Validade padrão: {COMPLIANCE_DEFAULTS.asoValidadeMeses} meses</span>
+      </div>
+      <div style={{ display:'flex', borderBottom:'1px solid var(--border-subtle)' }}>
+        {[['ok','Em dia',resumo.ok],['warn','Vence em breve',resumo.warn],['expired','Vencido',resumo.expired],['never','Sem ASO',resumo.never]].map(([key,label,count]) => (
+          <div key={key} style={{ flex:1, padding:'10px 16px', textAlign:'center', borderRight:'1px solid var(--border-subtle)' }}>
+            <div style={{ fontSize:22, fontWeight:800, fontFamily:'var(--mono)', color: key==='ok'?'var(--green)':key==='warn'?'var(--amber)':key==='expired'?'var(--red)':'var(--text-secondary)' }}>{count}</div>
+            <div style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em', color:'var(--text-secondary)', marginTop:2 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+      <p className="muted" style={{ padding:'10px 20px 0' }}>
+        O NutriOPS registra que o exame existe e até quando vale — o documento em si continua com a loja. Deixar a validade em branco assume {COMPLIANCE_DEFAULTS.asoValidadeMeses} meses a partir da emissão (padrão PCMSO), mas o que vale é a data que o médico definiu.
+      </p>
+      <div className="equipment-maintenance-list">
+        {resumo.situacoes.length === 0 && <p className="muted" style={{ padding:'20px' }}>Nenhum colaborador ativo cadastrado nesta loja.</p>}
+        {resumo.situacoes.map((s) => (
+          <div key={s.name} className="equipment-maintenance-row" style={editando === s.name ? { flexDirection:'column', gap:10, alignItems:'stretch' } : undefined}>
+            {/* O `.equipment-maintenance-row > div` do styles.css empilha os
+                filhos, mas só no PRIMEIRO nível — aqui há um wrapper no meio
+                (pra linha virar coluna ao editar), então a coluna vai no
+                inline. Sem isso, nome/cargo/status saíam colados numa linha. */}
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', width:'100%', gap:8 }}>
+              <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+                <strong>{s.name}</strong>
+                <span>{s.role}</span>
+                <span>
+                  {s.status === 'never' ? 'Nenhum ASO registrado'
+                    : s.status === 'expired' ? `Venceu há ${Math.abs(s.diasRestantes)} dia(s)`
+                    : `Vence em ${s.diasRestantes} dia(s) · ${new Date(`${s.doc._validade}T12:00`).toLocaleDateString('pt-BR')}`}
+                </span>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
+                <span className={`badge ${tone[s.status]}`}>{ASO_STATUS_LABEL[s.status]}</span>
+                <button className="ghost-action" style={{ fontSize:11 }} onClick={() => abrir(s.name)}>
+                  {s.status === 'never' ? 'Registrar' : 'Atualizar'}
+                </button>
+                {s.doc && <button className="ghost-action danger" style={{ fontSize:11 }} onClick={() => remover(s.doc.id)}>Remover</button>}
+              </div>
+            </div>
+            {editando === s.name && (
+              <div className="capture-fields" style={{ padding:0, width:'100%' }}>
+                <div className="grid-2">
+                  <label>Data do exame<input type="date" value={emissao} onChange={(e) => setEmissao(e.target.value)} /></label>
+                  <label>Válido até (opcional)<input type="date" value={validade} onChange={(e) => setValidade(e.target.value)} /></label>
+                </div>
+                <div className="grid-2">
+                  <label>Resultado
+                    <select value={resultado} onChange={(e) => setResultado(e.target.value)}>
+                      <option value="apto">Apto</option>
+                      <option value="apto_restricao">Apto com restrição</option>
+                      <option value="inapto">Inapto</option>
+                    </select>
+                  </label>
+                  <label>Observações<input value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Ex.: restrição para manipulação a frio" /></label>
+                </div>
+                <div className="actions-row" style={{ justifyContent:'flex-end' }}>
+                  <button className="secondary-action" onClick={() => setEditando(null)}>Cancelar</button>
+                  <button className="primary-action" onClick={salvar} disabled={!emissao}>Salvar ASO</button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
 function EmployeeStatusPanel({ allUsers, sessions, config }) {
   const validity = config?.validityMonths ?? 12;
   const statuses = allUsers.map((u) => {
@@ -550,7 +684,7 @@ export function TrainingView({ activeTenant, allTenants, onTenantChange, session
 
       {/* Tabs */}
       <div style={{ display:'flex', gap:6, marginBottom:20 }}>
-        {[['sessions','Sessões de treinamento'],['status','Situação da equipe'],['settings','Configurações']].map(([key,label]) => (
+        {[['sessions','Sessões de treinamento'],['status','Situação da equipe'],['aso','Saúde (ASO)'],['settings','Configurações']].map(([key,label]) => (
           <button key={key} onClick={() => setTab(key)}
             style={{ padding:'7px 16px', borderRadius:8, border:'1px solid var(--border)', background:tab===key?'var(--text)':'var(--surface)', color:tab===key?'white':'var(--text)', fontWeight:600, fontSize:13, cursor:'pointer', fontFamily:'var(--font)' }}>
             {label}
@@ -559,6 +693,8 @@ export function TrainingView({ activeTenant, allTenants, onTenantChange, session
       </div>
 
       {tab === 'status' && <EmployeeStatusPanel allUsers={allUsers} sessions={sessions} config={config} />}
+
+      {tab === 'aso' && <AsoPanel tenant={activeTenant} allUsers={allUsers} />}
 
       {tab === 'settings' && (
         <article className="management-card">

@@ -24,6 +24,7 @@
 
 import { conformityStats } from './limits';
 import { employeeTrainingStatus } from './training-status';
+import { teamAsoSummary, manualBpStatus, alvaraStatus, COMPLIANCE_DEFAULTS } from './compliance';
 
 // ─── Suposições e réguas ────────────────────────────────────────────────────
 // ⚠️ `dedetizacaoMeses` é SUPOSIÇÃO, não texto de norma (auditoria §4.1): a
@@ -222,12 +223,17 @@ export function computeReadiness(inputs = {}) {
     pendingForms = [],
     pops = [],
     companyProfile = {},
+    complianceDocs = [],       // ASO + Manual de BP (Fatia 2b)
     controlsByType = {},
     sync = {},
     localOnly = {},
   } = inputs;
 
   const cfg = { ...READINESS_DEFAULTS, ...defaults };
+  // Régua do ASO configurável pela loja, como a da dedetização: a RDC manda
+  // registrar o controle de saúde mas não fixa periodicidade (auditoria §4.3).
+  const asoMeses = Number(companyProfile.asoValidadeMeses) > 0
+    ? Number(companyProfile.asoValidadeMeses) : COMPLIANCE_DEFAULTS.asoValidadeMeses;
 
   // ── Grupo A — gera auto de infração na hora ───────────────────────────────
   const a = [];
@@ -362,10 +368,25 @@ export function computeReadiness(inputs = {}) {
     nome: 'higienização do reservatório',
   }));
 
-  // A7 · Sem captura no app até a Fatia 2b — `unknown` honesto + o caminho.
-  a.push(chk('a7-aso', 'Controle de saúde dos manipuladores (ASO)', 'unknown',
-    'O app ainda não captura este registro (auditoria §3.4). É item clássico de autuação: o fiscal pede ASO/exames válidos por colaborador. Entra na Fatia 2.',
-    'critical'));
+  // A7 · Controle de saúde (ASO) — deixou de ser `unknown` fixo na Fatia 2b.
+  // Mesma gramática do A4 (capacitação): a RDC trata os dois no §4.6.
+  if (ativos.length === 0) {
+    a.push(chk('a7-aso', 'Controle de saúde dos manipuladores (ASO)', 'unknown',
+      'Nenhum colaborador ativo cadastrado nesta loja — sem equipe cadastrada não há como verificar exames.',
+      'critical', 'training'));
+  } else {
+    const aso = teamAsoSummary(ativos, complianceDocs, asoMeses, now);
+    const semOuVencido = aso.expired + aso.never;
+    const criticos = aso.situacoes.filter((s) => s.status === 'expired' || s.status === 'never');
+    a.push(chk('a7-aso', 'Controle de saúde dos manipuladores (ASO)',
+      semOuVencido > 0 ? 'fail' : aso.warn > 0 ? 'warn' : 'ok',
+      semOuVencido > 0
+        ? `${plural(semOuVencido, 'colaborador ativo', 'colaboradores ativos')} de ${aso.total} sem ASO válido (${criticos.slice(0, 3).map((s) => s.name).join(', ')}${criticos.length > 3 ? '…' : ''}). O fiscal pede exame válido por manipulador — é autuação clássica.`
+        : aso.warn > 0
+          ? `${plural(aso.warn, 'ASO vence', 'ASOs vencem')} nos próximos 30 dias. Vale agendar a renovação.`
+          : `Todos os ${aso.total} colaboradores ativos com ASO válido.`,
+      'critical', 'training'));
+  }
 
   // ── Grupo B — documentação de entrada ─────────────────────────────────────
   const b = [];
@@ -378,12 +399,19 @@ export function computeReadiness(inputs = {}) {
       : `${rtNome} · ${rtCrn}.`,
     'high', 'settings'));
 
-  const alvara = txt(companyProfile.alvara);
-  b.push(chk('b2-alvara', 'Alvará sanitário',
-    alvara ? 'ok' : 'fail',
-    alvara
-      ? `Alvará ${alvara} registrado. Ressalva: o app guarda só o número — a DATA DE VALIDADE não é rastreada, então esta tela não avisa se ele venceu. Entra na Fatia 2.`
-      : 'Número do alvará não preenchido em Configurações.',
+  // B2 · Alvará — a Fatia 2b acrescentou a DATA DE VALIDADE. Até aqui o app
+  // guardava só o número e esta tela não tinha como avisar que venceu.
+  const alv = alvaraStatus(companyProfile, now);
+  b.push(chk('b2-alvara', 'Alvará sanitário', alv.status,
+    alv.status === 'fail' && !alv.numero
+      ? 'Número do alvará não preenchido em Configurações.'
+      : alv.status === 'fail'
+        ? `Alvará ${alv.numero} VENCIDO há ${Math.abs(alv.dias)} dia(s). Operar com alvará vencido é interdição, não advertência.`
+        : alv.dias === null
+          ? `Alvará ${alv.numero} registrado, mas sem data de validade preenchida — assim esta tela não tem como avisar quando ele vencer.`
+          : alv.status === 'warn'
+            ? `Alvará ${alv.numero} vence em ${alv.dias} dia(s). Renovação de alvará costuma demorar; vale começar agora.`
+            : `Alvará ${alv.numero} válido por mais ${alv.dias} dia(s).`,
     'high', 'settings'));
 
   const popsFaltando = missingRequiredPOPs(pops);
@@ -394,9 +422,19 @@ export function computeReadiness(inputs = {}) {
       : 'Os 4 POPs obrigatórios estão cadastrados.',
     'high', 'pops'));
 
-  b.push(chk('b4-manual-bp', 'Manual de Boas Práticas', 'unknown',
-    'O app ainda não registra a existência do Manual (auditoria §3.18) — nem arquivo, nem versão/data. O fiscal aceita o manual impresso, mas esta tela não tem como afirmar que ele existe. Entra na Fatia 2.',
-    'high'));
+  // B4 · Manual de BP — a Fatia 2b passou a registrar o ATESTADO (versão,
+  // data, autor), não o arquivo. O fiscal aceita o manual impresso; o que
+  // faltava era o app saber que ele existe.
+  const manualDoc = (complianceDocs ?? []).find((d) => d?.docType === 'manual_bp') ?? null;
+  const manual = manualBpStatus(manualDoc, now);
+  b.push(chk('b4-manual-bp', 'Manual de Boas Práticas',
+    manual.status === 'never' ? 'fail' : manual.status,
+    manual.status === 'never'
+      ? 'Nenhum registro de Manual de Boas Práticas. Ele é exigido pelo §4.11 e o fiscal pede na entrada — se a loja já tem o manual impresso, basta registrar versão e data em Configurações.'
+      : manual.status === 'warn'
+        ? `Manual registrado, mas a versão é de ${manual.mesesDesde} meses atrás. Vale revisar — o fiscal costuma cobrar manual coerente com a operação atual.`
+        : `Manual registrado${manualDoc?.versao ? ` (${manualDoc.versao})` : ''}, versão de ${manual.mesesDesde} meses atrás.`,
+    'high', 'settings'));
 
   // ── Grupo C — registros vivos dos últimos 30 dias ─────────────────────────
   const c = [];

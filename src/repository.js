@@ -1263,6 +1263,90 @@ export async function syncRtValidations(tenantId) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// FATIA 2b (15/08) — os descobertos que sobravam da auditoria RDC.
+// Perfil do estabelecimento na nuvem (§3.21, era local-only), ASO por
+// colaborador (§3.4) e atestado do Manual de BP (§3.18).
+// SQL: docs/compliance-docs-sync.sql (rodar ANTES do deploy).
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── Perfil do estabelecimento (1 linha por tenant) ──────────────────────
+// Mesmo contrato de training_config/validity_rules: o carimbo decide quem
+// vence. Sem isto, a validade do alvará nasceria evaporando junto com o
+// aparelho — o defeito que a própria Fatia 2b existe pra fechar.
+const COMPANY_PROFILE_KEY = (tenantId) => `nutriops.company.profile.${tenantId}`;
+
+export async function pushCompanyProfile(tenantId, profile) {
+  const updatedAt = new Date().toISOString();
+  lw(COMPANY_PROFILE_KEY(tenantId), { ...profile, updatedAt }); // local com o mesmo carimbo
+  const row = { tenant_id: tenantId, data: { ...profile, updatedAt }, updated_at: updatedAt };
+  if (!isSupabaseEnabled() || !navigator.onLine) { enqueue('company_profile', 'upsert', row); return; }
+  try {
+    await sbFetch('company_profile', { method:'POST', body:row, prefer:'resolution=merge-duplicates,return=minimal' }, tenantId);
+  } catch (e) { logFailAndEnqueue('company_profile', 'upsert', row, e); }
+}
+
+export async function syncCompanyProfile(tenantId) {
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false, reason:'offline_or_disabled' };
+  try {
+    const rows = await sbFetch('company_profile', { filter:`tenant_id=eq.${tenantId}&limit=1` }, tenantId);
+    if (!rows?.length) return { ok:true, applied:false };
+    const remote = rows[0];
+    const local = ls(COMPANY_PROFILE_KEY(tenantId), null);
+    if (!local?.updatedAt || new Date(remote.updated_at) > new Date(local.updatedAt)) {
+      lw(COMPANY_PROFILE_KEY(tenantId), { ...remote.data, updatedAt: remote.updated_at });
+      return { ok:true, applied:true };
+    }
+    return { ok:true, applied:false };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// ─── Documentos de conformidade (ASO, Manual de BP) ──────────────────────
+const COMPLIANCE_KEY = (tenantId) => `nutriops.compliance.${tenantId}`;
+
+function complianceToRow(tenantId, doc) {
+  return {
+    id: doc.id, tenant_id: tenantId, doc_type: doc.docType,
+    subject: doc.subject ?? null, issued_at: doc.issuedAt ?? null,
+    valid_until: doc.validUntil ?? null, data: doc,
+    created_at: doc.createdAt ?? new Date().toISOString(),
+    updated_at: doc.updatedAt ?? new Date().toISOString(),
+  };
+}
+function complianceFromRow(row) {
+  return {
+    ...row.data, id: row.id, docType: row.doc_type, subject: row.subject,
+    issuedAt: row.issued_at, validUntil: row.valid_until,
+  };
+}
+
+export async function pushComplianceDoc(tenantId, doc) {
+  const row = complianceToRow(tenantId, doc);
+  if (!isSupabaseEnabled() || !navigator.onLine) { enqueue('compliance_docs', 'upsert', row); return; }
+  try {
+    await sbFetch('compliance_docs', { method:'POST', body:row, prefer:'resolution=merge-duplicates,return=minimal' }, tenantId);
+  } catch (e) { logFailAndEnqueue('compliance_docs', 'upsert', row, e); }
+}
+
+// Online-only, mesmo motivo do deletePOPCloud: a fila replaya tudo como POST
+// merge-duplicates, então um DELETE enfileirado ressuscitaria o documento.
+export async function deleteComplianceDoc(tenantId, docId) {
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false };
+  try {
+    await sbFetch('compliance_docs', { method:'DELETE', filter:`tenant_id=eq.${tenantId}&id=eq.${docId}` }, tenantId);
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// Merge por id (não replace): um ASO lançado offline neste aparelho não pode
+// sumir quando o pull traz os da nuvem.
+export async function syncComplianceDocs(tenantId) {
+  return syncModule({
+    table:'compliance_docs', localKey:COMPLIANCE_KEY(tenantId), tenantId,
+    toRow:(d)=>complianceToRow(tenantId, d), fromRow:complianceFromRow,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // FULL SYNC — sincroniza todos os módulos de um tenant
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1286,6 +1370,8 @@ export async function syncAllModules(tenantId) {
     syncTrainingSessions(tenantId),
     syncTrainingConfig(tenantId),
     syncRtValidations(tenantId),
+    syncCompanyProfile(tenantId),
+    syncComplianceDocs(tenantId),
     syncSpecialControls('oil', tenantId),
     syncSpecialControls('thaw', tenantId),
     syncSpecialControls('cool', tenantId),
@@ -1374,6 +1460,19 @@ export async function migrateAllToSupabase(tenants) {
     for (const v of validations) {
       try { await sbFetch('rt_validations', { method:'POST', body:rtValidationToRow(id, v), prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
     }
+
+    // Perfil do estabelecimento (Fatia 2b) — só se existir local
+    const perfil = ls(`nutriops.company.profile.${id}`, null);
+    if (perfil) {
+      const perfilRow = { tenant_id: id, data: perfil, updated_at: perfil.updatedAt ?? new Date().toISOString() };
+      try { await sbFetch('company_profile', { method:'POST', body:perfilRow, prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
+    }
+
+    // Documentos de conformidade — ASO, Manual de BP (Fatia 2b)
+    const docs = ls(`nutriops.compliance.${id}`, []);
+    for (const d of docs) {
+      try { await sbFetch('compliance_docs', { method:'POST', body:complianceToRow(id, d), prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
+    }
   }
 
   setSyncStatus({ lastSync: new Date().toISOString(), pending: 0 });
@@ -1394,6 +1493,7 @@ export function countAllLocalRecords(tenants) {
       n += ls(`nutriops.corrective_actions.${t.id}`, []).length;
       n += ls(`nutriops.pops.${t.id}`, []).length;
       n += ls(`nutriops.training.sessions.${t.id}`, []).length;
+      n += ls(`nutriops.compliance.${t.id}`, []).length;
       for (const type of ['oil','thaw','cool','thermal','handwash']) {
         n += ls(`nutriops.${type}.${t.id}`, []).length;
       }

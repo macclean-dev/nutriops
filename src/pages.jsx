@@ -2814,7 +2814,9 @@ export function App() {
           // migrate. O bump faz devices que já backfillaram na v1 rodarem UMA
           // vez de novo — é o que sobe o acervo antigo da RT sem ninguém
           // precisar apertar "migrar". Idempotente (merge-duplicates).
-          const BACKFILL_KEY = 'nutriops.autobackfill.v2';
+          // v3 (Fatia 2b): perfil do estabelecimento e documentos de
+          // conformidade entraram no migrate.
+          const BACKFILL_KEY = 'nutriops.autobackfill.v3';
           const alreadyDone = localStorage.getItem(BACKFILL_KEY) === 'done';
           const localCount = countAllLocalRecords(activeTenants);
           if (shouldAutoBackfill({ enabled: isSupabaseEnabled(), online: navigator.onLine, alreadyDone, localCount })) {

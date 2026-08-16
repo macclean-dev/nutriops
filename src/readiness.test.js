@@ -27,6 +27,12 @@ const lojaOk = (over = {}) => ({
   pendingForms: [],
   pops: REQUIRED_POPS.map((r) => ({ title: r.label, category: r.categories[0] ?? 'outros' })),
   companyProfile: { rtNome: 'Ana Paula', rtCrn: 'CRN-1 12345', alvara: '123/2026' },
+  // Fatia 2b: sem estes, A7 (ASO) e B4 (Manual) viram pendência e a "loja
+  // hipoteticamente perfeita" deixaria de ser perfeita.
+  complianceDocs: [
+    { id: 'aso-ana', docType: 'aso', subject: 'Ana', issuedAt: '2026-06-01', validUntil: '2027-06-01' },
+    { id: 'manual', docType: 'manual_bp', issuedAt: '2026-02-01', versao: '3ª revisão' },
+  ],
   controlsByType: {},
   sync: { enabled: true, lastSync: iso(1), queueLength: 0 },
   localOnly: { maintenance: 0 },
@@ -34,6 +40,7 @@ const lojaOk = (over = {}) => ({
 });
 
 const check = (r, id) => r.groups.flatMap((g) => g.checks).find((c) => c.id === id);
+const RES_TPL_PRONTA = { id: 'res', category: 'potabilidade', frequency: 'semiannual', title: 'Higienização do Reservatório de Água' };
 
 describe('computeVerdict', () => {
   const g = (id, ...statuses) => ({ id, title: id, checks: statuses.map((status, i) => ({ id: `${id}${i}`, status })) });
@@ -258,19 +265,90 @@ describe('computeReadiness — grupo A manda no veredito', () => {
     expect(check(r, 'a5-dedetizacao').status).toBe('unknown');
   });
 
-  // ASO segue sem captura até a Fatia 2b.
-  it('ASO é sempre "sem dado" nesta fatia, com o caminho pra Fatia 2b', () => {
-    const r = computeReadiness(lojaOk());
-    expect(check(r, 'a7-aso').status).toBe('unknown');
-    expect(check(r, 'a7-aso').detail).toContain('Fatia 2');
-    expect(check(r, 'a7-aso').navTarget).toBeNull();
+  // ─── A7 · ASO (Fatia 2b: deixou de ser `unknown` fixo) ──────────────────
+  it('colaborador ativo sem ASO ⇒ EM RISCO', () => {
+    const r = computeReadiness(lojaOk({ complianceDocs: [] }));
+    expect(check(r, 'a7-aso').status).toBe('fail');
+    expect(check(r, 'a7-aso').detail).toContain('Ana');
+    expect(r.verdict).toBe('risk');
   });
 
-  // Consequência assumida — vale um teste pra ninguém "consertar" por engano.
-  it('enquanto o ASO não tiver captura, nenhuma loja lê PRONTA', () => {
-    const r = computeReadiness(lojaOk());
+  it('ASO válido de todo mundo ⇒ em ordem', () => {
+    const r = computeReadiness(lojaOk({
+      complianceDocs: [{ id: 'a1', docType: 'aso', subject: 'Ana', issuedAt: '2026-06-01', validUntil: '2027-06-01' }],
+    }));
+    expect(check(r, 'a7-aso').status).toBe('ok');
+  });
+
+  it('ASO vencido ⇒ EM RISCO', () => {
+    const r = computeReadiness(lojaOk({
+      complianceDocs: [{ id: 'a1', docType: 'aso', subject: 'Ana', issuedAt: '2025-01-01', validUntil: '2026-01-01' }],
+    }));
+    expect(check(r, 'a7-aso').status).toBe('fail');
+  });
+
+  it('régua do ASO configurada pela loja vence o default de 12 meses', () => {
+    // exame de 8 meses atrás, sem validade explícita
+    const doc = [{ id: 'a1', docType: 'aso', subject: 'Ana', issuedAt: '2025-12-15' }];
+    expect(check(computeReadiness(lojaOk({ complianceDocs: doc })), 'a7-aso').status).toBe('ok');
+    const apertado = computeReadiness(lojaOk({
+      complianceDocs: doc,
+      companyProfile: { ...lojaOk().companyProfile, asoValidadeMeses: 6 },
+    }));
+    expect(check(apertado, 'a7-aso').status).toBe('fail');
+  });
+
+  // ─── B2/B4 (Fatia 2b) ───────────────────────────────────────────────────
+  it('alvará vencido ⇒ pendência, mas sem virar EM RISCO (é grupo B)', () => {
+    const r = computeReadiness(lojaOk({
+      complianceDocs: [{ id: 'a1', docType: 'aso', subject: 'Ana', validUntil: '2027-06-01', issuedAt: '2026-06-01' }],
+      companyProfile: { ...lojaOk().companyProfile, alvaraValidade: '2026-01-01' },
+    }));
+    expect(check(r, 'b2-alvara').status).toBe('fail');
+    expect(check(r, 'b2-alvara').detail).toContain('VENCIDO');
     expect(r.verdict).toBe('attention');
-    expect(VERDICT_LABEL[r.verdict]).toBe('PRONTA COM RESSALVAS');
+  });
+
+  it('alvará sem data de validade ⇒ ressalva convidando a preencher', () => {
+    const r = computeReadiness(lojaOk());
+    expect(check(r, 'b2-alvara').status).toBe('warn');
+    expect(check(r, 'b2-alvara').detail).toContain('sem data de validade');
+  });
+
+  it('Manual de BP não registrado ⇒ pendência (era "sem dado" na Fatia 1)', () => {
+    const r = computeReadiness(lojaOk({ complianceDocs: [] }));
+    expect(check(r, 'b4-manual-bp').status).toBe('fail');
+    expect(check(r, 'b4-manual-bp').navTarget).toBe('settings');
+  });
+
+  it('Manual registrado ⇒ em ordem, citando a versão', () => {
+    const r = computeReadiness(lojaOk({
+      complianceDocs: [{ id: 'm', docType: 'manual_bp', issuedAt: '2026-02-01', versao: '3ª revisão' }],
+    }));
+    expect(check(r, 'b4-manual-bp').status).toBe('ok');
+    expect(check(r, 'b4-manual-bp').detail).toContain('3ª revisão');
+  });
+
+  // A trava de "nenhuma loja lê PRONTA" caiu na Fatia 2b: agora TODOS os
+  // checks do grupo A têm captura, então uma loja realmente em dia consegue.
+  it('loja com tudo capturado e em ordem finalmente lê PRONTA', () => {
+    const r = computeReadiness(lojaOk({
+      formTemplates: [...lojaOk().formTemplates, RES_TPL_PRONTA],
+      // com `validation`: senão C2 (aguardando validação da RT) acusa ressalva
+      formRecords: [...lojaOk().formRecords, { id: 'rr', formId: 'res', status: 'submitted', createdAt: iso(30), validation: { at: iso(29) } }],
+      complianceDocs: [
+        { id: 'a1', docType: 'aso', subject: 'Ana', issuedAt: '2026-06-01', validUntil: '2027-06-01' },
+        { id: 'm', docType: 'manual_bp', issuedAt: '2026-02-01', versao: '3ª revisão' },
+      ],
+      companyProfile: { rtNome: 'Ana Paula', rtCrn: 'CRN-1 12345', alvara: '123/2026', alvaraValidade: '2027-06-01' },
+      pendingForms: [],
+      catalog: [{ label: 'Fritadeira 1' }],
+      controlsByType: { oil: [{ createdAt: iso(3) }] },
+    }));
+    expect(r.counts.fail).toBe(0);
+    expect(r.counts.warn).toBe(0);
+    expect(r.verdict).toBe('ready');
+    expect(VERDICT_LABEL[r.verdict]).toBe('PRONTA');
   });
 
   // ─── A6 · Reservatório (Fatia 2a: deixou de ser `unknown` fixo) ──────────
@@ -343,10 +421,12 @@ describe('computeReadiness — grupos B, C e D', () => {
     expect(r.verdict).toBe('attention');
   });
 
-  it('alvará preenchido é ok COM a ressalva de que a validade não é rastreada', () => {
-    const r = computeReadiness(lojaOk());
+  it('alvará com validade futura ⇒ em ordem, dizendo quantos dias restam', () => {
+    const r = computeReadiness(lojaOk({
+      companyProfile: { ...lojaOk().companyProfile, alvaraValidade: '2027-06-01' },
+    }));
     expect(check(r, 'b2-alvara').status).toBe('ok');
-    expect(check(r, 'b2-alvara').detail).toContain('VALIDADE');
+    expect(check(r, 'b2-alvara').detail).toContain('válido por mais');
   });
 
   it('POP faltando é ressalva, não pendência — o POP pode existir em papel', () => {

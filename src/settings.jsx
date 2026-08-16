@@ -5,8 +5,9 @@ import { isGlobalAdmin } from './permissions';
 import {
   getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled,
   supabaseRepository, SUPABASE_SQL, migrateAllToSupabase,
-  getOfflineQueue, getSyncStatus,
+  getOfflineQueue, getSyncStatus, pushCompanyProfile, pushComplianceDoc,
 } from './repository';
+import { DOC_TYPES } from './compliance';
 
 const COMPANY_PROFILE_KEY = (tenantId) => `nutriops.company.profile.${tenantId}`;
 
@@ -16,6 +17,74 @@ export function readCompanyProfile(tenantId) {
 
 export function saveCompanyProfile(tenantId, profile) {
   try { localStorage.setItem(COMPANY_PROFILE_KEY(tenantId), JSON.stringify(profile)); } catch {}
+}
+
+// ─── Manual de Boas Práticas (Fatia 2b) ────────────────────────────────────
+// O app NÃO guarda o arquivo — guarda o ATESTADO de que ele existe (versão,
+// data, quem elaborou). Era um dos 5 DESCOBERTOS da auditoria (§3.18): o
+// fiscal aceita o manual impresso, o que faltava era o app saber que existe,
+// pra parar de responder "sem dado" na tela de Prontidão.
+const COMPLIANCE_KEY = (tenantId) => `nutriops.compliance.${tenantId}`;
+const lerDocs = (tenantId) => { try { const r = localStorage.getItem(COMPLIANCE_KEY(tenantId)); return r ? JSON.parse(r) : []; } catch { return []; } };
+
+function ManualBpCard({ tenantId }) {
+  const [docs, setDocs] = useState(() => lerDocs(tenantId));
+  const [salvo, setSalvo] = useState(false);
+  useEffect(() => { setDocs(lerDocs(tenantId)); }, [tenantId]);
+
+  const manual = docs.find((d) => d.docType === DOC_TYPES.MANUAL_BP) ?? null;
+  const [versao, setVersao]   = useState(manual?.versao ?? '');
+  const [data, setData]       = useState(manual?.issuedAt ?? '');
+  const [autor, setAutor]     = useState(manual?.autor ?? '');
+  useEffect(() => {
+    const m = lerDocs(tenantId).find((d) => d.docType === DOC_TYPES.MANUAL_BP);
+    setVersao(m?.versao ?? ''); setData(m?.issuedAt ?? ''); setAutor(m?.autor ?? '');
+  }, [tenantId]);
+
+  const salvar = () => {
+    const atualizado = {
+      id: manual?.id ?? crypto.randomUUID(),
+      docType: DOC_TYPES.MANUAL_BP, subject: null,
+      issuedAt: data || null, validUntil: null,
+      versao: versao.trim(), autor: autor.trim(),
+      createdAt: manual?.createdAt ?? new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const proximos = [atualizado, ...docs.filter((d) => d.id !== atualizado.id)];
+    setDocs(proximos);
+    try { localStorage.setItem(COMPLIANCE_KEY(tenantId), JSON.stringify(proximos)); } catch {}
+    pushComplianceDoc(tenantId, atualizado);
+    setSalvo(true); setTimeout(() => setSalvo(false), 2500);
+  };
+
+  return (
+    <article className="management-card">
+      <div className="card-head">
+        <div><span className="eyebrow">RDC 216 · §4.11</span><h2>Manual de Boas Práticas</h2></div>
+        {manual?.issuedAt ? <span className="badge ok">Atestado</span> : <span className="badge neutral">Sem registro</span>}
+      </div>
+      <div className="capture-fields">
+        <p className="muted">
+          O NutriOPS não guarda o arquivo do manual — guarda o registro de que ele existe. O fiscal aceita o manual impresso; o que faltava era a tela de Prontidão saber que ele existe em vez de responder "sem dado".
+        </p>
+        <div className="grid-2">
+          <label>Versão / revisão
+            <input value={versao} onChange={(e) => setVersao(e.target.value)} placeholder="Ex.: 3ª revisão" />
+          </label>
+          <label>Data da versão
+            <input type="date" value={data} onChange={(e) => setData(e.target.value)} />
+          </label>
+        </div>
+        <label>Elaborado / revisado por
+          <input value={autor} onChange={(e) => setAutor(e.target.value)} placeholder="Nome do responsável técnico" />
+        </label>
+        <div className="actions-row" style={{ justifyContent:'flex-end' }}>
+          <button className="primary-action attention" onClick={salvar} disabled={!data}>Registrar manual</button>
+        </div>
+        {salvo && <div className="submission ok">✓ Manual registrado. A tela de Prontidão já reconhece.</div>}
+      </div>
+    </article>
+  );
 }
 
 export function SettingsView({ session, activeTenant, activeTenants, tenants }) {
@@ -48,7 +117,12 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
   const setProfileField = (field, value) => setProfile(prev => ({ ...prev, [field]: value }));
 
   const handleSaveProfile = () => {
-    saveCompanyProfile(activeTenant?.id ?? 'global', profile);
+    const id = activeTenant?.id ?? 'global';
+    saveCompanyProfile(id, profile);
+    // Fatia 2b: o perfil era local-only (auditoria §3.21) — a validade do
+    // alvará nasceria evaporando junto com o aparelho. pushCompanyProfile
+    // regrava local com o carimbo e sobe (ou enfileira offline).
+    pushCompanyProfile(id, profile);
     setProfileSaved(true);
     setTimeout(() => setProfileSaved(false), 2500);
   };
@@ -214,6 +288,14 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
               <input value={profile.alvara ?? ''} onChange={e=>setProfileField('alvara', e.target.value)} placeholder="Número do alvará" />
             </label>
           </div>
+          {/* Fatia 2b: até aqui o app guardava só o NÚMERO do alvará, então a
+              tela de Prontidão não tinha como avisar que ele venceu — a
+              ressalva vivia no texto do check. */}
+          <div className="grid-2">
+            <label>Validade do alvará
+              <input type="date" value={profile.alvaraValidade ?? ''} onChange={e=>setProfileField('alvaraValidade', e.target.value)} />
+            </label>
+          </div>
           {/* Fatia 2a: a RDC não fixa prazo de dedetização — quem manda é o
               contrato da loja e a VISA do município. Antes eram 6 meses
               cravados no código; agora a régua da tela de Prontidão é daqui. */}
@@ -232,6 +314,8 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
           {profileSaved && <div className="submission ok">✓ Dados salvos. Todos os PDFs usarão essas informações.</div>}
         </div>
       </article>
+
+      <ManualBpCard tenantId={activeTenant?.id ?? 'global'} />
 
       {isSuper && (<>
       <div className="management-grid">

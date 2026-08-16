@@ -28,6 +28,10 @@ const readActions   = (id) => readLocal(`nutriops.corrective_actions.${id}`, [])
 const readReceiving = (id) => readLocal(`nutriops.receiving.${id}`, []);
 // Equipe: não há reader exportado — mesma leitura que reports.jsx:260 faz.
 const readStaff     = (tenant) => readLocal(`nutriops.users.${tenant.id}`, null) ?? tenant.usersList ?? [];
+// ASO + Manual de BP (Fatia 2b). Chave própria, sem reader exportado — a
+// captura vive em training.jsx (ASO) e settings.jsx (Manual), dois chunks
+// pesados que não vale puxar só por causa de uma leitura.
+const readCompliance = (id) => readLocal(`nutriops.compliance.${id}`, []);
 
 // Temperaturas DESTA loja. A prop `records` do App não serve sozinha: quando a
 // sessão não é de admin global — o caso da RT com 3 unidades, que é justamente
@@ -113,6 +117,7 @@ async function loadTenantReadiness({ tenant, records, now }) {
     pendingForms: pendingFormsForPeriod(templates, formRecords, new Date(now)),
     pops,
     companyProfile: readCompanyProfile(tenant.id),
+    complianceDocs: readCompliance(tenant.id),
     controlsByType,
     sync: { enabled: isSupabaseEnabled(), lastSync: getSyncStatus().lastSync, queueLength: getOfflineQueue().length },
     // POPs/capacitação saíram daqui na Fatia 3 (sincronizam agora); só

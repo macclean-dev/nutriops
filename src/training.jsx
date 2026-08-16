@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { employeeTrainingStatus } from './training-status';
+// Fatia 3 (15/08): sessões e config sobem pra nuvem — antes viviam só no
+// localStorage do device da RT, e um wipe apagava os comprovantes de
+// capacitação da rede inteira (auditoria RDC §3.5).
+import { pushTrainingSession, pushTrainingConfig } from './repository';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -498,14 +502,18 @@ export function TrainingView({ activeTenant, allTenants, onTenantChange, session
   const handleCreate = useCallback((data) => {
     const newSession = { id:uid(), tenantId:activeTenant.id, status:'open', participants:data.participants, rtSignature:null, createdAt:new Date().toISOString(), updatedAt:new Date().toISOString(), ...data };
     setSessions((prev) => [newSession, ...prev]);
+    pushTrainingSession(activeTenant.id, newSession); // nuvem (ou fila offline)
     setDetailSession(newSession);
     setView('detail');
   }, [activeTenant.id]);
 
   const handleUpdate = useCallback((updated) => {
     setSessions((prev) => prev.map((s) => s.id === updated.id ? updated : s));
+    // Toda mutação (presença confirmada, encerramento, assinatura RT) passa
+    // por aqui — um push cobre tudo. Upsert por id, pode repetir à vontade.
+    pushTrainingSession(updated.tenantId ?? activeTenant.id, updated);
     setDetailSession(updated);
-  }, []);
+  }, [activeTenant.id]);
 
   if (view === 'new') {
     return (
@@ -556,13 +564,16 @@ export function TrainingView({ activeTenant, allTenants, onTenantChange, session
         <article className="management-card">
           <div className="card-head"><div><span className="eyebrow">Parâmetros</span><h2>Configurações de capacitação</h2></div></div>
           <div className="capture-fields" style={{ maxWidth: 400 }}>
+            {/* Push no blur, não a cada tecla: digitar "24" dispararia dois
+                upserts; sair do campo dispara um. O localStorage continua
+                sendo escrito a cada tecla pelo effect de cima. */}
             <label>Validade do treinamento (meses)
-              <input type="number" min="1" max="60" value={config.validityMonths} onChange={(e) => setConfig((c) => ({ ...c, validityMonths: Number(e.target.value) }))} style={{ width: '100%' }} />
+              <input type="number" min="1" max="60" value={config.validityMonths} onChange={(e) => setConfig((c) => ({ ...c, validityMonths: Number(e.target.value) }))} onBlur={() => pushTrainingConfig(activeTenant.id, config)} style={{ width: '100%' }} />
             </label>
             <label>CRN da nutricionista (para certificados)
-              <input value={config.crnNumber} onChange={(e) => setConfig((c) => ({ ...c, crnNumber: e.target.value }))} placeholder="Ex.: 1-12345" />
+              <input value={config.crnNumber} onChange={(e) => setConfig((c) => ({ ...c, crnNumber: e.target.value }))} onBlur={() => pushTrainingConfig(activeTenant.id, config)} placeholder="Ex.: 1-12345" />
             </label>
-            <div className="submission ok" style={{ fontSize: 12 }}>Configurações salvas automaticamente.</div>
+            <div className="submission ok" style={{ fontSize: 12 }}>Configurações salvas automaticamente — neste aparelho e na nuvem.</div>
           </div>
         </article>
       )}

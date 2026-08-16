@@ -115,7 +115,9 @@ async function loadTenantReadiness({ tenant, records, now }) {
     companyProfile: readCompanyProfile(tenant.id),
     controlsByType,
     sync: { enabled: isSupabaseEnabled(), lastSync: getSyncStatus().lastSync, queueLength: getOfflineQueue().length },
-    localOnly: { pops: pops.length, training: sessions.length, maintenance: maintLogs.length },
+    // POPs/capacitação saíram daqui na Fatia 3 (sincronizam agora); só
+    // manutenção segue local-only.
+    localOnly: { maintenance: maintLogs.length },
   });
 }
 

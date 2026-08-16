@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.132', date: '2026-08-15', items: [
+    'POPs e Capacitação agora ficam guardados na nuvem, como as planilhas e as temperaturas. Antes viviam só no aparelho de quem cadastrou — trocar ou limpar o celular apagava certificados de treinamento e POPs sem aviso. Agora eles voltam sozinhos em qualquer aparelho da loja.',
+    'A validade do treinamento configurada (ex.: 24 meses) também sincroniza — um aparelho novo não volta mais pro padrão de 12 meses por conta própria.',
+    'A assinatura de período da RT (em Relatórios → Auditoria) agora é registrada por empresa e guardada na nuvem, valendo como trilha de verificação da loja mesmo que o aparelho original suma.',
+  ]},
   { version: '1.9.130', date: '2026-08-15', items: [
     'Nova tela "Prontidão" (menu Gestão): responde "se a vigilância chegasse agora, esta loja passaria?". Cada empresa ganha um veredito ao vivo — PRONTA, PRONTA COM RESSALVAS ou EM RISCO — com a lista do que falta e um botão que leva direto pra tela que resolve cada item.',
     'As pendências vêm separadas por gravidade: o grupo A é o que gera auto de infração na hora (produto vencido, temperatura sem registro no turno, capacitação vencida, não conformidade sem ação, dedetização fora do prazo). Só pendência do grupo A pinta a loja de EM RISCO.',

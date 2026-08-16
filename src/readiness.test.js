@@ -29,7 +29,7 @@ const lojaOk = (over = {}) => ({
   companyProfile: { rtNome: 'Ana Paula', rtCrn: 'CRN-1 12345', alvara: '123/2026' },
   controlsByType: {},
   sync: { enabled: true, lastSync: iso(1), queueLength: 0 },
-  localOnly: { pops: 0, training: 0, maintenance: 0 },
+  localOnly: { maintenance: 0 },
   ...over,
 });
 
@@ -203,10 +203,9 @@ describe('computeReadiness — grupo A manda no veredito', () => {
     expect(check(r, 'a3-desvio').status).toBe('unknown');
   });
 
-  it('colaborador ativo nunca capacitado ⇒ EM RISCO, com aviso de dado local', () => {
+  it('colaborador ativo nunca capacitado ⇒ EM RISCO', () => {
     const r = computeReadiness(lojaOk({ trainingSessions: [] }));
     expect(check(r, 'a4-capacitacao').status).toBe('fail');
-    expect(check(r, 'a4-capacitacao').detail).toContain('localStorage');
     expect(r.verdict).toBe('risk');
   });
 
@@ -339,11 +338,18 @@ describe('computeReadiness — grupos B, C e D', () => {
     expect(check(r, 'd2-fila').detail).toContain('3 registros');
   });
 
-  it('POPs/capacitação/manutenção presentes ⇒ aviso de "existe só neste aparelho"', () => {
-    const r = computeReadiness(lojaOk({ localOnly: { pops: 4, training: 2, maintenance: 0 } }));
+  // Fatia 3: POPs/capacitação/validações RT sincronizam — só manutenção
+  // continua presa ao aparelho e gera o aviso.
+  it('manutenção com registro local ⇒ aviso de "existe só neste aparelho"', () => {
+    const r = computeReadiness(lojaOk({ localOnly: { maintenance: 3 } }));
     expect(check(r, 'd3-local-only').status).toBe('warn');
-    expect(check(r, 'd3-local-only').detail).toContain('4 POPs');
-    expect(check(r, 'd3-local-only').detail).not.toContain('manutenção');
+    expect(check(r, 'd3-local-only').detail).toContain('3 registros de manutenção');
+  });
+
+  it('sem manutenção local, D3 fica em ordem — POPs/capacitação não geram mais aviso', () => {
+    const r = computeReadiness(lojaOk({ localOnly: { maintenance: 0 } }));
+    expect(check(r, 'd3-local-only').status).toBe('ok');
+    expect(check(r, 'd3-local-only').detail).toContain('já sincronizam');
   });
 });
 

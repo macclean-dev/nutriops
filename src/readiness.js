@@ -256,7 +256,8 @@ export function computeReadiness(inputs = {}) {
   }
 
   // A4 · Capacitação vencida ou nunca feita (§4.6 — "comprovada mediante documentação")
-  const AVISO_LOCAL = 'Atenção: capacitação hoje vive só no localStorage deste aparelho (auditoria §3.5) — se a RT usa outro device, os comprovantes de lá não chegam aqui.';
+  // O aviso "capacitação vive só neste aparelho" saiu na Fatia 3: sessões e
+  // config sincronizam via training_sessions/training_config (repository.js).
   // `!== 'Inativo'`, não `=== 'Ativo'`: a tela Equipe oferece três status
   // (Ativo/Pendente/Inativo) e o resto do app trata "Pendente" como gente que
   // opera — ela aparece no login (pages.jsx) e no seletor de operador
@@ -266,7 +267,7 @@ export function computeReadiness(inputs = {}) {
   const ativos = (staff ?? []).filter((u) => (u?.status ?? 'Ativo') !== 'Inativo');
   if (ativos.length === 0) {
     a.push(chk('a4-capacitacao', 'Capacitação dos manipuladores', 'unknown',
-      `Nenhum colaborador ativo cadastrado nesta loja — sem equipe cadastrada não há como verificar capacitação. ${AVISO_LOCAL}`,
+      'Nenhum colaborador ativo cadastrado nesta loja — sem equipe cadastrada não há como verificar capacitação.',
       'critical', 'training'));
   } else {
     const situacoes = ativos.map((u) => ({ name: u.name, ...employeeTrainingStatus(u.name, trainingSessions, trainingValidityMonths, now) }));
@@ -275,10 +276,10 @@ export function computeReadiness(inputs = {}) {
     a.push(chk('a4-capacitacao', 'Capacitação dos manipuladores',
       vencidos.length > 0 ? 'fail' : renovar.length > 0 ? 'warn' : 'ok',
       vencidos.length > 0
-        ? `${plural(vencidos.length, 'colaborador ativo', 'colaboradores ativos')} de ${ativos.length} com capacitação vencida ou nunca registrada (${vencidos.slice(0, 3).map((s) => s.name).join(', ')}${vencidos.length > 3 ? '…' : ''}). ${AVISO_LOCAL}`
+        ? `${plural(vencidos.length, 'colaborador ativo', 'colaboradores ativos')} de ${ativos.length} com capacitação vencida ou nunca registrada (${vencidos.slice(0, 3).map((s) => s.name).join(', ')}${vencidos.length > 3 ? '…' : ''}).`
         : renovar.length > 0
-          ? `${plural(renovar.length, 'colaborador entrando', 'colaboradores entrando')} na janela de renovação. ${AVISO_LOCAL}`
-          : `Todos os ${ativos.length} colaboradores ativos com capacitação em dia. ${AVISO_LOCAL}`,
+          ? `${plural(renovar.length, 'colaborador entrando', 'colaboradores entrando')} na janela de renovação.`
+          : `Todos os ${ativos.length} colaboradores ativos com capacitação em dia.`,
       'critical', 'training'));
   }
 
@@ -428,16 +429,15 @@ export function computeReadiness(inputs = {}) {
       : 'Fila vazia — nada preso neste aparelho.',
     'low', 'settings'));
 
-  const soLocal = [
-    localOnly.pops > 0 && plural(localOnly.pops, 'POP', 'POPs'),
-    localOnly.training > 0 && plural(localOnly.training, 'capacitação', 'capacitações'),
-    localOnly.maintenance > 0 && plural(localOnly.maintenance, 'registro de manutenção', 'registros de manutenção'),
-  ].filter(Boolean);
+  // POPs, capacitação e validações da RT saíram desta lista na Fatia 3 —
+  // agora sincronizam (pops/training_sessions/training_config/rt_validations).
+  // Manutenção é o único módulo de evidência ainda preso ao aparelho.
+  const maintCount = localOnly.maintenance ?? 0;
   d.push(chk('d3-local-only', 'Dados que existem só neste aparelho',
-    soLocal.length > 0 ? 'warn' : 'ok',
-    soLocal.length > 0
-      ? `${soLocal.join(', ')} não sincronizam com a nuvem (auditoria §2). Limpar ou trocar este aparelho apaga essa evidência sem deixar rastro. A Fatia 3 resolve.`
-      : 'Nenhum POP, capacitação ou manutenção registrado neste aparelho — nada a perder aqui, mas também nada a apresentar.',
+    maintCount > 0 ? 'warn' : 'ok',
+    maintCount > 0
+      ? `${plural(maintCount, 'registro de manutenção existe', 'registros de manutenção existem')} só neste aparelho — manutenção ainda não sincroniza (auditoria §2). Limpar ou trocar o device apaga essa evidência sem deixar rastro.`
+      : 'POPs, capacitação e validações da RT já sincronizam com a nuvem. Manutenção é o único módulo ainda preso ao aparelho — e não há registro dele aqui.',
     'low'));
 
   const groups = [

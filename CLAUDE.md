@@ -191,15 +191,16 @@ git status
 
 ## Sync por tenant (via Supabase)
 
-Tabelas do `syncAllModules` (8, todas com RLS ligado):
-`temperature_records` · `form_records` · `form_templates` ·
+Tabelas do `syncAllModules` (todas com RLS ligado):
+`temperature_records` (repositório próprio) · `form_records` · `form_templates` ·
 **`equipment_catalog`** (label/aliases/location/min_temp/max_temp) ·
-`receiving_records` · `products` · `stock_logs` · `special_controls`
+`tenant_staff` · `receiving_records` · `products` · `validity_rules` ·
+`corrective_actions` · `special_controls` (5 tipos) · **`pops` ·
+`training_sessions` · `training_config` · `rt_validations`** (as 4 últimas são
+a Fatia 3 da Prontidão, v1.9.132 — SQL em `docs/pops-capacitacao-sync.sql`).
 
-⚠️ Há uma **9ª tabela, `tenant_staff`, em trabalho não commitado** (`syncTenantStaff`
-+ policy no `SUPABASE_SQL` do `repository.js`, `team-views.jsx`, `staff-sync.test.js`).
-Ainda não está no HEAD nem, presumivelmente, no Supabase. Ao commitar: rodar o SQL
-da policy ANTES do deploy, senão o sync dessa tabela toma 401/403.
+`stock_logs` existe na nuvem mas está MORTA no código: a v1.9.129 removeu o
+controle de estoque do produto (vive no Nexum) — nada mais grava nem lê.
 
 Tabela `tenants` (fora do `syncAllModules`): espelha tenants criados via `/admin`
 pra o cliente abrir o link `?token=` em qualquer device. Lida só por
@@ -258,6 +259,7 @@ pré-criado).
 
 | Prioridade | Item |
 |------------|------|
+| 🔴 Alta | **Fatia 3 da Prontidão (v1.9.132): rodar `docs/pops-capacitacao-sync.sql` ANTES do deploy.** Cria `pops`, `training_sessions`, `training_config` e `rt_validations` (RLS de 4 caminhos). Sem rodar, os pushes tomam 404 e ficam presos na fila offline. O auto-backfill foi bumpado pra `nutriops.autobackfill.v2` — no 1º boot online após o deploy, cada device sobe sozinho o acervo local de POPs/capacitação. Manutenção continua local-only (fatia futura). |
 | 🟡 Média (custo) | **Vercel migrou de Hobby pra Pro** (resolve o antigo bloqueio de deploy — confirmado 04/08, push liberou sem erro). Ciclo atual (9/jul–9/ago): US$34,87 total, US$20,00 de crédito incluso já consumido, ~US$14,87 pago sob demanda. Maior item: **Fast Origin Transfer, US$22,02** — **confirmado 04/08: é tráfego do Nexum** (função serverless/SSR, não do NutriOPS — que até 09/08 era SPA estática sem rota de API no Vercel). **A partir de 09/08 (item 11) o NutriOPS ganhou sua PRIMEIRA função serverless** (`api/extract-template.js`, importação de planilha por IA) — baixo volume de uso esperado (só a RT, sob demanda), mas vale lembrar na próxima investigação de custo que o Fast Origin Transfer pode deixar de ser 100% Nexum. Próximo passo, se quiser cortar o custo do Nexum: mover pro Cloudflare Pages. |
 | 🔴 Alta | **Conectar a DBK Produção** — única loja ainda zerada na nuvem. Auto-connect + auto-backfill resolvem no próximo boot online do device dela. |
 | 🟡 Média | **Bäckerei** — no ar (18 registros), último de 04/06. Verificar no device (receita em `docs/RUNBOOK.md`). |

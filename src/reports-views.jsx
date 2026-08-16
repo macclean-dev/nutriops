@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useState, useMemo, useEffect } from 'react';
-import { getTemperatureRepository } from './repository';
+import { getTemperatureRepository, pushRtValidation } from './repository';
 import { resolveLimits as resolveLimitsFromCatalog, resolveRecordTone as resolveTemperatureTone, conformityStats, byWorstConformity } from './limits';
 import { employeeTrainingStatus } from './training-status';
 import CountUp from './count-up';
@@ -578,10 +578,22 @@ export function AuditView({ allTenants, records, session, onRecordSaved }) {
   };
 
   const saveValidation = (note) => {
-    const v = { id: crypto.randomUUID(), by: session.user.name, role: session.user.role, at: new Date().toISOString(), periodFilter, tenantFilter, recordCount: filtered.length, note: note.trim() };
-    const updated = [v, ...rtValidations];
+    // Fatia 3: uma assinatura POR LOJA coberta, não um blob "todas". É o que
+    // permite subir cada linha pra nuvem com tenant_id (RLS) e apresentar ao
+    // fiscal a trilha da loja DELE — a auditoria apontou exatamente isso
+    // ("nem é por tenant, cap 50"). Assinar com filtro "Todas" gera uma
+    // entrada por empresa presente no período, cada uma com a SUA contagem.
+    const byTenant = new Map();
+    for (const r of filtered) byTenant.set(r.tenantId, (byTenant.get(r.tenantId) ?? 0) + 1);
+    const at = new Date().toISOString();
+    const created = [...byTenant.entries()].map(([tenantId, count]) => ({
+      id: crypto.randomUUID(), tenantId, by: session.user.name, role: session.user.role,
+      at, periodFilter, recordCount: count, note: note.trim(),
+    }));
+    for (const v of created) pushRtValidation(v.tenantId, v); // nuvem (ou fila offline)
+    const updated = [...created, ...rtValidations];
     setRtValidations(updated);
-    localStorage.setItem('nutriops.rt.validations', JSON.stringify(updated.slice(0, 50)));
+    localStorage.setItem('nutriops.rt.validations', JSON.stringify(updated.slice(0, 100)));
     setSigningPeriod(false); setRtNote('');
   };
 

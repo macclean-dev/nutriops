@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { pushSpecialControl } from './repository';
+import { pushSpecialControl, pushPOP, deletePOPCloud } from './repository';
 import { resolveRecordTone, normalizeEquipmentName } from './limits';
 import { autoVerdict, verdictConflicts, thawCompliant, oilResultForAcidLevel, suggestionConflicts } from './verdict';
 import { readCatalog } from './maintenance';
@@ -75,12 +75,17 @@ export function POPsView({ activeTenant, allTenants, onTenantChange, session }) 
       updatedAt: new Date().toISOString(),
     };
     setPOPs(prev => [pop, ...prev]);
+    pushPOP(activeTenant.id, pop); // Fatia 3: sobe pra nuvem (ou enfileira offline)
     resetForm(); setView('list');
   };
 
   const deletePOP = (id) => {
     if (!window.confirm('Remover este POP?')) return;
     setPOPs(prev => prev.filter(p => p.id !== id));
+    // Offline o delete NÃO propaga (a fila replayaria como upsert e
+    // ressuscitaria o POP) — nesse caso ele some daqui mas volta no próximo
+    // sync, porque a nuvem ainda o tem; remover online apaga em todo lugar.
+    deletePOPCloud(activeTenant.id, id);
     if (selected?.id === id) { setSelected(null); setView('list'); }
   };
 

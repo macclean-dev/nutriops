@@ -1088,6 +1088,181 @@ export async function syncSpecialControls(type, tenantId) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// FATIA 3 (15/08) — evidência que sobrevive a wipe: POPs, capacitação e
+// validações da RT. Achado da auditoria RDC (docs/AUDITORIA_RDC_2026.md §2):
+// tudo que a RT constrói uma vez vivia só no localStorage do device dela —
+// um wipe apagava certificados e POPs da rede inteira. Mesma classe de bug
+// da Central de NC. SQL: docs/pops-capacitacao-sync.sql (rodar ANTES do
+// deploy). `data jsonb` guarda o objeto inteiro (padrão special_controls);
+// as colunas soltas são só índice.
+//
+// Nota: o "pull de stock_logs" que a auditoria também listou MORREU antes de
+// nascer — a v1.9.129 removeu o controle de estoque do produto (vive no
+// Nexum agora); não há mais tela que consuma nem código que grave stock_logs.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── POPs ────────────────────────────────────────────────────────────────
+const POPS_KEY = (tenantId) => `nutriops.pops.${tenantId}`;
+
+function popToRow(tenantId, pop) {
+  return {
+    id: pop.id, tenant_id: tenantId, title: pop.title, category: pop.category ?? null,
+    data: pop, created_at: pop.createdAt ?? new Date().toISOString(),
+    updated_at: pop.updatedAt ?? new Date().toISOString(),
+  };
+}
+function popFromRow(row) { return { ...row.data, id: row.id }; }
+
+export async function pushPOP(tenantId, pop) {
+  const row = popToRow(tenantId, pop);
+  if (!isSupabaseEnabled() || !navigator.onLine) { enqueue('pops', 'upsert', row); return; }
+  try {
+    await sbFetch('pops', { method:'POST', body:row, prefer:'resolution=merge-duplicates,return=minimal' }, tenantId);
+  } catch (e) { logFailAndEnqueue('pops', 'upsert', row, e); }
+}
+
+// Mesmo contrato online-only de deleteEquipmentItem/deleteStaffMember: a fila
+// offline replaya tudo como POST merge-duplicates, então um DELETE enfileirado
+// viraria upsert e RESSUSCITARIA o POP apagado. Offline devolve {ok:false} e
+// o POP some só localmente até alguém remover de novo online.
+export async function deletePOPCloud(tenantId, popId) {
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false };
+  try {
+    await sbFetch('pops', { method:'DELETE', filter:`tenant_id=eq.${tenantId}&id=eq.${popId}` }, tenantId);
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+export async function syncPOPs(tenantId) {
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false, reason:'offline_or_disabled' };
+  try {
+    const rows = await sbFetch('pops', { filter:`tenant_id=eq.${tenantId}&order=created_at.desc&limit=300` }, tenantId);
+    const remote = rows.map(popFromRow);
+    // Nuvem é fonte de verdade (mesma regra de tenant_staff/equipment_catalog,
+    // lista curada com remoção): é o que faz um "Remover" num device sumir nos
+    // outros. Nuvem vazia NÃO apaga local — loja que ainda não migrou mantém
+    // os POPs até o backfill subir com eles.
+    if (remote.length > 0) lw(POPS_KEY(tenantId), remote);
+    return { ok:true, count: remote.length };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// ─── Sessões de capacitação ──────────────────────────────────────────────
+const TRAINING_SESSIONS_KEY = (tenantId) => `nutriops.training.sessions.${tenantId}`;
+
+function trainingSessionToRow(tenantId, s) {
+  return {
+    id: s.id, tenant_id: tenantId, status: s.status ?? 'open', session_date: s.date ?? null,
+    data: s, created_at: s.createdAt ?? new Date().toISOString(),
+    updated_at: s.updatedAt ?? new Date().toISOString(),
+  };
+}
+function trainingSessionFromRow(row) { return { ...row.data, id: row.id }; }
+
+export async function pushTrainingSession(tenantId, session) {
+  const row = trainingSessionToRow(tenantId, session);
+  if (!isSupabaseEnabled() || !navigator.onLine) { enqueue('training_sessions', 'upsert', row); return; }
+  try {
+    await sbFetch('training_sessions', { method:'POST', body:row, prefer:'resolution=merge-duplicates,return=minimal' }, tenantId);
+  } catch (e) { logFailAndEnqueue('training_sessions', 'upsert', row, e); }
+}
+
+// Merge (não replace): sessão não tem exclusão na UI, e o merge nunca esconde
+// uma sessão criada offline que ainda espera na fila. mergeByKey decide pelo
+// updatedAt — confirmação de presença/assinatura da RT bumpa o carimbo.
+export async function syncTrainingSessions(tenantId) {
+  return syncModule({
+    table:'training_sessions', localKey:TRAINING_SESSIONS_KEY(tenantId), tenantId,
+    toRow:(s)=>trainingSessionToRow(tenantId, s), fromRow:trainingSessionFromRow,
+  });
+}
+
+// ─── Config de capacitação (1 linha por tenant, padrão validity_rules) ────
+// Sem sync, um device novo volta pro default de 12 meses e o status em-dia/
+// vencido de TODA a equipe muda silenciosamente — inclusive o check A4 da
+// tela de Prontidão.
+const TRAIN_CONFIG_KEY = (tenantId) => `nutriops.training.config.${tenantId}`;
+
+export async function pushTrainingConfig(tenantId, config) {
+  const updatedAt = new Date().toISOString();
+  lw(TRAIN_CONFIG_KEY(tenantId), { ...config, updatedAt }); // local com o mesmo carimbo da nuvem
+  const row = {
+    tenant_id: tenantId,
+    validity_months: Number(config.validityMonths) || 12,
+    crn_number: config.crnNumber ?? '',
+    updated_at: updatedAt,
+  };
+  if (!isSupabaseEnabled() || !navigator.onLine) { enqueue('training_config', 'upsert', row); return; }
+  try {
+    await sbFetch('training_config', { method:'POST', body:row, prefer:'resolution=merge-duplicates,return=minimal' }, tenantId);
+  } catch (e) { logFailAndEnqueue('training_config', 'upsert', row, e); }
+}
+
+// Nuvem só sobrescreve quando é mais nova — protege edição feita offline
+// neste device enquanto outro ainda não sincronizou a dele.
+export async function syncTrainingConfig(tenantId) {
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false, reason:'offline_or_disabled' };
+  try {
+    const rows = await sbFetch('training_config', { filter:`tenant_id=eq.${tenantId}&limit=1` }, tenantId);
+    if (!rows?.length) return { ok:true, applied:false };
+    const remote = rows[0];
+    const local = ls(TRAIN_CONFIG_KEY(tenantId), null);
+    if (!local?.updatedAt || new Date(remote.updated_at) > new Date(local.updatedAt)) {
+      lw(TRAIN_CONFIG_KEY(tenantId), {
+        validityMonths: remote.validity_months ?? 12,
+        crnNumber: remote.crn_number ?? '',
+        updatedAt: remote.updated_at,
+      });
+      return { ok:true, applied:true };
+    }
+    return { ok:true, applied:false };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// ─── Validações de período da RT ─────────────────────────────────────────
+// A chave local é ÚNICA no device (a tela de Auditoria mostra tudo junto),
+// mas cada linha na nuvem tem tenant_id — era o defeito apontado na auditoria
+// ("nem é por tenant, cap 50"). Insert-only: assinatura não se edita.
+const RT_VALIDATIONS_KEY = 'nutriops.rt.validations';
+
+function rtValidationToRow(tenantId, v) {
+  return {
+    id: v.id, tenant_id: tenantId, by_name: v.by, role: v.role ?? null,
+    period_filter: String(v.periodFilter ?? ''), record_count: v.recordCount ?? 0,
+    note: v.note ?? '', created_at: v.at,
+  };
+}
+function rtValidationFromRow(row) {
+  return {
+    id: row.id, tenantId: row.tenant_id, by: row.by_name, role: row.role,
+    at: row.created_at, periodFilter: row.period_filter, recordCount: row.record_count,
+    note: row.note ?? '',
+  };
+}
+
+export async function pushRtValidation(tenantId, validation) {
+  const row = rtValidationToRow(tenantId, validation);
+  if (!isSupabaseEnabled() || !navigator.onLine) { enqueue('rt_validations', 'insert', row); return; }
+  try {
+    await sbFetch('rt_validations', { method:'POST', body:row, prefer:'return=minimal' }, tenantId);
+  } catch (e) { logFailAndEnqueue('rt_validations', 'insert', row, e); }
+}
+
+export async function syncRtValidations(tenantId) {
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false, reason:'offline_or_disabled' };
+  try {
+    const rows = await sbFetch('rt_validations', { filter:`tenant_id=eq.${tenantId}&order=created_at.desc&limit=100` }, tenantId);
+    const remote = rows.map(rtValidationFromRow);
+    const local = ls(RT_VALIDATIONS_KEY, []);
+    const merged = mergeByKey([...local, ...remote], 'id')
+      .sort((a, b) => new Date(b.at) - new Date(a.at))
+      .slice(0, 200);
+    lw(RT_VALIDATIONS_KEY, merged);
+    return { ok:true, count: remote.length };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // FULL SYNC — sincroniza todos os módulos de um tenant
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1107,6 +1282,10 @@ export async function syncAllModules(tenantId) {
     syncProducts(tenantId),
     syncValidityRules(tenantId),
     syncCorrectiveActions(tenantId),
+    syncPOPs(tenantId),
+    syncTrainingSessions(tenantId),
+    syncTrainingConfig(tenantId),
+    syncRtValidations(tenantId),
     syncSpecialControls('oil', tenantId),
     syncSpecialControls('thaw', tenantId),
     syncSpecialControls('cool', tenantId),
@@ -1168,6 +1347,33 @@ export async function migrateAllToSupabase(tenants) {
     for (const a of actions) {
       try { await sbFetch('corrective_actions', { method:'POST', body:actionToRow(a, id), prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
     }
+
+    // POPs (Fatia 3 — é este backfill que sobe o acervo que a RT já tem)
+    const pops = ls(`nutriops.pops.${id}`, []);
+    for (const p of pops) {
+      try { await sbFetch('pops', { method:'POST', body:popToRow(id, p), prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
+    }
+
+    // Sessões de capacitação (Fatia 3)
+    const sessions = ls(`nutriops.training.sessions.${id}`, []);
+    for (const s of sessions) {
+      try { await sbFetch('training_sessions', { method:'POST', body:trainingSessionToRow(id, s), prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
+    }
+
+    // Config de capacitação (Fatia 3) — só se existir local; não inventa default
+    const trainCfg = ls(`nutriops.training.config.${id}`, null);
+    if (trainCfg) {
+      const cfgRow = { tenant_id: id, validity_months: Number(trainCfg.validityMonths) || 12, crn_number: trainCfg.crnNumber ?? '', updated_at: trainCfg.updatedAt ?? new Date().toISOString() };
+      try { await sbFetch('training_config', { method:'POST', body:cfgRow, prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
+    }
+
+    // Validações da RT (Fatia 3) — a chave local é global; sobe só as deste
+    // tenant. Legadas sem tenantId ficam locais: não dá pra saber de que loja
+    // eram, e inventar seria falsificar assinatura.
+    const validations = ls('nutriops.rt.validations', []).filter(v => v.tenantId === id);
+    for (const v of validations) {
+      try { await sbFetch('rt_validations', { method:'POST', body:rtValidationToRow(id, v), prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
+    }
   }
 
   setSyncStatus({ lastSync: new Date().toISOString(), pending: 0 });
@@ -1186,6 +1392,8 @@ export function countAllLocalRecords(tenants) {
       n += ls(`nutriops.receiving.${t.id}`, []).length;
       n += ls(`nutriops.products.${t.id}`, []).length;
       n += ls(`nutriops.corrective_actions.${t.id}`, []).length;
+      n += ls(`nutriops.pops.${t.id}`, []).length;
+      n += ls(`nutriops.training.sessions.${t.id}`, []).length;
       for (const type of ['oil','thaw','cool','thermal','handwash']) {
         n += ls(`nutriops.${type}.${t.id}`, []).length;
       }

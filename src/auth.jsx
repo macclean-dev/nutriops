@@ -104,7 +104,28 @@ export async function resetPassword(email) {
 
 // ─── Refresh token ─────────────────────────────────────────────────────────
 
+// ⚠️ SINGLE-FLIGHT (16/08). `syncAllModules` roda 19 tabelas em paralelo e
+// cada uma chama getValidAccessToken(). Quando o token de 1h expira, as 19
+// tentavam renovar AO MESMO TEMPO com o mesmo refresh token — e o Supabase
+// ROTACIONA refresh token no uso: a primeira ganha, as outras 18 recebem
+// "already used" (400/401) e o catch abaixo DESLOGAVA a loja inteira.
+//
+// Efeito observado em produção (15/08, 23:05): banner vermelho "chave do
+// Supabase inválida" na CASA DOCE. A chave estava perfeita — o que falhou foi
+// a corrida. Sem token válido, sbHeaders cai na anon key (repository.js), que
+// sob RLS não alcança tabela real: 401.
+//
+// Aqui a 1ª chamada faz a renovação e as outras 18 esperam a MESMA promessa.
+// Uma requisição só, um vencedor, zero perdedores.
+let refreshEmVoo = null;
+
 export async function refreshSession() {
+  if (refreshEmVoo) return refreshEmVoo;          // já tem uma em voo: pega carona
+  refreshEmVoo = doRefreshSession().finally(() => { refreshEmVoo = null; });
+  return refreshEmVoo;
+}
+
+async function doRefreshSession() {
   const s = readAuthSession();
   if (!s?.refreshToken || !isSupabaseEnabled()) return null;
   try {
@@ -124,6 +145,14 @@ export async function refreshSession() {
     // (throttle) são transitórios — manter a sessão e tentar de novo depois,
     // pra não trancar o PDV da loja por instabilidade passageira do servidor.
     if (e?.isNetworkError || e?.status >= 500 || e?.status === 429) return null;
+
+    // Cinto de segurança do single-flight: se OUTRA chamada já renovou com
+    // sucesso enquanto esta estava no ar, o token no storage é novo e válido —
+    // o 400/401 aqui é só "refresh token já rotacionado", não credencial
+    // podre. Deslogar aqui trancaria a loja por uma corrida que já foi vencida.
+    const agora = readAuthSession();
+    if (agora?.accessToken && agora.accessToken !== s.accessToken && isSessionValid(agora)) return agora;
+
     clearAuthSession();
     return null;
   }

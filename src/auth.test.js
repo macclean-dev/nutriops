@@ -182,3 +182,88 @@ describe('preserveMembershipScope — o refresh não pode perder o vínculo com 
     expect(preserveMembershipScope(fresh, semVinculo)).toEqual(fresh);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Corrida de refresh — incidente real da CASA DOCE (15/08/2026, 23:05).
+//
+// `syncAllModules` roda 19 tabelas em paralelo e cada uma chama
+// getValidAccessToken(). Com o token de 1h vencido, as 19 tentavam renovar ao
+// MESMO tempo com o mesmo refresh token; o Supabase rotaciona refresh token no
+// uso, então 1 ganhava e 18 recebiam "already used" (400/401) — e o catch
+// deslogava a loja. Sem token, sbHeaders cai na anon key, que sob RLS não
+// alcança tabela real: 401 → banner "chave do Supabase inválida" numa chave
+// perfeitamente boa.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('refreshSession — single-flight (corrida das 19 chamadas)', () => {
+  beforeEach(() => { localStorage.clear(); });
+  afterEach(() => { vi.unstubAllGlobals(); vi.resetModules(); });
+
+  const okRefresh = (accessToken = 'novo') => ({
+    ok: true,
+    json: () => Promise.resolve({
+      access_token: accessToken, refresh_token: 'rt-novo',
+      user: { user_metadata: { name: 'x' }, app_metadata: {} },
+    }),
+  });
+
+  it('19 chamadas simultâneas fazem UMA requisição só', async () => {
+    const { refreshSession } = await import('./auth');
+    withRefreshToken();
+    const fetchMock = vi.fn(() => Promise.resolve(okRefresh()));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const todas = await Promise.all(Array.from({ length: 19 }, () => refreshSession()));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);            // ✅ uma só, não 19
+    expect(todas.every((s) => s?.accessToken === 'novo')).toBe(true);  // todas ganham
+    expect(localStorage.getItem(KEY)).not.toBeNull();
+  });
+
+  it('depois que a primeira termina, uma nova chamada renova de novo (não fica travada)', async () => {
+    const { refreshSession } = await import('./auth');
+    withRefreshToken();
+    const fetchMock = vi.fn(() => Promise.resolve(okRefresh()));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await refreshSession();
+    await refreshSession();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);            // a trava foi liberada
+  });
+
+  it('a corrida perdida NÃO desloga: se outra já renovou, a sessão nova vale', async () => {
+    const { refreshSession } = await import('./auth');
+    withRefreshToken();
+    // Simula o perdedor: o servidor responde "refresh token já usado" (400),
+    // MAS o storage já tem a sessão nova que o vencedor gravou.
+    vi.stubGlobal('fetch', vi.fn(() => {
+      localStorage.setItem(KEY, JSON.stringify({
+        accessToken: 'novo-do-vencedor', refreshToken: 'rt-novo',
+        expiresAt: Date.now() + 3600_000, user: { name: 'x' },
+      }));
+      return Promise.resolve({
+        ok: false, status: 400,
+        json: () => Promise.resolve({ error_description: 'Invalid Refresh Token: Already Used' }),
+      });
+    }));
+
+    const r = await refreshSession();
+
+    expect(localStorage.getItem(KEY)).not.toBeNull();      // ✅ loja NÃO foi deslogada
+    expect(r?.accessToken).toBe('novo-do-vencedor');       // devolve a sessão válida
+  });
+
+  it('mas token REALMENTE revogado (sem vencedor no storage) ainda desloga', async () => {
+    const { refreshSession } = await import('./auth');
+    withRefreshToken();
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+      ok: false, status: 401,
+      json: () => Promise.resolve({ error_description: 'invalid refresh token' }),
+    })));
+
+    const r = await refreshSession();
+
+    expect(r).toBeNull();
+    expect(localStorage.getItem(KEY)).toBeNull();          // ✅ segurança não regride
+  });
+});

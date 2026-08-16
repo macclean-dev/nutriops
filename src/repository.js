@@ -69,11 +69,16 @@ async function memberTokenFor(tenantId) {
 async function sbHeaders(tenantId) {
   const { anonKey } = getSupabaseConfig();
   let token = anonKey;
+  let comJwt = false;
   if (tenantId) {
     const jwt = await memberTokenFor(tenantId);
-    if (jwt) token = jwt;
+    if (jwt) { token = jwt; comJwt = true; }
   }
-  return { apikey: anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  // `_comJwt` não vai na requisição — sbFetch tira antes de enviar. Serve pra
+  // o 401 saber DE QUEM ele é: com JWT é sessão expirando (transitório), com
+  // anon key é chave podre mesmo. Sem isso o banner acusava "chave inválida"
+  // numa chave perfeita e mandava o dono rotacionar à toa (15/08).
+  return { apikey: anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', _comJwt: comJwt };
 }
 function sbBase() { return `${getSupabaseConfig().url}/rest/v1`; }
 
@@ -86,10 +91,19 @@ export function getSupabaseAuthError() {
 export function clearSupabaseAuthError() {
   try { localStorage.removeItem(AUTH_ERROR_KEY); } catch {}
 }
-function markSupabaseAuthError(status, table) {
+// `kind` separa os dois 401 que a UI tratava como um só:
+//   'anon'    → a requisição foi com a anon key: chave inválida/rotacionada,
+//               ou usuário sem vínculo com a loja. É o caso que pede ação.
+//   'session' → foi com o JWT do usuário: sessão expirando. Se cura sozinho
+//               no próximo refresh, e alarmar aqui é falso positivo.
+// `falhas` conta quantas seguidas — o banner de sessão só aparece se
+// insistir, pra um soluço de rede não pintar a tela de vermelho.
+function markSupabaseAuthError(status, table, kind = 'anon') {
   try {
+    const anterior = getSupabaseAuthError();
+    const seguidas = anterior?.kind === kind ? (anterior.falhas ?? 1) + 1 : 1;
     localStorage.setItem(AUTH_ERROR_KEY, JSON.stringify({
-      status, table, at: new Date().toISOString(),
+      status, table, kind, falhas: seguidas, at: new Date().toISOString(),
     }));
   } catch {}
 }
@@ -100,14 +114,17 @@ async function sbFetch(table, params = {}, tenantId = null) {
   const { method='GET', filter='', body=null, prefer='' } = params;
   const url = `${sbBase()}/${table}${filter ? '?'+filter : ''}`;
   const headers = { ...(await sbHeaders(tenantId)) };
+  const comJwt = headers._comJwt === true;
+  delete headers._comJwt;              // marcador interno, não vai pro servidor
   if (prefer) headers['Prefer'] = prefer;
   const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
   if (!res.ok) {
-    // 401/403 = anon key inválida ou RLS bloqueando. Marca pra UI mostrar banner.
+    // 401/403 = credencial rejeitada ou RLS bloqueando. Marca pra UI mostrar
+    // banner — mas dizendo QUAL credencial falhou (ver markSupabaseAuthError).
     // Não há mais cache de token pra invalidar aqui: o JWT vem da sessão do
     // usuário, e refreshSession já cuida de renovar/limpar quando o servidor
     // rejeita (ver src/auth.jsx).
-    if (res.status === 401 || res.status === 403) markSupabaseAuthError(res.status, table);
+    if (res.status === 401 || res.status === 403) markSupabaseAuthError(res.status, table, comJwt ? 'session' : 'anon');
     // Lê body pra incluir a mensagem do Postgres (invalid uuid, NOT NULL,
     // schema mismatch, etc) — crítico pra debug. Sem isso, status code
     // sozinho não diz qual coluna ou constraint falhou.

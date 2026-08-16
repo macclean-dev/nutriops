@@ -1850,6 +1850,12 @@ function SupabaseAuthErrorBanner({ session, setActiveView }) {
     return () => clearInterval(t);
   }, []);
   if (!err) return null;
+  // Falha com o JWT do usuário = sessão expirando, que se cura sozinha no
+  // próximo refresh. Só vira banner se INSISTIR (3 seguidas) — um soluço de
+  // rede não pode pintar a tela de vermelho e mandar rotacionar uma chave
+  // perfeitamente boa, que foi o que aconteceu na CASA DOCE em 15/08.
+  const sessaoExpirando = err.kind === 'session';
+  if (sessaoExpirando && (err.falhas ?? 1) < 3) return null;
   const role = session?.user?.role;
   const canFix = role === 'Administrador' || role === 'Super-admin' || role === 'Nutricionista RT';
   return (
@@ -1861,16 +1867,20 @@ function SupabaseAuthErrorBanner({ session, setActiveView }) {
     }}>
       <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
         <strong style={{ color:'var(--red)', fontSize:13 }}>
-          ⚠ Sincronização falhando — chave do Supabase inválida (HTTP {err.status})
+          {sessaoExpirando
+            ? `⚠ Sincronização falhando — sua sessão não está sendo renovada (HTTP ${err.status})`
+            : `⚠ Sincronização falhando — chave do Supabase inválida (HTTP ${err.status})`}
         </strong>
         <span style={{ color:'var(--text-secondary)', fontSize:12 }}>
-          {canFix
-            ? 'Reconecte em Configurações ou atualize a anon key. Última falha em ' + new Date(err.at).toLocaleString('pt-BR') + '.'
-            : 'Peça pro administrador atualizar a chave em Configurações.'}
+          {sessaoExpirando
+            ? `Saia e entre de novo pra renovar o acesso. Nenhum registro se perde — tudo que não subiu fica na fila. Última falha em ${new Date(err.at).toLocaleString('pt-BR')}.`
+            : canFix
+              ? 'Reconecte em Configurações ou atualize a anon key. Última falha em ' + new Date(err.at).toLocaleString('pt-BR') + '.'
+              : 'Peça pro administrador atualizar a chave em Configurações.'}
         </span>
       </div>
       <div style={{ display:'flex', gap:6 }}>
-        {canFix && (
+        {canFix && !sessaoExpirando && (
           <button onClick={() => setActiveView('settings')}
             style={{ padding:'6px 14px', borderRadius:'var(--r)', border:'1px solid var(--red-border)', background:'var(--red)', color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'var(--font)' }}>
             Reconectar

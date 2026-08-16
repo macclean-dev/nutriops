@@ -21,6 +21,10 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.136', date: '2026-08-16', items: [
+    'Corrigido: o aviso vermelho "chave do Supabase inválida" aparecia sozinho e sumia sozinho, sem a chave ter problema nenhum. O que acontecia era a sessão sendo renovada — várias telas pediam a renovação ao mesmo tempo e atrapalhavam umas às outras. Agora a renovação é uma só, e ninguém é desconectado por causa disso.',
+    'Quando o aviso realmente precisar aparecer, ele passa a dizer a causa certa: "sua sessão não está sendo renovada" (é só sair e entrar de novo) ou "chave inválida" (aí sim é configuração). E não alarma mais na primeira falha passageira.',
+  ]},
   { version: '1.9.135', date: '2026-08-15', items: [
     'Nova aba "Saúde (ASO)" dentro de Capacitação: registre o exame de cada colaborador com data e validade, e veja num painel quem está em dia, quem vence em breve e quem está sem exame. O ASO é item clássico de autuação e até agora o app não tinha onde anotar.',
     'O alvará sanitário agora tem data de validade. A tela de Prontidão avisa quando ele está vencendo — renovação de alvará costuma demorar, e antes o app guardava só o número.',

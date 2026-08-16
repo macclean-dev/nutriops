@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { localRepository, supabaseRepository, saveSupabaseConfig, lw, tmplToRow, tmplFromRow } from './repository';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { localRepository, supabaseRepository, saveSupabaseConfig, lw, tmplToRow, tmplFromRow, syncProducts, getSupabaseAuthError } from './repository';
 
 const RECORDS_KEY = 'nutriops.temperature.records';
 
@@ -111,5 +111,62 @@ describe('tmplToRow/tmplFromRow — custom/v sobrevivem ao round-trip com a nuve
     const devolta = tmplFromRow(tmplToRow(editado, 'swiss'));
     expect(devolta.custom).toBe(true);
     expect(devolta.v).toBe(4);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Classificação do 401 — incidente CASA DOCE (15/08). O banner tratava todo
+// 401 como "chave do Supabase inválida" e mandava o dono rotacionar uma chave
+// perfeitamente boa. Um 401 com o JWT do usuário é sessão expirando (se cura
+// no próximo refresh); só com a anon key é a chave que está podre.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('markSupabaseAuthError — separa sessão expirando de chave podre', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    saveSupabaseConfig({ url: 'https://x.test', anonKey: 'anon123', enabled: true });
+  });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  const nega401 = () => vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+    ok: false, status: 401, text: () => Promise.resolve('{"message":"JWT expired"}'),
+  })));
+
+  it('SEM sessão (cai na anon key) ⇒ kind "anon" — é a chave mesmo', async () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+    nega401();
+    await syncProducts('swiss').catch(() => {});
+    expect(getSupabaseAuthError()).toMatchObject({ status: 401, kind: 'anon' });
+  });
+
+  it('COM sessão do membro (usa JWT) ⇒ kind "session" — é a sessão expirando', async () => {
+    localStorage.setItem('nutriops.session', JSON.stringify({
+      tenantId: 'swiss', accessToken: 'jwt-x', user: { name: 'Ana' },
+    }));
+    localStorage.setItem('nutriops.auth.session', JSON.stringify({
+      accessToken: 'jwt-x', refreshToken: 'rt', expiresAt: Date.now() + 3600_000, user: { name: 'Ana' },
+    }));
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+    nega401();
+    await syncProducts('swiss').catch(() => {});
+    expect(getSupabaseAuthError()).toMatchObject({ status: 401, kind: 'session' });
+  });
+
+  it('conta falhas SEGUIDAS do mesmo tipo — o banner de sessão só acende se insistir', async () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+    nega401();
+    await syncProducts('swiss').catch(() => {});
+    expect(getSupabaseAuthError().falhas).toBe(1);
+    await syncProducts('swiss').catch(() => {});
+    expect(getSupabaseAuthError().falhas).toBe(2);
+  });
+
+  it('o marcador interno _comJwt NUNCA vai no header da requisição', async () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true, text: () => Promise.resolve('[]') }));
+    vi.stubGlobal('fetch', fetchMock);
+    await syncProducts('swiss');
+    const [, opts] = fetchMock.mock.calls[0];
+    expect(opts.headers).not.toHaveProperty('_comJwt');
+    expect(opts.headers.apikey).toBe('anon123');
   });
 });

@@ -1405,6 +1405,99 @@ export async function syncComplianceDocs(tenantId) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// MANUTENÇÃO (16/08) — o último módulo local-only da auditoria RDC (§3.15).
+// Ativos, execuções e ordens de serviço viviam só no localStorage: limpar o
+// aparelho apagava o histórico de manutenção, que a RDC 216 §4.1 manda manter.
+// SQL: docs/manutencao-sync.sql (rodar ANTES do deploy).
+// ═══════════════════════════════════════════════════════════════════════════
+
+const EQUIP_ASSETS_KEY = (id) => `nutriops.equip_assets.${id}`;
+const MAINT_LOGS_KEY   = (id) => `nutriops.maint_logs.${id}`;
+const WORK_ORDERS_KEY  = (id) => `nutriops.work_orders.${id}`;
+
+function assetToRow(tenantId, a) {
+  return {
+    id: a.id, tenant_id: tenantId, name: a.name, location: a.location ?? null,
+    status: a.status ?? null, data: a,
+    created_at: a.createdAt ?? new Date().toISOString(),
+    updated_at: a.updatedAt ?? new Date().toISOString(),
+  };
+}
+function assetFromRow(row) { return { ...row.data, id: row.id }; }
+
+function maintLogToRow(tenantId, l) {
+  return {
+    id: l.id, tenant_id: tenantId, equipment_id: l.equipmentId ?? null,
+    plan_id: l.planId ?? null, type: l.type ?? null, title: l.title ?? null,
+    executed_by: l.executedBy ?? null, executed_at: l.executedAt ?? null,
+    data: l, created_at: l.createdAt ?? new Date().toISOString(),
+  };
+}
+function maintLogFromRow(row) {
+  return { ...row.data, id: row.id, equipmentId: row.equipment_id, executedAt: row.executed_at };
+}
+
+function workOrderToRow(tenantId, o) {
+  return {
+    id: o.id, tenant_id: tenantId, equipment_id: o.equipmentId ?? null,
+    status: o.status ?? null, title: o.title ?? null, data: o,
+    created_at: o.createdAt ?? new Date().toISOString(),
+    updated_at: o.updatedAt ?? new Date().toISOString(),
+  };
+}
+function workOrderFromRow(row) { return { ...row.data, id: row.id, equipmentId: row.equipment_id }; }
+
+// Push por ITEM, ligado nos pontos de mutação da tela (maintenance.jsx).
+// De propósito não é push de lista: o effect que grava no localStorage roda a
+// cada mudança de state, e empurrar a lista de lá faria 44 requisições pra
+// salvar UM equipamento numa loja com 44 ativos.
+async function pushItem(tabela, tenantId, item, toRow) {
+  if (!item?.id) return { ok: false, reason: 'sem_id' };
+  const row = toRow(tenantId, item);
+  if (!isSupabaseEnabled() || !navigator.onLine) { enqueue(tabela, 'upsert', row); return { ok: false, reason: 'offline_or_disabled' }; }
+  try {
+    await sbFetch(tabela, { method:'POST', body:row, prefer:'resolution=merge-duplicates,return=minimal' }, tenantId);
+    return { ok: true };
+  } catch (e) { logFailAndEnqueue(tabela, 'upsert', row, e); return { ok: false, reason: e.message }; }
+}
+
+export const pushEquipAsset = (tenantId, item) => pushItem('equip_assets', tenantId, item, assetToRow);
+export const pushMaintLog   = (tenantId, item) => pushItem('maint_logs',   tenantId, item, maintLogToRow);
+export const pushWorkOrder  = (tenantId, item) => pushItem('work_orders',  tenantId, item, workOrderToRow);
+
+// Apagar é online-only (mesmo motivo do deletePOPCloud): DELETE enfileirado
+// seria replayado como upsert e ressuscitaria o item.
+export async function deleteMaintenanceItem(tabela, tenantId, itemId) {
+  if (!['equip_assets', 'maint_logs', 'work_orders'].includes(tabela)) return { ok:false, reason:'tabela_invalida' };
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false, reason:'offline_or_disabled' };
+  try {
+    await sbFetch(tabela, { method:'DELETE', filter:`tenant_id=eq.${tenantId}&id=eq.${itemId}` }, tenantId);
+    return { ok:true };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+// Merge por id (não replace): ativo criado offline neste aparelho não pode
+// sumir quando o pull traz os da nuvem. mergeByKey desempata pelo updatedAt.
+export async function syncEquipAssets(tenantId) {
+  return syncModule({
+    table:'equip_assets', localKey:EQUIP_ASSETS_KEY(tenantId), tenantId,
+    toRow:(a)=>assetToRow(tenantId, a), fromRow:assetFromRow,
+  });
+}
+export async function syncMaintLogs(tenantId) {
+  return syncModule({
+    table:'maint_logs', localKey:MAINT_LOGS_KEY(tenantId), tenantId,
+    toRow:(l)=>maintLogToRow(tenantId, l), fromRow:maintLogFromRow,
+  });
+}
+export async function syncWorkOrders(tenantId) {
+  return syncModule({
+    table:'work_orders', localKey:WORK_ORDERS_KEY(tenantId), tenantId,
+    toRow:(o)=>workOrderToRow(tenantId, o), fromRow:workOrderFromRow,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // FULL SYNC — sincroniza todos os módulos de um tenant
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1430,6 +1523,9 @@ export async function syncAllModules(tenantId) {
     syncRtValidations(tenantId),
     syncCompanyProfile(tenantId),
     syncComplianceDocs(tenantId),
+    syncEquipAssets(tenantId),
+    syncMaintLogs(tenantId),
+    syncWorkOrders(tenantId),
     syncSpecialControls('oil', tenantId),
     syncSpecialControls('thaw', tenantId),
     syncSpecialControls('cool', tenantId),
@@ -1531,6 +1627,17 @@ export async function migrateAllToSupabase(tenants) {
     for (const d of docs) {
       try { await sbFetch('compliance_docs', { method:'POST', body:complianceToRow(id, d), prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
     }
+
+    // Manutenção — ativos, execuções e ordens de serviço (16/08)
+    for (const [tabela, chave, toRow] of [
+      ['equip_assets', `nutriops.equip_assets.${id}`, assetToRow],
+      ['maint_logs',   `nutriops.maint_logs.${id}`,   maintLogToRow],
+      ['work_orders',  `nutriops.work_orders.${id}`,  workOrderToRow],
+    ]) {
+      for (const it of ls(chave, [])) {
+        try { await sbFetch(tabela, { method:'POST', body:toRow(id, it), prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
+      }
+    }
   }
 
   setSyncStatus({ lastSync: new Date().toISOString(), pending: 0 });
@@ -1552,6 +1659,9 @@ export function countAllLocalRecords(tenants) {
       n += ls(`nutriops.pops.${t.id}`, []).length;
       n += ls(`nutriops.training.sessions.${t.id}`, []).length;
       n += ls(`nutriops.compliance.${t.id}`, []).length;
+      n += ls(`nutriops.equip_assets.${t.id}`, []).length;
+      n += ls(`nutriops.maint_logs.${t.id}`, []).length;
+      n += ls(`nutriops.work_orders.${t.id}`, []).length;
       for (const type of ['oil','thaw','cool','thermal','handwash']) {
         n += ls(`nutriops.${type}.${t.id}`, []).length;
       }

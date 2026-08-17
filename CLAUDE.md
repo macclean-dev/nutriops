@@ -198,7 +198,9 @@ Tabelas do `syncAllModules` (todas com RLS ligado):
 `corrective_actions` · `special_controls` (5 tipos) · **`pops` ·
 `training_sessions` · `training_config` · `rt_validations`** (Fatia 3 da
 Prontidão, v1.9.132 — SQL em `docs/pops-capacitacao-sync.sql`) · **`company_profile` ·
-`compliance_docs`** (Fatia 2b, v1.9.135 — SQL em `docs/compliance-docs-sync.sql`).
+`compliance_docs`** (Fatia 2b, v1.9.135 — SQL em `docs/compliance-docs-sync.sql`) ·
+**`equip_assets` · `maint_logs` · `work_orders`** (manutenção, v1.9.140 — SQL em
+`docs/manutencao-sync.sql`). Com isso NENHUM módulo de evidência é local-only.
 
 `stock_logs` existe na nuvem mas está MORTA no código: a v1.9.129 removeu o
 controle de estoque do produto (vive no Nexum) — nada mais grava nem lê.
@@ -275,6 +277,8 @@ pré-criado).
 
 | Prioridade | Item |
 |------------|------|
+| 🔴 Alta | **Manutenção sincroniza (v1.9.140): rodar `docs/manutencao-sync.sql` ANTES do deploy.** Cria `equip_assets`, `maint_logs` e `work_orders` com RLS de 4 caminhos. Era o último módulo local-only da auditoria (§3.15). Sem rodar, os pushes tomam 404 e ficam na fila. ⚠️ Acrescentar os 3 nomes na lista do `docs/rls-policies.sql` também, pra próxima vez que ele rodar não deixá-los de fora. |
+| 🟡 Média | **Corrigir o sinal da "Bancada congelada — F.2": rodar `docs/fix-bancada-congelada-f2.sql`.** Leituras gravadas positivas por falta da tecla de menos no tablet (bug do app corrigido na v1.9.126). O script genérico (`fix-temperatura-sinal-invertido.sql`) é conservador e deixaria de fora valores que, negados, ainda ficam fora da faixa -18/-12 — este é focado no equipamento e assume o que o dono confirmou: todas as leituras eram negativas. PASSO 1 é diagnóstico, conferir antes do PASSO 2. Preserva a trilha (`original_value`/`correction_reason`/`corrected_by`). |
 | 🟢 Baixa | **Planilhas BPF duplicadas — ferramenta pronta (v1.9.139), falta rodar nas lojas.** Configurações → "Planilhas BPF duplicadas" (só admin) mostra o plano e limpa. Medido em 16/08: Swiss 20→5 planilhas com **35 de 41 registros órfãos** (invisíveis na Central de NC), Bäckerei 15→6 (1 órfão), CASA DOCE 36→34, DBK 6→3. Zero colisões de período nas quatro. O motor é `src/forms-dedupe.js` (puro, 27 testes): reconecta órfão por categoria+título antes de apagar cópia, cópia `custom` da RT sempre sobrevive, e a limpeza se recusa a rodar se houver colisão de período. Rodar loja a loja e conferir a Central de NC depois.
 | 🔴 Alta | **Fatia 2b da Prontidão (v1.9.135): rodar `docs/compliance-docs-sync.sql` ANTES do deploy.** Cria `company_profile` (perfil do estabelecimento, que era local-only — sem ele a validade do alvará evapora com o aparelho) e `compliance_docs` (ASO por colaborador + atestado do Manual de BP), ambas com RLS de 4 caminhos. Sem rodar, os pushes tomam 404 e ficam na fila. Auto-backfill bumpado pra `nutriops.autobackfill.v3`. |
 | 🔴 Alta | **Fatia 3 da Prontidão (v1.9.132): rodar `docs/pops-capacitacao-sync.sql` ANTES do deploy.** Cria `pops`, `training_sessions`, `training_config` e `rt_validations` (RLS de 4 caminhos). Sem rodar, os pushes tomam 404 e ficam presos na fila offline. O auto-backfill foi bumpado pra `nutriops.autobackfill.v2` — no 1º boot online após o deploy, cada device sobe sozinho o acervo local de POPs/capacitação. Manutenção continua local-only (fatia futura). |

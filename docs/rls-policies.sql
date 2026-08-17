@@ -60,7 +60,7 @@ grant  execute on function public.is_admin_plataforma() to authenticated;
 --
 -- O caminho 3 é o que faltava na temperature_records e causou o incidente.
 --
--- A lista abaixo tem as 17 tabelas de tenant existentes hoje. AO CRIAR TABELA
+-- A lista abaixo tem as 20 tabelas de tenant existentes hoje. AO CRIAR TABELA
 -- NOVA: acrescente o nome aqui e rode este arquivo de novo — é tudo que
 -- precisa ser feito.
 
@@ -82,7 +82,9 @@ begin
     -- Fatia 3 da Prontidão (v1.9.132)
     'pops', 'training_sessions', 'training_config', 'rt_validations',
     -- Fatia 2b da Prontidão (v1.9.135)
-    'company_profile', 'compliance_docs'
+    'company_profile', 'compliance_docs',
+    -- Manutenção (v1.9.140) — o último módulo a sair do local-only
+    'equip_assets', 'maint_logs', 'work_orders'
   ] loop
     execute format('drop policy if exists tenant_isolation on public.%I', t);
     execute format(
@@ -122,7 +124,7 @@ create policy form_photos_tenant_delete on storage.objects for delete
 
 
 -- ── PARTE 4 — Conferência ───────────────────────────────────────────────────
--- Esperado: 17 linhas, TODAS com os_4_caminhos = 'ok'.
+-- Esperado: 20 linhas, TODAS com os_4_caminhos = 'ok'.
 -- Qualquer 'FALTA ALGO' → a tabela ficou pra trás, me avise.
 
 select tablename,

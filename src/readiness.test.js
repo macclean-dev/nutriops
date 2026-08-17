@@ -477,18 +477,18 @@ describe('computeReadiness — grupos B, C e D', () => {
     expect(check(r, 'd2-fila').detail).toContain('3 registros');
   });
 
-  // Fatia 3: POPs/capacitação/validações RT sincronizam — só manutenção
-  // continua presa ao aparelho e gera o aviso.
-  it('manutenção com registro local ⇒ aviso de "existe só neste aparelho"', () => {
+  // 16/08: manutenção foi o ÚLTIMO módulo local-only a sincronizar. Fecha o
+  // mapa do §2 da auditoria — não sobra evidência presa ao aparelho.
+  it('D3 sempre em ordem: nenhum módulo de evidência é mais local-only', () => {
     const r = computeReadiness(lojaOk({ localOnly: { maintenance: 3 } }));
-    expect(check(r, 'd3-local-only').status).toBe('warn');
-    expect(check(r, 'd3-local-only').detail).toContain('3 registros de manutenção');
+    expect(check(r, 'd3-local-only').status).toBe('ok');
+    expect(check(r, 'd3-local-only').detail).toContain('manutenção');
   });
 
-  it('sem manutenção local, D3 fica em ordem — POPs/capacitação não geram mais aviso', () => {
-    const r = computeReadiness(lojaOk({ localOnly: { maintenance: 0 } }));
-    expect(check(r, 'd3-local-only').status).toBe('ok');
-    expect(check(r, 'd3-local-only').detail).toContain('já sincronizam');
+  it('o check não depende mais da contagem local — nada a contar', () => {
+    const comDado = computeReadiness(lojaOk({ localOnly: { maintenance: 99 } }));
+    const semDado = computeReadiness(lojaOk({ localOnly: {} }));
+    expect(check(comDado, 'd3-local-only')).toEqual(check(semDado, 'd3-local-only'));
   });
 });
 

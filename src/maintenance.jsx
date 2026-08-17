@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { dedupeCatalog } from './limits';
+// 16/08: manutenção era o ÚLTIMO módulo local-only da auditoria RDC (§3.15).
+// Limpar o aparelho apagava o histórico que a RDC 216 §4.1 manda manter.
+import { pushEquipAsset, pushMaintLog, pushWorkOrder, deleteMaintenanceItem } from './repository';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -411,9 +414,12 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
                     <button className="primary-action" style={{ fontSize:11 }} onClick={() => {
                       const updated = { ...o, status:'concluida', completedAt:new Date().toISOString(), completedBy:session?.user?.name };
                       setOrders(prev => prev.map(x => x.id===o.id ? updated : x));
+                      pushWorkOrder(activeTenant.id, updated);
                       // Auto-log maintenance
                       if (o.equipmentId) {
-                        setLogs(prev => [{ id:uid(), equipmentId:o.equipmentId, planId:o.planId??null, type:o.maintenanceType??'corretiva', title:o.title, notes:o.description??'', executedBy:session?.user?.name??'—', executedAt:new Date().toISOString().slice(0,10), workOrderId:o.id }, ...prev]);
+                        const autoLog = { id:uid(), equipmentId:o.equipmentId, planId:o.planId??null, type:o.maintenanceType??'corretiva', title:o.title, notes:o.description??'', executedBy:session?.user?.name??'—', executedAt:new Date().toISOString().slice(0,10), workOrderId:o.id };
+                        setLogs(prev => [autoLog, ...prev]);
+                        pushMaintLog(activeTenant.id, autoLog);
                       }
                     }}>✓ Concluir</button>
                   )}
@@ -514,8 +520,14 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
       {editEquip !== null && (
         <EquipmentModal
           equipment={editEquip.id ? editEquip : null}
-          onSave={(eq) => { setEquipments(prev => prev.some(e=>e.id===eq.id) ? prev.map(e=>e.id===eq.id?eq:e) : [...prev, eq]); setEditEquip(null); }}
-          onDelete={(id) => { setEquipments(prev => prev.filter(e=>e.id!==id)); setEditEquip(null); }}
+          onSave={(eq) => { setEquipments(prev => prev.some(e=>e.id===eq.id) ? prev.map(e=>e.id===eq.id?eq:e) : [...prev, eq]); pushEquipAsset(activeTenant.id, eq); setEditEquip(null); }}
+          onDelete={(id) => {
+            setEquipments(prev => prev.filter(e=>e.id!==id));
+            // Offline o delete não propaga (a fila replayaria como upsert e
+            // ressuscitaria o ativo) — remover online apaga em todo lugar.
+            deleteMaintenanceItem('equip_assets', activeTenant.id, id);
+            setEditEquip(null);
+          }}
           onClose={() => setEditEquip(null)}
         />
       )}
@@ -526,7 +538,7 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
           order={editOrder.id ? editOrder : null}
           equipments={equipments}
           session={session}
-          onSave={(o) => { setOrders(prev => editOrder.id ? prev.map(x=>x.id===o.id?o:x) : [...prev, o]); setEditOrder(null); }}
+          onSave={(o) => { setOrders(prev => editOrder.id ? prev.map(x=>x.id===o.id?o:x) : [...prev, o]); pushWorkOrder(activeTenant.id, o); setEditOrder(null); }}
           onClose={() => setEditOrder(null)}
         />
       )}
@@ -537,7 +549,7 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
           equipment={showLogModal.equipment}
           plan={showLogModal.plan}
           session={session}
-          onSave={(log) => { setLogs(prev => [log, ...prev]); setShowLogModal(null); }}
+          onSave={(log) => { setLogs(prev => [log, ...prev]); pushMaintLog(activeTenant.id, log); setShowLogModal(null); }}
           onClose={() => setShowLogModal(null)}
         />
       )}

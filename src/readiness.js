@@ -508,15 +508,11 @@ export function computeReadiness(inputs = {}) {
       : 'Fila vazia — nada preso neste aparelho.',
     'low', 'settings'));
 
-  // POPs, capacitação e validações da RT saíram desta lista na Fatia 3 —
-  // agora sincronizam (pops/training_sessions/training_config/rt_validations).
-  // Manutenção é o único módulo de evidência ainda preso ao aparelho.
-  const maintCount = localOnly.maintenance ?? 0;
-  d.push(chk('d3-local-only', 'Dados que existem só neste aparelho',
-    maintCount > 0 ? 'warn' : 'ok',
-    maintCount > 0
-      ? `${plural(maintCount, 'registro de manutenção existe', 'registros de manutenção existem')} só neste aparelho — manutenção ainda não sincroniza (auditoria §2). Limpar ou trocar o device apaga essa evidência sem deixar rastro.`
-      : 'POPs, capacitação e validações da RT já sincronizam com a nuvem. Manutenção é o único módulo ainda preso ao aparelho — e não há registro dele aqui.',
+  // Fim do mapa de local-only da auditoria (§2): POPs/capacitação/validações
+  // saíram na Fatia 3, perfil e documentos na 2b, e manutenção em 16/08 — era
+  // o último. Todo módulo de evidência sincroniza agora.
+  d.push(chk('d3-local-only', 'Toda evidência sobrevive à troca de aparelho', 'ok',
+    'Temperatura, planilhas, POPs, capacitação, manutenção, perfil do estabelecimento e documentos (ASO, Manual de BP) sincronizam com a nuvem. Nenhum módulo de evidência depende só deste aparelho.',
     'low'));
 
   const groups = [

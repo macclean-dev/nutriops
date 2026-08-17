@@ -123,6 +123,32 @@ describe('overview-v2.jsx — o botão continua amarrado ao bloqueio', () => {
   it('o card do modal rola (celular com teclado aberto não pode prender o botão)', () => {
     expect(fonte).toMatch(/maxHeight:'calc\(100dvh - 48px\)',\s*overflowY:'auto'/);
   });
+
+  // ─── A confirmação de que salvou ─────────────────────────────────────────
+  // O que faltava desde sempre: sucesso e "fechei sem querer" eram a MESMA
+  // tela. A tela inicial confirma desde o começo — e é a única que a
+  // nutricionista diz que funciona. Não é coincidência.
+  it('sucesso vira estado visível, não um fechar calado', () => {
+    expect(fonte).toContain("setEstado('salvo')");
+    expect(fonte).toMatch(/role="status"/);
+    expect(fonte).toContain('✓ Registrado:');
+  });
+
+  it('a confirmação repete o valor gravado — confirmar sem dizer o quê não pega dedo errado', () => {
+    expect(fonte).toMatch(/✓ Registrado: \{numericValue\}°C em \{equipment\.label\}/);
+  });
+
+  it('falha ao salvar aparece — o save tem catch, não só finally', () => {
+    expect(fonte).toContain("setEstado('erro')");
+    expect(fonte).toMatch(/Não foi possível salvar/);
+  });
+
+  it('tocar fora NÃO descarta um número já digitado', () => {
+    expect(fonte).toMatch(/const fecharPeloFundo = \(\) => \{ if \(!hasValue/);
+    expect(fonte).toContain('onClick={fecharPeloFundo}');
+    // e o backdrop não chama mais onClose direto
+    expect(fonte).not.toMatch(/<div onClick=\{onClose\} style=\{\{\s*position:'fixed', inset:0, zIndex:1000/);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.146', date: '2026-08-17', items: [
+    'O registro rápido agora confirma na tela: "✓ Registrado: 3,4°C em Vitrine Refrigerada". Antes a janela apenas fechava — exatamente igual a fechar sem querer tocando fora dela. Não havia como saber se a leitura tinha sido gravada ou perdida. A tela inicial sempre confirmou, e era a única em que as equipes confiavam.',
+    'Tocar fora da janela não descarta mais um número já digitado. Para sair sem registrar, use o Cancelar.',
+    'E se der erro ao salvar, agora aparece um aviso vermelho dizendo que a leitura NÃO foi registrada. Antes o erro era engolido e a janela ficava parada, sem explicar nada.',
+  ]},
   { version: '1.9.145', date: '2026-08-17', items: [
     'Correção importante no registro rápido (o "+ Registrar" do card do equipamento): quando o app suspeitava que faltou o sinal de menos — digitar 20 num freezer que trabalha a −20°C, por exemplo — ele bloqueava para você confirmar, mas o botão continuava verde escrito "Registrar" e simplesmente não fazia nada. Dava pra medir, tocar e ir embora achando que registrou. Agora o botão fica cinza e diz "Confirme o sinal acima".',
     'No celular, a janela de registro rápido agora rola. Quando o aviso de sinal aparecia com o teclado aberto, o botão ficava embaixo da borda da tela e não tinha como alcançar.',

@@ -222,6 +222,12 @@ function QuickRegisterModal({ equipment, activeTenant, session, onClose, onSaved
   const [value, setValue] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  // 'idle' | 'salvo' | 'erro' — antes NÃO existia: o modal fechava calado ao
+  // gravar, exatamente igual a fechar por engano tocando fora. Não havia como
+  // a pessoa distinguir "registrei" de "perdi". A tela inicial sempre teve o
+  // "✓ Registro salvo com timestamp auditável" (pages.jsx) — e é justamente a
+  // que a nutricionista diz que funciona. O registro rápido não tinha nada.
+  const [estado, setEstado] = useState('idle');
   const [insistiuPositivo, setInsistiuPositivo] = useState(false);
   const inputRef = useRef(null);
   const repository = useMemo(() => getTemperatureRepository(), []);
@@ -233,6 +239,13 @@ function QuickRegisterModal({ equipment, activeTenant, session, onClose, onSaved
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [onClose]);
+  // A confirmação fica na tela um instante antes de fechar. Sem isso ela seria
+  // um flash que ninguém lê, e voltaríamos ao problema de origem.
+  useEffect(() => {
+    if (estado !== 'salvo') return;
+    const t = setTimeout(() => onClose(), 1400);
+    return () => clearTimeout(t);
+  }, [estado, onClose]);
 
   const numericValue = Number(value);
   const hasValue = value !== '' && !isNaN(numericValue);
@@ -258,7 +271,7 @@ function QuickRegisterModal({ equipment, activeTenant, session, onClose, onSaved
     // Bloqueia enquanto a suspeita de sinal não for resolvida — ou corrige
     // pelo botão, ou confirma explicitamente que o positivo é real.
     if (bloqueadoPeloSinal) return;
-    setSaving(true);
+    setSaving(true); setEstado('idle');
     try {
       await repository.create({
         tenantId: activeTenant.id, tenantName: activeTenant.name,
@@ -270,12 +283,23 @@ function QuickRegisterModal({ equipment, activeTenant, session, onClose, onSaved
         min: limits.min, max: limits.max,
       });
       onSaved?.();
-      onClose();
+      setEstado('salvo');          // fecha sozinho depois de mostrar (efeito acima)
+    } catch {
+      // Antes era `try/finally` sem catch: a exceção subia, onClose() não
+      // rodava e o modal ficava parado sem dizer nada. Falhar calado foi o que
+      // criou este incidente inteiro — falha tem que aparecer.
+      setEstado('erro');
     } finally { setSaving(false); }
   };
 
+  // Tocar fora fechava e jogava fora o valor digitado — e a tela ficava
+  // IDÊNTICA à de um registro bem-sucedido. Num celular o card ocupa pouco mais
+  // de 300px de largura, então há muito escuro em volta pra acertar sem querer.
+  // Com número digitado, só fecha pelo Cancelar (que diz o que faz).
+  const fecharPeloFundo = () => { if (!hasValue && estado !== 'salvo') onClose(); };
+
   return (
-    <div onClick={onClose} style={{
+    <div onClick={fecharPeloFundo} style={{
       position:'fixed', inset:0, zIndex:1000,
       background:'rgba(20,20,19,.55)', backdropFilter:'blur(4px)',
       display:'flex', alignItems:'center', justifyContent:'center', padding:24,
@@ -345,7 +369,22 @@ function QuickRegisterModal({ equipment, activeTenant, session, onClose, onSaved
           <textarea value={note} onChange={e => setNote(e.target.value)} style={{ minHeight:54, padding:'8px 12px', borderRadius:'var(--r)', border:'1px solid var(--border)', fontFamily:'var(--font)', fontSize:13, resize:'vertical' }} />
         </label>
 
-        <div style={{ display:'flex', gap:10 }}>
+        {/* O sinal que faltava. Repete o valor gravado de propósito: confirmar
+            "salvou" sem dizer O QUE salvou não pega dedo em número errado. */}
+        {estado === 'salvo' && (
+          <div role="status" style={{ padding:'10px 12px', borderRadius:'var(--r)', background:'var(--green-light)', border:'1px solid var(--green-border)', color:'var(--green)', fontSize:13, fontWeight:700 }}>
+            ✓ Registrado: {numericValue}°C em {equipment.label}
+          </div>
+        )}
+        {estado === 'erro' && (
+          <div role="alert" style={{ padding:'10px 12px', borderRadius:'var(--r)', background:'var(--red-light)', border:'1px solid var(--red)', color:'var(--red)', fontSize:13, fontWeight:600 }}>
+            Não foi possível salvar. A leitura <strong>não</strong> foi registrada — tente de novo.
+          </div>
+        )}
+
+        {/* Some depois de gravar: não dá pra registrar o mesmo número duas
+            vezes por ansiedade enquanto a confirmação está na tela. */}
+        <div style={{ display:'flex', gap:10, visibility: estado === 'salvo' ? 'hidden' : 'visible' }}>
           <button onClick={onClose} style={{ flex:1, padding:'10px', borderRadius:'var(--r)', border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', cursor:'pointer', fontSize:13, fontWeight:600, fontFamily:'var(--font)' }}>Cancelar</button>
           {/* Bloqueado ≠ desabilitado sem dizer por quê: o rótulo troca pra
               apontar o aviso. Num celular com o teclado aberto o aviso âmbar

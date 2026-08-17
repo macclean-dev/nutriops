@@ -995,7 +995,13 @@ export async function pushReceivingRecord(tenantId, record) {
     return;
   }
   try {
-    await sbFetch('receiving_records', { method:'POST', body:recvToRow(record), prefer:'return=minimal' }, tenantId);
+    // merge-duplicates: era o ÚNICO push do projeto sem isso, e por isso
+    // reenviar um recebimento já subido devolvia 409 (23505, duplicate key)
+    // em vez de virar no-op. Como o auto-backfill reenvia tudo, cada boot
+    // acumulava um 409 por recebimento antigo, o backfill nunca fechava e
+    // repetia pra sempre. A fila já reexecutava com merge — só o caminho
+    // direto ficou de fora.
+    await sbFetch('receiving_records', { method:'POST', body:recvToRow(record), prefer:'resolution=merge-duplicates,return=minimal' }, tenantId);
   } catch (e) { logFailAndEnqueue('receiving_records', 'insert', recvToRow(record), e); }
 }
 
@@ -1077,7 +1083,7 @@ export async function pushStockLog(tenantId, log) {
     return;
   }
   try {
-    await sbFetch('stock_logs', { method:'POST', body:stockToRow(log, tenantId), prefer:'return=minimal' }, tenantId);
+    await sbFetch('stock_logs', { method:'POST', body:stockToRow(log, tenantId), prefer:'resolution=merge-duplicates,return=minimal' }, tenantId);
   } catch (e) { logFailAndEnqueue('stock_logs', 'insert', stockToRow(log, tenantId), e); }
 }
 
@@ -1202,7 +1208,7 @@ export async function pushSpecialControl(type, tenantId, record) {
     return;
   }
   try {
-    await sbFetch('special_controls', { method:'POST', body:controlToRow(type, record, tenantId), prefer:'return=minimal' }, tenantId);
+    await sbFetch('special_controls', { method:'POST', body:controlToRow(type, record, tenantId), prefer:'resolution=merge-duplicates,return=minimal' }, tenantId);
   } catch (e) { logFailAndEnqueue('special_controls', 'insert', controlToRow(type, record, tenantId), e); }
 }
 
@@ -1375,7 +1381,7 @@ export async function pushRtValidation(tenantId, validation) {
   const row = rtValidationToRow(tenantId, validation);
   if (!isSupabaseEnabled() || !navigator.onLine) { enqueue('rt_validations', 'insert', row); return; }
   try {
-    await sbFetch('rt_validations', { method:'POST', body:row, prefer:'return=minimal' }, tenantId);
+    await sbFetch('rt_validations', { method:'POST', body:row, prefer:'resolution=merge-duplicates,return=minimal' }, tenantId);
   } catch (e) { logFailAndEnqueue('rt_validations', 'insert', row, e); }
 }
 
@@ -1638,7 +1644,7 @@ export async function migrateAllToSupabase(tenants) {
     // Receiving
     const recv = ls(`nutriops.receiving.${id}`, []);
     for (const r of recv) {
-      try { await sbFetch('receiving_records', { method:'POST', body:recvToRow(r), prefer:'return=minimal' }, id); pushed++; } catch { failed++; }
+      try { await sbFetch('receiving_records', { method:'POST', body:recvToRow(r), prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
     }
 
     // Products
@@ -1651,7 +1657,7 @@ export async function migrateAllToSupabase(tenants) {
     for (const type of ['oil','thaw','cool','thermal','handwash']) {
       const controls = ls(`nutriops.${type}.${id}`, []);
       for (const r of controls) {
-        try { await sbFetch('special_controls', { method:'POST', body:controlToRow(type, r, id), prefer:'return=minimal' }, id); pushed++; } catch { failed++; }
+        try { await sbFetch('special_controls', { method:'POST', body:controlToRow(type, r, id), prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
       }
     }
 
@@ -1707,7 +1713,16 @@ export async function migrateAllToSupabase(tenants) {
       ['maint_logs',   `nutriops.maint_logs.${id}`,   maintLogToRow],
       ['work_orders',  `nutriops.work_orders.${id}`,  workOrderToRow],
     ]) {
-      for (const it of ls(chave, [])) {
+      // `id` é primary key not-null. Item local sem id virava POST sem a coluna
+      // → 23502 em TODA tentativa, e como o backfill só fecha com failed:0, ele
+      // repetia a cada boot pra sempre (era o "auto-backfill incompleto" no
+      // console). Diferente do pushItem, este caminho não tinha a guarda.
+      //
+      // Gera o id e GRAVA DE VOLTA no aparelho, em vez de descartar o item ou
+      // de inventar um id só pra este POST: sem persistir, cada boot geraria um
+      // id diferente e a mesma manutenção viraria N linhas na nuvem.
+      const itens = garantirIds(chave);
+      for (const it of itens) {
         try { await sbFetch(tabela, { method:'POST', body:toRow(id, it), prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
       }
     }
@@ -1715,6 +1730,26 @@ export async function migrateAllToSupabase(tenants) {
 
   setSyncStatus({ lastSync: new Date().toISOString(), pending: 0 });
   return { ok:true, pushed, failed };
+}
+
+// Garante `id` em todo item de uma lista local, persistindo o conserto. Puro o
+// suficiente pra testar: devolve a lista já corrigida e só reescreve o
+// localStorage se algo mudou. Exportado por causa dos testes.
+export function garantirIds(chave) {
+  const itens = ls(chave, []);
+  if (!Array.isArray(itens)) return [];
+  let mudou = false;
+  const out = itens.map((it) => {
+    if (!it || typeof it !== 'object') return it;
+    if (it.id) return it;
+    mudou = true;
+    return { ...it, id: crypto.randomUUID() };
+  }).filter((it) => it && typeof it === 'object');
+  if (mudou || out.length !== itens.length) {
+    console.warn(`[repo] ${chave}: itens sem id corrigidos e regravados (${itens.length} → ${out.length})`);
+    lw(chave, out);
+  }
+  return out;
 }
 
 // ─── Auto-backfill (auto-cura sem admin) ────────────────────────────────────

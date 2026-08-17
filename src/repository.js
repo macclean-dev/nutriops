@@ -91,7 +91,10 @@ export function getSupabaseAuthError() {
 export function clearSupabaseAuthError() {
   try { localStorage.removeItem(AUTH_ERROR_KEY); } catch {}
 }
-// `kind` separa os dois 401 que a UI tratava como um só:
+// `kind` separa os 401 que a UI tratava como um só:
+//   'rls'     → o corpo trouxe 42501/row-level security: credencial VÁLIDA,
+//               sem permissão pra essa loja. Nunca é problema de chave, e
+//               dizer que é manda o suporte trocar uma chave perfeita.
 //   'anon'    → a requisição foi com a anon key: chave inválida/rotacionada,
 //               ou usuário sem vínculo com a loja. É o caso que pede ação.
 //   'session' → foi com o JWT do usuário: sessão expirando. Se cura sozinho
@@ -124,13 +127,20 @@ async function sbFetch(table, params = {}, tenantId = null) {
     // Não há mais cache de token pra invalidar aqui: o JWT vem da sessão do
     // usuário, e refreshSession já cuida de renovar/limpar quando o servidor
     // rejeita (ver src/auth.jsx).
-    if (res.status === 401 || res.status === 403) markSupabaseAuthError(res.status, table, comJwt ? 'session' : 'anon');
     // Lê body pra incluir a mensagem do Postgres (invalid uuid, NOT NULL,
     // schema mismatch, etc) — crítico pra debug. Sem isso, status code
     // sozinho não diz qual coluna ou constraint falhou.
     let errBody = '';
     try { errBody = await res.text(); } catch {}
     if (errBody) console.warn(`[repo] ${method} ${table} ${res.status} body:`, errBody);
+    // A classificação vem DEPOIS de ler o body, senão ela nunca enxerga o
+    // 42501: o Postgres devolve negação de RLS como 401, e classificar por
+    // status sozinho transforma "sem permissão" em "chave inválida" — a
+    // mensagem errada que custou a investigação de 16/08.
+    if (res.status === 401 || res.status === 403) {
+      const ehRls = errBody.includes('row-level security') || errBody.includes('42501');
+      markSupabaseAuthError(res.status, table, ehRls ? 'rls' : comJwt ? 'session' : 'anon');
+    }
     throw new Error(`SB ${method} ${table}: ${res.status}${errBody ? ' — ' + errBody.slice(0, 200) : ''}`);
   }
   // Sucesso → limpa flag se existia (key foi corrigida)
@@ -510,11 +520,18 @@ export const supabaseRepository = {
     // ID precisa ser UUID válido (coluna é tipo uuid). Sem prefix.
     // Identificamos como healthcheck via tenant_id='__healthcheck__' pra delete.
     const fakeId = crypto.randomUUID();
+    // `_comJwt` é marcador interno do sbHeaders — precisa sair antes de virar
+    // header HTTP, e é ele que diz QUAL credencial foi usada. Sem ler isso, as
+    // marcações abaixo caíam todas no default 'anon' e a tela acusava "chave
+    // inválida" mesmo com chave boa e sessão válida (incidente de 16/08).
+    const hcHeaders = { ...(await sbHeaders()) };
+    const hcComJwt = hcHeaders._comJwt === true;
+    delete hcHeaders._comJwt;
     try {
       // INSERT
       const insertRes = await fetch(`${sbBase()}/temperature_records`, {
         method: 'POST',
-        headers: { ...(await sbHeaders()), Prefer: 'return=minimal' },
+        headers: { ...hcHeaders, Prefer: 'return=minimal' },
         body: JSON.stringify({
           id: fakeId,
           tenant_id: '__healthcheck__',
@@ -530,21 +547,24 @@ export const supabaseRepository = {
       });
       if (!insertRes.ok) {
         const body = await insertRes.text().catch(() => '');
+        // RLS vem ANTES do 401 genérico: o Postgres devolve 401 com 42501 pra
+        // negação de permissão, e tratar isso como "credencial ruim" é o que
+        // manda o suporte trocar uma chave que está perfeita.
+        if (body.includes('row-level security') || body.includes('42501')) {
+          markSupabaseAuthError(insertRes.status, 'temperature_records (RLS)', 'rls');
+          return { ok: false, reason: 'rls_blocked', status: insertRes.status, body };
+        }
         if (insertRes.status === 401 || insertRes.status === 403) {
-          markSupabaseAuthError(insertRes.status, 'temperature_records (write)');
+          markSupabaseAuthError(insertRes.status, 'temperature_records (write)', hcComJwt ? 'session' : 'anon');
           return { ok: false, reason: 'auth_error', status: insertRes.status, body };
         }
         if (insertRes.status === 404) return { ok: false, reason: 'table_missing', body };
-        if (body.includes('row-level security') || body.includes('42501')) {
-          markSupabaseAuthError(insertRes.status, 'temperature_records (RLS)');
-          return { ok: false, reason: 'rls_blocked', status: insertRes.status, body };
-        }
         return { ok: false, reason: `http_${insertRes.status}`, status: insertRes.status, body };
       }
       // DELETE por tenant_id — limpa o registro fake E qualquer stray de
       // healthchecks anteriores cujo DELETE falhou (ex.: rede caiu no meio).
       await fetch(`${sbBase()}/temperature_records?tenant_id=eq.__healthcheck__`, {
-        method: 'DELETE', headers: await sbHeaders(),
+        method: 'DELETE', headers: hcHeaders,
       });
       // Escrita OK → limpa flag de auth error se existia (key foi corrigida).
       // testWrite usa fetch cru, então não passa pelo clear do sbFetch.

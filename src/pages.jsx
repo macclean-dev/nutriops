@@ -1846,7 +1846,10 @@ function countLocalRecords(tenantId) {
 function SupabaseAuthErrorBanner({ session, setActiveView }) {
   const [err, setErr] = useState(() => getSupabaseAuthError());
   useEffect(() => {
-    const t = setInterval(() => setErr(getSupabaseAuthError()), 30_000);
+    // 10s, não 30s: o flag é apagado no primeiro sucesso (repository.js), então
+    // esta é a latência entre "voltou a funcionar" e "o vermelho some". Com 30s
+    // o aviso sobrevivia à própria causa e a pessoa via um erro que já passou.
+    const t = setInterval(() => setErr(getSupabaseAuthError()), 10_000);
     return () => clearInterval(t);
   }, []);
   if (!err) return null;
@@ -1855,7 +1858,13 @@ function SupabaseAuthErrorBanner({ session, setActiveView }) {
   // rede não pode pintar a tela de vermelho e mandar rotacionar uma chave
   // perfeitamente boa, que foi o que aconteceu na CASA DOCE em 15/08.
   const sessaoExpirando = err.kind === 'session';
+  const semPermissao   = err.kind === 'rls';
   if (sessaoExpirando && (err.falhas ?? 1) < 3) return null;
+  // Os outros pedem 2 seguidas. Uma falha isolada — rede oscilando no tablet,
+  // token trocando de mãos — pintava a tela inteira de vermelho na hora, e
+  // sumia sozinha depois. Alarme que se desmente sozinho vira chamado de
+  // suporte e, pior, ensina a equipe a ignorar o vermelho.
+  if ((err.falhas ?? 1) < 2) return null;
   const role = session?.user?.role;
   const canFix = role === 'Administrador' || role === 'Super-admin' || role === 'Nutricionista RT';
   return (
@@ -1869,18 +1878,24 @@ function SupabaseAuthErrorBanner({ session, setActiveView }) {
         <strong style={{ color:'var(--red)', fontSize:13 }}>
           {sessaoExpirando
             ? `⚠ Sincronização falhando — sua sessão não está sendo renovada (HTTP ${err.status})`
-            : `⚠ Sincronização falhando — chave do Supabase inválida (HTTP ${err.status})`}
+            : semPermissao
+              ? `⚠ Sincronização falhando — sem permissão para esta loja (${err.table ?? 'banco'})`
+              : `⚠ Sincronização falhando — o servidor recusou o acesso (HTTP ${err.status})`}
         </strong>
         <span style={{ color:'var(--text-secondary)', fontSize:12 }}>
           {sessaoExpirando
             ? `Saia e entre de novo pra renovar o acesso. Nenhum registro se perde — tudo que não subiu fica na fila. Última falha em ${new Date(err.at).toLocaleString('pt-BR')}.`
+            : semPermissao
+              // Não é a chave. Mandar trocar a chave aqui é o conselho errado —
+              // foi o que atrasou o diagnóstico em 16/08.
+              ? `A chave está certa; o que falta é o vínculo do seu acesso com esta loja. Nenhum registro se perde — tudo que não subiu fica na fila. Última falha em ${new Date(err.at).toLocaleString('pt-BR')}.`
             : canFix
-              ? 'Reconecte em Configurações ou atualize a anon key. Última falha em ' + new Date(err.at).toLocaleString('pt-BR') + '.'
-              : 'Peça pro administrador atualizar a chave em Configurações.'}
+              ? 'Reconecte em Configurações ou confira a anon key. Nenhum registro se perde — tudo que não subiu fica na fila. Última falha em ' + new Date(err.at).toLocaleString('pt-BR') + '.'
+              : 'Peça pro administrador conferir a conexão em Configurações. Nenhum registro se perde — tudo que não subiu fica na fila.'}
         </span>
       </div>
       <div style={{ display:'flex', gap:6 }}>
-        {canFix && !sessaoExpirando && (
+        {canFix && !sessaoExpirando && !semPermissao && (
           <button onClick={() => setActiveView('settings')}
             style={{ padding:'6px 14px', borderRadius:'var(--r)', border:'1px solid var(--red-border)', background:'var(--red)', color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'var(--font)' }}>
             Reconectar

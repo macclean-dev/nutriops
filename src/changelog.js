@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.147', date: '2026-08-17', items: [
+    'O aviso vermelho de sincronização parou de acusar a chave sem saber. Ele dizia "chave do Supabase inválida" para qualquer recusa do servidor — inclusive quando a chave estava perfeita e o que faltava era o vínculo do acesso com a loja. Agora ele diz o que realmente aconteceu, e some sozinho em até 10 segundos depois que a sincronização volta.',
+    'Uma falha isolada de rede não pinta mais a tela de vermelho: o aviso só aparece se o problema insistir. Antes ele surgia e sumia sozinho, assustando sem motivo.',
+    'Em todos os casos o aviso agora lembra que nenhum registro se perde — o que não subiu fica na fila e sobe depois.',
+  ]},
   { version: '1.9.146', date: '2026-08-17', items: [
     'O registro rápido agora confirma na tela: "✓ Registrado: 3,4°C em Vitrine Refrigerada". Antes a janela apenas fechava — exatamente igual a fechar sem querer tocando fora dela. Não havia como saber se a leitura tinha sido gravada ou perdida. A tela inicial sempre confirmou, e era a única em que as equipes confiavam.',
     'Tocar fora da janela não descarta mais um número já digitado. Para sair sem registrar, use o Cancelar.',

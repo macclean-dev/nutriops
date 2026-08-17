@@ -17,6 +17,14 @@
 --
 -- COMO RODAR: Supabase → SQL Editor → New query → colar TUDO → Run (uma vez,
 -- sem selecionar trecho). Idempotente.
+--
+-- ⚠️ O RLS é ligado DUAS vezes de propósito: junto de cada `create table`, e de
+-- novo no bloco do fim. Motivo (17/08): o analisador do SQL Editor não lê dentro
+-- de `do $$ ... execute format(...)`, então avisava "cria tabelas sem RLS" mesmo
+-- com o bloco ligando. Pior que o aviso era a janela real: se o bloco falhasse
+-- no meio (ele depende de is_member/is_admin_plataforma existirem), as tabelas
+-- ficariam criadas e SEM proteção. Ligar na criação fecha isso — tabela sem
+-- policy nega tudo, que é o modo de falhar certo.
 -- ⚠️ RODAR ANTES do deploy da versão que sincroniza — sem as tabelas os pushes
 -- tomam 404 e ficam presos na fila offline.
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -33,6 +41,7 @@ create table if not exists public.equip_assets (
   updated_at  timestamptz not null default now()
 );
 create index if not exists idx_equip_assets_tenant on public.equip_assets(tenant_id);
+alter table public.equip_assets enable row level security;   -- ligado JÁ na criação (ver nota no topo)
 
 -- 2. Execuções de manutenção (o que foi feito, quando e por quem)
 --    `executed_at` é DATE: a UI grava só o dia (não a hora).
@@ -50,6 +59,7 @@ create table if not exists public.maint_logs (
 );
 create index if not exists idx_maint_logs_tenant on public.maint_logs(tenant_id);
 create index if not exists idx_maint_logs_equip  on public.maint_logs(tenant_id, equipment_id);
+alter table public.maint_logs enable row level security;   -- ligado JÁ na criação (ver nota no topo)
 
 -- 3. Ordens de serviço
 create table if not exists public.work_orders (
@@ -63,11 +73,13 @@ create table if not exists public.work_orders (
   updated_at    timestamptz not null default now()
 );
 create index if not exists idx_work_orders_tenant on public.work_orders(tenant_id);
+alter table public.work_orders enable row level security;   -- ligado JÁ na criação (ver nota no topo)
 
--- 4. RLS — os mesmos 4 caminhos de docs/rls-policies.sql (a fonte de verdade).
---    ⚠️ ORDEM: policy ANTES do enable — RLS sem policy é deny-all.
---    Se estas tabelas já existirem quando você rodar o rls-policies.sql,
---    acrescente os três nomes na lista dele também.
+-- 4. As policies — os mesmos 4 caminhos de docs/rls-policies.sql (a fonte de
+--    verdade), onde estas três tabelas já entraram na lista.
+--    O RLS já foi ligado na criação (acima). A janela entre ligar e ter policy
+--    é intencionalmente segura: RLS sem policy NEGA tudo, então o pior caso é
+--    o app tomar erro de permissão — visível — em vez de dado exposto.
 
 do $$
 declare

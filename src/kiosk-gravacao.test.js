@@ -136,3 +136,46 @@ describe('cenário real: tablet sem sync, leitura crítica no quiosque', () => {
     expect(getOfflineQueue()).toHaveLength(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// O 4º defeito, achado ao validar os outros três: `list()` não tinha catch.
+// Quando a nuvem recusava (401 do RLS, timeout, offline), a função ESTOURAVA,
+// o Promise.all do refreshRecords rejeitava e `setRecords` nunca era chamado —
+// a tela ficava com ZERO leituras. Foi o mecanismo que transformou a negação
+// de RLS de 16/08 em "todos os registros da CASA DOCE foram zerados": os 108
+// estavam intactos no banco E no cache, e a tela mostrava vazio.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('list — falha da nuvem NUNCA pode zerar a tela', () => {
+  beforeEach(() => {
+    lw(RECORDS_KEY, [
+      { id: 'a', tenantId: 'casadoce', value: -18, createdAt: new Date().toISOString() },
+      { id: 'b', tenantId: 'casadoce', value: -19, createdAt: new Date().toISOString() },
+    ]);
+  });
+
+  it('401 do RLS ⇒ mostra o cache local em vez de estourar', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => nega(401, { code: '42501', message: 'row-level security' })));
+    const lista = await supabaseRepository.list({ tenantId: 'casadoce', days: 90 });
+    expect(lista).toHaveLength(2);          // ✅ a tela continua mostrando o histórico
+  });
+
+  it('rede caída (fetch rejeita) ⇒ idem, sem lançar', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))));
+    await expect(supabaseRepository.list({ tenantId: 'casadoce', days: 90 })).resolves.toHaveLength(2);
+  });
+
+  it('vale também pro período "Todos" (days=0)', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => nega(401, { code: '42501' })));
+    await expect(supabaseRepository.list({ tenantId: 'casadoce', days: 0 })).resolves.toHaveLength(2);
+  });
+
+  it('mesmo caindo pro cache, não vaza registro de outra loja', async () => {
+    lw(RECORDS_KEY, [
+      { id: 'meu', tenantId: 'casadoce', createdAt: new Date().toISOString() },
+      { id: 'alheio', tenantId: 'swiss', createdAt: new Date().toISOString() },
+    ]);
+    vi.stubGlobal('fetch', vi.fn(() => nega(401, {})));
+    const lista = await supabaseRepository.list({ tenantId: 'casadoce', days: 90 });
+    expect(lista.map((r) => r.id)).toEqual(['meu']);
+  });
+});

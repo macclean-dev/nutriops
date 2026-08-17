@@ -360,7 +360,21 @@ export const supabaseRepository = {
         `created_at=gte.${from}`,
         'order=created_at.desc', 'limit=1000',
       ].filter(Boolean).join('&');
-      const rows = await sbFetch('temperature_records', { filter }, tenantId);
+      // ⚠️ A NUVEM PODE FALHAR — e falhar NÃO pode apagar a tela.
+      // Sem este catch, um 401/timeout fazia `list()` estourar, o Promise.all
+      // do refreshRecords (pages.jsx) rejeitar e `setRecords` NUNCA ser
+      // chamado: a tela ficava com ZERO leituras. Foi o mecanismo que
+      // transformou a negação de RLS de 16/08 em "todos os registros da CASA
+      // DOCE foram zerados" — os 108 estavam intactos no banco e no cache
+      // local, e a tela mostrava vazio. O cache é a rede de segurança: se a
+      // nuvem não responde, mostramos o que o aparelho tem.
+      let rows;
+      try {
+        rows = await sbFetch('temperature_records', { filter }, tenantId);
+      } catch (e) {
+        console.warn(`[repo] list(temperature_records) falhou (${e?.message}) — exibindo o cache local`);
+        return localRepository.list({ tenantId, days });
+      }
       const local = ls(RECORDS_KEY, []);
       const merged = mergeByKey([...local, ...rows.map(tempFromRow)], 'id');
       lw(RECORDS_KEY, merged.slice(0, 1000));
@@ -390,7 +404,13 @@ export const supabaseRepository = {
         tenantId ? `tenant_id=eq.${tenantId}` : null,
         'order=created_at.desc', 'limit=1000', `offset=${page * 1000}`,
       ].filter(Boolean).join('&');
-      const rows = await sbFetch('temperature_records', { filter }, tenantId);
+      let rows;
+      try {
+        rows = await sbFetch('temperature_records', { filter }, tenantId);
+      } catch (e) {
+        console.warn(`[repo] list("Todos") falhou (${e?.message}) — exibindo o cache local`);
+        return localRepository.list({ tenantId, days });
+      }
       allRows = allRows.concat(rows);
       if (rows.length < 1000) break;
     }

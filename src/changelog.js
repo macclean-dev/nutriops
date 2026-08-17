@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.144', date: '2026-08-17', items: [
+    'Os aparelhos agora se atualizam sozinhos. Antes, quem registrava no computador não aparecia nos tablets até alguém sair e entrar de novo — o app só buscava dados ao abrir. Agora ele busca a cada 2 minutos e sempre que a tela volta a ser usada, inclusive no Modo Quiosque.',
+    'Corrigido: "Suas leituras hoje" não contava as leituras feitas pelo Modo Quiosque. O registro sempre esteve certo, com o nome de quem mediu — quem estava errado era o contador da tela inicial.',
+    'Correção importante: quando a nuvem não responde (queda de internet ou problema de permissão), a tela passa a mostrar o histórico guardado no aparelho em vez de aparecer vazia. Era isso que fazia parecer que os registros de uma loja tinham sumido.',
+  ]},
   { version: '1.9.143', date: '2026-08-17', items: [
     'Correção importante no Modo Quiosque: quando a temperatura está bem fora da faixa, o app pede uma observação antes de salvar — mas o botão ✓ ficava apenas cinza e não dizia nada. O dedo sentia que apertou e a leitura não era gravada. Agora aparece um aviso vermelho, bem visível: "Ainda não salvou" e o motivo.',
     'Também corrigido: se ficasse só um sinal de menos no visor (ao apagar dígitos, por exemplo), o app gravava um valor vazio que nunca conseguia subir e travava a fila de envio. Agora ele avisa que o número está incompleto.',

@@ -212,6 +212,20 @@ export function KioskApp({ config, onExit }) {
   // essencial pro card ficar marcado; o valor em si não é reexibido em
   // lugar nenhum, então não precisa (nem pode, com segurança) reconciliar
   // tipo string-vs-number com o que vem do banco.
+  // `semente` faz o efeito abaixo rodar de novo a cada 2 min — sem isso o
+  // tablet em modo quiosque semeava UMA vez, no mount, e passava o dia inteiro
+  // sem saber do que foi medido nos outros aparelhos (relato da CASA DOCE,
+  // 17/08: 2 tablets + 3 computadores, nada se atualizava entre eles).
+  const [semente, setSemente] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === 'visible') setSemente((n) => n + 1);
+    }, 120000);
+    const aoVoltar = () => { if (document.visibilityState === 'visible') setSemente((n) => n + 1); };
+    document.addEventListener('visibilitychange', aoVoltar);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', aoVoltar); };
+  }, []);
+
   useEffect(() => {
     let vivo = true;
     (async () => {
@@ -226,7 +240,7 @@ export function KioskApp({ config, onExit }) {
       } catch { /* sem isso o quiosque mostra tudo pendente — pior é travar */ }
     })();
     return () => { vivo = false; };
-  }, [config.tenantId, repository, catalog]);
+  }, [config.tenantId, repository, catalog, semente]);
 
   const active = catalog[activeIdx];
   const limits = resolveTemperatureLimits(active?.label ?? '', active);

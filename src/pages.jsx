@@ -2685,6 +2685,34 @@ export function App() {
 
   useEffect(() => { refreshRecords(); }, [refreshRecords]);
 
+  // ─── Atualização automática entre aparelhos (17/08) ───────────────────────
+  // Relato da CASA DOCE: "conectado em 2 tablets e 3 computadores; quando
+  // registra no computador não atualiza nos tablets, só quando desconecta e
+  // entra de novo". Estava certo — até aqui o app só buscava dados da nuvem em
+  // DOIS momentos: no boot e no evento 'online'. Um tablet que fica na parede o
+  // dia inteiro nunca mais consultava.
+  //
+  // Três gatilhos, todos baratos (uma requisição por loja visível):
+  //   · a cada 2 min, mas SÓ com a aba visível — tablet em standby não gasta
+  //     rede nem bateria à toa;
+  //   · quando a aba volta a ficar visível (voltar do standby é o caso comum
+  //     no tablet);
+  //   · quando a janela recebe foco (o caso comum no computador).
+  //
+  // Vale também no Modo Quiosque: ele é um `return` antecipado DENTRO do App,
+  // e hook não se importa com early return — este efeito continua rodando.
+  useEffect(() => {
+    const atualizar = () => { if (document.visibilityState === 'visible') refreshRecords(); };
+    const t = setInterval(atualizar, 120000);
+    document.addEventListener('visibilitychange', atualizar);
+    window.addEventListener('focus', atualizar);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', atualizar);
+      window.removeEventListener('focus', atualizar);
+    };
+  }, [refreshRecords]);
+
   const turns       = readTurns(activeTenant);
   const [alertsTick, setAlertsTick] = useState(0); // bump ao dar ciência → recomputa badge/lista
   const alertCount  = useMemo(() => computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id, activeTenant.implantacao === true).length, [records, activeTenant.id, activeTenant.implantacao, equipmentCatalog, alertsTick]);

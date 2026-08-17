@@ -16,6 +16,7 @@ import { detectTrend } from './trend';
 import { readTurns } from './turns';
 import { EquipmentDetailModal, EquipmentChart, toneColor, toneBg } from './equipment-detail';
 import { getTemperatureRepository } from './repository';
+import { readOperator } from './operator';
 import CountUp from './count-up';
 
 function fmtRelative(iso) {
@@ -816,9 +817,23 @@ function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records
     records.filter(r => r.tenantId === activeTenant.id),
   [records, activeTenant.id]);
 
+  // "Minhas" leituras = as que levam o MEU nome, e o meu nome pode chegar por
+  // dois caminhos (CASA DOCE, 17/08):
+  //   · tela principal — o operador é aplicado NA SESSÃO (applyOperatorToSession),
+  //     então session.user.name já é a pessoa;
+  //   · Modo Quiosque — o operador é carimbado no REGISTRO, mas a sessão segue
+  //     com o nome da conta de loja ("Equipe"). Comparar só com a sessão dava
+  //     falso e as leituras do quiosque não contavam — a tela subestimava o
+  //     trabalho da pessoa e o "última leitura há X" ficava velho.
+  // O registro está certo nos dois casos; quem estava errado era esta conta.
+  const meusNomes = useMemo(() => {
+    const operador = readOperator(activeTenant.id)?.name;
+    return new Set([session.user.name, operador].filter(Boolean));
+  }, [session.user.name, activeTenant.id, tenantRecords]);
+
   const myToday = useMemo(() =>
-    tenantRecords.filter(r => r.user === session.user.name && new Date(r.createdAt).getTime() >= todayMs),
-  [tenantRecords, session.user.name, todayMs]);
+    tenantRecords.filter(r => meusNomes.has(r.user) && new Date(r.createdAt).getTime() >= todayMs),
+  [tenantRecords, meusNomes, todayMs]);
 
   // Equipamentos pendentes = não tem leitura no turno atual
   const equipmentHistory = useMemo(() => {

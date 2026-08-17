@@ -241,6 +241,13 @@ function QuickRegisterModal({ equipment, activeTenant, session, onClose, onSaved
   // inputMode="decimal", e o confirm genérico que existia aqui era dispensado
   // no reflexo (gravou 5 leituras de freezer como +18 na CASA DOCE, 14/08).
   const faltouMenos = hasValue && suspectMissingMinus(numericValue, limits.min, limits.max);
+  // O bloqueio precisa ser NOMEADO e aparecer no botão. Enquanto era só um
+  // `return` mudo dentro do save(), o botão continuava verde escrito
+  // "Registrar" e não fazia nada: a pessoa media, tocava, o modal ficava
+  // parado e ela ia embora achando que registrou (CASA DOCE, 17/08 — leitura
+  // das 06:30 na gelateria, feita pelo celular, nunca existiu). É a mesma
+  // armadilha do ✓ do quiosque, corrigida na v1.9.143 só lá.
+  const bloqueadoPeloSinal = faltouMenos && !insistiuPositivo;
   const trocarSinal = () => {
     setInsistiuPositivo(false);
     setValue((v) => (v.startsWith('-') ? v.slice(1) : v.trim() ? `-${v.trim()}` : v));
@@ -250,7 +257,7 @@ function QuickRegisterModal({ equipment, activeTenant, session, onClose, onSaved
     if (!hasValue || saving) return;
     // Bloqueia enquanto a suspeita de sinal não for resolvida — ou corrige
     // pelo botão, ou confirma explicitamente que o positivo é real.
-    if (faltouMenos && !insistiuPositivo) return;
+    if (bloqueadoPeloSinal) return;
     setSaving(true);
     try {
       await repository.create({
@@ -273,10 +280,14 @@ function QuickRegisterModal({ equipment, activeTenant, session, onClose, onSaved
       background:'rgba(20,20,19,.55)', backdropFilter:'blur(4px)',
       display:'flex', alignItems:'center', justifyContent:'center', padding:24,
     }}>
+      {/* maxHeight+overflow: o card cresce quando o aviso de sinal abre, e num
+          celular com o teclado por cima ele passava da tela SEM rolagem — o
+          botão de registrar ficava inalcançável e não havia como saber disso. */}
       <div onClick={e => e.stopPropagation()} style={{
         background:'var(--surface)', borderRadius:'var(--r-xl)',
         width:'100%', maxWidth:360, boxShadow:'var(--shadow-lg)', padding:24,
         display:'flex', flexDirection:'column', gap:14,
+        maxHeight:'calc(100dvh - 48px)', overflowY:'auto',
       }}>
         <div>
           <div style={{ fontSize:10, fontWeight:600, letterSpacing:'.12em', textTransform:'uppercase', color:'var(--text-secondary)' }}>
@@ -336,12 +347,17 @@ function QuickRegisterModal({ equipment, activeTenant, session, onClose, onSaved
 
         <div style={{ display:'flex', gap:10 }}>
           <button onClick={onClose} style={{ flex:1, padding:'10px', borderRadius:'var(--r)', border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', cursor:'pointer', fontSize:13, fontWeight:600, fontFamily:'var(--font)' }}>Cancelar</button>
-          <button onClick={save} disabled={!hasValue || saving} style={{
+          {/* Bloqueado ≠ desabilitado sem dizer por quê: o rótulo troca pra
+              apontar o aviso. Num celular com o teclado aberto o aviso âmbar
+              pode estar fora da vista, e um botão cinza mudo não ensina nada. */}
+          <button onClick={save} disabled={!hasValue || saving || bloqueadoPeloSinal} style={{
             flex:2, padding:'10px', borderRadius:'var(--r)', border:'none',
-            background: !hasValue ? 'var(--border)' : 'var(--primary)', color:'white',
-            cursor: !hasValue ? 'not-allowed' : 'pointer', fontSize:13, fontWeight:700, fontFamily:'var(--font)',
+            background: (!hasValue || bloqueadoPeloSinal) ? 'var(--border)' : 'var(--primary)',
+            color: bloqueadoPeloSinal ? 'var(--text-secondary)' : 'white',
+            cursor: (!hasValue || bloqueadoPeloSinal) ? 'not-allowed' : 'pointer',
+            fontSize:13, fontWeight:700, fontFamily:'var(--font)',
           }}>
-            {saving ? 'Salvando…' : 'Registrar'}
+            {saving ? 'Salvando…' : bloqueadoPeloSinal ? 'Confirme o sinal acima' : 'Registrar'}
           </button>
         </div>
       </div>

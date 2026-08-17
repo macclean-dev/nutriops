@@ -21,6 +21,10 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.145', date: '2026-08-17', items: [
+    'Correção importante no registro rápido (o "+ Registrar" do card do equipamento): quando o app suspeitava que faltou o sinal de menos — digitar 20 num freezer que trabalha a −20°C, por exemplo — ele bloqueava para você confirmar, mas o botão continuava verde escrito "Registrar" e simplesmente não fazia nada. Dava pra medir, tocar e ir embora achando que registrou. Agora o botão fica cinza e diz "Confirme o sinal acima".',
+    'No celular, a janela de registro rápido agora rola. Quando o aviso de sinal aparecia com o teclado aberto, o botão ficava embaixo da borda da tela e não tinha como alcançar.',
+  ]},
   { version: '1.9.144', date: '2026-08-17', items: [
     'Os aparelhos agora se atualizam sozinhos. Antes, quem registrava no computador não aparecia nos tablets até alguém sair e entrar de novo — o app só buscava dados ao abrir. Agora ele busca a cada 2 minutos e sempre que a tela volta a ser usada, inclusive no Modo Quiosque.',
     'Corrigido: "Suas leituras hoje" não contava as leituras feitas pelo Modo Quiosque. O registro sempre esteve certo, com o nome de quem mediu — quem estava errado era o contador da tela inicial.',

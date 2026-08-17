@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.143', date: '2026-08-17', items: [
+    'Correção importante no Modo Quiosque: quando a temperatura está bem fora da faixa, o app pede uma observação antes de salvar — mas o botão ✓ ficava apenas cinza e não dizia nada. O dedo sentia que apertou e a leitura não era gravada. Agora aparece um aviso vermelho, bem visível: "Ainda não salvou" e o motivo.',
+    'Também corrigido: se ficasse só um sinal de menos no visor (ao apagar dígitos, por exemplo), o app gravava um valor vazio que nunca conseguia subir e travava a fila de envio. Agora ele avisa que o número está incompleto.',
+    'E as leituras que ainda não subiram para a nuvem passam a aparecer na tela normalmente. Antes elas ficavam salvas e seguras no aparelho, mas invisíveis — parecia que não tinham sido registradas, e só apareciam depois de sair e entrar de novo.',
+  ]},
   { version: '1.9.140', date: '2026-08-17', items: [
     'Manutenção agora fica guardada na nuvem — ativos, execuções e ordens de serviço. Era o último módulo que vivia só no aparelho: trocar ou limpar o celular apagava o histórico de manutenção, que a RDC 216 exige manter. Com isso, nenhuma evidência do app depende mais de um aparelho específico.',
     'Na tela de Prontidão, o item "a evidência sobrevive a uma troca de aparelho?" passa a responder que sim para todos os módulos.',

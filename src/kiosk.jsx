@@ -15,7 +15,7 @@ function fmtTime() {
 
 // ─── Numpad ────────────────────────────────────────────────────────────────
 
-function Numpad({ value, onChange, onConfirm, label, hint, tone, confirmDisabled = false }) {
+function Numpad({ value, onChange, onConfirm, onBlocked, label, hint, tone, confirmDisabled = false }) {
   const handleKey = (k) => {
     if (k === '⌫') { onChange(value.slice(0, -1)); return; }
     if (k === '.' && value.includes('.')) return;
@@ -52,7 +52,16 @@ function Numpad({ value, onChange, onConfirm, label, hint, tone, confirmDisabled
           const isClear   = k === '⌫';
           const confirmBlocked = isConfirm && confirmDisabled;
           return (
-            <button key={i} onClick={() => { if (k === '✓') { if (!confirmDisabled) onConfirm(); } else handleKey(k); }}
+            <button key={i} onClick={() => {
+                // ⚠️ O ✓ bloqueado NUNCA pode ficar mudo (CASA DOCE, 17/08). Ele
+                // ficava cinza mas `disabled` era false: rodava a animação de
+                // toque, o dedo sentia que apertou, e não gravava nada. Numa
+                // leitura crítica — justo a que mais importa registrar — a
+                // pessoa media, o número sumia, e a conclusão era "o quiosque
+                // não registra". Agora ele diz o que falta.
+                if (k === '✓') { confirmDisabled ? onBlocked?.() : onConfirm(); return; }
+                handleKey(k);
+              }}
               style={{
                 height: 68, borderRadius: 14, border: 'none',
                 cursor: confirmBlocked ? 'not-allowed' : 'pointer',
@@ -64,9 +73,9 @@ function Numpad({ value, onChange, onConfirm, label, hint, tone, confirmDisabled
                 transition: 'transform .1s, background .1s',
                 fontFamily: 'inherit',
               }}
-              onMouseDown={e => e.currentTarget.style.transform='scale(.95)'}
+              onMouseDown={e => { if (!confirmBlocked) e.currentTarget.style.transform='scale(.95)'; }}
               onMouseUp={e => e.currentTarget.style.transform='scale(1)'}
-              onTouchStart={e => e.currentTarget.style.transform='scale(.95)'}
+              onTouchStart={e => { if (!confirmBlocked) e.currentTarget.style.transform='scale(.95)'; }}
               onTouchEnd={e => e.currentTarget.style.transform='scale(1)'}
             >
               {k}
@@ -161,6 +170,10 @@ export function KioskApp({ config, onExit }) {
   // outro; ok/warn continuam salvando note:'' como sempre salvaram.
   const [note, setNote]           = useState('');
   const [insistiuPositivo, setInsistiuPositivo] = useState(false);
+  // Aviso de "por que o ✓ não gravou". Fica ACIMA do teclado de propósito: a
+  // observação obrigatória era renderizada lá embaixo (y≈644-723) e em tablet
+  // na horizontal ficava cortada — a pessoa não via o que o app pedia.
+  const [avisoBloqueio, setAvisoBloqueio] = useState(null);
   const [savedValues, setSavedValues] = useState({});
   const [saving, setSaving]       = useState(false);
   const [successData, setSuccessData] = useState(null);
@@ -217,17 +230,37 @@ export function KioskApp({ config, onExit }) {
 
   const active = catalog[activeIdx];
   const limits = resolveTemperatureLimits(active?.label ?? '', active);
-  const tone   = value ? resolveTemperatureTone(value, limits.min, limits.max) : 'neutral';
+  // ⚠️ `value` é STRING do teclado: '-' e '.' sozinhos são truthy mas viram NaN.
+  // Digitar -18 e apagar dois dígitos deixa '-'; o ✓ estava vivo, gravava NaN,
+  // o JSON virava value:null, o banco recusava (23502) e o registro ia pra fila
+  // offline ONDE NUNCA IA SUBIR — entupindo a fila pra sempre, com a tela
+  // dizendo "Registro salvo". (CASA DOCE, 17/08.)
+  const numero = Number(value);
+  const numeroValido = value !== '' && Number.isFinite(numero);
+  const tone   = numeroValido ? resolveTemperatureTone(value, limits.min, limits.max) : 'neutral';
   const noteRequired = tone === 'danger';
   const noteMissing   = noteRequired && !note.trim();
   // Sinal trocado: a tecla − existia mas só valia com o campo vazio, então
   // "18" + − ficava +18 e ia pro banco (CASA DOCE, 14/08). Aqui a leitura
   // trava até resolver — corrigir num toque ou confirmar que o positivo é real.
-  const faltouMenos = value !== '' && suspectMissingMinus(Number(value), limits.min, limits.max);
+  const faltouMenos = numeroValido && suspectMissingMinus(numero, limits.min, limits.max);
   const bloqueadoPeloSinal = faltouMenos && !insistiuPositivo;
+  const numeroIncompleto = value !== '' && !numeroValido;
+
+  // O motivo do bloqueio, em português, pro toque no ✓ nunca ser mudo.
+  const motivoBloqueio = numeroIncompleto
+    ? 'Número incompleto — digite o valor da temperatura.'
+    : bloqueadoPeloSinal
+      ? `Confirme o sinal: ${active?.label ?? 'este equipamento'} não deveria marcar positivo. Toque em "Corrigir para ${-Math.abs(numero)}°" ou confirme que o positivo é real.`
+      : noteMissing
+        ? 'Escreva a observação antes de salvar — a leitura está fora da faixa e a RDC exige a ação registrada.'
+        : null;
+
+  useEffect(() => { if (!motivoBloqueio) setAvisoBloqueio(null); }, [motivoBloqueio]);
 
   const handleConfirm = useCallback(async () => {
     if (!value || !active || saving) return;
+    if (!Number.isFinite(Number(value))) return;   // '-' ou '.' sozinho — nunca grava NaN
     if (suspectMissingMinus(Number(value), limits.min, limits.max) && !insistiuPositivo) return;
     const currentTone = resolveTemperatureTone(value, limits.min, limits.max);
     // RDC 216 espera a ação anotada quando o desvio é crítico (item 16 da
@@ -367,8 +400,22 @@ export function KioskApp({ config, onExit }) {
               label={active?.label ?? '—'}
               hint={`Faixa: ${limits.min}°C a ${limits.max}°C${active?.location ? ` · ${active.location}` : ''}`}
               tone={tone}
-              confirmDisabled={noteMissing || bloqueadoPeloSinal}
+              confirmDisabled={noteMissing || bloqueadoPeloSinal || numeroIncompleto}
+              onBlocked={() => setAvisoBloqueio(motivoBloqueio)}
             />
+            {avisoBloqueio && (
+              <div role="alert" aria-live="assertive" style={{
+                marginBottom:12, padding:'14px 16px', borderRadius:12,
+                background:'#ffebe9', border:'2px solid #c0392b',
+                display:'flex', alignItems:'flex-start', gap:10,
+              }}>
+                <span style={{ fontSize:20, lineHeight:1 }}>⚠</span>
+                <div>
+                  <strong style={{ fontSize:15, color:'#c0392b', display:'block', marginBottom:2 }}>Ainda não salvou</strong>
+                  <span style={{ fontSize:14, color:'#5c6c7a' }}>{avisoBloqueio}</span>
+                </div>
+              </div>
+            )}
             {faltouMenos && (
               <div role="alert" style={{ marginTop:12, padding:'12px 14px', borderRadius:10, background:'#fdf8e3', border:'1.5px solid #e3aa14' }}>
                 <strong style={{ fontSize:14, color:'#8a4e00', display:'block', marginBottom:4 }}>Faltou o sinal de menos?</strong>

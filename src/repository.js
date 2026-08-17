@@ -145,6 +145,29 @@ async function sbFetch(table, params = {}, tenantId = null) {
 export function getOfflineQueue()   { return ls(OFFLINE_Q_KEY, []); }
 export function clearOfflineQueue() { lw(OFFLINE_Q_KEY, []); }
 
+// Remove da fila o que NUNCA vai conseguir subir. Hoje só um caso, real e
+// medido (CASA DOCE, 17/08): o quiosque aceitava '-' ou '.' sozinho como
+// temperatura, gravava NaN, o JSON virava `value: null` e o Postgres recusava
+// com 23502 (value numeric not null) — em toda tentativa, pra sempre. O item
+// ficava girando na fila, empurrando o cap de 5000 e escondendo falha real
+// atrás de um contador de pendências que nunca zerava.
+//
+// A guarda do quiosque (kiosk.jsx) impede novos; isto limpa os que já existem.
+// Só descarta o que é comprovadamente insalvável: temperatura sem valor
+// numérico. Nada de heurística — na dúvida, o item FICA.
+export function purgarFilaEnvenenada(queue) {
+  const limpa = (queue ?? []).filter((item) => {
+    if (item?.table !== 'temperature_records') return true;
+    const v = item?.payload?.value;
+    return v !== null && v !== undefined && Number.isFinite(Number(v));
+  });
+  if (limpa.length !== (queue ?? []).length) {
+    console.warn(`[repo] fila: descartados ${(queue ?? []).length - limpa.length} registro(s) de temperatura sem valor numérico — nunca subiriam (ver purgarFilaEnvenenada)`);
+    lw(OFFLINE_Q_KEY, limpa);
+  }
+  return limpa;
+}
+
 // Cap pra não estourar localStorage em devices que nunca habilitam Supabase.
 // 5000 é > 1 ano de uso normal (15 registros/dia × 365 ≈ 5500).
 const OFFLINE_Q_CAP = 5000;
@@ -341,7 +364,17 @@ export const supabaseRepository = {
       const local = ls(RECORDS_KEY, []);
       const merged = mergeByKey([...local, ...rows.map(tempFromRow)], 'id');
       lw(RECORDS_KEY, merged.slice(0, 1000));
-      return rows.map(tempFromRow);
+      // ⚠️ Devolve o MERGE, não só `rows` (CASA DOCE, 17/08). Antes gravava uma
+      // coisa e retornava outra: o registro que falhou no POST ficava salvo no
+      // cache E na fila offline, mas a tela — que monta `records` puramente
+      // deste retorno (pages.jsx refreshRecords) — nunca o via. A leitura
+      // "sumia", o equipamento voltava a aparecer como pendente, e a conclusão
+      // natural era "não registrou". Só reaparecia depois de sair e entrar,
+      // quando a fila subia e o registro passava a existir na nuvem.
+      // `localRepository.list` reaplica o filtro de tenant/dias — o cache é
+      // GLOBAL (todas as lojas, sem corte de data), então devolver `merged` cru
+      // vazaria registro de outra loja pra dentro da tela.
+      return localRepository.list({ tenantId, days });
     }
     // days<=0 = "Todos" (item 14). Sem o filtro de data o servidor ainda
     // limitava a 1000 linhas — um tenant com mais de 1000 registros no total
@@ -364,7 +397,7 @@ export const supabaseRepository = {
     const local = ls(RECORDS_KEY, []);
     const merged = mergeByKey([...local, ...allRows.map(tempFromRow)], 'id');
     lw(RECORDS_KEY, merged.slice(0, Math.max(1000, allRows.length)));
-    return allRows.map(tempFromRow);
+    return localRepository.list({ tenantId, days });   // idem: inclui o pendente local
   },
   async create(input) {
     if (!navigator.onLine) {
@@ -417,7 +450,7 @@ export const supabaseRepository = {
     }
   },
   async syncQueue() {
-    const queue = getOfflineQueue();
+    const queue = purgarFilaEnvenenada(getOfflineQueue());
     if (!queue.length || !navigator.onLine) {
       console.debug(`[repo] syncQueue skip — ${queue.length} pendentes, online=${navigator.onLine}`);
       return { synced:0, failed:0, remaining:queue.length };

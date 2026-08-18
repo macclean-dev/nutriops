@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.153', date: '2026-08-18', items: [
+    'Novo em Planilhas BPF (para a RT): botão "Organizar". Dá para renomear as abas — por exemplo, trocar "Faxina" por "Serviços gerais" — e escolher em qual aba cada planilha aparece, sem precisar pedir alteração no sistema. Vale só para a sua empresa; as outras continuam como estão.',
+    'As 21 folhas de Higienização ficam fixas na aba delas: o setor de cada uma vem do próprio título, e fora dali o filtro por setor deixaria de funcionar. A tela explica isso em vez de apenas bloquear.',
+    'Correção: renomear um equipamento no catálogo criava uma cópia em vez de renomear. O nome antigo continuava na nuvem e voltava na próxima sincronização — foi o que duplicou o "Banho-maria — BM.1". Agora o nome antigo é removido, e as duplicatas que já existiam são unificadas automaticamente quando têm o mesmo código, local e faixa.',
+  ]},
   { version: '1.9.152', date: '2026-08-18', items: [
     'A tela inicial agora mostra "Atividade da loja hoje" — todas as leituras do dia, com o equipamento, a temperatura e o nome de quem mediu. Antes essa lista só existia no perfil de supervisor: quem entrava como colaborador via apenas as próprias leituras e não tinha como saber o que a equipe já havia registrado.',
     'O card "Suas leituras hoje" passou a mostrar também o total da loja ao lado. Num aparelho compartilhado, o número pessoal costuma ser bem menor que o do dia — e era isso que fazia parecer que as leituras não estavam sendo registradas.',

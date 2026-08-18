@@ -3,6 +3,8 @@ import { FormKioskApp } from './kiosk';
 import { pushFormRecord } from './repository';
 import { ImportTemplateModal } from './import-template-modal';
 import { isFieldDue, dueFields } from './field-frequency';
+import { prefsFromProfile, profileWithPrefs, catLabelFor, podeMoverPara, applyCategoryPrefs, enxugarPrefs, CATEGORIA_COM_COMPORTAMENTO } from './form-prefs';
+import { readCompanyProfile, saveCompanyProfile } from './settings';
 
 // Read company profile from localStorage
 function getProfile(tenantId) {
@@ -1181,6 +1183,110 @@ const higSetor = (uuid, slug, setor, tarefas) => () => ({
 });
 
 // Setor de uma planilha de higienização — ver o aviso do bloco acima.
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Organizar planilhas — pedido da RT da CASA DOCE (18/08): renomear a aba
+// "Faxina" pra "Serviços gerais" e tirar dali duas planilhas. Terceiro pedido
+// dessa natureza em um mês (setores 07/08, tarefas 10/08), então virou edição
+// em vez de hardcode. Tudo POR LOJA: "Faxina" também é a aba da Swiss, da
+// Bäckerei e da DBK, que não pediram nada.
+//
+// Uma tela só com as duas coisas, porque o pedido dela é uma reorganização —
+// não um ajuste pontual.
+// ─────────────────────────────────────────────────────────────────────────────
+function OrganizarPlanilhasModal({ templates, prefs, onSave, onClose }) {
+  const [labels, setLabels] = useState(() => ({ ...(prefs?.categoryLabels ?? {}) }));
+  const [cats, setCats]     = useState(() => ({ ...(prefs?.templateCategory ?? {}) }));
+
+  // Categorias presentes na loja + as que ela já renomeou (pra poder desfazer
+  // mesmo que a última planilha daquela aba tenha saído).
+  const catsPresentes = useMemo(() => {
+    const set = new Set(templates.map((t) => t.category).filter(Boolean));
+    for (const k of Object.keys(labels)) set.add(k);
+    return [...set].sort((a, b) => catMeta(a).label.localeCompare(catMeta(b).label, 'pt-BR'));
+  }, [templates, labels]);
+
+  const destinos = useMemo(
+    () => catsPresentes.filter((c) => c !== CATEGORIA_COM_COMPORTAMENTO),
+    [catsPresentes]);
+
+  const ordenadas = useMemo(
+    () => [...templates].sort((a, b) => a.title.localeCompare(b.title, 'pt-BR')),
+    [templates]);
+
+  return (
+    <div onClick={onClose} style={{ position:'fixed', inset:0, zIndex:1000, background:'rgba(20,20,19,.55)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background:'var(--surface)', borderRadius:'var(--r-xl)', width:'100%', maxWidth:640, boxShadow:'var(--shadow-lg)', padding:24, display:'flex', flexDirection:'column', gap:18, maxHeight:'calc(100dvh - 48px)', overflowY:'auto' }}>
+        <div>
+          <span className="eyebrow">Boas práticas de fabricação</span>
+          <h2 style={{ fontFamily:'var(--serif)', fontSize:24, fontWeight:400, margin:0 }}>Organizar planilhas</h2>
+          <p style={{ fontSize:12, color:'var(--text-secondary)', marginTop:4, marginBottom:0 }}>
+            Vale só para esta empresa. As outras continuam como estão.
+          </p>
+        </div>
+
+        <section>
+          <h3 style={{ fontSize:12, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--text-secondary)', marginBottom:8 }}>Nome das abas</h3>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {/* flexDirection explícito: styles.css põe todo `label` em coluna
+                (linha 111), e sem isto o nome da aba cai em cima do campo. */}
+            {catsPresentes.map((cat) => (
+              <label key={cat} style={{ display:'flex', flexDirection:'row', alignItems:'center', gap:10, fontSize:13 }}>
+                <span style={{ width:150, flexShrink:0, color:'var(--text-secondary)' }}>{catMeta(cat).label}</span>
+                <input value={labels[cat] ?? ''} placeholder={catMeta(cat).label}
+                  onChange={(e) => setLabels((p) => ({ ...p, [cat]: e.target.value }))}
+                  style={{ flex:1, minWidth:0, padding:'7px 10px', fontSize:13 }} />
+              </label>
+            ))}
+          </div>
+          <p style={{ fontSize:11, color:'var(--text-secondary)', marginTop:6, marginBottom:0 }}>
+            Deixe em branco para voltar ao nome original.
+          </p>
+        </section>
+
+        <section>
+          <h3 style={{ fontSize:12, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--text-secondary)', marginBottom:8 }}>Em qual aba cada planilha aparece</h3>
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            {ordenadas.map((tpl) => {
+              const atual = cats[tpl.id] ?? tpl.category;
+              const travada = podeMoverPara(tpl, destinos.find((d) => d !== tpl.category) ?? tpl.category);
+              const ehHigienizacao = tpl.category === CATEGORIA_COM_COMPORTAMENTO;
+              return (
+                <div key={tpl.id} style={{ display:'flex', alignItems:'center', gap:10, fontSize:13, padding:'6px 0', borderBottom:'1px solid var(--border-subtle)' }}>
+                  <span style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{tpl.title}</span>
+                  {ehHigienizacao ? (
+                    <span title={travada.motivo} style={{ fontSize:11, color:'var(--text-secondary)', fontStyle:'italic', flexShrink:0, maxWidth:230, textAlign:'right' }}>
+                      fixa em {catMeta(CATEGORIA_COM_COMPORTAMENTO).label} — organizada por setor
+                    </span>
+                  ) : (
+                    <select value={atual} onChange={(e) => setCats((p) => ({ ...p, [tpl.id]: e.target.value }))}
+                      style={{ width:190, flexShrink:0, fontSize:12, padding:'5px 8px' }}>
+                      {destinos.map((c) => (
+                        <option key={c} value={c}>{labels[c]?.trim() || catMeta(c).label}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <p style={{ fontSize:11, color:'var(--text-secondary)', marginTop:6, marginBottom:0 }}>
+            As planilhas de {catMeta(CATEGORIA_COM_COMPORTAMENTO).label} não mudam de aba: o setor de cada uma vem do título dela, e fora dessa aba o filtro por setor deixaria de funcionar.
+          </p>
+        </section>
+
+        <div style={{ display:'flex', gap:10 }}>
+          <button onClick={onClose} style={{ flex:1, padding:'10px', borderRadius:'var(--r)', border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', cursor:'pointer', fontSize:13, fontWeight:600, fontFamily:'var(--font)' }}>Cancelar</button>
+          <button onClick={() => onSave({ categoryLabels: labels, templateCategory: cats })}
+            style={{ flex:2, padding:'10px', borderRadius:'var(--r)', border:'none', background:'var(--primary)', color:'white', cursor:'pointer', fontSize:13, fontWeight:700, fontFamily:'var(--font)' }}>
+            Salvar organização
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function templateSector(tpl) {
   if (tpl?.category !== 'higienizacao') return null;
   const i = (tpl.title ?? '').indexOf('—');
@@ -1664,10 +1770,15 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   // Setor escolhido por card, pra planilhas com `scopeBy`. Fica na tela (não
   // persiste): é a via que a pessoa está preenchendo agora, não preferência.
   const [scopeSel, setScopeSel] = useState({});
+  // Preferências de organização por loja (rótulo das abas + em qual aba cada
+  // planilha aparece). Moram no blob do perfil, que já sincroniza.
+  const [prefs, setPrefs] = useState(() => prefsFromProfile(readCompanyProfile(activeTenant.id)));
+  const [organizando, setOrganizando] = useState(false);
   const [formsTenant, setFormsTenant] = useState(activeTenant.id);
   useEffect(() => {
     setTemplates(readFormTemplates(activeTenant));
     setRecords(readFormRecords(activeTenant.id));
+    setPrefs(prefsFromProfile(readCompanyProfile(activeTenant.id)));
     setFormsTenant(activeTenant.id);
     setFilling(null); setHistId(null);
     pickCategory('all');
@@ -1710,11 +1821,31 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   }, []);
 
   const pendingValidation = records.filter((r) => r.status==='submitted' && !r.validation).length;
-  const byCategory = catFilter==='all' ? templates : templates.filter((t) => t.category===catFilter);
+  // As preferências entram AQUI, sobre a lista já lida do seed/cache — não
+  // gravadas no template. Assim a planilha continua recebendo correções minhas
+  // (o seed sobe de versão) sem perder a aba que a RT escolheu, e sem precisar
+  // marcá-la como `custom`, que congelaria o conteúdo dela pra sempre.
+  const templatesOrganizados = useMemo(() => applyCategoryPrefs(templates, prefs), [templates, prefs]);
+  const byCategory = catFilter==='all' ? templatesOrganizados : templatesOrganizados.filter((t) => t.category===catFilter);
   const filteredTemplates = sectorFilter==='all'
     ? byCategory
     : byCategory.filter((t) => templateSector(t) === sectorFilter);
-  const categories = [...new Set(templates.map((t) => t.category))];
+  const categories = [...new Set(templatesOrganizados.map((t) => t.category))];
+  const rotuloCat = (cat) => catLabelFor(cat, prefs, catMeta(cat).label);
+
+  const salvarOrganizacao = (novas) => {
+    const padroes = Object.fromEntries(categories.map((c) => [c, catMeta(c).label]));
+    const enxutas = enxugarPrefs(novas, padroes, templates);
+    setPrefs(enxutas);
+    // Grava no blob do perfil (local + nuvem). readCompanyProfile devolve o
+    // objeto inteiro, então CNPJ/alvará/resto seguem intactos — há teste disso
+    // em form-prefs.test.js.
+    const perfil = profileWithPrefs(readCompanyProfile(activeTenant.id), enxutas);
+    saveCompanyProfile(activeTenant.id, perfil);
+    import('./repository').then((m) => m.pushCompanyProfile(activeTenant.id, perfil)).catch(() => {});
+    setOrganizando(false);
+    if (catFilter !== 'all' && !categories.includes(catFilter)) pickCategory('all');
+  };
   // Setores da categoria em foco (só Higienização tem). Ordena em pt-BR pra
   // "Área de Lavagem" e "Câmaras" não caírem depois de "Vestiário" por acento.
   const sectors = [...new Set(byCategory.map(templateSector).filter(Boolean))]
@@ -1775,6 +1906,13 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
       {importOpen && (
         <ImportTemplateModal onSave={criarTemplate} onClose={() => setImportOpen(false)} />
       )}
+      {organizando && (
+        <OrganizarPlanilhasModal
+          templates={templatesOrganizados}
+          prefs={prefs}
+          onSave={salvarOrganizacao}
+          onClose={() => setOrganizando(false)} />
+      )}
       <div className="page-header">
         <div>
           <span className="eyebrow">Boas Práticas de Fabricação</span>
@@ -1785,6 +1923,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
           <select value={activeTenant.id} onChange={(e) => onTenantChange(e.target.value)} style={{ width:'auto' }}>
             {allTenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
+          {isRT && <button className="secondary-action" style={{ fontSize:12 }} onClick={() => setOrganizando(true)}>Organizar</button>}
           {isRT && <button className="secondary-action" style={{ fontSize:12 }} onClick={() => setImportOpen(true)}>Importar por IA</button>}
         </div>
       </div>
@@ -1812,14 +1951,11 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
             <button className={`quick-chip ${catFilter==='all'?'active':''}`} onClick={() => pickCategory('all')}>
               <strong>Todas</strong><span>{templates.length} planilhas</span>
             </button>
-            {categories.map((cat) => {
-              const meta = catMeta(cat);
-              return (
-                <button key={cat} className={`quick-chip ${catFilter===cat?'active':''}`} onClick={() => pickCategory(cat)}>
-                  <strong>{meta.label}</strong><span>{templates.filter((t) => t.category===cat).length}</span>
-                </button>
-              );
-            })}
+            {categories.map((cat) => (
+              <button key={cat} className={`quick-chip ${catFilter===cat?'active':''}`} onClick={() => pickCategory(cat)}>
+                <strong>{rotuloCat(cat)}</strong><span>{templatesOrganizados.filter((t) => t.category===cat).length}</span>
+              </button>
+            ))}
           </div>
 
           {/* Segundo nível: setor. Só aparece quando a categoria em foco tem

@@ -1396,11 +1396,23 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
       return;
     }
     const next = { label, aliases, location, minTemp: minN, maxTemp: maxN };
+    const anterior = editingIndex === null ? null : catalog[editingIndex];
     setCatalog((prev) => editingIndex === null
       ? [...prev, next]
       : prev.map((item, i) => i === editingIndex ? { ...item, ...next } : item));
     // Sync pro Supabase (no-op se desligado/offline; cai na fila)
     pushEquipmentItem(activeTenant.id, next).catch(() => {});
+    // RENOMEAÇÃO deixa órfão (CASA DOCE, 18/08): a linha na nuvem é
+    // identificada por (tenant_id, label) — eqToRow não tem id. Trocar o nome
+    // faz upsert numa chave NOVA e a linha velha continua lá; no boot seguinte
+    // o sync traz as duas e o equipamento aparece duplicado. Localmente o
+    // `map` acima substitui certo, então nada denunciava — só reaparecia
+    // depois, em outro aparelho, parecendo cadastro errado da equipe.
+    // Apagar DEPOIS de subir a nova: se a ordem inverter e o push falhar,
+    // o equipamento some da nuvem.
+    if (anterior?.label && anterior.label !== label) {
+      deleteEquipmentItem(activeTenant.id, anterior.label).catch(() => {});
+    }
     cancelEdit();
   };
 

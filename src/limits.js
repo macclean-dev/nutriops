@@ -128,11 +128,32 @@ export function suggestLimits(label = '') {
 export function dedupeCatalog(catalog) {
   if (!Array.isArray(catalog)) return [];
   const seen = new Set();
+  const porIdentidade = new Map();   // alias+local+faixa → índice em `out`
   const out = [];
+  const norm = (v) => String(v ?? '').trim().toLowerCase();
   for (const item of catalog) {
-    const key = String(item?.label ?? '').trim().toLowerCase();
+    const key = norm(item?.label);
     if (key && seen.has(key)) continue; // já vi esse label (não-vazio) — pula
     if (key) seen.add(key);
+
+    // Rede contra RENOMEAÇÃO (CASA DOCE, 18/08): a linha na nuvem é
+    // identificada por (loja, label) e não tem id próprio. Renomear
+    // "Banho-maria — BM.1" pra "Banho-maria (Refeitório) — BM.1" criava linha
+    // nova e deixava a velha órfã — o mesmo equipamento aparecia duas vezes.
+    // Corrigido na origem (o editor apaga o label antigo); isto aqui limpa a
+    // sujeira que já está na nuvem, inclusive a pendência antiga da Swiss.
+    //
+    // A identidade é o ALIAS (o código do equipamento: "BM.1"), mas exigindo
+    // TAMBÉM local e faixa iguais. Só o alias seria frouxo demais: dois
+    // equipamentos distintos podem compartilhar apelido por descuido, e aí
+    // sumiria um da lista — trocar duplicata por desaparecimento é pior.
+    const aliases = Array.isArray(item?.aliases) ? item.aliases.map(norm).filter(Boolean) : [];
+    const assinatura = aliases.length
+      ? `${aliases.slice().sort().join('|')}::${norm(item?.location)}::${item?.minTemp ?? ''}::${item?.maxTemp ?? ''}`
+      : null;
+    if (assinatura && porIdentidade.has(assinatura)) continue;
+    if (assinatura) porIdentidade.set(assinatura, out.length);
+
     out.push(item);
   }
   return out;

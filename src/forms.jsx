@@ -132,7 +132,53 @@ function weekRangeFromKey(key) {
   return start ? { start, end } : null;
 }
 
+// ─── Escopo por setor dentro do mesmo período ──────────────────────────────
+// Pergunta da nutricionista (18/08): "na Higienização de Hortifrutícolas só
+// consigo preencher 1 setor por dia?". Sim — e pior: a segunda equipe
+// SOBRESCREVIA a primeira. O registro é chaveado por (formId, periodKey) e o
+// periodKey era só a data; o "Setor" é conteúdo do formulário, não entra na
+// chave. Confeitaria e Café no mesmo dia disputavam a mesma linha, e o save
+// troca `responses` e `user` inteiros — o registro anterior sumia sem aviso.
+//
+// A planilha de Higienização (por ÁREA) nunca teve esse problema porque usa um
+// template por setor (ver templateSector). As de EQUIPE usam um template só com
+// campo "Setor", e é aí que a chave precisa do setor junto.
+//
+// Formato: "2026-08-18::Confeitaria". Registro antigo (chave sem "::") continua
+// válido e legível — nada do que já existe é reescrito.
+const SEP_ESCOPO = '::';
+
+// Campo que divide a planilha em vias independentes. Explícito no template
+// (`scopeBy`) em vez de adivinhado pelo label: adivinhar erraria numa planilha
+// futura que tenha um select "Setor" só informativo.
+export function scopeFieldOf(template) {
+  if (!template?.scopeBy) return null;
+  for (const sec of template.sections ?? []) {
+    for (const f of sec.fields ?? []) if (f.id === template.scopeBy) return f;
+  }
+  return null;
+}
+
+export function makePeriodKey(frequency, date, scopeValue) {
+  const base = getPeriodKey(frequency, date);
+  const v = String(scopeValue ?? '').trim();
+  return v ? `${base}${SEP_ESCOPO}${v}` : base;
+}
+
+export function splitPeriodKey(key) {
+  const i = String(key ?? '').indexOf(SEP_ESCOPO);
+  return i < 0
+    ? { base: String(key ?? ''), scope: null }
+    : { base: key.slice(0, i), scope: key.slice(i + SEP_ESCOPO.length) };
+}
+
 export function formatPeriodLabel(frequency, key) {
+  // Chave com escopo: formata só a parte da data e devolve o setor junto,
+  // senão `new Date('2026-08-18::Confeitaria')` vira "Invalid Date" e a tela
+  // mostra a chave crua pro colaborador.
+  const { base, scope } = splitPeriodKey(key);
+  if (scope) return `${formatPeriodLabel(frequency, base)} · ${scope}`;
+  key = base;
   try {
     if (frequency === 'daily')    return new Date(key+'T12:00').toLocaleDateString('pt-BR',{weekday:'short',day:'numeric',month:'short'});
     if (frequency === 'weekly') {
@@ -162,7 +208,12 @@ export function pendingFormsForPeriod(templates, records, now = new Date()) {
   return (templates ?? [])
     .map((tpl) => {
       const periodKey = getPeriodKey(tpl.frequency, now);
-      const rec = (records ?? []).find((r) => r.formId === tpl.id && r.periodKey === periodKey);
+      // Planilha com escopo por setor: conta como feita se QUALQUER setor
+      // registrou no período. Exigir todos os setores marcaria pendência
+      // eterna — nem toda equipe higieniza hortifruti todo dia.
+      const rec = (records ?? []).find((r) =>
+        r.formId === tpl.id &&
+        (r.periodKey === periodKey || splitPeriodKey(r.periodKey).base === periodKey));
       return {
         id: tpl.id, title: tpl.title, category: tpl.category, periodKey,
         periodLabel: formatPeriodLabel(tpl.frequency, periodKey),
@@ -866,7 +917,7 @@ const TPL_CASADOCE_BANHEIROS = () => ({
 // "a confirmar" nas descrições — trocar 1 valor + re-rodar o SQL se ela ajustar.
 
 const TPL_CD_HORTIFRUTI = () => ({
-  id:'f565a332-b2a1-401d-b1f4-5e70825aafec', category:'faxina', frequency:'daily', v:2,
+  id:'f565a332-b2a1-401d-b1f4-5e70825aafec', category:'faxina', frequency:'daily', v:3, scopeBy:'cd-hf-setor',
   title:'Higienização de Hortifrutícolas',
   description:'Registro da higienização de hortifrutícolas (imersão em solução sanitizante). Frequência: diária (a confirmar com a RT).',
   sections:[
@@ -1000,7 +1051,7 @@ const CD_SETORES_EQUIPE = [
 ];
 
 const TPL_CD_HIGIENE = () => ({
-  id:'c1e7838e-1cac-4a76-a0c3-296e1bebbfdb', category:'higiene_pessoal', frequency:'daily', v:3,
+  id:'c1e7838e-1cac-4a76-a0c3-296e1bebbfdb', category:'higiene_pessoal', frequency:'daily', v:4, scopeBy:'cd-hig-setor',
   title:'Higiene Pessoal dos Colaboradores',
   description:'Verificação por SETOR: escolha o setor, registre data e quem verificou. C=conforme / NC=não conforme. Ex.: toda segunda e terça o checklist da Padaria.',
   sections:[
@@ -1032,7 +1083,7 @@ const TPL_CD_HIGIENE = () => ({
 });
 
 const TPL_CD_VETORES = () => ({
-  id:'96496ddc-a938-4b90-9aa5-fd5710a54fb0', category:'vetores_pragas', frequency:'daily', v:2,
+  id:'96496ddc-a938-4b90-9aa5-fd5710a54fb0', category:'vetores_pragas', frequency:'daily', v:3, scopeBy:'cd-vet-setor',
   title:'Controle Integrado de Vetores e Pragas',
   description:'Verificação diária. Registrar tipo de praga e o setor onde foi feito o controle. Anexar comprovante de dedetização.',
   sections:[
@@ -1610,6 +1661,9 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   // Terceira vez que esta classe de bug aparece (catálogo v1.9.71, equipe
   // v1.9.81); aqui contamina planilha E registro preenchido. Precisa ser state,
   // não ref: com ref o efeito leria o valor já atualizado e a checagem passaria.
+  // Setor escolhido por card, pra planilhas com `scopeBy`. Fica na tela (não
+  // persiste): é a via que a pessoa está preenchendo agora, não preferência.
+  const [scopeSel, setScopeSel] = useState({});
   const [formsTenant, setFormsTenant] = useState(activeTenant.id);
   useEffect(() => {
     setTemplates(readFormTemplates(activeTenant));
@@ -1786,7 +1840,15 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
 
           <div className="forms-grid">
             {filteredTemplates.map((tpl) => {
-              const pk     = getPeriodKey(tpl.frequency, today);
+              const pkBase = getPeriodKey(tpl.frequency, today);
+              // Planilha com escopo: a via aberta depende do setor escolhido no
+              // card. Sem setor escolhido ainda, `pk` é a chave-base — que é
+              // exatamente o registro legado (pré-18/08), então histórico
+              // antigo continua abrindo normalmente.
+              const campoEscopo = scopeFieldOf(tpl);
+              const setorSel    = campoEscopo ? (scopeSel[tpl.id] ?? '') : '';
+              const pk     = campoEscopo ? makePeriodKey(tpl.frequency, today, setorSel) : pkBase;
+              const escopoPendente = Boolean(campoEscopo) && !setorSel;
               const rec    = getRecord(tpl, pk);
               const pct    = completionPct(tpl, rec);
               const meta   = catMeta(tpl.category);
@@ -1814,6 +1876,24 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
                   <div style={{ fontSize:11, color:'var(--text-secondary)', marginBottom:10 }}>
                     Período: <strong style={{ color:'var(--text)' }}>{formatPeriodLabel(tpl.frequency, pk)}</strong>
                   </div>
+                  {/* Cada setor tem sua própria via no mesmo dia. Sem isto, a
+                      segunda equipe abria o registro da primeira e o salvava
+                      por cima — o nome e as respostas da primeira sumiam. */}
+                  {campoEscopo && (
+                    <div style={{ marginBottom:10 }}>
+                      <label style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--text-secondary)', display:'block', marginBottom:4 }}>
+                        {campoEscopo.label} — cada um preenche o seu
+                      </label>
+                      <select value={setorSel} style={{ width:'100%', fontSize:12, padding:'6px 8px' }}
+                        onChange={(e) => setScopeSel((prev) => ({ ...prev, [tpl.id]: e.target.value }))}>
+                        <option value="">Escolha o {String(campoEscopo.label).toLowerCase()}…</option>
+                        {(campoEscopo.options ?? []).map((o) => {
+                          const feito = records.some((r) => r.formId===tpl.id && r.periodKey===makePeriodKey(tpl.frequency, today, o) && r.status==='submitted');
+                          return <option key={o} value={o}>{feito ? `✓ ${o}` : o}</option>;
+                        })}
+                      </select>
+                    </div>
+                  )}
                   <div style={{ height:4, background:'var(--border-subtle)', borderRadius:2, marginBottom:12, overflow:'hidden' }}>
                     <div style={{ height:'100%', width:`${pct}%`, background:isValidated?'var(--green)':isDone?meta.color:meta.color, borderRadius:2, transition:'width .3s', opacity:isDone?1:0.6 }} />
                   </div>
@@ -1841,13 +1921,18 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
                           win.document.close(); setTimeout(() => win.print(), 400);
                         }}>↓ PDF</button>
                       )}
-                      <button className="secondary-action" style={{ fontSize:11, padding:'5px 10px', background:'#001e2b', color:'white', borderColor:'transparent' }}
-                        onClick={() => { const pk2=getPeriodKey(tpl.frequency,today); setKioskForm({ template:tpl, record:getRecord(tpl,pk2), periodKey:pk2 }); }}>
+                      {/* `pk` já carrega o setor escolhido — recalcular com
+                          getPeriodKey aqui reintroduziria a colisão. */}
+                      <button className="secondary-action" disabled={escopoPendente}
+                        title={escopoPendente ? `Escolha o ${String(campoEscopo.label).toLowerCase()} primeiro` : undefined}
+                        style={{ fontSize:11, padding:'5px 10px', background: escopoPendente ? 'var(--border)' : '#001e2b', color:'white', borderColor:'transparent', cursor: escopoPendente ? 'not-allowed' : 'pointer' }}
+                        onClick={() => setKioskForm({ template:tpl, record:rec, periodKey:pk })}>
                         📱 Tablet
                       </button>
-                      <button className="primary-action" style={{ fontSize:12, padding:'6px 14px', background:isValidated?'var(--green)':`linear-gradient(135deg,${meta.color},${meta.color}cc)` }}
-                        onClick={() => { const pk2=getPeriodKey(tpl.frequency,today); setFilling({ template:tpl, record:getRecord(tpl,pk2), periodKey:pk2 }); }}>
-                        {isDone?'Ver / editar':isDraft?'Continuar':'Preencher'}
+                      <button className="primary-action" disabled={escopoPendente}
+                        style={{ fontSize:12, padding:'6px 14px', background: escopoPendente ? 'var(--border)' : (isValidated?'var(--green)':`linear-gradient(135deg,${meta.color},${meta.color}cc)`), cursor: escopoPendente ? 'not-allowed' : 'pointer' }}
+                        onClick={() => setFilling({ template:tpl, record:rec, periodKey:pk })}>
+                        {escopoPendente ? `Escolha o ${String(campoEscopo.label).toLowerCase()}` : isDone?'Ver / editar':isDraft?'Continuar':'Preencher'}
                       </button>
                     </div>
                   </div>

@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.150', date: '2026-08-18', items: [
+    'Agora cada setor preenche a sua própria via, no mesmo dia. Antes, planilhas com campo "Setor" — Higienização de Hortifrutícolas, Higiene Pessoal e Controle de Vetores e Pragas — só aceitavam um preenchimento por dia: se a Confeitaria registrasse de manhã e o Café registrasse à tarde, o segundo substituía o primeiro, junto com o nome de quem preencheu. Nada avisava.',
+    'No card da planilha há um seletor de setor. Escolha o setor antes de preencher; os setores já registrados hoje aparecem com um ✓ na lista, para a equipe ver o que falta.',
+    'Os registros que já existem continuam como estão — nada foi reescrito.',
+  ]},
   { version: '1.9.149', date: '2026-08-18', items: [
     'Corrigido: a tela de Nova Ordem de Serviço (Manutenção) não mostrava os equipamentos já monitorados na Visão Geral — só apareciam ativos cadastrados manualmente em Manutenção. Se a loja nunca tinha usado a aba Equipamentos da Manutenção, o menu de equipamento ficava vazio mesmo com o catálogo cheio. Agora os dois aparecem juntos.',
     'Corrigido também: transformar um equipamento do catálogo em ativo de manutenção completo (com plano preventivo) podia gerar um cadastro que nunca sincronizava com a nuvem. Já ficou resolvido antes de qualquer loja sentir o efeito.',

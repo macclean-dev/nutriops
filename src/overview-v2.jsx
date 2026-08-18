@@ -890,6 +890,26 @@ function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records
     tenantRecords.filter(r => meusNomes.has(r.user) && new Date(r.createdAt).getTime() >= todayMs),
   [tenantRecords, meusNomes, todayMs]);
 
+  // Leituras da LOJA hoje — de qualquer pessoa. Numa conta compartilhada sem
+  // operador escolhido, "suas leituras" não tem dono: a sessão se chama
+  // "Equipe", e o card contava só os registros gravados literalmente com esse
+  // nome. Foi o que a nutricionista da CASA DOCE viu em 18/08 — "3" no card
+  // enquanto a loja tinha medido 36 dos 46 equipamentos no mesmo dia (os
+  // outros no nome de cada colaboradora). O número estava certo e não servia
+  // pra nada.
+  const lojaHoje = useMemo(() =>
+    tenantRecords.filter(r => new Date(r.createdAt).getTime() >= todayMs),
+  [tenantRecords, todayMs]);
+
+  // NÃO tentar adivinhar "esta conta é de uma pessoa ou da loja". A sessão da
+  // CASA DOCE se chama "Equipe" mas NÃO é conta de loja (não passa pelo
+  // seletor de operador), então qualquer heurística baseada em
+  // isStoreAccountSession erraria justamente o caso que originou isto.
+  // Em vez de detectar, MOSTRAR OS DOIS: o card continua sendo o pessoal, e o
+  // total da loja vai no subtítulo sempre que for diferente. Quem procurava
+  // "as leituras de hoje" acha o número na hora, seja qual for o tipo de conta.
+  const mostrarTotalDaLoja = lojaHoje.length !== myToday.length;
+
   // Equipamentos pendentes = não tem leitura no turno atual
   const equipmentHistory = useMemo(() => {
     const map = new Map();
@@ -953,7 +973,10 @@ function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records
           count
           label="Suas leituras hoje"
           value={myToday.length}
-          sub={myToday.length > 0 ? `última ${fmtRelative(myToday[0].createdAt)}` : 'comece registrando'} />
+          sub={[
+            myToday.length > 0 ? `última ${fmtRelative(myToday[0].createdAt)}` : 'comece registrando',
+            mostrarTotalDaLoja ? `loja: ${lojaHoje.length} hoje` : null,
+          ].filter(Boolean).join(' · ')} />
         <MetricBig
           count
           label="Planilhas pendentes"
@@ -1033,11 +1056,25 @@ function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records
         </Section>
       )}
 
-      {/* O que você já fez */}
+      {/* O que você já fez — só quando há um "você". Na conta compartilhada sem
+          operador, a seção abaixo (a loja inteira) é a que faz sentido. */}
       {myToday.length > 0 && (
         <Section title="O que você fez hoje" subtitle={`${myToday.length} leituras registradas`}>
           <div style={{ padding:'4px 18px', background:'var(--surface)', border:'1px solid var(--border-subtle)', borderRadius:'var(--r-lg)' }}>
             <ActivityTimeline records={myToday} limit={8} />
+          </div>
+        </Section>
+      )}
+
+      {/* Atividade da loja — o colaborador não tinha NENHUMA lista das leituras
+          do dia, de qualquer pessoa; esta seção só existia na visão do
+          supervisor. Num tablet de loja, onde várias pessoas se revezam, saber
+          o que já foi medido (e por quem) é o que evita medir duas vezes e o
+          que responde "cadê as leituras de hoje". */}
+      {lojaHoje.length > 0 && (
+        <Section title="Atividade da loja hoje" subtitle={`${lojaHoje.length} leituras registradas por toda a equipe`}>
+          <div style={{ padding:'4px 18px', background:'var(--surface)', border:'1px solid var(--border-subtle)', borderRadius:'var(--r-lg)' }}>
+            <ActivityTimeline records={lojaHoje} limit={12} />
           </div>
         </Section>
       )}

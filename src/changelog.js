@@ -21,6 +21,10 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.152', date: '2026-08-18', items: [
+    'A tela inicial agora mostra "Atividade da loja hoje" — todas as leituras do dia, com o equipamento, a temperatura e o nome de quem mediu. Antes essa lista só existia no perfil de supervisor: quem entrava como colaborador via apenas as próprias leituras e não tinha como saber o que a equipe já havia registrado.',
+    'O card "Suas leituras hoje" passou a mostrar também o total da loja ao lado. Num aparelho compartilhado, o número pessoal costuma ser bem menor que o do dia — e era isso que fazia parecer que as leituras não estavam sendo registradas.',
+  ]},
   { version: '1.9.151', date: '2026-08-18', items: [
     'Correção importante: as leituras do dia feitas em OUTROS aparelhos paravam de aparecer. O app guarda uma cópia local das leituras para funcionar sem internet, e essa cópia tem um limite. Quando enchia, as leituras que chegavam da nuvem eram descartadas em vez das mais antigas — então só sobravam as registradas naquele mesmo aparelho.',
     'Era isso que fazia a "Cobertura de registro hoje" mostrar um número muito baixo (ex.: 6 de 138) mesmo com a equipe registrando normalmente, e cada aparelho mostrar uma contagem diferente. Nenhuma leitura foi perdida — todas sempre estiveram na nuvem; o que falhava era a exibição.',

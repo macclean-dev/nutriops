@@ -532,11 +532,15 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
         />
       )}
 
-      {/* Work order modal */}
+      {/* Work order modal — equipments é mergedEquipments (catálogo de
+          temperatura + ativos reais), não o `equipments` cru. Esse era o bug:
+          uma loja que nunca cadastrou nada em Manutenção → Equipamentos tem
+          `equipments` vazio, mesmo com Freezer/Refrigerador já monitorados na
+          Visão Geral. O dropdown ficava sem opção nenhuma pra escolher. */}
       {editOrder !== null && (
         <WorkOrderModal
           order={editOrder.id ? editOrder : null}
-          equipments={equipments}
+          equipments={mergedEquipments}
           session={session}
           onSave={(o) => { setOrders(prev => editOrder.id ? prev.map(x=>x.id===o.id?o:x) : [...prev, o]); pushWorkOrder(activeTenant.id, o); setEditOrder(null); }}
           onClose={() => setEditOrder(null)}
@@ -576,7 +580,15 @@ function EquipmentModal({ equipment, onSave, onDelete, onClose }) {
 
   const handleSave = () => {
     if (!name.trim()) return;
-    onSave({ id: equipment?.id ?? uid(), name:name.trim(), location:location.trim(), brand:brand.trim(), model:model.trim(), serialNumber:serialNumber.trim(), purchaseDate, status, notes:notes.trim(), maintenancePlans:plans, createdAt: equipment?.createdAt ?? new Date().toISOString(), updatedAt:new Date().toISOString() });
+    // Converter um item virtual do catálogo (_fromCatalog, id sintético
+    // "cat-<label>") em ativo real precisa de um id de VERDADE — a coluna em
+    // equip_assets é uuid. Reusar o id virtual (equipment?.id ?? uid() sempre
+    // manteria "cat-Freezer") faria esse ativo falhar pra sempre no push, 22P02
+    // invalid uuid syntax — a mesma doença do ativo sem id (v1.9.148), só que
+    // com id inválido em vez de ausente, e passando batido por garantirIds
+    // porque "cat-Freezer" é truthy.
+    const id = equipment?._fromCatalog ? uid() : (equipment?.id ?? uid());
+    onSave({ id, name:name.trim(), location:location.trim(), brand:brand.trim(), model:model.trim(), serialNumber:serialNumber.trim(), purchaseDate, status, notes:notes.trim(), maintenancePlans:plans, createdAt: equipment?.createdAt ?? new Date().toISOString(), updatedAt:new Date().toISOString() });
   };
 
   return (

@@ -1735,18 +1735,26 @@ export async function migrateAllToSupabase(tenants) {
 // Garante `id` em todo item de uma lista local, persistindo o conserto. Puro o
 // suficiente pra testar: devolve a lista já corrigida e só reescreve o
 // localStorage se algo mudou. Exportado por causa dos testes.
+const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function garantirIds(chave) {
   const itens = ls(chave, []);
   if (!Array.isArray(itens)) return [];
   let mudou = false;
   const out = itens.map((it) => {
     if (!it || typeof it !== 'object') return it;
-    if (it.id) return it;
+    // Não basta id AUSENTE — id INVÁLIDO passa batido pelo `if (it.id)` e falha
+    // pra sempre do mesmo jeito (22P02 em vez de 23502). Achado ao corrigir o
+    // dropdown de Ordens de Serviço: converter um item virtual do catálogo
+    // (maintenance.jsx, id sintético "cat-<label>") em ativo real reusava esse
+    // id truthy-mas-não-uuid. Corrigido na origem também — isto é a rede,
+    // pra qualquer outro produtor de id ruim que a gente não tenha achado.
+    if (it.id && RE_UUID.test(String(it.id))) return it;
     mudou = true;
     return { ...it, id: crypto.randomUUID() };
   }).filter((it) => it && typeof it === 'object');
   if (mudou || out.length !== itens.length) {
-    console.warn(`[repo] ${chave}: itens sem id corrigidos e regravados (${itens.length} → ${out.length})`);
+    console.warn(`[repo] ${chave}: itens sem id válido corrigidos e regravados (${itens.length} → ${out.length})`);
     lw(chave, out);
   }
   return out;

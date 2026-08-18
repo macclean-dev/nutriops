@@ -43,11 +43,15 @@ describe('garantirIds — recupera o item em vez de descartar', () => {
     expect(segundo).toBe(primeiro);
   });
 
-  it('não mexe em quem já tem id, nem reescreve o storage à toa', () => {
-    lw(CHAVE, [{ id: 'fixo-1', name: 'Bancada R.7' }]);
+  it('não mexe em quem já tem id VÁLIDO, nem reescreve o storage à toa', () => {
+    // fixture precisa ser uuid de verdade agora — id truthy-mas-inválido é
+    // exatamente o caso que este arquivo passou a regenerar (ver testes de
+    // "cat-Freezer" abaixo).
+    const real = 'a1b2c3d4-0000-4000-8000-000000000001';
+    lw(CHAVE, [{ id: real, name: 'Bancada R.7' }]);
     const spy = vi.spyOn(Storage.prototype, 'setItem');
     const out = garantirIds(CHAVE);
-    expect(out[0].id).toBe('fixo-1');
+    expect(out[0].id).toBe(real);
     expect(spy).not.toHaveBeenCalled();
   });
 
@@ -67,6 +71,24 @@ describe('garantirIds — recupera o item em vez de descartar', () => {
 
   it('lista vazia ou chave inexistente não quebra', () => {
     expect(garantirIds('nutriops.equip_assets.vazio')).toEqual([]);
+  });
+
+  // Achado corrigindo o dropdown de Nova OS (maintenance.jsx): converter um
+  // item virtual do catálogo (id sintético "cat-Freezer") em ativo real
+  // reusava esse id truthy-mas-não-uuid. `if (it.id)` deixava passar; a coluna
+  // é uuid e recusaria pra sempre, 22P02 em toda tentativa — mesma doença do
+  // ativo sem id, forma diferente.
+  it('id presente mas que NÃO é uuid também é regenerado', () => {
+    lw(CHAVE, [{ id: 'cat-Freezer', name: 'Freezer', _fromCatalog: true }]);
+    const [a] = garantirIds(CHAVE);
+    expect(a.id).not.toBe('cat-Freezer');
+    expect(a.id).toMatch(/^[0-9a-f-]{36}$/i);
+  });
+
+  it('uuid válido de verdade não é trocado (não pode divergir do que já subiu)', () => {
+    const real = crypto.randomUUID();
+    lw(CHAVE, [{ id: real, name: 'Bancada R.7' }]);
+    expect(garantirIds(CHAVE)[0].id).toBe(real);
   });
 });
 

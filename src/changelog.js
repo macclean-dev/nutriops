@@ -21,6 +21,10 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.149', date: '2026-08-18', items: [
+    'Corrigido: a tela de Nova Ordem de Serviço (Manutenção) não mostrava os equipamentos já monitorados na Visão Geral — só apareciam ativos cadastrados manualmente em Manutenção. Se a loja nunca tinha usado a aba Equipamentos da Manutenção, o menu de equipamento ficava vazio mesmo com o catálogo cheio. Agora os dois aparecem juntos.',
+    'Corrigido também: transformar um equipamento do catálogo em ativo de manutenção completo (com plano preventivo) podia gerar um cadastro que nunca sincronizava com a nuvem. Já ficou resolvido antes de qualquer loja sentir o efeito.',
+  ]},
   { version: '1.9.148', date: '2026-08-17', items: [
     'Corrigido: os equipamentos cadastrados na Manutenção não estavam subindo para a nuvem. Os mais antigos não tinham um código interno que o servidor exige, e eram recusados a cada tentativa. Agora o app gera esse código e envia — nada precisa ser recadastrado.',
     'Corrigido também: reenviar um recebimento já salvo dava erro de duplicado em vez de simplesmente não fazer nada. Como o app reenvia o acervo antigo a cada abertura, isso se repetia todo dia e travava a sincronização de fundo — que nunca terminava e recomeçava do zero na abertura seguinte.',

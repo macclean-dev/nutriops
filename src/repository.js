@@ -273,6 +273,12 @@ export async function pushModule({ table, localKey, toRow }) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const RECORDS_KEY = 'nutriops.temperature.records';
+// Teto do cache local. É GLOBAL (todas as lojas dividem), então precisa caber
+// o dia inteiro das 4 somadas com folga: a CASA DOCE sozinha faz ~60/dia em 46
+// equipamentos. 1000 era apertado demais e cortava leitura do dia (ver o
+// comentário em supabaseRepository.list). localStorage aguenta ~5MB; um
+// registro de temperatura tem ~300 bytes, então 5000 fica em ~1,5MB.
+const MAX_CACHE_RECORDS = 5000;
 
 function tempToRow(input) {
   return {
@@ -320,7 +326,7 @@ function correctionToRow(id, tenantId, patch) {
 // quando o POST ao remoto já passou, pra evitar duplicação na queue.
 function cacheTempLocal(record) {
   const current = ls(RECORDS_KEY, []);
-  lw(RECORDS_KEY, [record, ...current].slice(0, 1000));
+  lw(RECORDS_KEY, [record, ...current].slice(0, MAX_CACHE_RECORDS));
   return record;
 }
 
@@ -387,7 +393,20 @@ export const supabaseRepository = {
       }
       const local = ls(RECORDS_KEY, []);
       const merged = mergeByKey([...local, ...rows.map(tempFromRow)], 'id');
-      lw(RECORDS_KEY, merged.slice(0, 1000));
+      // ⚠️ ORDENAR ANTES DE CORTAR. `mergeByKey` devolve na ordem de inserção
+      // (local primeiro, remoto anexado no fim) e o cache é GLOBAL — as 4 lojas
+      // dividem as mesmas vagas. Cortando na ordem crua, assim que o cache
+      // enchia, TODA leitura nova vinda da nuvem caía fora: entrava no fim da
+      // lista e o slice a descartava, para sempre.
+      //
+      // Sintoma em produção (CASA DOCE, 18/08): "cobertura 4% — 6 de 138", com
+      // a equipe registrando normalmente. As 6 que sobreviviam eram as criadas
+      // NESTE aparelho — cacheTempLocal faz [record, ...current], que PREPENDA.
+      // As dos outros aparelhos chegavam pela nuvem e evaporavam. Também
+      // explica contagens diferentes por aparelho (uma pessoa via 3, outra 6):
+      // cada cache sobreviveu a um corte diferente.
+      const porData = merged.sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0));
+      lw(RECORDS_KEY, porData.slice(0, MAX_CACHE_RECORDS));
       // ⚠️ Devolve o MERGE, não só `rows` (CASA DOCE, 17/08). Antes gravava uma
       // coisa e retornava outra: o registro que falhou no POST ficava salvo no
       // cache E na fila offline, mas a tela — que monta `records` puramente

@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.151', date: '2026-08-18', items: [
+    'Correção importante: as leituras do dia feitas em OUTROS aparelhos paravam de aparecer. O app guarda uma cópia local das leituras para funcionar sem internet, e essa cópia tem um limite. Quando enchia, as leituras que chegavam da nuvem eram descartadas em vez das mais antigas — então só sobravam as registradas naquele mesmo aparelho.',
+    'Era isso que fazia a "Cobertura de registro hoje" mostrar um número muito baixo (ex.: 6 de 138) mesmo com a equipe registrando normalmente, e cada aparelho mostrar uma contagem diferente. Nenhuma leitura foi perdida — todas sempre estiveram na nuvem; o que falhava era a exibição.',
+    'Agora o limite descarta as mais antigas, e ele foi ampliado para caber o dia inteiro de todas as unidades com folga.',
+  ]},
   { version: '1.9.150', date: '2026-08-18', items: [
     'Agora cada setor preenche a sua própria via, no mesmo dia. Antes, planilhas com campo "Setor" — Higienização de Hortifrutícolas, Higiene Pessoal e Controle de Vetores e Pragas — só aceitavam um preenchimento por dia: se a Confeitaria registrasse de manhã e o Café registrasse à tarde, o segundo substituía o primeiro, junto com o nome de quem preencheu. Nada avisava.',
     'No card da planilha há um seletor de setor. Escolha o setor antes de preencher; os setores já registrados hoje aparecem com um ✓ na lista, para a equipe ver o que falta.',

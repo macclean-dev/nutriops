@@ -753,8 +753,35 @@ const TPL_POTABILIDADE = () => ({
 //
 // `photo` no comprovante porque é o que o fiscal pede de verdade — o laudo da
 // empresa executora. O motor de planilhas já suporta o tipo desde a v1.9.x.
-const TPL_RESERVATORIO = () => ({
-  id:'8f2b1c04-6d3a-4e57-9b18-2a7c5e0d4f91', category:'potabilidade', frequency:'semiannual', v:1,
+// ─────────────────────────────────────────────────────────────────────────────
+// Id de seed determinístico POR LOJA.
+//
+// `form_templates` tem `id uuid primary key` — `tenant_id` é só coluna
+// indexada. Um template com id FIXO servido a mais de uma loja faz as linhas
+// dessas lojas COLIDIREM na nuvem: quando a RT da Swiss salva a planilha do
+// Reservatório, o upsert (que resolve por id) sobrescreve a linha da CASA
+// DOCE, trocando inclusive o tenant_id. A outra loja para de achar a dela no
+// pull e cai de volta no seed — a customização some. Achado da auditoria de
+// 18/08, e só o Reservatório está nessa situação: os outros 4 templates
+// compartilhados usam uid().
+//
+// `uid()` NÃO resolve: id aleatório por device recria a duplicação de planilhas
+// que a v1.9.139 passou a limpar (dois aparelhos da mesma loja gerariam ids
+// diferentes pro mesmo template). Precisa ser estável DENTRO da loja e distinto
+// ENTRE lojas — daí o hash do tenantId no último grupo do uuid base.
+// ─────────────────────────────────────────────────────────────────────────────
+export function idSeedPorTenant(base, tenantId) {
+  let h = 0x811c9dc5;                     // FNV-1a, 32 bits
+  const t = String(tenantId ?? '');
+  for (let i = 0; i < t.length; i++) {
+    h ^= t.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return base.slice(0, 24) + h.toString(16).padStart(8, '0') + base.slice(32);
+}
+
+const TPL_RESERVATORIO = (tenantId) => ({
+  id: idSeedPorTenant('8f2b1c04-6d3a-4e57-9b18-2a7c5e0d4f91', tenantId), category:'potabilidade', frequency:'semiannual', v:1,
   title:'Higienização do Reservatório de Água',
   description:'Obrigatória a cada 6 meses (RDC 216). Registrar empresa executora, data e anexar o comprovante/laudo.',
   sections:[{ id:'res-servico', title:'Registro da higienização', fields:[
@@ -1430,16 +1457,16 @@ function seedTemplates(tenant) {
   // TPL_RESERVATORIO vai pra TODAS as lojas: a exigência da RDC 216 §4.4 não
   // depende do segmento — quem tem reservatório de água precisa comprovar a
   // higienização semestral, e isso é toda cozinha industrial.
-  if (id.includes('swiss'))                          return [TPL_HIGIENE_PESSOAL(), TPL_VETORES('C=Cozinha D=Distribuição S=Salão E=Externa'), TPL_DEDETIZACAO(), TPL_FAXINA_SWISS(), TPL_RESERVATORIO()];
-  if (id.includes('backerei')||id.includes('bäck')) return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_FAXINA_BACKEREI(), TPL_POTABILIDADE(), TPL_RESERVATORIO()];
-  if (id.includes('dbk'))                            return [TPL_FAXINA_DBK(), TPL_MANUTENCAO_DBK(), TPL_VETORES(), TPL_RESERVATORIO()];
+  if (id.includes('swiss'))                          return [TPL_HIGIENE_PESSOAL(), TPL_VETORES('C=Cozinha D=Distribuição S=Salão E=Externa'), TPL_DEDETIZACAO(), TPL_FAXINA_SWISS(), TPL_RESERVATORIO(tenant.id)];
+  if (id.includes('backerei')||id.includes('bäck')) return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_FAXINA_BACKEREI(), TPL_POTABILIDADE(), TPL_RESERVATORIO(tenant.id)];
+  if (id.includes('dbk'))                            return [TPL_FAXINA_DBK(), TPL_MANUTENCAO_DBK(), TPL_VETORES(), TPL_RESERVATORIO(tenant.id)];
   if (id.includes('bf245c3b') || name.includes('casa doce')) return [
     TPL_CASADOCE_BANHEIROS(), TPL_CD_HORTIFRUTI(), TPL_CD_FILTRO_CAFE(), TPL_CD_RESIDUOS(),
     TPL_CD_CARRINHOS(), TPL_CD_CLIMATIZACAO(), TPL_CD_MANUT_PROG(), TPL_CD_CALIBRACAO(),
-    TPL_CD_HIGIENE(), TPL_CD_VETORES(), TPL_CD_DEDETIZACAO(), TPL_RESERVATORIO(),
+    TPL_CD_HIGIENE(), TPL_CD_VETORES(), TPL_CD_DEDETIZACAO(), TPL_RESERVATORIO(tenant.id),
     ...TPL_CD_HIG.map((mk) => mk()),
   ];
-  return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_RESERVATORIO()];
+  return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_RESERVATORIO(tenant.id)];
 }
 
 // ─── Field components ──────────────────────────────────────────────────────

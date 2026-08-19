@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.160', date: '2026-08-19', items: [
+    'Correção importante: a planilha "Higienização do Reservatório de Água" era compartilhada entre as empresas por engano — quando a RT de uma loja ajustava as tarefas, sobrescrevia a planilha de outra loja na nuvem, e a segunda voltava ao modelo padrão. Cada empresa passa a ter a sua. As planilhas já preenchidas continuam onde estão.',
+    'Cadastrar dois equipamentos com o mesmo nome na mesma empresa agora é bloqueado, com sugestão de como diferenciar. Antes o segundo apagava o primeiro (faixa, setor e apelidos) na sincronização, sem avisar.',
+    'No painel administrativo, o botão de remover cliente agora diz a verdade: ele oculta o cliente da lista — e isso passa a valer de verdade, antes o cliente reaparecia sozinho na abertura seguinte. Os dados não são apagados e o acesso continua; para cortar o acesso, use Desativar.',
+  ]},
   { version: '1.9.159', date: '2026-08-19', items: [
     'Correções internas na tela antiga de registro de temperatura (hoje fora do menu): o número no botão "Registrar N temperaturas" podia não bater com o que era realmente gravado, valores digitados com vírgula não eram salvos, e corrigir uma medição já registrada não tinha efeito. Nada disso afeta o uso atual do app — está corrigido caso a tela volte.',
   ]},

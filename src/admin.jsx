@@ -1349,6 +1349,18 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
 // MAIN ADMIN PANEL
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Lápides de clientes ocultados no painel. Não é exclusão — ver deleteClient.
+const OCULTOS_KEY = 'nutriops.admin.clientes.ocultos';
+function lerOcultos() {
+  try { const r = localStorage.getItem(OCULTOS_KEY); return r ? JSON.parse(r) : []; } catch { return []; }
+}
+function ocultarCliente(id) {
+  try {
+    const atual = lerOcultos();
+    if (!atual.includes(id)) localStorage.setItem(OCULTOS_KEY, JSON.stringify([...atual, id]));
+  } catch {}
+}
+
 export function AdminPanel({ onExit }) {
   const [clients, setClients]         = useState(() => readClients());
   const [modal, setModal]             = useState(null);
@@ -1373,7 +1385,11 @@ export function AdminPanel({ onExit }) {
         const { fetchAllTenantsFromCloud, mergeCloudTenants } = await import('./tenant-sync');
         const cloud = await fetchAllTenantsFromCloud();
         if (cancelled || !cloud.length) return;
-        setClients(prev => mergeCloudTenants(prev, cloud));
+        // Filtra os ocultados ANTES do merge — senão eles voltam por serem
+        // "novos" pro merge (não estão na lista local justamente porque foram
+        // removidos).
+        const ocultos = lerOcultos();
+        setClients(prev => mergeCloudTenants(prev, cloud.filter(r => !ocultos.includes(r.id))));
       } catch {}
     })();
     return () => { cancelled = true; };
@@ -1385,8 +1401,21 @@ export function AdminPanel({ onExit }) {
       : [...prev, client]);
   };
 
+  // Remover era SÓ local: a linha na tabela `tenants` continuava, e o merge do
+  // próximo boot (`mergeCloudTenants`) trazia o cliente de volta — reativado e
+  // sem os campos comerciais, que só existem localmente. O modal ainda afirmava
+  // "não pode ser desfeita". Achado da auditoria de 18/08.
+  //
+  // Apagar de verdade na nuvem NÃO é possível hoje e nem seria certo aqui: a
+  // tabela `tenants` está deny-all com RLS e só expõe RPCs de leitura/upsert,
+  // e os dados do cliente vivem em 20 tabelas por tenant_id. Uma exclusão real
+  // é migração + RPC nova, e é decisão do dono, não efeito colateral de um 🗑.
+  //
+  // Então o botão passa a fazer o que dá pra fazer com honestidade: esconder
+  // do painel, de forma que PERSISTA. A lápide sobrevive ao merge.
   const deleteClient = (id) => {
     setClients(prev => prev.filter(c=>c.id!==id));
+    ocultarCliente(id);
     setConfirmDelete(null);
   };
 
@@ -1633,11 +1662,14 @@ export function AdminPanel({ onExit }) {
       {confirmDelete && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:300, padding:24 }}>
           <div style={{ background:'white', borderRadius:14, padding:28, maxWidth:360, width:'100%' }}>
-            <h3 style={{ fontSize:16, fontWeight:800, marginBottom:8 }}>Remover cliente?</h3>
-            <p style={{ fontSize:14, color:'#5c6c7a', marginBottom:20 }}>Esta ação não pode ser desfeita. O cliente perderá acesso ao sistema.</p>
+            <h3 style={{ fontSize:16, fontWeight:800, marginBottom:8 }}>Ocultar cliente do painel?</h3>
+            <p style={{ fontSize:14, color:'#5c6c7a', marginBottom:20 }}>
+              Ele sai desta lista e não volta. <strong>Os dados dele não são apagados</strong> e o
+              acesso continua funcionando — para cortar o acesso, use “Desativar”.
+            </p>
             <div style={{ display:'flex', gap:10 }}>
               <button onClick={() => setConfirmDelete(null)} style={{ flex:1, padding:'10px', borderRadius:8, border:'1px solid #c1ccd6', background:'white', cursor:'pointer', fontSize:14, fontWeight:600, fontFamily:'inherit' }}>Cancelar</button>
-              <button onClick={() => deleteClient(confirmDelete)} style={{ flex:1, padding:'10px', borderRadius:8, border:'none', background:'#c0392b', color:'white', cursor:'pointer', fontSize:14, fontWeight:700, fontFamily:'inherit' }}>Remover</button>
+              <button onClick={() => deleteClient(confirmDelete)} style={{ flex:1, padding:'10px', borderRadius:8, border:'none', background:'#c0392b', color:'white', cursor:'pointer', fontSize:14, fontWeight:700, fontFamily:'inherit' }}>Ocultar</button>
             </div>
           </div>
         </div>

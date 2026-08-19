@@ -1445,6 +1445,24 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
       window.alert('Mínimo precisa ser menor ou igual ao máximo.');
       return;
     }
+    // Nome repetido é PERDA DE DADO, não incômodo: a linha na nuvem é chaveada
+    // por (tenant_id, label) — eqToRow não tem id —, então dois equipamentos
+    // com o mesmo nome viram UMA linha, e o segundo apaga o primeiro (faixa,
+    // setor e apelidos). O `dedupeCatalog` ainda some com um deles na tela.
+    // Cenário natural na CASA DOCE: 44 equipamentos em 11 setores, "Freezer 1"
+    // na Padaria e na Confeitaria. Achado da auditoria de 18/08.
+    // Bloqueio, não confirmação: não existe forma de gravar os dois — deixar
+    // seguir só escolheria em silêncio qual perder.
+    const norm = (v) => String(v ?? '').trim().toLowerCase();
+    const conflito = catalog.some((item, i) => i !== editingIndex && norm(item.label) === norm(label));
+    if (conflito) {
+      window.alert(
+        `Já existe um equipamento chamado "${label}" nesta empresa.\n\n` +
+        `Dois equipamentos não podem ter o mesmo nome — um sobrescreveria o outro na nuvem. ` +
+        `Use um nome que os diferencie (ex.: "${label} — Padaria").`
+      );
+      return;
+    }
     const next = { label, aliases, location, minTemp: minN, maxTemp: maxN };
     const anterior = editingIndex === null ? null : catalog[editingIndex];
     setCatalog((prev) => editingIndex === null

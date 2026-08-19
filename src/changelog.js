@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.164', date: '2026-08-19', items: [
+    'Correção importante: uma correção de temperatura feita na Auditoria podia sumir da tela na atualização seguinte, antes de subir para a nuvem. O valor corrigido e a trilha (valor original, quem corrigiu) voltavam ao que eram. Agora a correção permanece.',
+    'Corrigido: concluir o PIN de setup de uma empresa apagava do aparelho as outras empresas já carregadas nele.',
+    'Ao preencher uma planilha atravessando a meia-noite, o app agora pergunta em qual dia registrar, mostrando os dois. Antes gravava no dia em que a planilha foi aberta — por cima da folha daquele dia, se já estivesse preenchida.',
+  ]},
   { version: '1.9.163', date: '2026-08-19', items: [
     'Correção importante no backup: o arquivo exportado de uma empresa levava junto os dados das OUTRAS empresas do aparelho — e restaurá-lo sobrescrevia todas. Agora o backup leva só a empresa escolhida, e a restauração ignora (avisando) o que não for dela.',
     'O arquivo de backup também deixou de carregar credenciais — sessão, chave de acesso e PINs não entram mais nele. Se você tem backups antigos guardados fora do aparelho, vale apagá-los: eles contêm esses dados.',

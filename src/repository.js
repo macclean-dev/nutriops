@@ -398,7 +398,14 @@ export const localRepository = {
     const records = ls(RECORDS_KEY, []);
     const idx = records.findIndex((r) => r.id === id);
     if (idx === -1) return null;
-    records[idx] = { ...records[idx], ...patch };
+    // `updatedAt` é o que faz a correção SOBREVIVER ao próximo refresh.
+    // mergeByKey desempata com `>=`, e em list() o remoto entra DEPOIS do
+    // local — então, no empate, o remoto vence. A correção não muda o
+    // createdAt, então ela empatava com a linha velha da nuvem e era apagada
+    // da tela até a fila subir. Numa correção de temperatura isso é evidência
+    // de fiscalização sumindo (originalValue/correctedBy). Achado da
+    // auditoria (18/08).
+    records[idx] = { ...records[idx], ...patch, updatedAt: new Date().toISOString() };
     lw(RECORDS_KEY, records);
     enqueue('temperature_records', 'upsert', correctionToRow(id, tenantId, patch));
     return records[idx];
@@ -519,11 +526,13 @@ export const supabaseRepository = {
     }
   },
   async update(id, tenantId, patch) {
+    // Mesmo motivo do localRepository.update: sem `updatedAt` a correção perde
+    // o desempate do mergeByKey pro registro velho que ainda está na nuvem.
     const applyLocal = (fields) => {
       const records = ls(RECORDS_KEY, []);
       const idx = records.findIndex((r) => r.id === id);
       if (idx === -1) return null;
-      records[idx] = { ...records[idx], ...fields };
+      records[idx] = { ...records[idx], ...fields, updatedAt: fields.updatedAt ?? new Date().toISOString() };
       lw(RECORDS_KEY, records);
       return records[idx];
     };

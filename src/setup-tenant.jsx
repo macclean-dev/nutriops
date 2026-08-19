@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { BrandLockup, APP_VERSION } from './brand';
 import { verifyPin, hashPin } from './crypto';
 import { isWeakPin, writePinOverride } from './pin';
-import { writeOnboardingTenants } from './onboarding-storage';
+import { writeOnboardingTenants , readOnboardingTenants } from './onboarding-storage';
 import {
   fetchTenantByToken,
   bumpSetupAttempts,
@@ -184,12 +184,20 @@ export function SetupPinScreen({ tenant, onComplete }) {
         pin: newPin, // só pro shape dos seeds — override é o que vale
       };
 
-      // Salva tenant operacional local com o admin owner
+      // Salva tenant operacional local com o admin owner.
+      // MESCLA em vez de substituir: `writeOnboardingTenants([updatedTenant])`
+      // gravava um array de UM e apagava do disco as outras lojas já hidratadas
+      // no aparelho. Num tablet que atende mais de uma unidade — ou quando o
+      // dono abre o link de setup de um cliente novo no próprio aparelho — as
+      // outras sumiam junto com a lista de usuários delas.
+      // Achado da auditoria (18/08).
       const updatedTenant = {
         ...tenant,
         usersList: [adminUser],
       };
-      writeOnboardingTenants([updatedTenant]);
+      const jaNoAparelho = readOnboardingTenants() ?? [];
+      const semEste = jaNoAparelho.filter((t) => t?.id !== updatedTenant.id);
+      writeOnboardingTenants([...semEste, updatedTenant]);
 
       // PIN override (formato canônico do app — `pin.js` lê dele primeiro)
       writePinOverride(tenant.id, ownerName, newPin);

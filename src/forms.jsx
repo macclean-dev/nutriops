@@ -1916,12 +1916,35 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   const handleSave = useCallback(({ responses, status }) => {
     if (!filling) return;
     const { template, periodKey } = filling;
+    // O periodKey é capturado quando a planilha ABRE e nunca recalculado. Quem
+    // começa 23:58 e confirma 00:03 gravava na folha de ONTEM — e como o save
+    // faz upsert por (formId, periodKey), sobrescrevia a folha de ontem que já
+    // estava preenchida. A DBK é unidade de produção e vira a noite.
+    // Achado da auditoria (18/08).
+    //
+    // Não troco em silêncio: quem preencheu à meia-noite pode estar registrando
+    // o turno que ACABOU. Pergunto, com os dois períodos escritos por extenso.
+    const escopo = filling.escopo ?? null;
+    const pkAgora = escopo
+      ? makePeriodKey(template.frequency, new Date(), escopo)
+      : getPeriodKey(template.frequency, new Date());
+    let periodoFinal = periodKey;
+    if (pkAgora !== periodKey) {
+      const usarAgora = window.confirm(
+        `A data virou enquanto você preenchia.\n\n` +
+        `Esta planilha foi aberta em "${formatPeriodLabel(template.frequency, periodKey)}" ` +
+        `e agora estamos em "${formatPeriodLabel(template.frequency, pkAgora)}".\n\n` +
+        `OK = registrar no período ATUAL.\n` +
+        `Cancelar = manter no período em que foi aberta.`
+      );
+      if (usarAgora) periodoFinal = pkAgora;
+    }
     setRecords((prev) => {
-      const ex = prev.find((r) => r.formId===template.id && r.periodKey===periodKey);
+      const ex = prev.find((r) => r.formId===template.id && r.periodKey===periodoFinal);
     const up = {
         id: ex?.id ?? uid(),
         tenantId: activeTenant.id, formId: template.id, formTitle: template.title,
-        category: template.category, frequency: template.frequency, periodKey,
+        category: template.category, frequency: template.frequency, periodKey: periodoFinal,
         responses, status,
         user: session?.user?.name ?? 'Usuário', role: session?.user?.role ?? '',
         createdAt: ex?.createdAt ?? new Date().toISOString(), updatedAt: new Date().toISOString(),
@@ -2189,7 +2212,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
                       </button>
                       <button className="primary-action" disabled={escopoPendente}
                         style={{ fontSize:12, padding:'6px 14px', background: escopoPendente ? 'var(--border)' : (isValidated?'var(--green)':`linear-gradient(135deg,${meta.color},${meta.color}cc)`), cursor: escopoPendente ? 'not-allowed' : 'pointer' }}
-                        onClick={() => setFilling({ template:tpl, record:rec, periodKey:pk })}>
+                        onClick={() => setFilling({ template:tpl, record:rec, periodKey:pk, escopo: campoEscopo ? setorSel : null })}>
                         {escopoPendente ? `Escolha o ${String(campoEscopo.label).toLowerCase()}` : isDone?'Ver / editar':isDraft?'Continuar':'Preencher'}
                       </button>
                     </div>

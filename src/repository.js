@@ -613,9 +613,22 @@ export const supabaseRepository = {
     return { synced, failed, remaining: remaining.length };
   },
   async exportCsv(records = []) { return localRepository.exportCsv(records); },
-  async testConnection() {
+  // `override` deixa testar url/anonKey CANDIDATOS sem gravar nada em
+  // localStorage — sem argumento, cai no comportamento de sempre (config
+  // salva). Existe pra settings.jsx: "Testar conexão" precisa checar o que a
+  // pessoa DIGITOU, mas testConnection() só sabia ler de getSupabaseConfig(),
+  // e por isso o chamador salvava a config antes de testar — o que, desde que
+  // source:'manual' passou a travar o auto-config pra sempre (shouldAutoConfigSupabase),
+  // virava lockout permanente quando o teste dava errado. Achado alta-sem-perda
+  // da auditoria (19/08).
+  async testConnection(override) {
+    const { url, anonKey } = override ?? {};
+    const base = url ? `${url}/rest/v1` : sbBase();
+    const key  = anonKey ?? getSupabaseConfig().anonKey;
     try {
-      const res = await fetch(`${sbBase()}/temperature_records?limit=1`, { headers: await sbHeaders() });
+      const res = await fetch(`${base}/temperature_records?limit=1`, {
+        headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      });
       if (res.ok)                                    return { ok: true };
       if (res.status === 404)                        return { ok: false, reason: 'table_missing' };
       if (res.status === 401 || res.status === 403)  return { ok: false, reason: 'auth_error' };

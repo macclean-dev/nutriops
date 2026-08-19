@@ -172,7 +172,20 @@ function LimpezaPlanilhasCard({ tenantId, tenantNome }) {
   }, [tenantId, tenantNome]);
 
   const calcular = useCallback(async () => {
-    setErro(null); setResultado(null);
+    // NÃO zera `resultado` aqui. calcular() é chamado de 3 lugares: o efeito
+    // de troca de tenant (abaixo, que já zera resultado explicitamente antes
+    // de chamar), o botão "Recalcular" (ok manter o último resultado à
+    // vista), e de DENTRO de `aplicar()` logo depois de gravar o resultado —
+    // esse é o caso que quebrava. A continuação da promise de `aplicar()`
+    // roda tudo síncrono até o próximo `await` (que é o de dentro de
+    // montarPlano), então gravar o resultado seguido de zerá-lo de novo aqui
+    // cai no MESMO lote de atualização do React: nenhum render intermediário
+    // chega a mostrar o resultado real, e a tela nunca exibe nem o "✓ limpeza
+    // aplicada" nem — o pior caso — o aviso de que cópias NÃO saíram da nuvem
+    // (falhasApagar), o único sinal que mandaria a pessoa rodar de novo com
+    // internet. Confirmado em vitest+jsdom: sequência de renders era
+    // [null, null]. Achado alta-sem-perda da auditoria (19/08).
+    setErro(null);
     try { setPlano(await montarPlano()); }
     catch (e) { setErro(e?.message ?? 'Não consegui montar o plano.'); }
   }, [montarPlano]);
@@ -356,8 +369,18 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
 
   const handleTest = async () => {
     setTesting(true); setTestResult(null);
-    saveSupabaseConfig({ url: url.trim(), anonKey: anonKey.trim(), enabled: true, source: 'manual' });
-    const result = await supabaseRepository.testConnection();
+    // NÃO grava em localStorage aqui — "Testar conexão" é uma consulta, não
+    // uma gravação. Salvar antes de testar (como era) tinha dois problemas:
+    // (1) com enabled:true fixo, ignorava o checkbox marcado/desmarcado na
+    // tela; (2) com source:'manual', um teste com credencial ERRADA travava
+    // shouldAutoConfigSupabase (repository.js) pra sempre — o aparelho ficava
+    // com Supabase ligado e chave podre, sem o auto-config de login pra se
+    // curar sozinho, e sem desfazer nada quando o teste falhava (quem saía da
+    // tela sem tocar "Salvar" achava que não tinha mexido em nada). testConnection
+    // agora aceita url/anonKey candidatos — "Salvar configurações" (handleSave,
+    // abaixo) continua sendo o único jeito de persistir. Achado alta-sem-perda
+    // da auditoria (19/08).
+    const result = await supabaseRepository.testConnection({ url: url.trim(), anonKey: anonKey.trim() });
     setTestResult(result); setTesting(false);
   };
 

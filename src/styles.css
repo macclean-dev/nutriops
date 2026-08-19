@@ -791,6 +791,15 @@ label {
 .audit-stat.ok     strong { color: var(--green); }
 .audit-stat.warn   strong { color: var(--amber); }
 .audit-stat.danger strong { color: var(--red); }
+
+/* Cards clicáveis (19/08) — mesmo card, agora também <button>: sorteia ou
+   filtra a tabela abaixo dele, dependendo do que a tela faz. Fica junto do
+   cabeçalho de tabela clicável como o padrão de indexação do NutriOPS. */
+.audit-stat.clicavel { cursor: pointer; text-align: left; font: inherit; transition: border-color .12s, box-shadow .12s; }
+.audit-stat.clicavel:hover { border-color: var(--primary); }
+.audit-stat.clicavel:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.audit-stat.clicavel.ativo { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+
 .audit-filters {
   display: flex; gap: 10px; flex-wrap: wrap;
   background: var(--surface); border: 1px solid var(--border);

@@ -702,10 +702,34 @@ export function AuditView({ allTenants, records, session, onRecordSaved }) {
       )}
       {loadingExtra && <p className="muted" style={{ fontSize:11 }}>Buscando histórico completo…</p>}
       <div className="audit-stats">
-        <div className="audit-stat"><span>Registros</span><strong>{stats.total}</strong></div>
-        <div className="audit-stat ok"><span>Conformes</span><strong>{stats.ok}</strong></div>
-        <div className="audit-stat warn"><span>Desvio leve</span><strong>{stats.warn}</strong></div>
-        <div className="audit-stat danger"><span>Fora da faixa</span><strong>{stats.danger}</strong></div>
+        <button type="button" className={`audit-stat clicavel ${statusFilter==='all'?'ativo':''}`}
+          aria-pressed={statusFilter==='all'} title="Mostrar todos os status"
+          onClick={() => setStatusFilter('all')}>
+          <span>Registros</span><strong>{stats.total}</strong>
+        </button>
+        {/* Cards clicáveis (19/08) — esta tela JÁ tem statusFilter + o <select>
+            "Status" logo abaixo; o card só troca o mesmo estado, sem inventar
+            um segundo filtro que pudesse desincronizar dos dois. Clicar no
+            card já ativo volta pra "Todos" — mesma saída do dropdown. Depois
+            de filtrar por um status, os OUTROS números deste bloco caem
+            (stats vem de `filtered`, que já reflete o filtro) — comportamento
+            que já existia antes desta mudança, só ficou mais visível agora
+            que dá pra chegar nele com um clique. */}
+        <button type="button" className={`audit-stat clicavel ok ${statusFilter==='ok'?'ativo':''}`}
+          aria-pressed={statusFilter==='ok'} title='Filtrar por "Conforme"'
+          onClick={() => setStatusFilter((s) => s==='ok' ? 'all' : 'ok')}>
+          <span>Conformes</span><strong>{stats.ok}</strong>
+        </button>
+        <button type="button" className={`audit-stat clicavel warn ${statusFilter==='warn'?'ativo':''}`}
+          aria-pressed={statusFilter==='warn'} title='Filtrar por "Desvio leve"'
+          onClick={() => setStatusFilter((s) => s==='warn' ? 'all' : 'warn')}>
+          <span>Desvio leve</span><strong>{stats.warn}</strong>
+        </button>
+        <button type="button" className={`audit-stat clicavel danger ${statusFilter==='danger'?'ativo':''}`}
+          aria-pressed={statusFilter==='danger'} title='Filtrar por "Fora da faixa"'
+          onClick={() => setStatusFilter((s) => s==='danger' ? 'all' : 'danger')}>
+          <span>Fora da faixa</span><strong>{stats.danger}</strong>
+        </button>
         <div className="audit-stat"><span>Conformidade</span><strong>{stats.total > 0 ? Math.round((stats.ok / stats.total) * 100) : 0}%</strong></div>
       </div>
       <div className="audit-filters">

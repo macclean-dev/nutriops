@@ -64,20 +64,42 @@ function TemperatureReport({ allTenants, records, periodDays, tenantFilter }) {
     }).sort((a,b) => a.tenant.localeCompare(b.tenant,'pt-BR'));
   }, [filtered]);
 
-  const { ordem, aoClicar, ordenar } = useOrdenacao();
+  const { ordem, aoClicar, ordenar, setOrdem } = useOrdenacao();
   const linhasEquip = ordenar(equipStats, COLS_EQUIP);
 
   const totals = { total: filtered.length, ok: filtered.filter(r=>resolveTemperatureTone(r)==='ok').length, warn: filtered.filter(r=>resolveTemperatureTone(r)==='warn').length, danger: filtered.filter(r=>resolveTemperatureTone(r)==='danger').length };
+
+  // Cards clicáveis (19/08) — a tabela é por EQUIPAMENTO (cada linha soma
+  // ok+warn+danger), então "filtrar" não tem um subconjunto correto pra
+  // recortar; o card SORTEIA a mesma tabela pela coluna equivalente, usando o
+  // infra do cabeçalho clicável em vez de inventar um segundo estado. Clicar
+  // no card já ativo desliga (volta à ordem natural) — mesma tecla de saída
+  // do 3º clique no cabeçalho, só que num passo só.
+  // `compliance` foge do padrão desc de propósito: é a única onde "pior
+  // primeiro" (asc) é a leitura útil — é o card que a RT aperta pra achar o
+  // equipamento com mais desvio, não o mais conforme.
+  const aoClicarCard = (coluna, direcaoPadrao = 'desc') =>
+    setOrdem((o) => (o.coluna === coluna ? { coluna: null, direcao: 'asc' } : { coluna, direcao: direcaoPadrao }));
+  const cardAtivo = (coluna) => ordem?.coluna === coluna;
+  const CardStat = ({ coluna, direcaoPadrao, tone, label, value }) => (
+    <button type="button"
+      className={`audit-stat clicavel ${tone ?? ''} ${cardAtivo(coluna) ? 'ativo' : ''}`}
+      aria-pressed={cardAtivo(coluna)}
+      title={`Ordenar equipamentos por ${label.toLowerCase()}`}
+      onClick={() => aoClicarCard(coluna, direcaoPadrao)}>
+      <span>{label}</span><strong>{value}</strong>
+    </button>
+  );
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
       {/* Summary cards */}
       <div className="audit-stats">
-        <div className="audit-stat"><span>Registros</span><strong>{totals.total}</strong></div>
-        <div className="audit-stat ok"><span>Conformes</span><strong>{totals.ok}</strong></div>
-        <div className="audit-stat warn"><span>Desvio leve</span><strong>{totals.warn}</strong></div>
-        <div className="audit-stat danger"><span>Fora da faixa</span><strong>{totals.danger}</strong></div>
-        <div className="audit-stat"><span>Conformidade geral</span><strong>{pct(totals.ok, totals.total)}%</strong></div>
+        <CardStat coluna="total"      label="Registros"          value={totals.total} />
+        <CardStat coluna="ok"         label="Conformes"          value={totals.ok}    tone="ok" />
+        <CardStat coluna="warn"       label="Desvio leve"        value={totals.warn}  tone="warn" />
+        <CardStat coluna="danger"     label="Fora da faixa"      value={totals.danger} tone="danger" />
+        <CardStat coluna="compliance" label="Conformidade geral" value={`${pct(totals.ok, totals.total)}%`} direcaoPadrao="asc" />
       </div>
 
       {/* Per-equipment table */}
@@ -242,7 +264,13 @@ function TrainingReport({ allTenants, tenantFilter }) {
   }, [allTenants, tenantFilter]);
 
   const { ordem: ordemTr, aoClicar: clicarTr, ordenar: ordenarTr } = useOrdenacao();
-  const linhasTr = ordenarTr(data, COLS_TREINO);
+  // Cards clicáveis (19/08) — aqui cada linha JÁ é uma pessoa com UM status, diferente
+  // da tabela de equipamento acima (que soma ok+warn+danger na mesma linha). Filtro é o
+  // que faz sentido: clicar em "Vencido" mostra só quem venceu. Clicar de novo desliga —
+  // mesma tecla de saída usada no cabeçalho e no card de Temperatura.
+  const [statusCard, setStatusCard] = useState(null);
+  const dataFiltrada = statusCard ? data.filter(r => r.status === statusCard) : data;
+  const linhasTr = ordenarTr(dataFiltrada, COLS_TREINO);
 
   const stLabel = { ok:'Em dia', warn:'Renovar em breve', expired:'Vencido', never:'Nunca capacitado' };
   const stTone  = { ok:'ok', warn:'warn', expired:'danger', never:'danger' };
@@ -251,12 +279,22 @@ function TrainingReport({ allTenants, tenantFilter }) {
     <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
       <div className="audit-stats">
         {['ok','warn','expired','never'].map(s => (
-          <div key={s} className={`audit-stat ${s==='ok'?'ok':s==='warn'?'warn':'danger'}`}>
+          <button key={s} type="button"
+            className={`audit-stat clicavel ${s==='ok'?'ok':s==='warn'?'warn':'danger'} ${statusCard===s?'ativo':''}`}
+            aria-pressed={statusCard===s}
+            title={`Mostrar só "${stLabel[s]}"`}
+            onClick={() => setStatusCard((cur) => cur===s ? null : s)}>
             <span>{stLabel[s]}</span>
             <strong>{data.filter(r=>r.status===s).length}</strong>
-          </div>
+          </button>
         ))}
       </div>
+      {statusCard && (
+        <div style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, color:'var(--text-secondary)' }}>
+          Mostrando só <strong style={{ color:'var(--text)' }}>{stLabel[statusCard]}</strong> — {dataFiltrada.length} de {data.length}
+          <button type="button" className="ghost-action" style={{ fontSize:11, padding:'2px 8px' }} onClick={() => setStatusCard(null)}>limpar</button>
+        </div>
+      )}
       <div className="audit-table-wrap">
         <table className="table">
           <thead><tr>

@@ -167,3 +167,55 @@ describe('padrão de tabela — cobertura', () => {
     expect(usos).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cards clicáveis (19/08) — extensão do padrão pedida logo depois dos
+// cabeçalhos: "faça os cards clicáveis também". Guarda de fonte, no mesmo
+// espírito dos testes de cobertura acima — cada tela usa o comportamento que
+// bate com a tabela dela: ORDENA quando a linha soma várias categorias
+// (equipamento), FILTRA quando a linha já É uma categoria (pessoa/status).
+// ─────────────────────────────────────────────────────────────────────────────
+describe('cards clicáveis', () => {
+  const arq = (n) => readFileSync(`${process.cwd()}/src/${n}`, 'utf8');
+
+  it('TemperatureReport: os 5 cards viram <button class="audit-stat clicavel">', () => {
+    const fonte = arq('reports.jsx');
+    expect(fonte).toContain('const aoClicarCard = (coluna, direcaoPadrao');
+    expect(fonte).toContain('<CardStat coluna="total"');
+    expect(fonte).toContain('<CardStat coluna="compliance"');
+  });
+
+  it('TemperatureReport: Conformidade geral ordena ASC (pior primeiro) — foge do padrão desc de propósito', () => {
+    expect(arq('reports.jsx')).toContain('direcaoPadrao="asc"');
+  });
+
+  it('TemperatureReport: clicar no card ativo desliga a ordenação', () => {
+    expect(arq('reports.jsx')).toContain("o.coluna === coluna ? { coluna: null, direcao: 'asc' }");
+  });
+
+  it('TrainingReport: os 4 cards FILTRAM (cada linha já é uma pessoa com 1 status)', () => {
+    const fonte = arq('reports.jsx');
+    expect(fonte).toContain('const [statusCard, setStatusCard] = useState(null);');
+    expect(fonte).toContain('const dataFiltrada = statusCard ? data.filter(r => r.status === statusCard) : data;');
+    expect(fonte).toContain("onClick={() => setStatusCard((cur) => cur===s ? null : s)}");
+  });
+
+  it('AuditView: os cards reusam statusFilter — não criam um segundo estado', () => {
+    const fonte = arq('reports-views.jsx');
+    expect(fonte).toContain("onClick={() => setStatusFilter((s) => s==='ok' ? 'all' : 'ok')}");
+    expect(fonte).toContain("onClick={() => setStatusFilter((s) => s==='warn' ? 'all' : 'warn')}");
+    expect(fonte).toContain("onClick={() => setStatusFilter((s) => s==='danger' ? 'all' : 'danger')}");
+    // não pode existir um useState novo pra isso — reusar é o ponto
+    const blocoCards = fonte.slice(fonte.indexOf('<div className="audit-stats">', fonte.indexOf('function AuditView')), fonte.indexOf('</div>\n      <div className="audit-filters">'));
+    expect(blocoCards).not.toContain('useState');
+  });
+
+  it('todo card clicável tem aria-pressed — leitor de tela precisa saber o estado', () => {
+    for (const nome of ['reports.jsx', 'reports-views.jsx']) {
+      const fonte = arq(nome);
+      const botoesClicaveis = (fonte.match(/className=\{`audit-stat clicavel[^`]*`\}/g) ?? []).length;
+      const ariaPressed = (fonte.match(/aria-pressed=\{/g) ?? []).length;
+      expect(ariaPressed, `${nome}: ${botoesClicaveis} cards clicáveis mas só ${ariaPressed} aria-pressed`).toBeGreaterThanOrEqual(botoesClicaveis);
+    }
+  });
+});

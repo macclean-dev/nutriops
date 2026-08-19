@@ -73,6 +73,35 @@ function dueLabel(days) {
   return `${days} dias`;
 }
 
+// Conta por PLANO (tarefa preventiva), não por equipamento — um equipamento
+// com 4 tarefas vencidas é 4 aqui, não 1. É o mesmo critério que
+// maintAlertCount (pages.jsx, badge do menu lateral) já usa somando planos
+// com `days <= 7`; contar por equipamento fazia o card "Manutenções
+// atrasadas" (badge, KPI "Atrasados/críticos" e badge da aba) mostrar "1" em
+// cima de uma lista com 4 linhas, e discordar do "4" do menu lateral ao
+// lado — dois números pra mesma coisa na mesma tela. Achado da auditoria
+// (19/08).
+export function countPlansByTone(equipmentsWithDue, tones) {
+  return (equipmentsWithDue ?? []).reduce(
+    (n, e) => n + (e.plans ?? []).filter((p) => tones.includes(p.tone)).length,
+    0
+  );
+}
+
+// Histórico e PDF de manutenção mostram por ordem de EXECUÇÃO, mais recente
+// primeiro — não a ordem de inserção no array. O log local entra por prepend
+// (mais novo no início — ver os onSave mais abaixo), mas o que o sync traz
+// da nuvem é anexado no FIM (syncModule → mergeByKey([...local, ...remoto]),
+// repository.js) sem reordenar por data. Sem este sort, uma execução feita
+// HOJE em outro aparelho cai no fim da lista/do PDF, atrás de registros de
+// meses atrás — quem confere pelo topo conclui que a equipe não registrou
+// nada. Achado da auditoria (19/08).
+export function sortLogsByExecution(logs) {
+  return [...(Array.isArray(logs) ? logs : [])].sort(
+    (a, b) => new Date(b?.executedAt ?? 0) - new Date(a?.executedAt ?? 0)
+  );
+}
+
 export function printMaintenanceReport(activeTenant, equipments, logs, orders) {
   const p = (() => { try { const r = localStorage.getItem(`nutriops.company.profile.${activeTenant?.id}`); return r ? JSON.parse(r) : {}; } catch { return {}; } })();
   const date = new Date().toLocaleString('pt-BR');
@@ -90,13 +119,24 @@ export function printMaintenanceReport(activeTenant, equipments, logs, orders) {
     </tr>`;
   }).join('');
 
-  const logRows = logs.slice(0,100).map(l => {
+  const logRows = sortLogsByExecution(logs).slice(0,100).map(l => {
     const eq = equipments.find(e=>e.id===l.equipmentId);
     const mt = MAINTENANCE_TYPES.find(t=>t.id===l.type);
     return `<tr><td>${fmtDate(l.executedAt)}</td><td>${eq?.name||'—'}</td><td>${mt?.label||l.type}</td><td>${l.title}</td><td>${l.executedBy}</td></tr>`;
   }).join('');
 
   const win = window.open('', '_blank');
+  // window.open devolve null com pop-up bloqueado (padrão no Safari/iOS,
+  // webview de app tipo WhatsApp/Instagram, tablet com bloqueador) — sem a
+  // guarda, o write seguinte estourava TypeError dentro do onClick, sem
+  // try/catch nem error boundary que pegue: o único sinal era o console
+  // (ninguém olha isso num tablet), e pro usuário o botão "não fazia nada".
+  // Mesma guarda que reports-views.jsx (printDashboard/exportPDF) e
+  // dossie-view.jsx já usam. Achado da auditoria (19/08).
+  if (!win) {
+    window.alert('Não foi possível abrir a janela de impressão — o navegador pode estar bloqueando pop-ups. Libere pop-ups para este site e toque em "Exportar PDF" de novo.');
+    return;
+  }
   win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
   <title>Relatório de Manutenção — ${activeTenant.name}</title>
   <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:10px;color:#1c2128;padding:20px}
@@ -151,6 +191,15 @@ const FREQUENCY_OPTIONS = [
 
 const EQUIPMENT_STATUS = ['Operacional', 'Em manutenção', 'Inativo', 'Aguardando peça'];
 
+// 'cancelada' não é 'aberta'. O filtro velho só excluía 'concluida', então
+// "OS abertas" (KPI, badge da aba, card do Painel) nunca baixava ao
+// cancelar — o único jeito de sumir do contador era clicar "✓ Concluir", que
+// grava uma execução como se o serviço tivesse sido FEITO (ver o auto-log
+// logo abaixo) pra um serviço que na verdade foi cancelado: evidência falsa
+// no histórico da RDC só pra "zerar" o contador. Achado da auditoria
+// (19/08).
+export const isOrderOpen = (o) => o.status !== 'concluida' && o.status !== 'cancelada';
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN VIEW
 // ═══════════════════════════════════════════════════════════════════════════
@@ -203,9 +252,9 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
   }), [mergedEquipments, logs]);
 
   // KPIs
-  const overdue  = equipmentsWithDue.filter(e => e.plans.some(p => p.tone === 'expired' || p.tone === 'danger')).length;
-  const due30    = equipmentsWithDue.filter(e => e.plans.some(p => p.tone === 'warn')).length;
-  const openOrders = orders.filter(o => o.status !== 'concluida').length;
+  const overdue  = countPlansByTone(equipmentsWithDue, ['expired', 'danger']);
+  const due30    = countPlansByTone(equipmentsWithDue, ['warn']);
+  const openOrders = orders.filter(isOrderOpen).length;
 
   // ── Dashboard ──────────────────────────────────────────────────────────
 
@@ -222,7 +271,7 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
       {overdue > 0 && (
         <article className="management-card" style={{ borderColor:'var(--red-border)' }}>
           <div className="card-head" style={{ background:'var(--red-light)', borderBottomColor:'var(--red-border)' }}>
-            <div><span className="eyebrow" style={{ color:'var(--red)' }}>Ação imediata</span><h2>Manutenções atrasadas ou vencendo hoje</h2></div>
+            <div><span className="eyebrow" style={{ color:'var(--red)' }}>Ação imediata</span><h2>Manutenções atrasadas ou vencendo em até 7 dias</h2></div>
             <span className="badge danger">{overdue}</span>
           </div>
           <div className="equipment-maintenance-list">
@@ -289,7 +338,7 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
         <article className="management-card">
           <div className="card-head"><div><span className="eyebrow">Ordens de serviço</span><h2>OS abertas</h2></div><span className="badge warn">{openOrders}</span></div>
           <div className="equipment-maintenance-list">
-            {orders.filter(o=>o.status!=='concluida').map(o => (
+            {orders.filter(isOrderOpen).map(o => (
               <div key={o.id} className="equipment-maintenance-row">
                 <div>
                   <strong>{o.title}</strong>
@@ -426,7 +475,7 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
                   {o.description && <p style={{ fontSize:13, marginTop:6 }}>{o.description}</p>}
                 </div>
                 <div style={{ display:'flex', gap:6 }}>
-                  {o.status !== 'concluida' && (
+                  {isOrderOpen(o) && (
                     <button className="primary-action" style={{ fontSize:11 }} onClick={() => {
                       // updatedAt PRECISA bumpar aqui — é o campo que
                       // mergeByKey usa pra decidir quem vence o sync (fica
@@ -469,7 +518,11 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
       <div className="equipment-maintenance-list">
         {logs.length === 0
           ? <p className="muted" style={{ padding:'24px' }}>Nenhum registro ainda.</p>
-          : logs.map(l => {
+          // Ordena por data de EXECUÇÃO, mais recente primeiro — ver
+          // sortLogsByExecution. Sem isto, o registro que chegou de outro
+          // aparelho no último sync cai no fim (a nuvem é anexada no fim do
+          // merge, não misturada por data). Achado da auditoria (19/08).
+          : sortLogsByExecution(logs).map(l => {
             const eq = mergedEquipments.find(e=>e.id===l.equipmentId);
             const mt = MAINTENANCE_TYPES.find(t=>t.id===l.type);
             return (

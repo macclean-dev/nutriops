@@ -912,7 +912,7 @@ export async function pushAllEquipment(tenantId, catalog) {
 }
 
 export async function deleteEquipmentItem(tenantId, label) {
-  if (!isSupabaseEnabled() || !navigator.onLine) return { ok: false };
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok: false, reason: 'offline_or_disabled' };
   try {
     await sbFetch('equipment_catalog', {
       method: 'DELETE',
@@ -1292,6 +1292,19 @@ function actionFromRow(row) {
 
 export async function syncCorrectiveActions(tenantId) {
   return syncModule({ table:'corrective_actions', localKey:`nutriops.corrective_actions.${tenantId}`, tenantId, toRow:(a)=>actionToRow(a, tenantId), fromRow:actionFromRow });
+}
+
+// Apagar é online-only (mesmo motivo do deleteEquipmentItem/deletePOPCloud):
+// DELETE enfileirado seria replayado como upsert e ressuscitaria a ação.
+// "Remover esta ação?" na Central de NC não tinha isso — só mexia no estado
+// local, então a ação voltava sozinha no próximo sync. Achado da auditoria
+// (18/08), 2 lentes no mesmo lugar (nº era duplicado no pool).
+export async function deleteCorrectiveAction(tenantId, id) {
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok: false, reason: 'offline_or_disabled' };
+  try {
+    await sbFetch('corrective_actions', { method:'DELETE', filter:`tenant_id=eq.${tenantId}&id=eq.${id}` }, tenantId);
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
 }
 
 export async function pushCorrectiveAction(tenantId, action) {

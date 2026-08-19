@@ -115,6 +115,36 @@ export function parseTemperatura(v) {
   return Number(t);
 }
 
+// Dias corridos entre HOJE e a data — meia-noite com meia-noite. Vivia em
+// validity.jsx; movido pra cá (18/08) porque pages.jsx precisava dela pro
+// badge de Validades no menu, e um import estático de validity.jsx puxa o
+// módulo INTEIRO (componentes React, geração de PDF, leitor de QR) pro bundle
+// principal — +161KB carregado em todo login pra usar uma função de 4 linhas.
+// `limits.js` é puro e já é importado eager por pages.jsx, então não pesa nada
+// a mais aqui.
+export function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const diff = new Date(dateStr + 'T00:00').getTime() - new Date().setHours(0,0,0,0);
+  return Math.round(diff / 86400000);
+}
+
+// Conta produtos "problema" (vencidos OU vencendo em 7 dias) — a mesma
+// definição que a tela de Validades usa nos cards "Vencendo em 7 dias" +
+// "Vencidos" somados. Existia reimplementada 3 VEZES em pages.jsx (RailNav,
+// MobileDrawer, BottomNav) com uma fórmula antiga e quebrada (Math.ceil de
+// T12:00 contra T00:00, o mesmo off-by-one que daysUntil corrigiu em
+// validity.jsx) e ignorando `openedUntil` (validade pós-abertura). As três
+// cópias iam divergir umas das outras E do que a tela de Validades mostra —
+// é a família de bug desta auditoria (badge ≠ tela). Achado 18/08.
+export function contarValidadesEmAlerta(products) {
+  return (products ?? []).filter((p) => {
+    const efetiva = p.openedUntil ? p.openedUntil.slice(0, 10) : p.expiryDate;
+    if (!efetiva) return false;
+    const days = daysUntil(efetiva);
+    return days !== null && (days < 0 || days <= 7);
+  }).length;
+}
+
 export function suspectMissingMinus(value, min, max) {
   const v = Number(value), mn = Number(min), mx = Number(max);
   if (!Number.isFinite(v) || !Number.isFinite(mn) || !Number.isFinite(mx)) return false;

@@ -6,7 +6,7 @@ import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
 import { trackUsage } from './repository';
 import { employeeTrainingStatus } from './training-status';
 import { readTurns } from './turns';
-import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, getStorageFull, clearStorageFull, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill, pushCorrectiveAction, syncCorrectiveActions } from './repository';
+import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, getStorageFull, clearStorageFull, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill, pushCorrectiveAction, syncCorrectiveActions, deleteCorrectiveAction } from './repository';
 import { notificarSyncAplicado } from './lista-local';
 // Central de Não-Conformidades (item 2 da revisão, 09/08) — puro, sem React;
 // `extractNonConformities` (forms.jsx) e os readers de controles especiais
@@ -18,7 +18,7 @@ import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
 import { getUnseenEntries } from './changelog';
-import { resolveLimits as resolveLimitsFromCatalog, resolveTone, resolveRecordTone as resolveTemperatureTone, heuristicLimits, suggestLimits, dedupeCatalog, normalizeEquipmentName, getEquipmentEntry, suspectMissingMinus, parseTemperatura } from './limits';
+import { resolveLimits as resolveLimitsFromCatalog, resolveTone, resolveRecordTone as resolveTemperatureTone, heuristicLimits, suggestLimits, dedupeCatalog, normalizeEquipmentName, getEquipmentEntry, suspectMissingMinus, parseTemperatura, daysUntil, contarValidadesEmAlerta } from './limits';
 import { receivingSuggestedResult } from './verdict';
 import { isPlaceholderCatalog } from './segments';
 
@@ -161,19 +161,26 @@ function generateAuditHTML(records, tenantName) {
 // ─── Mobile Bottom Nav ─────────────────────────────────────────────────────
 
 function BottomNav({ activeView, setActiveView, session, alertCount, actionCount }) {
+  // `hoje` muda quando a aba volta a ficar visível — sem isso o badge
+  // calculava uma vez por troca de tenant e congelava: quem deixava o app
+  // aberto de um dia pro outro via a mesma contagem, mesmo com produto tendo
+  // vencido enquanto isso. Achado da auditoria (18/08).
+  const [hoje, setHoje] = useState(() => new Date().toDateString());
+  useEffect(() => {
+    const atualizar = () => { if (document.visibilityState === 'visible') setHoje(new Date().toDateString()); };
+    document.addEventListener('visibilitychange', atualizar);
+    window.addEventListener('focus', atualizar);
+    return () => { document.removeEventListener('visibilitychange', atualizar); window.removeEventListener('focus', atualizar); };
+  }, []);
+
   const validityAlertCount = useMemo(() => {
     try {
       const tenantId = session?.tenantId;
       if (!tenantId) return 0;
       const products = JSON.parse(localStorage.getItem(`nutriops.products.${tenantId}`) ?? '[]');
-      const now = new Date().setHours(0,0,0,0);
-      return products.filter(p => {
-        if (!p.expiryDate) return false;
-        const days = Math.ceil((new Date(p.expiryDate + 'T12:00').getTime() - now) / 86400000);
-        return days <= 3 || days < 0;
-      }).length;
+      return contarValidadesEmAlerta(products);
     } catch { return 0; }
-  }, [session?.tenantId]);
+  }, [session?.tenantId, hoje]);
 
   const items = [
     { key: 'overview',  iconId: 'overview',  label: 'Início',    badge: 0 },
@@ -202,17 +209,21 @@ function BottomNav({ activeView, setActiveView, session, alertCount, actionCount
 // ─── Mobile Drawer ─────────────────────────────────────────────────────────
 
 function MobileDrawer({ open, onClose, activeView, setActiveView, session, activeTenant, allTenants, onTenantChange, onLogout, alertCount, actionCount, maintAlertCount = 0, switchableTenants = [], onRequestTenantSwitch, onChangeOperator }) {
+  // `hoje` muda quando a aba volta a ficar visível — sem isso a contagem
+  // travava no valor do primeiro cálculo até trocar de empresa.
+  const [hoje, setHoje] = useState(() => new Date().toDateString());
+  useEffect(() => {
+    const atualizar = () => { if (document.visibilityState === 'visible') setHoje(new Date().toDateString()); };
+    document.addEventListener('visibilitychange', atualizar);
+    window.addEventListener('focus', atualizar);
+    return () => { document.removeEventListener('visibilitychange', atualizar); window.removeEventListener('focus', atualizar); };
+  }, []);
   const validityAlertCount = useMemo(() => {
     try {
-      const products = JSON.parse(localStorage.getItem(`nutriops.products.${activeTenant.id}`) ?? '[]');
-      const now = new Date().setHours(0,0,0,0);
-      return products.filter(p => {
-        if (!p.expiryDate) return false;
-        const days = Math.ceil((new Date(p.expiryDate + 'T12:00').getTime() - now) / 86400000);
-        return days <= 3 || days < 0;
-      }).length;
+      const products = JSON.parse(localStorage.getItem(`nutriops.products.${activeTenant?.id}`) ?? '[]');
+      return contarValidadesEmAlerta(products);
     } catch { return 0; }
-  }, [activeTenant?.id]);
+  }, [activeTenant?.id, hoje]);
 
   const SECTIONS = buildNavSections({ validityAlertCount, maintAlertCount, alertCount, actionCount, isGlobalAdmin: isGlobalAdmin(session) });
   const navigate = (key) => { setActiveView(key); onClose(); };
@@ -395,17 +406,21 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
   const canSwitch = perms.canSwitchTenant && switchableTenants.length > 1;
   const [accountOpen, setAccountOpen] = useState(false);
 
+  // `hoje` muda quando a aba volta a ficar visível — sem isso a contagem
+  // travava no valor do primeiro cálculo até trocar de empresa.
+  const [hoje, setHoje] = useState(() => new Date().toDateString());
+  useEffect(() => {
+    const atualizar = () => { if (document.visibilityState === 'visible') setHoje(new Date().toDateString()); };
+    document.addEventListener('visibilitychange', atualizar);
+    window.addEventListener('focus', atualizar);
+    return () => { document.removeEventListener('visibilitychange', atualizar); window.removeEventListener('focus', atualizar); };
+  }, []);
   const validityAlertCount = useMemo(() => {
     try {
       const products = JSON.parse(localStorage.getItem(`nutriops.products.${activeTenant.id}`) ?? '[]');
-      const now = new Date().setHours(0,0,0,0);
-      return products.filter(p => {
-        if (!p.expiryDate) return false;
-        const days = Math.ceil((new Date(p.expiryDate + 'T12:00').getTime() - now) / 86400000);
-        return days <= 3 || days < 0;
-      }).length;
+      return contarValidadesEmAlerta(products);
     } catch { return 0; }
-  }, [activeTenant.id]);
+  }, [activeTenant.id, hoje]);
 
   const SECTIONS = buildNavSections({ validityAlertCount, maintAlertCount, alertCount, actionCount, isGlobalAdmin: isGlobalAdmin(session) });
   // Conta vai pro dropdown do avatar — rail mostra só Operação, Qualidade, Gestão
@@ -1121,6 +1136,7 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
   const [responsible, setResponsible] = useState('');
   const [deadline, setDeadline]       = useState('');
   const [resolution, setResolution]   = useState('');
+  const [verTodosPendentes, setVerTodosPendentes] = useState(false);
   const [resolvingId, setResolvingId] = useState(null);
   // Recebimento é lido direto (mesmo arquivo); controles especiais e
   // planilhas vêm de chunks pesados (controls.jsx/extras.jsx/forms.jsx) — só
@@ -1199,7 +1215,21 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
     setResolvingId(null); setResolution('');
   };
 
-  const removeAction = (id) => { if (!window.confirm('Remover esta ação?')) return; setActions((prev) => prev.filter((a) => a.id !== id)); };
+  const removeAction = async (id) => {
+    if (!window.confirm('Remover esta ação?')) return;
+    setActions((prev) => prev.filter((a) => a.id !== id));
+    const r = await deleteCorrectiveAction(activeTenant.id, id);
+    if (!r.ok) {
+      // Offline/config off: intencional, não avisa (é o mesmo caso do
+      // equipamento — ela vai reaparecer no sync e a pessoa pode remover de
+      // novo quando estiver online). Falha DE VERDADE (erro do servidor com
+      // internet presente) precisa ser dita — senão a ação volta sozinha e
+      // parece que a remoção nunca aconteceu.
+      if (r.reason !== 'offline_or_disabled') {
+        window.alert('Não foi possível remover na nuvem agora. Ela pode reaparecer na próxima sincronização — tente remover de novo.');
+      }
+    }
+  };
 
   const filtered = actions.filter((a) => statusFilter === 'all' || a.status === statusFilter);
   const open = actions.filter((a) => a.status !== 'resolvida').length;
@@ -1225,7 +1255,11 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
         <article className="management-card" style={{ marginBottom: 16 }}>
           <div className="card-head"><div><span className="eyebrow">Aguardando ação</span><h2>Não conformidades sem ação corretiva</h2></div><span className="badge danger">{pending.length}</span></div>
           <div className="equipment-maintenance-list">
-            {pending.slice(0, 15).map((item) => (
+            {/* O badge acima mostra pending.length, mas a lista cortava em 15
+                sem dizer isso — numa central de não-conformidades, esconder
+                item sem avisar significa esconder o que ainda precisa de ação
+                corretiva pela RDC 216. Achado da auditoria (18/08). */}
+            {(verTodosPendentes ? pending : pending.slice(0, 15)).map((item) => (
               <div key={`${item.source}::${item.sourceId}`} className="equipment-maintenance-row">
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1239,6 +1273,11 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
               </div>
             ))}
           </div>
+          {!verTodosPendentes && pending.length > 15 && (
+            <button className="ghost-action" style={{ margin: '8px 16px', fontSize: 12 }} onClick={() => setVerTodosPendentes(true)}>
+              Ver os outros {pending.length - 15}
+            </button>
+          )}
         </article>
       )}
 
@@ -1484,13 +1523,21 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
     cancelEdit();
   };
 
-  const removeItem = (i) => {
+  const removeItem = async (i) => {
     const item = catalog[i];
     if (!item) return;
     if (!window.confirm(`Remover "${item.label}"?`)) return;
     setCatalog((prev) => prev.filter((_, idx) => idx !== i));
     if (editingIndex === i) cancelEdit();
-    deleteEquipmentItem(activeTenant.id, item.label).catch(() => {});
+    // deleteEquipmentItem NUNCA lança — devolve {ok:false, reason}. O
+    // `.catch(() => {})` não pegava nada, e o {ok:false} que a função devolvia
+    // era descartado: falha real (com internet, erro do servidor) não
+    // avisava, e o equipamento voltava sozinho no próximo sync como se a
+    // remoção nunca tivesse acontecido. Achado da auditoria (18/08).
+    const r = await deleteEquipmentItem(activeTenant.id, item.label);
+    if (!r.ok && r.reason !== 'offline_or_disabled') {
+      window.alert(`Não foi possível remover "${item.label}" na nuvem agora. Ele pode reaparecer na próxima sincronização — tente remover de novo.`);
+    }
   };
 
   // Setores existentes no catálogo — alimentam o filtro. Vem da própria
@@ -2201,7 +2248,15 @@ function OfflineIndicator() {
         </button>
       )}
       {syncResult && (
-        <span style={{ fontSize: 11, color: 'var(--green)' }}>{syncResult.synced} sincronizado{syncResult.synced > 1 ? 's' : ''}</span>
+        // `syncQueue` sempre devolveu {synced, failed, remaining} — a tela só
+        // usava `synced` e mostrava em VERDE mesmo quando TUDO falhava ("0
+        // sincronizado" em verde é indistinguível de sucesso). Quatro achados
+        // da auditoria (18/08) apontavam pro mesmo trecho.
+        <span style={{ fontSize: 11, fontWeight: 600, color: syncResult.failed > 0 ? 'var(--red)' : 'var(--green)' }}>
+          {syncResult.synced > 0 && `${syncResult.synced} sincronizado${syncResult.synced > 1 ? 's' : ''}`}
+          {syncResult.synced > 0 && syncResult.failed > 0 && ' · '}
+          {syncResult.failed > 0 && `${syncResult.failed} falhou${syncResult.failed > 1 ? 'ram' : ''} — segue na fila`}
+        </span>
       )}
     </div>
   );
@@ -2441,7 +2496,13 @@ function ChangelogModal({ entries, onClose }) {
 export function App() {
   const repository = useMemo(() => getTemperatureRepository(), []);
   const [session, setSession]         = useState(() => readSession());
-  const [activeTenants, setActiveTenants] = useState(() => readOnboardingTenants() ?? defaultTenants);
+  // `?? defaultTenants` só troca de fonte quando o storage é NULL — um device
+  // que já tem qualquer tenant salvo localmente nunca ganha um cliente NOVO
+  // adicionado ao seed (data.js) depois. `mesclaTenants` (usada na constante
+  // `tenants` do módulo, linha 91) é a lógica certa: salvos + o que falta do
+  // seed. `activeTenants` reimplementava errado a mesma coisa que já existia
+  // certa 2400 linhas acima. Achado da auditoria (18/08).
+  const [activeTenants, setActiveTenants] = useState(() => mesclaTenants(readOnboardingTenants(), defaultTenants));
 
   // Novidades da versão — só pra quem já usava o app antes (1º acesso não
   // mostra nada, só passa a acompanhar a partir daqui).
@@ -2602,7 +2663,17 @@ export function App() {
   // — logins por PIN (tenant seed) já estão presentes, então não são afetados.
   useEffect(() => {
     if (!session?.tenantId) return;
-    if (activeTenants.some((t) => t.id === session.tenantId)) return;
+    // A guarda checava SÓ session.tenantId (a unidade primária). Se ela é uma
+    // loja-seed — sempre presente em activeTenants, mesmo antes de qualquer
+    // hidratação — a guarda dava `true` no 1º boot e o efeito NUNCA rodava,
+    // mesmo com a RT tendo uma SEGUNDA unidade (ex.: CASA DOCE) que não está
+    // no seed. handleLogin (login fresco) hidrata as duas certo; um F5 na
+    // mesma sessão persistida caía aqui e a segunda unidade sumia da lista de
+    // empresas até logar de novo. Achado da auditoria (18/08).
+    const necessarios = session.memberTenants?.length > 0
+      ? session.memberTenants.map((m) => m.id)
+      : [session.tenantId];
+    if (necessarios.every((id) => activeTenants.some((t) => t.id === id))) return;
     let cancelled = false;
     import('./tenant-sync')
       .then((m) => m.fetchMemberTenants())
@@ -2616,7 +2687,7 @@ export function App() {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [session?.tenantId, activeTenants]);
+  }, [session?.tenantId, session?.memberTenants, activeTenants]);
 
   // Active store object
   const activeStore = useMemo(() => {

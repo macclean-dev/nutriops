@@ -24,14 +24,12 @@ export const readStockLogs   = (id) => sl(sk('stocklogs', id), []);
 export const writeStockLogs  = (id, v) => ss(sk('stocklogs', id), v.slice(0, 500));
 
 function uid() { return crypto.randomUUID(); }
-// Dias corridos entre HOJE e a data — meia-noite com meia-noite. O ceil da
-// versão antiga comparava 12:00 com 00:00 e somava 1 dia em tudo (produto
-// vencendo hoje dizia "Vence amanhã"; regra de 30 dias virava badge de 31).
-export function daysUntil(dateStr) {
-  if (!dateStr) return null;
-  const diff = new Date(dateStr + 'T00:00').getTime() - new Date().setHours(0,0,0,0);
-  return Math.round(diff / 86400000);
-}
+// Movida pra limits.js (18/08): pages.jsx precisava dela sem puxar este
+// módulo inteiro (componentes + PDF + QR) pro bundle principal. Importada E
+// reexportada — `export {X} from Y` sozinho não cria vínculo local, e este
+// arquivo usa `daysUntil` internamente (linha ~254).
+import { daysUntil } from './limits';
+export { daysUntil };
 
 // ─── Validade tone ─────────────────────────────────────────────────────────
 

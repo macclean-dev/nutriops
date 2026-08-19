@@ -232,11 +232,26 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
 
   const handleSaveProfile = () => {
     const id = activeTenant?.id ?? 'global';
-    saveCompanyProfile(id, profile);
+    // `profile` é o retrato de quando a tela abriu. Se o sync gravou uma versão
+    // mais nova depois disso, salvar o retrato velho a apagava — e como
+    // pushCompanyProfile carimba updatedAt=agora, a versão velha passava a
+    // VENCER na nuvem pra sempre (syncCompanyProfile compara timestamps).
+    //
+    // O caso concreto: as preferências de organização das planilhas da RT
+    // (formPrefs, v1.9.153) moram neste blob. Ela renomeia as abas num
+    // aparelho; alguém abre Configurações noutro que ainda não tinha
+    // sincronizado, salva o CNPJ, e a organização dela evapora.
+    //
+    // Mesclar sobre o que está gravado AGORA: os campos deste formulário
+    // valem (a pessoa está olhando pra eles), e tudo que o formulário não
+    // conhece é preservado. Achado nº7/9 da auditoria de 18/08.
+    const atual = readCompanyProfile(id);
+    const mesclado = { ...atual, ...profile };
+    saveCompanyProfile(id, mesclado);
     // Fatia 2b: o perfil era local-only (auditoria §3.21) — a validade do
     // alvará nasceria evaporando junto com o aparelho. pushCompanyProfile
     // regrava local com o carimbo e sobe (ou enfileira offline).
-    pushCompanyProfile(id, profile);
+    pushCompanyProfile(id, mesclado);
     setProfileSaved(true);
     setTimeout(() => setProfileSaved(false), 2500);
   };

@@ -21,6 +21,12 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.155', date: '2026-08-19', items: [
+    'Correção importante: uma planilha BPF preenchida em dois aparelhos no mesmo período ficava presa para sempre na fila de envio do segundo aparelho — o servidor recusava por duplicidade e ninguém era avisado. Agora o segundo preenchimento atualiza o registro em vez de ser recusado.',
+    'Corrigido: o filtro "Todos" da Auditoria podia mostrar MENOS registros que "90 dias", e ainda apagava do aparelho o histórico das outras empresas. Era o mesmo problema de limite corrigido ontem, num caminho que passou despercebido.',
+    'Corrigido: salvar os dados do estabelecimento podia apagar alterações que a sincronização tinha acabado de trazer — inclusive a organização das abas de planilhas feita pela RT em outro aparelho.',
+    'Corrigido: transformar um equipamento do catálogo em ativo de manutenção desvinculava, sem avisar, as execuções e ordens de serviço já registradas nele.',
+  ]},
   { version: '1.9.154', date: '2026-08-18', items: [
     'Correção importante nos controles especiais (óleo, descongelamento, resfriamento, tratamento térmico) e na higiene das mãos: os registros feitos em outros aparelhos não apareciam, e o próximo registro feito neste aparelho apagava esses registros do celular. Nada se perdia na nuvem, mas o histórico da tela ficava incompleto — e a Prontidão, o Dossiê Fiscal e a Exportação mensal liam essa lista curta.',
     'Agora essas telas se atualizam sozinhas quando a sincronização traz dados novos, e gravar um registro nunca mais apaga o que veio de outro aparelho.',

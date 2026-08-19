@@ -280,6 +280,20 @@ const RECORDS_KEY = 'nutriops.temperature.records';
 // registro de temperatura tem ~300 bytes, então 5000 fica em ~1,5MB.
 const MAX_CACHE_RECORDS = 5000;
 
+// Filtra a lista já mesclada pelo escopo pedido. Existe pra separar duas coisas
+// que estavam grudadas: o TETO DO CACHE (quanto o aparelho guarda) e o QUE A
+// TELA RECEBE. Devolver a partir do cache capado fazia o teto virar limite de
+// exibição — com "Todos", uma loja com mais registros que o teto passaria a
+// mostrar menos do que mostra em "90 dias".
+function filtrarEscopo(lista, tenantId, days) {
+  const cutoff = days > 0 ? Date.now() - days * 86400000 : null;
+  return lista.filter((r) => {
+    if (tenantId && r.tenantId !== tenantId) return false;
+    if (cutoff != null && new Date(r.createdAt).getTime() < cutoff) return false;
+    return true;
+  });
+}
+
 function tempToRow(input) {
   return {
     id: input.id,
@@ -406,7 +420,8 @@ export const supabaseRepository = {
       // explica contagens diferentes por aparelho (uma pessoa via 3, outra 6):
       // cada cache sobreviveu a um corte diferente.
       const porData = merged.sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0));
-      lw(RECORDS_KEY, porData.slice(0, MAX_CACHE_RECORDS));
+      lw(RECORDS_KEY, porData.slice(0, MAX_CACHE_RECORDS));   // cache: capado
+      return filtrarEscopo(porData, tenantId, days);          // tela: completo
       // ⚠️ Devolve o MERGE, não só `rows` (CASA DOCE, 17/08). Antes gravava uma
       // coisa e retornava outra: o registro que falhou no POST ficava salvo no
       // cache E na fila offline, mas a tela — que monta `records` puramente
@@ -414,10 +429,9 @@ export const supabaseRepository = {
       // "sumia", o equipamento voltava a aparecer como pendente, e a conclusão
       // natural era "não registrou". Só reaparecia depois de sair e entrar,
       // quando a fila subia e o registro passava a existir na nuvem.
-      // `localRepository.list` reaplica o filtro de tenant/dias — o cache é
-      // GLOBAL (todas as lojas, sem corte de data), então devolver `merged` cru
-      // vazaria registro de outra loja pra dentro da tela.
-      return localRepository.list({ tenantId, days });
+      // `filtrarEscopo` reaplica tenant/dias — o cache é GLOBAL (todas as
+      // lojas, sem corte de data), então devolver `merged` cru vazaria
+      // registro de outra loja pra dentro da tela.
     }
     // days<=0 = "Todos" (item 14). Sem o filtro de data o servidor ainda
     // limitava a 1000 linhas — um tenant com mais de 1000 registros no total
@@ -445,8 +459,18 @@ export const supabaseRepository = {
     }
     const local = ls(RECORDS_KEY, []);
     const merged = mergeByKey([...local, ...allRows.map(tempFromRow)], 'id');
-    lw(RECORDS_KEY, merged.slice(0, Math.max(1000, allRows.length)));
-    return localRepository.list({ tenantId, days });   // idem: inclui o pendente local
+    // MESMO conserto do ramo de cima (v1.9.151) — que eu apliquei lá e esqueci
+    // aqui. Dois defeitos neste `slice`, achados pela auditoria de 18/08:
+    //
+    // 1. Cortava na ordem de inserção. mergeByKey devolve local-primeiro e o
+    //    remoto anexado no fim, então o que veio da nuvem era o primeiro a cair.
+    // 2. O teto saía de `allRows.length` — o volume de UMA loja — mas o cache é
+    //    GLOBAL. Abrir "Todos" na CASA DOCE (700 registros) cortava o cache
+    //    inteiro em 1000 e decapitava Swiss, Bäckerei e DBK, que não têm nada a
+    //    ver com o filtro que a pessoa escolheu.
+    const porData = merged.sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0));
+    lw(RECORDS_KEY, porData.slice(0, MAX_CACHE_RECORDS));   // cache: capado
+    return filtrarEscopo(porData, tenantId, days);          // tela: completo
   },
   async create(input) {
     if (!navigator.onLine) {
@@ -641,7 +665,24 @@ export async function pushFormRecord(tenantId, record) {
     return;
   }
   try {
-    await sbFetch('form_records', { method:'POST', body:formToRow(record), prefer:'resolution=merge-duplicates,return=minimal' }, tenantId);
+    // `on_conflict` é obrigatório aqui: form_records tem DUAS chaves únicas —
+    // `id` (primária) e `unique(tenant_id, form_id, period_key)`. Sem apontar a
+    // segunda, o merge-duplicates só resolve pela primária, e dois aparelhos
+    // preenchendo a MESMA planilha no MESMO período geram uuids diferentes:
+    // não colidem na primária, colidem na composta, e o POST toma 409 (23505)
+    // em toda tentativa — a planilha do segundo aparelho fica presa na fila
+    // pra sempre. Achado da auditoria de 18/08 (nº 4/18/22, três lentes
+    // diferentes chegaram nele).
+    //
+    // Com o alvo certo o segundo vira UPDATE da linha existente. É "o último a
+    // salvar vence" — mesma regra do resto do app. Não é ideal (o certo seria
+    // fundir as respostas), mas perde menos que o 409 eterno, onde o segundo
+    // preenchimento simplesmente nunca chegava.
+    await sbFetch('form_records', {
+      method:'POST', body:formToRow(record),
+      filter:'on_conflict=tenant_id,form_id,period_key',
+      prefer:'resolution=merge-duplicates,return=minimal',
+    }, tenantId);
   } catch (e) { logFailAndEnqueue('form_records', 'upsert', formToRow(record), e); }
 }
 

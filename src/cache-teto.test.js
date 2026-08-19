@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { ls, lw, saveSupabaseConfig, clearOfflineQueue, supabaseRepository } from './repository';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -104,5 +105,83 @@ describe('o que já funcionava não pode regredir', () => {
     lw(RECORDS_KEY, [{ id:'a', tenantId:'casadoce', createdAt:new Date().toISOString() }]);
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('offline'))));
     expect(await supabaseRepository.list({ tenantId:'casadoce', days:90 })).toHaveLength(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Triagem manual dos achados não-julgados da auditoria (19/08). Estes quatro
+// vieram de achados que o limite de uso impediu de verificar — foram
+// confirmados lendo o código, não por agente.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('ramo "Todos" — o irmão que a v1.9.151 esqueceu', () => {
+  const pagina = (n, tenant='casadoce') => Array.from({length:n},(_,i)=>({
+    id:`${tenant}-${i}`, tenant_id:tenant, value:3, created_at:new Date(Date.now()-i*60000).toISOString(),
+  }));
+
+  it('não decapita o cache das OUTRAS lojas', async () => {
+    // 3000 registros de outras lojas já no cache
+    lw(RECORDS_KEY, Array.from({length:3000},(_,i)=>({
+      id:`swiss-${i}`, tenantId:'swiss', value:2, createdAt:new Date(Date.now()-i*60000).toISOString(),
+    })));
+    vi.stubGlobal('fetch', vi.fn(() => ok(pagina(700))));
+    await supabaseRepository.list({ tenantId:'casadoce', days:0 });   // "Todos" na CASA DOCE
+    const cache = ls(RECORDS_KEY, []);
+    expect(cache.filter(r => r.tenantId === 'swiss').length).toBe(3000);  // ✅ intactos
+  });
+
+  it('o teto do cache NÃO vira teto de exibição', async () => {
+    // loja com mais registros que o teto do cache
+    // ids únicos POR PÁGINA — com ids repetidos o mergeByKey dedupa tudo em
+    // 1000 e o teste mede a própria fixture, não o código.
+    let chamada = 0;
+    vi.stubGlobal('fetch', vi.fn(() => {
+      const p = chamada++;
+      if (p >= 6) return ok([]);
+      return ok(Array.from({length:1000},(_,i)=>({
+        id:`casadoce-p${p}-${i}`, tenant_id:'casadoce', value:3,
+        created_at:new Date(Date.now()-(p*1000+i)*60000).toISOString(),
+      })));
+    }));
+    const lista = await supabaseRepository.list({ tenantId:'casadoce', days:0 });
+    expect(lista.length).toBeGreaterThan(5000);   // ✅ a tela recebe tudo
+    expect(ls(RECORDS_KEY, []).length).toBeLessThanOrEqual(5000);  // ✅ o cache fica capado
+  });
+
+  it('"Todos" nunca devolve menos que "90 dias"', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => ok(pagina(300))));
+    const todos = await supabaseRepository.list({ tenantId:'casadoce', days:0 });
+    vi.stubGlobal('fetch', vi.fn(() => ok(pagina(300))));
+    const noventa = await supabaseRepository.list({ tenantId:'casadoce', days:90 });
+    expect(todos.length).toBeGreaterThanOrEqual(noventa.length);
+  });
+});
+
+describe('form_records — a segunda chave única', () => {
+  it('o upsert aponta pro alvo composto, senão dá 409 eterno', () => {
+    const fonte = readFileSync(`${process.cwd()}/src/repository.js`, 'utf8');
+    expect(fonte).toContain("filter:'on_conflict=tenant_id,form_id,period_key'");
+  });
+
+  it('a tabela realmente tem as duas chaves — é o que torna o on_conflict obrigatório', () => {
+    const fonte = readFileSync(`${process.cwd()}/src/repository.js`, 'utf8');
+    expect(fonte).toContain('constraint form_records_pkey2 unique(tenant_id, form_id, period_key)');
+  });
+});
+
+describe('perfil do estabelecimento — salvar não pode apagar o que o sync trouxe', () => {
+  it('mescla sobre o que está gravado agora, não sobre o retrato da montagem', () => {
+    const fonte = readFileSync(`${process.cwd()}/src/settings.jsx`, 'utf8');
+    expect(fonte).toContain('const atual = readCompanyProfile(id);');
+    expect(fonte).toContain('const mesclado = { ...atual, ...profile };');
+    expect(fonte).not.toContain('pushCompanyProfile(id, profile);');
+  });
+});
+
+describe('manutenção — converter ativo virtual religa o histórico', () => {
+  it('remapeia execuções e ordens do id sintético pro uuid novo', () => {
+    const fonte = readFileSync(`${process.cwd()}/src/maintenance.jsx`, 'utf8');
+    expect(fonte).toContain("const idAntigo = editEquip?._fromCatalog ? editEquip.id : null;");
+    expect(fonte).toContain('l.equipmentId === idAntigo ? { ...l, equipmentId: eq.id } : l');
+    expect(fonte).toContain('o.equipmentId === idAntigo ? { ...o, equipmentId: eq.id } : o');
   });
 });

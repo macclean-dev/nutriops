@@ -520,7 +520,23 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
       {editEquip !== null && (
         <EquipmentModal
           equipment={editEquip.id ? editEquip : null}
-          onSave={(eq) => { setEquipments(prev => prev.some(e=>e.id===eq.id) ? prev.map(e=>e.id===eq.id?eq:e) : [...prev, eq]); pushEquipAsset(activeTenant.id, eq); setEditEquip(null); }}
+          onSave={(eq) => {
+            // Converter um item virtual do catálogo gera id novo (uuid de
+            // verdade — v1.9.153, senão não sincroniza). Só que execuções e
+            // ordens de serviço já criadas apontam pro id sintético
+            // "cat-<label>": sem religar, o ativo nasce sem histórico e as OS
+            // passam a mostrar "—" no equipamento. Ninguém é avisado.
+            // Eu introduzi este risco ao consertar o id; a auditoria de 18/08
+            // (achado nº1 dos não-julgados) pegou. Religa antes de gravar.
+            const idAntigo = editEquip?._fromCatalog ? editEquip.id : null;
+            if (idAntigo && idAntigo !== eq.id) {
+              setLogs(prev => prev.map(l => l.equipmentId === idAntigo ? { ...l, equipmentId: eq.id } : l));
+              setOrders(prev => prev.map(o => o.equipmentId === idAntigo ? { ...o, equipmentId: eq.id } : o));
+            }
+            setEquipments(prev => prev.some(e=>e.id===eq.id) ? prev.map(e=>e.id===eq.id?eq:e) : [...prev, eq]);
+            pushEquipAsset(activeTenant.id, eq);
+            setEditEquip(null);
+          }}
           onDelete={(id) => {
             setEquipments(prev => prev.filter(e=>e.id!==id));
             // Offline o delete não propaga (a fila replayaria como upsert e

@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.162', date: '2026-08-19', items: [
+    'O "Organizar" das Planilhas BPF agora edita também o nome, a frequência e a descrição de cada planilha — não só a aba. A RT pode confirmar a frequência que as próprias descrições pediam ("a confirmar com a RT") e renomear planilhas sem depender de alteração no sistema. Vale só para a sua empresa.',
+    'Mudar a frequência avisa na hora que isso altera o período a partir de agora; o que já foi preenchido continua no histórico com a frequência antiga.',
+    'As 21 folhas de Higienização têm o nome fixo (o setor de cada uma vem dele), mas frequência e descrição podem ser ajustadas normalmente.',
+  ]},
   { version: '1.9.161', date: '2026-08-19', items: [
     'O nome de aba escolhido em "Organizar" agora aparece em todo lugar: no card de cada planilha, no cabeçalho do preenchimento e no PDF. Antes só a aba mudava — se você renomeasse "Faxina" para "Serviços gerais", os cards embaixo dela continuavam dizendo FAXINA.',
   ]},

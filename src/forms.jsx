@@ -4,7 +4,7 @@ import { pushFormRecord } from './repository';
 import { ImportTemplateModal } from './import-template-modal';
 import { isFieldDue, dueFields } from './field-frequency';
 import { gravarMesclando, SYNC_EVENT } from './lista-local';
-import { prefsFromProfile, profileWithPrefs, catLabelFor, podeMoverPara, applyCategoryPrefs, enxugarPrefs, CATEGORIA_COM_COMPORTAMENTO } from './form-prefs';
+import { prefsFromProfile, profileWithPrefs, catLabelFor, podeMoverPara, podeEditarTitulo, applyCategoryPrefs, enxugarPrefs, CATEGORIA_COM_COMPORTAMENTO, FREQUENCIAS } from './form-prefs';
 import { readCompanyProfile, saveCompanyProfile } from './settings';
 
 // Read company profile from localStorage
@@ -1225,6 +1225,7 @@ const higSetor = (uuid, slug, setor, tarefas) => () => ({
 function OrganizarPlanilhasModal({ templates, prefs, onSave, onClose }) {
   const [labels, setLabels] = useState(() => ({ ...(prefs?.categoryLabels ?? {}) }));
   const [cats, setCats]     = useState(() => ({ ...(prefs?.templateCategory ?? {}) }));
+  const [meta, setMeta]     = useState(() => ({ ...(prefs?.templateMeta ?? {}) }));
 
   // Categorias presentes na loja + as que ela já renomeou (pra poder desfazer
   // mesmo que a última planilha daquela aba tenha saído).
@@ -1303,9 +1304,52 @@ function OrganizarPlanilhasModal({ templates, prefs, onSave, onClose }) {
           </p>
         </section>
 
+        <section>
+          <h3 style={{ fontSize:12, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--text-secondary)', marginBottom:8 }}>Nome, frequência e descrição de cada planilha</h3>
+          <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+            {ordenadas.map((tpl) => {
+              const m = meta[tpl.id] ?? {};
+              const tituloTravado = podeEditarTitulo(tpl);
+              const freqAtual = m.frequency ?? tpl.frequency;
+              const mudouFreq = freqAtual !== tpl.frequency;
+              return (
+                <div key={tpl.id} style={{ display:'flex', flexDirection:'column', gap:5, paddingBottom:10, borderBottom:'1px solid var(--border-subtle)' }}>
+                  <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                    {tituloTravado.ok ? (
+                      <input value={m.title ?? ''} placeholder={tpl.title}
+                        onChange={(e) => setMeta((p) => ({ ...p, [tpl.id]: { ...(p[tpl.id] ?? {}), title: e.target.value } }))}
+                        style={{ flex:1, minWidth:0, padding:'7px 10px', fontSize:13, fontWeight:600 }} />
+                    ) : (
+                      <span title={tituloTravado.motivo} style={{ flex:1, minWidth:0, fontSize:13, fontWeight:600, color:'var(--text-secondary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {tpl.title} <span style={{ fontSize:10, fontStyle:'italic' }}>· nome fixo</span>
+                      </span>
+                    )}
+                    <select value={freqAtual}
+                      onChange={(e) => setMeta((p) => ({ ...p, [tpl.id]: { ...(p[tpl.id] ?? {}), frequency: e.target.value } }))}
+                      style={{ width:130, flexShrink:0, fontSize:12, padding:'6px 8px' }}>
+                      {FREQUENCIAS.map(([id, rotulo]) => <option key={id} value={id}>{rotulo}</option>)}
+                    </select>
+                  </div>
+                  <input value={m.description ?? ''} placeholder={tpl.description || 'Descrição (opcional)'}
+                    onChange={(e) => setMeta((p) => ({ ...p, [tpl.id]: { ...(p[tpl.id] ?? {}), description: e.target.value } }))}
+                    style={{ width:'100%', padding:'6px 10px', fontSize:12, color:'var(--text-secondary)' }} />
+                  {mudouFreq && (
+                    <span style={{ fontSize:11, color:'var(--amber)' }}>
+                      Muda o período a partir de agora. O que já foi preenchido continua no histórico com a frequência antiga.
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <p style={{ fontSize:11, color:'var(--text-secondary)', marginTop:6, marginBottom:0 }}>
+            Deixe em branco para voltar ao texto original. As planilhas de {catMeta(CATEGORIA_COM_COMPORTAMENTO).label} têm o nome fixo — o setor de cada uma vem dele — mas frequência e descrição você pode ajustar.
+          </p>
+        </section>
+
         <div style={{ display:'flex', gap:10 }}>
           <button onClick={onClose} style={{ flex:1, padding:'10px', borderRadius:'var(--r)', border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', cursor:'pointer', fontSize:13, fontWeight:600, fontFamily:'var(--font)' }}>Cancelar</button>
-          <button onClick={() => onSave({ categoryLabels: labels, templateCategory: cats })}
+          <button onClick={() => onSave({ categoryLabels: labels, templateCategory: cats, templateMeta: meta })}
             style={{ flex:2, padding:'10px', borderRadius:'var(--r)', border:'none', background:'var(--primary)', color:'white', cursor:'pointer', fontSize:13, fontWeight:700, fontFamily:'var(--font)' }}>
             Salvar organização
           </button>

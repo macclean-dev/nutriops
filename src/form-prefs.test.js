@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import {
   normalizePrefs, prefsFromProfile, profileWithPrefs, catLabelFor,
   podeMoverPara, applyCategoryPrefs, enxugarPrefs, CATEGORIA_COM_COMPORTAMENTO,
+  podeEditarTitulo, FREQUENCIAS,
 } from './form-prefs';
 
 const tpl = (id, category, extra = {}) => ({ id, category, title: `T ${id}`, ...extra });
@@ -103,13 +104,13 @@ describe('convivência com o perfil do estabelecimento', () => {
   });
 
   it('perfil sem preferências devolve vazio, não quebra', () => {
-    expect(prefsFromProfile(perfil)).toEqual({ categoryLabels: {}, templateCategory: {} });
-    expect(prefsFromProfile(null)).toEqual({ categoryLabels: {}, templateCategory: {} });
+    expect(prefsFromProfile(perfil)).toEqual({ categoryLabels: {}, templateCategory: {}, templateMeta: {} });
+    expect(prefsFromProfile(null)).toEqual({ categoryLabels: {}, templateCategory: {}, templateMeta: {} });
   });
 
   it('lixo no lugar das preferências não derruba nada', () => {
-    expect(prefsFromProfile({ formPrefs: 'nao é objeto' })).toEqual({ categoryLabels: {}, templateCategory: {} });
-    expect(normalizePrefs({ categoryLabels: null })).toEqual({ categoryLabels: {}, templateCategory: {} });
+    expect(prefsFromProfile({ formPrefs: 'nao é objeto' })).toEqual({ categoryLabels: {}, templateCategory: {}, templateMeta: {} });
+    expect(normalizePrefs({ categoryLabels: null })).toEqual({ categoryLabels: {}, templateCategory: {}, templateMeta: {} });
   });
 });
 
@@ -156,5 +157,105 @@ describe('o rótulo renomeado vale em todo lugar', () => {
     expect(fonte).toContain('generateFormPDF(template, record, tenant, rotuloCategoria)');
     expect(fonte).toContain('${rotuloCategoria ?? meta.label}');
     expect(fonte).toContain('generateFormPDF(tpl, rec, activeTenant, rotuloCat(tpl.category))');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Título, frequência e descrição por loja (19/08) — o dono perguntou como a RT
+// muda "Faxina · Diária" e "Lavagem do Filtro de Café"; a categoria já dava,
+// o resto não dava em lugar nenhum. As descrições dos seeds da CASA DOCE dizem
+// literalmente "Frequência: diária (a confirmar com a RT)".
+// ─────────────────────────────────────────────────────────────────────────────
+const tplH = (id) => ({ id, category: CATEGORIA_COM_COMPORTAMENTO, title: 'Higienização — Padaria', frequency: 'weekly', description: 'x' });
+const tplF = (id) => ({ id, category: 'faxina', title: 'Lavagem do Filtro de Café', frequency: 'daily', description: 'Registro da lavagem.' });
+
+describe('editar título, frequência e descrição', () => {
+  it('aplica os três', () => {
+    const [t] = applyCategoryPrefs([tplF('a')], { templateMeta: { a: { title: 'Filtro do Café', frequency: 'weekly', description: 'Nova' } } });
+    expect(t.title).toBe('Filtro do Café');
+    expect(t.frequency).toBe('weekly');
+    expect(t.description).toBe('Nova');
+  });
+
+  it('campo vazio não apaga o original — apagar é como se desfaz', () => {
+    const [t] = applyCategoryPrefs([tplF('a')], { templateMeta: { a: { title: '   ', description: '' } } });
+    expect(t.title).toBe('Lavagem do Filtro de Café');
+    expect(t.description).toBe('Registro da lavagem.');
+  });
+
+  it('frequência inválida é IGNORADA — viraria período sem rótulo', () => {
+    const [t] = applyCategoryPrefs([tplF('a')], { templateMeta: { a: { frequency: 'anual' } } });
+    expect(t.frequency).toBe('daily');
+  });
+
+  it('só as frequências que o app sabe agrupar são aceitas', () => {
+    for (const [f] of FREQUENCIAS) {
+      const [t] = applyCategoryPrefs([tplF('a')], { templateMeta: { a: { frequency: f } } });
+      expect(t.frequency).toBe(f);
+    }
+  });
+});
+
+describe('a trava do título da Higienização', () => {
+  it('bloqueia com motivo — o setor vem do título', () => {
+    const r = podeEditarTitulo(tplH('h'));
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toMatch(/setor/i);
+  });
+
+  it('e o título dessas NÃO é aplicado nem se estiver gravado', () => {
+    const [t] = applyCategoryPrefs([tplH('h')], { templateMeta: { h: { title: 'Outro nome' } } });
+    expect(t.title).toBe('Higienização — Padaria');
+  });
+
+  it('mas frequência e descrição delas continuam editáveis', () => {
+    const [t] = applyCategoryPrefs([tplH('h')], { templateMeta: { h: { frequency: 'monthly', description: 'Nova' } } });
+    expect(t.frequency).toBe('monthly');
+    expect(t.description).toBe('Nova');
+  });
+
+  it('planilha comum pode renomear', () => {
+    expect(podeEditarTitulo(tplF('a')).ok).toBe(true);
+  });
+});
+
+describe('enxugarPrefs com meta', () => {
+  const originais = [tplF('a')];
+  it('descarta o que é igual ao original', () => {
+    const out = enxugarPrefs({ templateMeta: { a: { title: 'Lavagem do Filtro de Café', frequency: 'weekly' } } }, {}, originais);
+    expect(out.templateMeta).toEqual({ a: { frequency: 'weekly' } });
+  });
+
+  it('descarta planilha que não existe mais', () => {
+    expect(enxugarPrefs({ templateMeta: { sumiu: { title: 'X' } } }, {}, originais).templateMeta).toEqual({});
+  });
+
+  it('não grava entrada vazia', () => {
+    expect(enxugarPrefs({ templateMeta: { a: { title: '  ' } } }, {}, originais).templateMeta).toEqual({});
+  });
+});
+
+describe('forms.jsx — a terceira seção do Organizar', () => {
+  const fonte = readFileSync(`${process.cwd()}/src/forms.jsx`, 'utf8');
+
+  it('existe a seção de nome/frequência/descrição', () => {
+    expect(fonte).toContain('Nome, frequência e descrição de cada planilha');
+  });
+
+  it('o título das travadas vira texto, não input', () => {
+    expect(fonte).toContain('tituloTravado.ok ? (');
+    expect(fonte).toContain('nome fixo');
+  });
+
+  it('a frequência só oferece o que o app sabe agrupar', () => {
+    expect(fonte).toContain('{FREQUENCIAS.map(([id, rotulo]) =>');
+  });
+
+  it('mudar a frequência avisa sobre o período — não é mudança inócua', () => {
+    expect(fonte).toContain('Muda o período a partir de agora');
+  });
+
+  it('o salvar leva a meta junto', () => {
+    expect(fonte).toContain('onSave({ categoryLabels: labels, templateCategory: cats, templateMeta: meta })');
   });
 });

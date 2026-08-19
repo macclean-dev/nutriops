@@ -19,13 +19,24 @@
 // escolha — que a tela de perfil sobrescreva estas chaves ao salvar.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const VAZIO = { categoryLabels: {}, templateCategory: {} };
+const VAZIO = { categoryLabels: {}, templateCategory: {}, templateMeta: {} };
+
+// Frequências que o app sabe agrupar (getPeriodKey/formatPeriodLabel em
+// forms.jsx). Qualquer outra viraria período sem rótulo.
+export const FREQUENCIAS = [
+  ['daily',      'Diária'],
+  ['weekly',     'Semanal'],
+  ['biweekly',   'Quinzenal'],
+  ['monthly',    'Mensal'],
+  ['semiannual', 'Semestral'],
+];
 
 export function normalizePrefs(bruto) {
   const p = bruto ?? {};
   return {
     categoryLabels:   (p.categoryLabels   && typeof p.categoryLabels   === 'object') ? { ...p.categoryLabels }   : {},
     templateCategory: (p.templateCategory && typeof p.templateCategory === 'object') ? { ...p.templateCategory } : {},
+    templateMeta:     (p.templateMeta     && typeof p.templateMeta     === 'object') ? { ...p.templateMeta }     : {},
   };
 }
 
@@ -55,6 +66,15 @@ export function catLabelFor(catId, prefs, padrao) {
 // família de bug que este projeto passou a semana matando.
 export const CATEGORIA_COM_COMPORTAMENTO = 'higienizacao';
 
+// O TÍTULO das 21 folhas de Higienização é dado, não rótulo: templateSector()
+// deriva o setor dele ("Higienização — Padaria" → "Padaria"). Renomear quebra
+// o filtro por setor em silêncio — a mesma razão pela qual elas não mudam de
+// aba. Descrição e frequência dessas continuam editáveis.
+export function podeEditarTitulo(template) {
+  if (template?.category !== CATEGORIA_COM_COMPORTAMENTO) return { ok: true };
+  return { ok: false, motivo: 'O setor desta planilha vem do título dela (ex.: "Higienização — Padaria"). Renomear tiraria ela do filtro por setor.' };
+}
+
 export function podeMoverPara(template, destino) {
   const origem = template?.category;
   if (!destino || destino === origem) return { ok: true };
@@ -71,11 +91,26 @@ export function podeMoverPara(template, destino) {
 // não é modificada, e movimento proibido é IGNORADO (defesa: preferência antiga
 // gravada antes de uma trava nova não pode quebrar a tela).
 export function applyCategoryPrefs(templates, prefs) {
-  const mapa = normalizePrefs(prefs).templateCategory;
+  const p = normalizePrefs(prefs);
+  const validas = new Set(FREQUENCIAS.map(([id]) => id));
   return (templates ?? []).map((t) => {
-    const destino = mapa[t?.id];
-    if (!destino || destino === t.category) return t;
-    return podeMoverPara(t, destino).ok ? { ...t, category: destino } : t;
+    let out = t;
+    const destino = p.templateCategory[t?.id];
+    if (destino && destino !== t.category && podeMoverPara(t, destino).ok) {
+      out = { ...out, category: destino };
+    }
+    // Título/frequência/descrição por loja. Cada campo é validado na aplicação,
+    // não só na gravação: preferência antiga, gravada antes de uma trava nova,
+    // não pode quebrar a tela.
+    const m = p.templateMeta[t?.id];
+    if (m) {
+      const titulo = String(m.title ?? '').trim();
+      if (titulo && podeEditarTitulo(out).ok) out = { ...out, title: titulo };
+      if (m.frequency && validas.has(m.frequency)) out = { ...out, frequency: m.frequency };
+      const desc = String(m.description ?? '').trim();
+      if (desc) out = { ...out, description: desc };
+    }
+    return out;
   });
 }
 
@@ -93,7 +128,19 @@ export function enxugarPrefs(prefs, padroes, templatesOriginais) {
   for (const [id, destino] of Object.entries(p.templateCategory)) {
     if (destino && porId.has(id) && destino !== porId.get(id)) cats[id] = destino;
   }
-  return { categoryLabels: labels, templateCategory: cats };
+  const meta = {};
+  for (const [id, m] of Object.entries(p.templateMeta)) {
+    const orig = (templatesOriginais ?? []).find((t) => t.id === id);
+    if (!orig || !m) continue;
+    const limpo = {};
+    const titulo = String(m.title ?? '').trim();
+    const desc   = String(m.description ?? '').trim();
+    if (titulo && titulo !== orig.title)             limpo.title = titulo;
+    if (m.frequency && m.frequency !== orig.frequency) limpo.frequency = m.frequency;
+    if (desc && desc !== orig.description)           limpo.description = desc;
+    if (Object.keys(limpo).length) meta[id] = limpo;
+  }
+  return { categoryLabels: labels, templateCategory: cats, templateMeta: meta };
 }
 
 export { VAZIO as PREFS_VAZIAS };

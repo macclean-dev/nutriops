@@ -167,8 +167,19 @@ async function sbFetch(table, params = {}, tenantId = null) {
     }
     throw new Error(`SB ${method} ${table}: ${res.status}${errBody ? ' — ' + errBody.slice(0, 200) : ''}`);
   }
-  // Sucesso → limpa flag se existia (key foi corrigida)
-  if (getSupabaseAuthError()) clearSupabaseAuthError();
+  // Sucesso → limpa flag, mas só quando ele deixa de fazer sentido pra ESTE
+  // sucesso. RLS nega POR TABELA — credencial válida, só falta o vínculo com
+  // ESSA tabela — então sucesso numa tabela DIFERENTE não prova nada sobre a
+  // que está falhando. anon/session são da CREDENCIAL inteira (chave podre ou
+  // sessão expirando): aí sim, sucesso em qualquer tabela confirma a cura.
+  // Sem esta distinção, syncAllModules (22 GETs em paralelo) deixa o sucesso
+  // de qualquer uma das outras 21 tabelas apagar o carimbo da tabela
+  // realmente negada antes do contador de `falhas` seguidas chegar a 2 — e o
+  // banner (que exige >=2, ver pages.jsx) fica estruturalmente incapaz de
+  // nascer. Era exatamente a parte "invisível" do incidente de 16/08,
+  // continuando ativa no código. Achado da auditoria (19/08).
+  const erroAtual = getSupabaseAuthError();
+  if (erroAtual && (erroAtual.kind !== 'rls' || erroAtual.table === table)) clearSupabaseAuthError();
   if (method === 'DELETE') return true;
   const text = await res.text();
   return text ? JSON.parse(text) : null;
@@ -578,10 +589,26 @@ export const supabaseRepository = {
         // global, itens de tenants diferentes podem estar misturados nela.
         await sbFetch(table, { method:'POST', body:payload, prefer:'resolution=merge-duplicates,return=minimal' }, payload?.tenant_id);
         synced++;
-      } catch { failed++; remaining.push(item); }
+      } catch (e) {
+        // Sem isto o motivo de CADA falha morria aqui — diferente de todo
+        // outro caminho de push do arquivo (ver logFailAndEnqueue), que
+        // sempre loga antes de reenfileirar. Uma tabela sem SQL rodado (404)
+        // ou o servidor fora do ar caía aqui, e o retry manual
+        // ("Sincronizar") repetia pra sempre sem deixar rastro nenhum, nem
+        // no console. Achado da auditoria (19/08).
+        console.warn(`[repo] syncQueue: ${item.table} falhou (${e?.message ?? e}) — mantido na fila`);
+        failed++; remaining.push(item);
+      }
     }
     lw(OFFLINE_Q_KEY, remaining);
-    setSyncStatus({ lastSync: new Date().toISOString(), pending: remaining.length });
+    // Mesmo raciocínio do syncAllModules (achado da auditoria, 19/08): só
+    // carimba lastSync=agora quando ALGO realmente saiu. Fila com itens,
+    // todos recusados (tabela sem SQL, servidor fora do ar), não pode virar
+    // "sincronizado agora" — é o mesmo carimbo que Configurações e a
+    // Prontidão pra Fiscalização leem pra dizer que a evidência está na
+    // nuvem. `setSyncStatus` faz merge, então omitir a chave preserva o
+    // carimbo anterior.
+    setSyncStatus({ pending: remaining.length, ...(synced > 0 ? { lastSync: new Date().toISOString() } : {}) });
     console.debug(`[repo] syncQueue done — ${synced} ok, ${failed} falharam, ${remaining.length} ainda na fila`);
     return { synced, failed, remaining: remaining.length };
   },
@@ -1811,10 +1838,20 @@ export async function syncAllModules(tenantId) {
     syncSpecialControls('handwash', tenantId),
   ]);
   await supabaseRepository.syncQueue();
-  setSyncStatus({ lastSync: new Date().toISOString(), pending: getOfflineQueue().length });
   const ok = results.filter(r => r.status === 'fulfilled' && r.value?.ok).length;
+  // `lastSync` é o carimbo que Configurações e a Prontidão pra Fiscalização
+  // (grupo D, check "Sincronização com a nuvem") leem pra dizer se a
+  // evidência está na nuvem. Gravar `agora` mesmo com 0/22 módulos ok — rede
+  // que responde `navigator.onLine=true` mas não fala de verdade com o
+  // Supabase (portal cativo, servidor fora do ar) — fazia as duas telas
+  // mentirem "sync há 0 dia(s), em ordem" num aparelho que não confirmou
+  // ida-e-volta com NADA. Só atualiza quando pelo menos 1 módulo confirmou;
+  // sem nenhum, o carimbo ANTERIOR (verdadeiro) permanece — `setSyncStatus`
+  // faz merge, então omitir a chave preserva o que já estava lá. Achado da
+  // auditoria (19/08).
+  setSyncStatus({ pending: getOfflineQueue().length, ...(ok > 0 ? { lastSync: new Date().toISOString() } : {}) });
   console.info(`[repo] syncAllModules done — ${ok}/${results.length} módulos ok em ${Date.now()-t0}ms`);
-  return { ok: true, synced: ok, total: results.length };
+  return { ok: ok > 0, synced: ok, total: results.length };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

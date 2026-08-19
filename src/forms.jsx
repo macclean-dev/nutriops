@@ -358,6 +358,20 @@ export function TaskEditorModal({ template, onSave, onClose }) {
   const [selectFields, setSelectFields] = useState(() => extractSelectFields(template));
   const [novaOpcao, setNovaOpcao] = useState({});
 
+  // "Cancelar" descartava tarefas e opções digitadas sem aviso — e como o
+  // "Salvar planilha" também fecha o modal, as duas ações terminavam na MESMA
+  // tela. Não havia como saber se o que ela cadastrou foi gravado.
+  // Achado da auditoria (18/08); mesma família do "← Voltar" do preenchimento
+  // (v1.9.158) e do registro rápido sem confirmação (v1.9.146).
+  const inicial = useRef({ tarefas, selectFields });
+  const temAlteracao =
+    JSON.stringify(tarefas) !== JSON.stringify(inicial.current.tarefas) ||
+    JSON.stringify(selectFields) !== JSON.stringify(inicial.current.selectFields);
+  const cancelar = () => {
+    if (temAlteracao && !window.confirm('Sair sem salvar? As alterações nesta planilha serão perdidas.')) return;
+    onClose();
+  };
+
   const add = () => {
     const t = nome.trim();
     if (!t) return;
@@ -452,7 +466,7 @@ export function TaskEditorModal({ template, onSave, onClose }) {
           Ao salvar, esta planilha passa a ser sua: deixa de receber atualizações automáticas do NutriOPS.
         </p>
         <div className="actions-row">
-          <button className="secondary-action" onClick={onClose}>Cancelar</button>
+          <button className="secondary-action" onClick={cancelar}>Cancelar</button>
           <button className="primary-action" onClick={salvar} disabled={semOpcoes}>Salvar planilha</button>
         </div>
       </div>

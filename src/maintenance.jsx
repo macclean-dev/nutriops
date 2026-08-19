@@ -536,6 +536,7 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
       {editEquip !== null && (
         <EquipmentModal
           equipment={editEquip.id ? editEquip : null}
+          existentes={mergedEquipments}
           onSave={(eq) => {
             // Converter um item virtual do catálogo gera id novo (uuid de
             // verdade — v1.9.153, senão não sincroniza). Só que execuções e
@@ -595,7 +596,7 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
 
 // ─── Equipment modal ───────────────────────────────────────────────────────
 
-function EquipmentModal({ equipment, onSave, onDelete, onClose }) {
+function EquipmentModal({ equipment, onSave, onDelete, onClose, existentes = [] }) {
   const [name, setName]             = useState(equipment?.name ?? '');
   const [location, setLocation]     = useState(equipment?.location ?? '');
   const [brand, setBrand]           = useState(equipment?.brand ?? '');
@@ -612,6 +613,24 @@ function EquipmentModal({ equipment, onSave, onDelete, onClose }) {
 
   const handleSave = () => {
     if (!name.trim()) return;
+    // Nome que já existe na lista faz o OUTRO sumir: mergedEquipments esconde
+    // o item do catálogo cujo nome bate com um ativo cadastrado. As OS e
+    // execuções que apontavam pro virtual "cat-<label>" viram órfãs e passam a
+    // mostrar "—" no equipamento. Achado da auditoria (18/08).
+    // Aponto a ação certa: pra dar plano preventivo a um equipamento do
+    // catálogo, é EDITAR o card dele (que religa o histórico — v1.9.153), não
+    // cadastrar um homônimo.
+    const norm = (v) => String(v ?? '').trim().toLowerCase();
+    const conflito = existentes.find((e) => e.id !== equipment?.id && norm(e.name) === norm(name));
+    if (conflito) {
+      window.alert(
+        `Já existe "${conflito.name}" nesta lista.\n\n` +
+        (conflito._fromCatalog
+          ? `Ele vem do catálogo de temperatura. Para dar plano de manutenção a ele, use o botão "Editar" no card dele — assim o histórico já registrado continua ligado.`
+          : `Use um nome que os diferencie (ex.: "${name.trim()} — Padaria").`)
+      );
+      return;
+    }
     // Converter um item virtual do catálogo (_fromCatalog, id sintético
     // "cat-<label>") em ativo real precisa de um id de VERDADE — a coluna em
     // equip_assets é uuid. Reusar o id virtual (equipment?.id ?? uid() sempre

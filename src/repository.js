@@ -857,10 +857,27 @@ export async function syncEquipmentCatalog(tenantId) {
     const q = `tenant_id=eq.${tenantId}&order=label.asc&limit=500`;
     const rows = await sbFetch('equipment_catalog', { filter: q }, tenantId);
     const remote = rows.map(eqFromRow);
-    // Estratégia: cloud é a fonte de verdade. Substitui o local.
-    // (Cadastro de equipamento é raro o suficiente pra não termos conflitos.)
+    // A nuvem é a fonte de verdade, MAS substituir o local cru apagava o
+    // equipamento cadastrado offline que ainda estava na FILA — o pull rodava
+    // antes do push e o cadastro sumia sem nunca ter subido. O mesmo acontecia
+    // quando dois equipamentos homônimos colidiam em (tenant_id, label) e a
+    // nuvem devolvia uma linha só. Achado da auditoria (18/08).
+    //
+    // Preservo exatamente o que ainda está pendente na fila — nada além disso:
+    // item local que NÃO está na fila e sumiu da nuvem foi apagado noutro
+    // aparelho, e ressuscitá-lo desfaria a exclusão.
     if (remote.length > 0) {
-      lw(EQ_KEY(tenantId), remote);
+      const norm = (v) => String(v ?? '').trim().toLowerCase();
+      const pendentes = new Set(
+        getOfflineQueue()
+          .filter((i) => i?.table === 'equipment_catalog' && i?.payload?.tenant_id === tenantId)
+          .map((i) => norm(i.payload?.label)),
+      );
+      const naNuvem = new Set(remote.map((e) => norm(e.label)));
+      const local = ls(EQ_KEY(tenantId), []);
+      const salvos = local.filter((e) => pendentes.has(norm(e.label)) && !naNuvem.has(norm(e.label)));
+      if (salvos.length) console.warn(`[repo] syncEquipmentCatalog: ${salvos.length} equipamento(s) ainda na fila preservados`);
+      lw(EQ_KEY(tenantId), [...remote, ...salvos]);
     }
     console.debug(`[repo] syncEquipmentCatalog done — ${remote.length} itens`);
     return { ok: true, count: remote.length };

@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.165', date: '2026-08-19', items: [
+    'Correção importante: um equipamento cadastrado sem internet podia ser apagado pela sincronização antes de chegar à nuvem. Agora o que ainda está na fila de envio é preservado.',
+    'Na Manutenção, cadastrar um equipamento com o mesmo nome de um que já aparece na lista agora é bloqueado — antes o outro sumia da tela e as ordens de serviço dele ficavam sem equipamento. Para dar plano de manutenção a um equipamento do catálogo, use "Editar" no card dele.',
+    'No editor de planilha, sair pelo "Cancelar" com alterações não salvas agora pede confirmação. Antes descartava tudo sem avisar, e a tela ficava igual à de quem tinha salvado.',
+  ]},
   { version: '1.9.164', date: '2026-08-19', items: [
     'Correção importante: uma correção de temperatura feita na Auditoria podia sumir da tela na atualização seguinte, antes de subir para a nuvem. O valor corrigido e a trilha (valor original, quem corrigiu) voltavam ao que eram. Agora a correção permanece.',
     'Corrigido: concluir o PIN de setup de uma empresa apagava do aparelho as outras empresas já carregadas nele.',

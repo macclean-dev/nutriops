@@ -24,7 +24,7 @@
 
 import { conformityStats } from './limits';
 import { employeeTrainingStatus } from './training-status';
-import { teamAsoSummary, manualBpStatus, alvaraStatus, COMPLIANCE_DEFAULTS } from './compliance';
+import { teamAsoSummary, manualBpStatus, alvaraStatus, latestManualBp, COMPLIANCE_DEFAULTS } from './compliance';
 
 // ─── Suposições e réguas ────────────────────────────────────────────────────
 // ⚠️ `dedetizacaoMeses` é SUPOSIÇÃO, não texto de norma (auditoria §4.1): a
@@ -425,7 +425,11 @@ export function computeReadiness(inputs = {}) {
   // B4 · Manual de BP — a Fatia 2b passou a registrar o ATESTADO (versão,
   // data, autor), não o arquivo. O fiscal aceita o manual impresso; o que
   // faltava era o app saber que ele existe.
-  const manualDoc = (complianceDocs ?? []).find((d) => d?.docType === 'manual_bp') ?? null;
+  // latestManualBp, não .find(): duas lojas offline podem ter criado duas
+  // linhas manual_bp sem nunca sincronizar entre si — .find() prendia esta
+  // tela na versão do PRÓPRIO aparelho pra sempre, mesmo com a Prontidão já
+  // vendo a revisão nova do outro. Achado nº4 da auditoria (19/08).
+  const manualDoc = latestManualBp(complianceDocs);
   const manual = manualBpStatus(manualDoc, now);
   b.push(chk('b4-manual-bp', 'Manual de Boas Práticas',
     manual.status === 'never' ? 'fail' : manual.status,

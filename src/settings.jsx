@@ -7,7 +7,7 @@ import {
   supabaseRepository, SUPABASE_SQL, migrateAllToSupabase,
   getOfflineQueue, getSyncStatus, pushCompanyProfile, pushComplianceDoc,
 } from './repository';
-import { DOC_TYPES } from './compliance';
+import { DOC_TYPES, latestManualBp } from './compliance';
 
 const COMPANY_PROFILE_KEY = (tenantId) => `nutriops.company.profile.${tenantId}`;
 
@@ -70,25 +70,41 @@ function ManualBpCard({ tenantId }) {
   const [salvo, setSalvo] = useState(false);
   useEffect(() => { setDocs(lerDocs(tenantId)); }, [tenantId]);
 
-  const manual = docs.find((d) => d.docType === DOC_TYPES.MANUAL_BP) ?? null;
+  // latestManualBp, não .find(): ver compliance.js — duas lojas offline podem
+  // ter criado duas linhas manual_bp sem nunca sincronizar entre si, e
+  // .find() prendia esta tela na versão do PRÓPRIO aparelho pra sempre.
+  const manual = latestManualBp(docs);
   const [versao, setVersao]   = useState(manual?.versao ?? '');
   const [data, setData]       = useState(manual?.issuedAt ?? '');
   const [autor, setAutor]     = useState(manual?.autor ?? '');
   useEffect(() => {
-    const m = lerDocs(tenantId).find((d) => d.docType === DOC_TYPES.MANUAL_BP);
+    const m = latestManualBp(lerDocs(tenantId));
     setVersao(m?.versao ?? ''); setData(m?.issuedAt ?? ''); setAutor(m?.autor ?? '');
   }, [tenantId]);
 
   const salvar = () => {
+    // `docs` é a foto de quando o card montou (ou trocou de loja) — mas
+    // `nutriops.compliance.{tenantId}` é uma chave COMPARTILHADA com os ASOs
+    // (training.jsx) e com o sync (syncComplianceDocs), que grava por baixo
+    // deste componente sem avisá-lo (doSync roda em pages.jsx). Relê AGORA em
+    // vez de confiar no `docs` do state: a gravação abaixo troca a chave
+    // INTEIRA, e escrever por cima do snapshot velho apagaria qualquer ASO
+    // que tenha chegado via sync depois da montagem. Achados nº5/nº6 da
+    // triagem da auditoria (19/08).
+    const atual = lerDocs(tenantId);
+    const manualAtual = latestManualBp(atual);
     const atualizado = {
-      id: manual?.id ?? crypto.randomUUID(),
+      id: manualAtual?.id ?? crypto.randomUUID(),
       docType: DOC_TYPES.MANUAL_BP, subject: null,
       issuedAt: data || null, validUntil: null,
       versao: versao.trim(), autor: autor.trim(),
-      createdAt: manual?.createdAt ?? new Date().toISOString(),
+      createdAt: manualAtual?.createdAt ?? new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    const proximos = [atualizado, ...docs.filter((d) => d.id !== atualizado.id)];
+    // Tira TODAS as entradas manual_bp da lista (não só a de mesmo id): se
+    // sobrou duplicata de uma corrida antiga entre dois aparelhos (achado
+    // nº4), este salvamento já autocura o aparelho local pra uma linha só.
+    const proximos = [atualizado, ...atual.filter((d) => d.docType !== DOC_TYPES.MANUAL_BP)];
     setDocs(proximos);
     try { localStorage.setItem(COMPLIANCE_KEY(tenantId), JSON.stringify(proximos)); } catch {}
     pushComplianceDoc(tenantId, atualizado);
@@ -141,22 +157,58 @@ function LimpezaPlanilhasCard({ tenantId, tenantNome }) {
   const [aplicando, setAplicando] = useState(false);
   const [resultado, setResultado] = useState(null);
 
+  // Única porta de entrada pra montar o plano — lê templates/records DO
+  // STORAGE nesse instante. Usada tanto pelo cálculo de exibição (mount e
+  // "Recalcular") quanto, agora, pelo instante do clique em "Limpar
+  // duplicatas": ver o comentário em `aplicar` sobre por que reusar o plano
+  // do state ali era o bug.
+  const montarPlano = useCallback(async () => {
+    const [{ planejarDedupe }, { readFormTemplates, readFormRecords }] = await Promise.all([
+      import('./forms-dedupe'), import('./forms'),
+    ]);
+    const templates = readFormTemplates({ id: tenantId, name: tenantNome });
+    const records = readFormRecords(tenantId);
+    return { ...planejarDedupe(templates, records), templates, records };
+  }, [tenantId, tenantNome]);
+
   const calcular = useCallback(async () => {
     setErro(null); setResultado(null);
-    try {
-      const [{ planejarDedupe }, { readFormTemplates, readFormRecords }] = await Promise.all([
-        import('./forms-dedupe'), import('./forms'),
-      ]);
-      const templates = readFormTemplates({ id: tenantId, name: tenantNome });
-      const records = readFormRecords(tenantId);
-      setPlano({ ...planejarDedupe(templates, records), templates, records });
-    } catch (e) { setErro(e?.message ?? 'Não consegui montar o plano.'); }
-  }, [tenantId, tenantNome]);
+    try { setPlano(await montarPlano()); }
+    catch (e) { setErro(e?.message ?? 'Não consegui montar o plano.'); }
+  }, [montarPlano]);
 
   useEffect(() => { setPlano(null); setResultado(null); calcular(); }, [calcular]);
 
   const aplicar = async () => {
-    const r = plano.resumo;
+    setErro(null);
+    // `plano` (state) pode ter sido montado no mount ou no último
+    // "Recalcular" — segundos ou minutos atrás. Nesse intervalo o doSync
+    // (boot, ou volta de wi-fi via 'online-event') pode ter trazido registro
+    // novo pra nutriops.forms.records.{tenantId}. aplicarLimpezaFormularios
+    // REGRAVA A CHAVE INTEIRA (repository.js `lw` = substituição, não merge):
+    // aplicar o plano velho apagaria do aparelho tudo que chegou depois do
+    // cálculo — o oposto do que o confirm() abaixo promete ("nenhum é
+    // apagado"). Recalcula na hora do clique, antes de mostrar o confirm, e
+    // usa ESSE plano fresco (não o `plano` do state) pra aplicar.
+    // Achado da triagem da auditoria (19/08).
+    let planoAtual;
+    try { planoAtual = await montarPlano(); }
+    catch (e) { setErro(e?.message ?? 'Não consegui montar o plano.'); return; }
+
+    const r = planoAtual.resumo;
+    if (r.colisoesDePeriodo > 0) {
+      // Colisão nova que não existia no plano exibido — mesma trava do botão
+      // (disabled por temColisao), só que reconferida agora com dado fresco.
+      setPlano(planoAtual);
+      setErro('Apareceu registro novo com colisão de período desde o último cálculo. Confira o plano de novo antes de aplicar.');
+      return;
+    }
+    if (!(r.copiasExcedentes > 0 || r.orfaosRecuperados > 0)) {
+      setPlano(planoAtual);
+      setErro('Nada para limpar agora — outra sessão já deve ter aplicado a limpeza.');
+      return;
+    }
+
     const ok = window.confirm(
       `Limpar as planilhas de ${tenantNome}?\n\n`
       + `• ${r.templatesAntes} planilhas viram ${r.templatesDepois}\n`
@@ -170,10 +222,10 @@ function LimpezaPlanilhasCard({ tenantId, tenantNome }) {
       const [{ aplicarDedupe }, { aplicarLimpezaFormularios }] = await Promise.all([
         import('./forms-dedupe'), import('./repository'),
       ]);
-      const limpo = aplicarDedupe(plano.templates, plano.records, plano);
+      const limpo = aplicarDedupe(planoAtual.templates, planoAtual.records, planoAtual);
       const out = await aplicarLimpezaFormularios(tenantId, {
         templates: limpo.templates, records: limpo.records,
-        apagar: plano.apagar, remapear: plano.remapear,
+        apagar: planoAtual.apagar, remapear: planoAtual.remapear,
       });
       setResultado(out);
       await calcular();                       // recalcula: deve sobrar nada
@@ -253,6 +305,7 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [copied,  setCopied]  = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const [migrating, setMigrating]     = useState(false);
   const [migrateResult, setMigrateResult] = useState(null);
   const [currentPin, setCurrentPin] = useState('');
@@ -319,8 +372,22 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
   const msg = testMessage();
   const tableMissing = testResult?.reason === 'table_missing';
 
+  // Dois jeitos de falhar em silêncio que o achado da auditoria (19/08)
+  // apontou: (a) fora de contexto seguro (dev server pelo IP da rede da
+  // loja) `navigator.clipboard` é undefined — chamar .writeText nele
+  // estourava TypeError síncrono dentro do onClick; (b) contexto seguro mas
+  // writeText() rejeita (sem foco, permissão negada) — o .then nunca corria e
+  // não havia .catch, virava unhandled rejection só no console. Nos dois
+  // casos o botão continuava dizendo "Copiar SQL" sem nenhum aviso, e quem
+  // colasse no SQL Editor colava o conteúdo antigo da área de transferência.
   const copySql = () => {
-    navigator.clipboard.writeText(SUPABASE_SQL).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+    if (!navigator.clipboard?.writeText) {
+      setCopyFailed(true); setTimeout(() => setCopyFailed(false), 4000);
+      return;
+    }
+    navigator.clipboard.writeText(SUPABASE_SQL)
+      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })
+      .catch(() => { setCopyFailed(true); setTimeout(() => setCopyFailed(false), 4000); });
   };
 
   const [exporting, setExporting] = useState(false);
@@ -358,6 +425,13 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
   const handleImportBackup = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Sem isto, escolher o MESMO arquivo de novo (ex.: cancelou o confirm
+    // abaixo e tentou de novo) não dispara onChange — o <input type="file">
+    // só reage quando o value muda, e reselecionar o mesmo arquivo mantém o
+    // value igual. `file` já foi capturado acima, então resetar aqui não
+    // afeta a leitura que já vai começar. Achado nº1 da triagem da auditoria
+    // (19/08).
+    e.target.value = '';
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -554,7 +628,7 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
             <div><span className="eyebrow">SQL</span><h2>Schema do banco de dados</h2>
               {tableMissing && <p style={{ fontSize:12, color:'var(--amber)', fontWeight:600, marginTop:4 }}>👆 Execute este SQL no Supabase</p>}
             </div>
-            <button className="secondary-action" style={{ fontSize:12 }} onClick={copySql}>{copied?'✓ Copiado!':'Copiar SQL'}</button>
+            <button className="secondary-action" style={{ fontSize:12 }} onClick={copySql}>{copied?'✓ Copiado!':copyFailed?'✕ Falha — selecione e copie manualmente':'Copiar SQL'}</button>
           </div>
           <div style={{ padding:'12px 16px' }}>
             <p className="muted" style={{ marginBottom:12 }}>Cole no Supabase → SQL Editor → New query → Run.</p>

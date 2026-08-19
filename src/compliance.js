@@ -93,6 +93,30 @@ export function teamAsoSummary(staff, docs, meses, now = Date.now()) {
 // desatualizado demais merece ressalva.
 export const MANUAL_REVISAO_MESES = 24;
 
+// Duas lojas (ou o mesmo aparelho offline duas vezes) podem registrar o
+// Manual sem nunca ter sincronizado entre si: cada uma sorteia um `id` novo
+// (settings.jsx ManualBpCard), e como `compliance_docs` não tem unique em
+// (tenant_id, doc_type) — só `id uuid primary key` — as DUAS linhas convivem
+// pra sempre: mergeByKey (repository.js) dedupa por id, não por tipo. Quem lia
+// com `.find(d => d.docType === 'manual_bp')` pegava sempre a PRIMEIRA da
+// lista — que é sempre a do PRÓPRIO aparelho, porque o merge põe local antes
+// de remoto (`[...local, ...remoteRecords]`) — então cada aparelho ficava
+// preso na sua versão pra sempre, mesmo depois do outro atualizar a revisão.
+// Pegar a mais RECENTE por updatedAt faz os dois aparelhos convergirem pro
+// mesmo resultado assim que sincronizarem, sem precisar apagar a linha velha
+// nem mexer no schema. Achado nº4 da triagem da auditoria (19/08).
+export function latestManualBp(docs) {
+  let latest = null;
+  for (const d of (docs ?? [])) {
+    if (d?.docType !== DOC_TYPES.MANUAL_BP) continue;
+    if (!latest) { latest = d; continue; }
+    const a = new Date(d?.updatedAt ?? d?.createdAt ?? 0).getTime();
+    const b = new Date(latest?.updatedAt ?? latest?.createdAt ?? 0).getTime();
+    if (a >= b) latest = d;
+  }
+  return latest;
+}
+
 export function manualBpStatus(doc, now = Date.now()) {
   if (!doc || !doc.issuedAt) return { status: 'never', mesesDesde: null };
   const d = new Date(`${String(doc.issuedAt).slice(0, 10)}T00:00`);

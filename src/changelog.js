@@ -21,6 +21,9 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.161', date: '2026-08-19', items: [
+    'O nome de aba escolhido em "Organizar" agora aparece em todo lugar: no card de cada planilha, no cabeçalho do preenchimento e no PDF. Antes só a aba mudava — se você renomeasse "Faxina" para "Serviços gerais", os cards embaixo dela continuavam dizendo FAXINA.',
+  ]},
   { version: '1.9.160', date: '2026-08-19', items: [
     'Correção importante: a planilha "Higienização do Reservatório de Água" era compartilhada entre as empresas por engano — quando a RT de uma loja ajustava as tarefas, sobrescrevia a planilha de outra loja na nuvem, e a segunda voltava ao modelo padrão. Cada empresa passa a ter a sua. As planilhas já preenchidas continuam onde estão.',
     'Cadastrar dois equipamentos com o mesmo nome na mesma empresa agora é bloqueado, com sugestão de como diferenciar. Antes o segundo apagava o primeiro (faixa, setor e apelidos) na sincronização, sem avisar.',

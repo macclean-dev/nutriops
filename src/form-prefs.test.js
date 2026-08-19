@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   normalizePrefs, prefsFromProfile, profileWithPrefs, catLabelFor,
   podeMoverPara, applyCategoryPrefs, enxugarPrefs, CATEGORIA_COM_COMPORTAMENTO,
@@ -129,5 +130,31 @@ describe('enxugarPrefs — não sincroniza ruído', () => {
   it('descarta preferência de planilha que não existe mais', () => {
     const out = enxugarPrefs({ templateCategory: { sumiu: 'manutencao' } }, padroes, originais);
     expect(out.templateCategory).toEqual({});
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// O rename da aba tem que valer em TODO lugar que mostra a categoria (19/08).
+// Quando o dono perguntou "como a RT muda esses nomes?", descobri que o
+// "Organizar" da v1.9.153 renomeava só a ABA: o card, o cabeçalho do
+// preenchimento e o PDF continuavam mostrando o nome de fábrica. A RT
+// renomearia "Faxina" pra "Serviços gerais" e veria FAXINA em todo card.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('o rótulo renomeado vale em todo lugar', () => {
+  const fonte = readFileSync(`${process.cwd()}/src/forms.jsx`, 'utf8');
+
+  it('o card usa rotuloCat, não catMeta cru', () => {
+    expect(fonte).toContain('{rotuloCat(tpl.category)} · {freqLabel(tpl.frequency)}');
+  });
+
+  it('a tela de preenchimento recebe o rótulo já resolvido', () => {
+    expect(fonte).toContain('rotuloCategoria={rotuloCat(filling.template.category)}');
+    expect(fonte).toContain('{rotuloCategoria ?? catMeta(template.category).label}');
+  });
+
+  it('o PDF da planilha também — é o que vai pro fiscal', () => {
+    expect(fonte).toContain('generateFormPDF(template, record, tenant, rotuloCategoria)');
+    expect(fonte).toContain('${rotuloCategoria ?? meta.label}');
+    expect(fonte).toContain('generateFormPDF(tpl, rec, activeTenant, rotuloCat(tpl.category))');
   });
 });

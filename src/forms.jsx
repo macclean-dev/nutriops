@@ -532,7 +532,7 @@ export function extractNonConformities(template, record) {
 
 // ─── PDF generator for forms ───────────────────────────────────────────────
 
-export function generateFormPDF(template, record, tenant) {
+export function generateFormPDF(template, record, tenant, rotuloCategoria) {
   const p       = getProfile(tenant?.id);
   const period  = formatPeriodLabel(template.frequency, record.periodKey);
   const filledAt = new Date(record.updatedAt).toLocaleString('pt-BR');
@@ -645,7 +645,7 @@ export function generateFormPDF(template, record, tenant) {
   <div class="header">
     <div class="header-left">
       <h1>${template.title}</h1>
-      <div class="period">${period} · <span class="cat-badge">${meta.label} · ${freqLabel(template.frequency)}</span></div>
+      <div class="period">${period} · <span class="cat-badge">${rotuloCategoria ?? meta.label} · ${freqLabel(template.frequency)}</span></div>
     </div>
   </div>
   <table class="meta-table">
@@ -1561,7 +1561,7 @@ function DateSigField({ value={}, onChange, currentName }) {
 
 // ─── Form Fill ─────────────────────────────────────────────────────────────
 
-function FormFill({ template, record, onSave, onBack, session, tenant }) {
+function FormFill({ template, record, onSave, onBack, session, tenant, rotuloCategoria }) {
   const respostasIniciais = useRef(record?.responses ?? {});
   const [responses, setResponses] = useState(() => respostasIniciais.current);
   const [saving, setSaving] = useState(false);
@@ -1597,7 +1597,7 @@ function FormFill({ template, record, onSave, onBack, session, tenant }) {
   const handlePDF = () => {
     const rec = { ...record, responses, updatedAt:new Date().toISOString(), user:session?.user?.name??'—', role:session?.user?.role??'' };
     const win = window.open('','_blank');
-    win.document.write(generateFormPDF(template, rec, tenant));
+    win.document.write(generateFormPDF(template, rec, tenant, rotuloCategoria));
     win.document.close();
     setTimeout(() => win.print(), 400);
   };
@@ -1607,7 +1607,7 @@ function FormFill({ template, record, onSave, onBack, session, tenant }) {
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20 }}>
         <button className="ghost-action" onClick={voltar} style={{ padding:'6px 10px' }}>← Voltar</button>
         <div style={{ flex:1 }}>
-          <span className="eyebrow">{freqLabel(template.frequency)} · {catMeta(template.category).label}</span>
+          <span className="eyebrow">{freqLabel(template.frequency)} · {rotuloCategoria ?? catMeta(template.category).label}</span>
           <h2 style={{ fontSize:18, fontWeight:800, letterSpacing:'-.03em', marginTop:2 }}>{template.title}</h2>
         </div>
         <div style={{ textAlign:'right' }}>
@@ -1961,7 +1961,8 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
     return (
       <div className="management-page">
         <FormFill template={filling.template} record={filling.record}
-          onSave={handleSave} onBack={() => setFilling(null)} session={session} tenant={activeTenant} />
+          onSave={handleSave} onBack={() => setFilling(null)} session={session} tenant={activeTenant}
+          rotuloCategoria={rotuloCat(filling.template.category)} />
       </div>
     );
   }
@@ -2065,7 +2066,11 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
                 <article key={tpl.id} className="form-card" style={{ borderTopColor:meta.color }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:10 }}>
                     <div>
-                      <span className="eyebrow" style={{ color:meta.color }}>{meta.label} · {freqLabel(tpl.frequency)}</span>
+                      {/* rotuloCat, não meta.label: o "Organizar" (v1.9.153)
+                          renomeia a aba por loja, e o card precisa seguir —
+                          senão a aba diz "Serviços gerais" e todo card embaixo
+                          dela continua dizendo "FAXINA". */}
+                      <span className="eyebrow" style={{ color:meta.color }}>{rotuloCat(tpl.category)} · {freqLabel(tpl.frequency)}</span>
                       <h3 style={{ fontSize:14, fontWeight:700, marginTop:3, marginBottom:0 }}>{tpl.title}</h3>
                     </div>
                     <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4 }}>
@@ -2121,7 +2126,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
                       {isDone && (
                         <button className="secondary-action" style={{ fontSize:11, padding:'5px 10px' }} onClick={() => {
                           const win = window.open('','_blank');
-                          win.document.write(generateFormPDF(tpl, rec, activeTenant));
+                          win.document.write(generateFormPDF(tpl, rec, activeTenant, rotuloCat(tpl.category)));
                           win.document.close(); setTimeout(() => win.print(), 400);
                         }}>↓ PDF</button>
                       )}

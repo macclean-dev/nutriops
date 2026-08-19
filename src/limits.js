@@ -103,6 +103,18 @@ export function byWorstConformity(a, b) {
 // o valor digitado está fora de faixa, e o mesmo valor NEGADO seria aceitável.
 // Um freezer realmente quebrado a +5°C (faixa -25/-18) não cai aqui: -5
 // continuaria fora de faixa, então não é erro de sinal — é desvio real.
+// Lê temperatura digitada aceitando vírgula decimal. O teclado numérico do
+// celular em pt-BR entrega "3,4", e Number("3,4") é NaN — o rascunho contava
+// no botão, não era gravado, e sumia no fim da gravação (achado nº10 da
+// auditoria de falha silenciosa, 18/08). Devolve NaN pro que realmente não é
+// número, pra quem chama poder avisar em vez de descartar calado.
+export function parseTemperatura(v) {
+  if (typeof v === 'number') return v;
+  const t = String(v ?? '').trim().replace(',', '.');
+  if (t === '' || t === '-' || t === '.' || t === '-.') return NaN;
+  return Number(t);
+}
+
 export function suspectMissingMinus(value, min, max) {
   const v = Number(value), mn = Number(min), mx = Number(max);
   if (!Number.isFinite(v) || !Number.isFinite(mn) || !Number.isFinite(mx)) return false;

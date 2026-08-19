@@ -421,6 +421,7 @@ label {
 .actions-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .submission { padding: 8px 12px; border-radius: var(--r); font-size: 13px; font-weight: 600; }
 .submission.ok { background: var(--green-light); color: var(--green); border: 1px solid var(--green-border); }
+.submission.warn { background: var(--amber-light); color: var(--amber); border: 1px solid var(--amber-border); }
 .submission.danger { background: var(--red-light); color: var(--red); border: 1px solid var(--red-border); }
 
 /* ===== HISTORY CARD ===== */

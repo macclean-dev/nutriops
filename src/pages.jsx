@@ -18,7 +18,7 @@ import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
 import { getUnseenEntries } from './changelog';
-import { resolveLimits as resolveLimitsFromCatalog, resolveTone, resolveRecordTone as resolveTemperatureTone, heuristicLimits, suggestLimits, dedupeCatalog, normalizeEquipmentName, getEquipmentEntry, suspectMissingMinus } from './limits';
+import { resolveLimits as resolveLimitsFromCatalog, resolveTone, resolveRecordTone as resolveTemperatureTone, heuristicLimits, suggestLimits, dedupeCatalog, normalizeEquipmentName, getEquipmentEntry, suspectMissingMinus, parseTemperatura } from './limits';
 import { receivingSuggestedResult } from './verdict';
 import { isPlaceholderCatalog } from './segments';
 
@@ -711,7 +711,11 @@ function TemperatureCapture({ activeTenant, session, equipmentCatalog, onRecordS
 
   const activeEntry  = getEquipmentEntry(equipmentCatalog, activeEquipment);
   const limits       = resolveTemperatureLimits(activeEquipment, equipmentCatalog);
-  const numericValue = Number(value);
+  // Vírgula decimal: o teclado numérico do celular em pt-BR entrega "3,4", e
+  // Number('3,4') é NaN. O rascunho contava no botão, não era gravado, e era
+  // apagado junto com o resto no fim — perda silenciosa. Achado nº10 da
+  // auditoria (18/08).
+  const numericValue = parseTemperatura(value);
   const hasValue     = value !== '' && !isNaN(numericValue);
   const inRange      = hasValue && numericValue >= limits.min && numericValue <= limits.max;
   const warnRange    = hasValue && !inRange && numericValue >= limits.min - 3 && numericValue <= limits.max + 3;
@@ -720,10 +724,44 @@ function TemperatureCapture({ activeTenant, session, equipmentCatalog, onRecordS
   const currentTime  = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const flowComplete = Boolean(savedByEquipment[activeEquipment]);
 
-  const pendingDrafts = useMemo(() => {
-    const others = Object.entries(draftByEquipment).filter(([lbl, d]) => lbl !== activeEquipment && d.value).length;
-    return others + (hasValue && !savedByEquipment[activeEquipment] ? 1 : 0);
-  }, [draftByEquipment, activeEquipment, hasValue, savedByEquipment]);
+  // FONTE ÚNICA do que seria gravado agora. Antes `pendingDrafts` e o `toSave`
+  // do handleSaveAll usavam critérios DIFERENTES: o contador aceitava qualquer
+  // `d.value` truthy, o laço exigia número válido e equipamento não-gravado.
+  // O botão prometia N, o laço gravava menos, e a tela confirmava "✓ Registro
+  // salvo" do mesmo jeito — inclusive com ZERO gravações. Achados nº10, 12 e
+  // 14 da auditoria, que eram o mesmo defeito visto por três lentes.
+  //
+  // `mudouDepoisDeGravar`: equipamento já gravado com valor DIFERENTE agora é
+  // gravável de novo. Antes, medir outra vez e corrigir não fazia nada — o ✓✓
+  // continuava na tela sobre o número novo (achado nº12).
+  const rascunhosGravaveis = useMemo(() => {
+    const out = [];
+    const jaGravado = (lbl, val) => {
+      const s = savedByEquipment[lbl];
+      return s ? parseTemperatura(s.temperature) === val : false;
+    };
+    if (hasValue && !jaGravado(activeEquipment, numericValue)) {
+      out.push({ label: activeEquipment, val: numericValue, loc: equipmentLocation, nt: note });
+    }
+    for (const [label, draft] of Object.entries(draftByEquipment)) {
+      if (label === activeEquipment) continue;
+      const val = parseTemperatura(draft.value);
+      if (draft.value && !isNaN(val) && !jaGravado(label, val)) {
+        out.push({ label, val, loc: draft.location ?? '', nt: draft.note ?? '' });
+      }
+    }
+    return out;
+  }, [draftByEquipment, activeEquipment, hasValue, numericValue, savedByEquipment, equipmentLocation, note]);
+
+  const pendingDrafts = rascunhosGravaveis.length;
+
+  // Rascunho com número inválido (vírgula já é aceita, mas "12-" ou "--" não):
+  // conta separado pra poder AVISAR em vez de sumir com ele.
+  const rascunhosInvalidos = useMemo(() =>
+    Object.entries(draftByEquipment)
+      .filter(([lbl, d]) => lbl !== activeEquipment && d.value && isNaN(parseTemperatura(d.value)))
+      .map(([lbl, d]) => `${lbl}: "${d.value}"`),
+  [draftByEquipment, activeEquipment]);
 
   const persistDraft = useCallback((lbl, patch) => {
     setDraftByEquipment((prev) => ({ ...prev, [lbl]: { ...(prev[lbl] ?? {}), ...patch } }));
@@ -754,13 +792,17 @@ function TemperatureCapture({ activeTenant, session, equipmentCatalog, onRecordS
 
   const handleSaveAll = async () => {
     if (pendingDrafts === 0) return;
-    const toSave = [];
-    if (hasValue && !savedByEquipment[activeEquipment]) toSave.push({ label: activeEquipment, val: numericValue, loc: equipmentLocation, nt: note });
-    for (const [label, draft] of Object.entries(draftByEquipment)) {
-      if (label === activeEquipment) continue;
-      const val = Number(draft.value || '');
-      if (!isNaN(val) && draft.value && !savedByEquipment[label]) toSave.push({ label, val, loc: draft.location ?? '', nt: draft.note ?? '' });
+    // Rascunho com número que não dá pra ler ("12-", "--"). Antes ele contava
+    // no botão, não entrava no laço, e era apagado junto com o resto — a
+    // leitura sumia sem nada na tela. Agora a pessoa decide.
+    if (rascunhosInvalidos.length) {
+      const ok = window.confirm(
+        `Estes valores não são números válidos e NÃO serão registrados:\n\n${rascunhosInvalidos.join('\n')}\n\n` +
+        `Continuar gravando os outros? (Cancele para corrigir antes.)`
+      );
+      if (!ok) return;
     }
+    const toSave = rascunhosGravaveis;
     // Guarda contra erro de digitação (ex.: freezer a -19°C lançado como 19°C):
     // valor bem fora da faixa cadastrada pede confirmação antes de gravar —
     // evita não-conformidade falsa por typo, sem bloquear um valor real ruim.
@@ -789,7 +831,13 @@ function TemperatureCapture({ activeTenant, session, equipmentCatalog, onRecordS
           if (item.label === activeEquipment) setValue(`-${item.val}`);
           persistDraft(item.label, { value: `-${item.val}` });
         }
-        return;   // volta pra tela com os valores corrigidos, pra ela conferir
+        // Volta pra tela com os valores corrigidos, pra ela conferir — mas
+        // NADA foi gravado ainda, e antes nada dizia isso: o botão continuava
+        // no mesmo lugar e a pessoa podia sair achando que registrou (achado
+        // nº11 da auditoria). O estado 'corrigido' aparece na mesma faixa que
+        // já mostra "✓ Registro salvo".
+        setSubmissionState('corrigido');
+        return;
       }
     }
     const missingNote = outOfRange.filter((item) => !item.nt?.trim());
@@ -923,6 +971,7 @@ function TemperatureCapture({ activeTenant, session, equipmentCatalog, onRecordS
             {submissionState === 'saving' ? 'Salvando…' : pendingDrafts > 1 ? `Registrar ${pendingDrafts} temperaturas` : 'Registrar temperatura'}
           </button>
         </div>
+        {submissionState === 'corrigido' && <div className="submission warn">Sinal corrigido — <strong>ainda não gravou</strong>. Confira os valores e toque em registrar de novo.</div>}
         {submissionState === 'saved' && <div className="submission ok">✓ Registro salvo com timestamp auditável.</div>}
         {submissionState === 'error' && <div className="submission danger">Erro ao salvar. Tente novamente.</div>}
       </div>

@@ -79,7 +79,11 @@ export function ImportTemplateModal({ onSave, onClose }) {
           <div className="capture-fields">
             <p className="muted">Tire uma foto (ou envie um PDF) da planilha de papel. A IA extrai título, tarefas e frequência — você revisa tudo antes de publicar.</p>
             <label>Arquivo (foto ou PDF)
-              <input type="file" accept="image/*,application/pdf" onChange={(e) => handleFile(e.target.files?.[0])} />
+              {/* Reseta o value depois de ler: sem isso, escolher o MESMO arquivo de
+                  novo (retry após erro) não dispara `change` — o browser só notifica
+                  quando o valor muda — e handleFile nunca roda de novo. Mesmo padrão
+                  de forms.jsx:354. Achado da auditoria de 18/08 (T1). */}
+              <input type="file" accept="image/*,application/pdf" onChange={(e) => { handleFile(e.target.files?.[0]); e.target.value = ''; }} />
             </label>
             {error && <div className="submission danger">✕ {error}</div>}
           </div>

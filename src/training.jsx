@@ -281,17 +281,29 @@ function SessionForm({ session, allUsers, onSave, onCancel, tenant }) {
 
 // ─── Session Detail ────────────────────────────────────────────────────────
 
+// Confirma presença pelo ÍNDICE na lista, não pelo nome: participante nasce
+// sem id (só name/role — ParticipantSelector, acima), e duas colaboradoras
+// homônimas na mesma loja (nenhuma guarda contra nome duplicado em
+// team-views.jsx) geram duas linhas com o MESMO name. Casar por
+// `p.name === name` confirmava as DUAS de uma vez — inclusive a que não foi
+// ao treinamento — e o certificado assinado pela RT saía pra ela também.
+// Pura (extraída pra testar sem precisar montar o componente — sem
+// @testing-library neste repo). Achado da auditoria de 18/08 (T4).
+export function confirmParticipantAt(participants, index, confirmedAt = new Date().toISOString()) {
+  return participants.map((p, i) => i === index ? { ...p, confirmed: true, confirmedAt } : p);
+}
+
 function SessionDetail({ session, onBack, onUpdate, session: _s, tenant, config, sessionIndex }) {
   const [rtNote, setRtNote]         = useState('');
   const [signingRT, setSigningRT]   = useState(false);
-  const [confirmingName, setConfirmingName] = useState(null);
+  const [confirmingIndex, setConfirmingIndex] = useState(null);
 
   const isClosed = session.status === 'closed';
 
-  const confirmParticipant = (name) => {
-    const updated = { ...session, participants: session.participants.map((p) => p.name === name ? { ...p, confirmed: true, confirmedAt: new Date().toISOString() } : p), updatedAt: new Date().toISOString() };
+  const confirmParticipant = (index) => {
+    const updated = { ...session, participants: confirmParticipantAt(session.participants, index), updatedAt: new Date().toISOString() };
     onUpdate(updated);
-    setConfirmingName(null);
+    setConfirmingIndex(null);
   };
 
   const signAndClose = (rtUser) => {
@@ -348,8 +360,8 @@ function SessionDetail({ session, onBack, onUpdate, session: _s, tenant, config,
           <span className={`badge ${confirmedCount === total ? 'ok' : 'warn'}`}>{confirmedCount}/{total} confirmados</span>
         </div>
         <div className="equipment-maintenance-list">
-          {session.participants.map((p) => (
-            <div key={p.name} className="equipment-maintenance-row">
+          {session.participants.map((p, i) => (
+            <div key={`${p.name}-${i}`} className="equipment-maintenance-row">
               <div>
                 <strong>{p.name}</strong>
                 <span>{p.role}</span>
@@ -368,17 +380,17 @@ function SessionDetail({ session, onBack, onUpdate, session: _s, tenant, config,
                 {!isClosed && (
                   p.confirmed
                     ? <span className="badge ok">✓ Presente</span>
-                    : confirmingName === p.name
+                    : confirmingIndex === i
                       ? (
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="primary-action attention" style={{ fontSize: 12, padding: '6px 12px' }} onClick={() => confirmParticipant(p.name)}>
+                          <button className="primary-action attention" style={{ fontSize: 12, padding: '6px 12px' }} onClick={() => confirmParticipant(i)}>
                             ✓ Confirmar presença
                           </button>
-                          <button className="secondary-action" style={{ fontSize: 12 }} onClick={() => setConfirmingName(null)}>Cancelar</button>
+                          <button className="secondary-action" style={{ fontSize: 12 }} onClick={() => setConfirmingIndex(null)}>Cancelar</button>
                         </div>
                       )
                       : (
-                        <button className="secondary-action" style={{ fontSize: 12, padding: '6px 12px' }} onClick={() => setConfirmingName(p.name)}>
+                        <button className="secondary-action" style={{ fontSize: 12, padding: '6px 12px' }} onClick={() => setConfirmingIndex(i)}>
                           Confirmar presença
                         </button>
                       )
@@ -426,8 +438,8 @@ function SessionDetail({ session, onBack, onUpdate, session: _s, tenant, config,
           </div>
           <div style={{ padding: '12px 20px' }}>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {session.participants.filter((p) => p.confirmed).map((p) => (
-                <button key={p.name} className="secondary-action" style={{ fontSize: 12 }} onClick={() => printCertificate(p)}>
+              {session.participants.map((p, i) => ({ p, i })).filter(({ p }) => p.confirmed).map(({ p, i }) => (
+                <button key={`${p.name}-${i}`} className="secondary-action" style={{ fontSize: 12 }} onClick={() => printCertificate(p)}>
                   📄 {p.name}
                 </button>
               ))}

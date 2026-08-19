@@ -62,6 +62,21 @@ async function generateTenantDossier({ tenant, records, periodDays, periodLabel 
   return dossier.buildDossierHtml({ tenantName: tenant.name, periodLabel, companyProfile: readCompanyProfile(tenant.id), sections, generatedAt: Date.now() });
 }
 
+// Resultado a mostrar pra tela dado quantas empresas foram PEDIDAS vs quantas
+// janelas de fato ABRIRAM. Extraído pra função pura (sem window.open, sem
+// I/O) porque `count: tenants.length` mentia quando o bloqueador de pop-up
+// barrava uma janela no meio do loop — com "Todas as empresas" a ativação do
+// clique se esgota na 1ª janela, `if (!win) continue` pulava as seguintes em
+// silêncio, e a tela ainda assim dizia "✓ Dossiê gerado para 4 empresas" com
+// só 1 aberta. Achado da auditoria de 18/08 (T6).
+export function summarizeDossieRun(requested, opened) {
+  if (opened >= requested) return { ok: true, count: opened };
+  const message = requested === 1
+    ? 'O navegador bloqueou a janela de impressão. Libere pop-ups para este site e gere de novo.'
+    : `O navegador bloqueou ${requested - opened} de ${requested} janelas de impressão (abriu só ${opened}). Libere pop-ups para este site e gere de novo, ou selecione uma empresa por vez.`;
+  return { ok: false, message };
+}
+
 export function DossieView({ allTenants, records }) {
   const [tenantFilter, setTenantFilter] = useState('all');
   const [periodDays, setPeriodDays] = useState(30);
@@ -75,15 +90,17 @@ export function DossieView({ allTenants, records }) {
     setGenerating(true);
     setResult(null);
     try {
+      let opened = 0;
       for (const tenant of tenants) {
         const html = await generateTenantDossier({ tenant, records, periodDays, periodLabel });
         const win = window.open('', '_blank');
-        if (!win) continue;
+        if (!win) continue; // bloqueado pelo navegador — não conta como gerado
         win.document.write(html);
         win.document.close();
         setTimeout(() => win.print(), 400);
+        opened++;
       }
-      setResult({ ok: true, count: tenants.length });
+      setResult(summarizeDossieRun(tenants.length, opened));
     } catch (err) {
       setResult({ ok: false, message: err?.message ?? 'Erro ao gerar o dossiê.' });
     } finally {

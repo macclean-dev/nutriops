@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { resolveLimits, resolveTone, suspectMissingMinus } from './limits';
+import { resolveLimits, resolveTone, suspectMissingMinus, getEquipmentEntry } from './limits';
 import { ordenarPorSetor, agruparPorSetor } from './setores';
 import { detectTrend } from './trend';
 import { readTurns } from './turns';
@@ -670,6 +670,28 @@ function HeroGreeting({ session, activeTenant, lastRecord, coverageToday }) {
   );
 }
 
+// Mapa equipamento → histórico de leituras, casando por label OU alias
+// (case-insensitive) — mesma regra do resolveLimits/getEquipmentEntry
+// (limits.js). Sem isso, o histórico casava só por igualdade exata de
+// string: renomear um equipamento no catálogo (sem recriar o vínculo como
+// alias) ou um registro digitado com case diferente do label cadastrado
+// descolava o card do equipamento do seu próprio histórico — os registros
+// continuam no banco (aparecem na Atividade ao vivo), só ficam presos num
+// label que o mapa não reconhece mais. Achado da auditoria de 18/08.
+// Exportada pra ganhar teste de comportamento direto (sem @testing-library
+// neste repo, mas esta é pura — não precisa montar componente pra testar).
+export function buildEquipmentHistory(equipmentCatalog, tenantRecords) {
+  const map = new Map();
+  for (const eq of (equipmentCatalog || [])) map.set(eq.label, []);
+  for (const r of tenantRecords) {
+    const entry = getEquipmentEntry(equipmentCatalog || [], r.equipmentInput)
+      ?? getEquipmentEntry(equipmentCatalog || [], r.equipmentKey);
+    const arr = entry ? map.get(entry.label) : undefined;
+    if (arr) arr.unshift(r); // unshift pra ficar cronológico (mais antigo primeiro)
+  }
+  return map;
+}
+
 function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records, onLaunchKiosk, onNavigate, onRecordSaved }) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const todayMs = today.getTime();
@@ -714,15 +736,8 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
     : null;
 
   // Mapa equipamento → histórico (últimas 30 leituras)
-  const equipmentHistory = useMemo(() => {
-    const map = new Map();
-    for (const eq of (equipmentCatalog || [])) map.set(eq.label, []);
-    for (const r of tenantRecords) {
-      const arr = map.get(r.equipmentInput) ?? map.get(r.equipmentKey);
-      if (arr) arr.unshift(r); // unshift pra ficar cronológico (mais antigo primeiro)
-    }
-    return map;
-  }, [tenantRecords, equipmentCatalog]);
+  const equipmentHistory = useMemo(() => buildEquipmentHistory(equipmentCatalog, tenantRecords),
+  [tenantRecords, equipmentCatalog]);
 
   const sectors = useMemo(() => {
     const set = new Set((equipmentCatalog || []).map((e) => e.location).filter(Boolean));
@@ -911,15 +926,8 @@ function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records
   const mostrarTotalDaLoja = lojaHoje.length !== myToday.length;
 
   // Equipamentos pendentes = não tem leitura no turno atual
-  const equipmentHistory = useMemo(() => {
-    const map = new Map();
-    for (const eq of (equipmentCatalog || [])) map.set(eq.label, []);
-    for (const r of tenantRecords) {
-      const arr = map.get(r.equipmentInput) ?? map.get(r.equipmentKey);
-      if (arr) arr.unshift(r);
-    }
-    return map;
-  }, [tenantRecords, equipmentCatalog]);
+  const equipmentHistory = useMemo(() => buildEquipmentHistory(equipmentCatalog, tenantRecords),
+  [tenantRecords, equipmentCatalog]);
 
   const pending = useMemo(() => {
     return (equipmentCatalog || []).filter(eq => {

@@ -321,7 +321,18 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
       const c = readClients().find(x => x.id === tenantId);
       if (!c) return { ok: false, reason: 'cliente não encontrado' };
       const { pushTenant } = await import('./tenant-sync');
-      return await pushTenant(c);
+      // Este push é só de PLANO — nunca de credencial. `c` é o registro CRU do
+      // localStorage deste device, que pode estar desatualizado se o admin
+      // regerou o PIN de configuração de OUTRO device (ex.: /admin no notebook)
+      // depois do último boot daqui. `pushTenant` manda setupPinHash ?? null,
+      // e a RPC só faz coalesce (preserva o valor da nuvem) quando o campo vem
+      // null — como o hash velho aqui é uma string de verdade, não null, ele
+      // VENCE o coalesce e revoga em silêncio o PIN novo que o cliente já
+      // recebeu. Mesma disciplina que ClientModal.handleSave já usa em
+      // admin.jsx (setupPinHash: needsNewPin ? hash : undefined): omitir o
+      // campo pra virar `null` na RPC e não tocar no que já está na nuvem.
+      // Achado da auditoria de 18/08 (T4).
+      return await pushTenant({ ...c, setupPinHash: undefined });
     } catch (e) { return { ok: false, reason: e?.message ?? 'erro' }; }
   };
 

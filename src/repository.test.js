@@ -205,9 +205,14 @@ describe('migrateAllToSupabase — só empurra as lojas recebidas (isolamento)',
   afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
   it('não tenta gravar tenant_id de fora da lista, mesmo com dado local presente', async () => {
+    // `value` presente e válido de propósito: a triagem de 19/08 ensinou
+    // migrateAllToSupabase a pular temperatura com value não-finito (mesma
+    // guarda de purgarFilaEnvenenada) — sem isto aqui, o fixture parecia
+    // "envenenado" só por omissão e o teste media a guarda nova, não o
+    // isolamento por tenant que é o assunto deste describe.
     lw('nutriops.temperature.records', [
-      { id: 't1', tenantId: 'casadoce', createdAt: '2026-08-01T10:00:00.000Z' },
-      { id: 't2', tenantId: 'swiss',    createdAt: '2026-08-01T10:00:00.000Z' },
+      { id: 't1', tenantId: 'casadoce', value: -18, createdAt: '2026-08-01T10:00:00.000Z' },
+      { id: 't2', tenantId: 'swiss',    value: -18, createdAt: '2026-08-01T10:00:00.000Z' },
     ]);
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
     const fetchMock = vi.fn(() => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('null') }));

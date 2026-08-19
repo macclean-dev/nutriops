@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { pushSpecialControl, pushPOP, deletePOPCloud, lw as gravarLocal } from './repository';
+import { pushSpecialControl, pushPOP, deletePOPCloud, lw as gravarLocal, SPECIAL_CONTROLS_CAP } from './repository';
 import { resolveRecordTone, normalizeEquipmentName } from './limits';
 import { autoVerdict, verdictConflicts, thawCompliant, oilResultForAcidLevel, suggestionConflicts } from './verdict';
 import { readCatalog } from './maintenance';
@@ -85,14 +85,22 @@ export function POPsView({ activeTenant, allTenants, onTenantChange, session }) 
     resetForm(); setView('list');
   };
 
-  const deletePOP = (id) => {
+  const deletePOP = async (id) => {
     if (!window.confirm('Remover este POP?')) return;
     setPOPs(prev => prev.filter(p => p.id !== id));
+    if (selected?.id === id) { setSelected(null); setView('list'); }
     // Offline o delete NÃO propaga (a fila replayaria como upsert e
     // ressuscitaria o POP) — nesse caso ele some daqui mas volta no próximo
     // sync, porque a nuvem ainda o tem; remover online apaga em todo lugar.
-    deletePOPCloud(activeTenant.id, id);
-    if (selected?.id === id) { setSelected(null); setView('list'); }
+    // deletePOPCloud NUNCA lança — devolve {ok:false, reason}. Offline é
+    // esperado (avisar aqui não ajudaria, e o próprio comentário acima já
+    // documenta o "volta no próximo sync"); falha REAL com internet presente
+    // precisa ser dita, senão o POP reaparece sozinho e parece que a remoção
+    // nunca aconteceu. Mesmo padrão de removeItem/removeAction (pages.jsx).
+    const r = await deletePOPCloud(activeTenant.id, id);
+    if (!r.ok && r.reason !== 'offline_or_disabled') {
+      window.alert('Não foi possível remover este POP na nuvem agora. Ele pode reaparecer na próxima sincronização — tente remover de novo.');
+    }
   };
 
   const printPOP = (pop) => {
@@ -333,7 +341,7 @@ export function OilControlView({ activeTenant, allTenants, onTenantChange, sessi
       acidez, cor, odor, espuma, resultado, justificativa: conflita ? justificativa.trim() : '', acao: acao.trim(), obs: obs.trim(),
       user: session?.user?.name, createdAt: new Date().toISOString(),
     };
-    setRecords(prev => [record, ...prev].slice(0, 200));
+    setRecords(prev => [record, ...prev].slice(0, SPECIAL_CONTROLS_CAP));
     pushSpecialControl('oil', activeTenant.id, record);
     setDate(todayISO()); setResponsavel(session?.user?.name ?? ''); setAcidez('');
     setResultado(''); setResultadoTouched(false); setJustificativa(''); setAcao(''); setObs('');
@@ -484,7 +492,7 @@ export function ThawControlView({ activeTenant, allTenants, onTenantChange, sess
   const handleSave = () => {
     if (!product.trim() || !resultado || (conflita && !justificativa.trim())) return;
     const thawRecord = { id:uid(), tenantId:activeTenant.id, product:product.trim(), weight:weight.trim(), method, startAt, endAt, tempStart, tempEnd, resultado, justificativa: conflita ? justificativa.trim() : '', obs:obs.trim(), user:session?.user?.name, createdAt:new Date().toISOString() };
-    setRecords(prev => [thawRecord, ...prev].slice(0,200));
+    setRecords(prev => [thawRecord, ...prev].slice(0, SPECIAL_CONTROLS_CAP));
     pushSpecialControl('thaw', activeTenant.id, thawRecord);
     setProduct(''); setWeight(''); setMethod('refrigerador'); setStartAt(''); setEndAt(''); setTempStart(''); setTempEnd(''); setResultado(''); setResultadoTouched(false); setJustificativa(''); setObs('');
     setSaved(true); setTimeout(() => setSaved(false), 3000);
@@ -632,7 +640,7 @@ export function CoolingControlView({ activeTenant, allTenants, onTenantChange, s
   const handleSave = () => {
     if (!product.trim() || !resultado || (conflita && !justificativa.trim())) return;
     const coolRecord = { id:uid(), tenantId:activeTenant.id, product:product.trim(), quantity:quantity.trim(), tempHot, time1, temp1, time2, temp2, method, resultado, justificativa: conflita ? justificativa.trim() : '', obs:obs.trim(), user:session?.user?.name, createdAt:new Date().toISOString() };
-    setRecords(prev => [coolRecord, ...prev].slice(0,200));
+    setRecords(prev => [coolRecord, ...prev].slice(0, SPECIAL_CONTROLS_CAP));
     pushSpecialControl('cool', activeTenant.id, coolRecord);
     setProduct(''); setQuantity(''); setTempHot(''); setTime1(''); setTemp1(''); setTime2(''); setTemp2(''); setMethod('banho_gelo'); setResultado(''); setResultadoTouched(false); setJustificativa(''); setObs('');
     setSaved(true); setTimeout(() => setSaved(false), 3000);
@@ -784,7 +792,7 @@ export function ThermalControlView({ activeTenant, allTenants, onTenantChange, s
       equipment: equipment.trim(), tempTarget, tempReached, timeReached, holdTime,
       resultado, justificativa: conflita ? justificativa.trim() : '', obs: obs.trim(), user: session?.user?.name, createdAt: new Date().toISOString()
     };
-    setRecords(prev => [thermalRecord, ...prev].slice(0, 200));
+    setRecords(prev => [thermalRecord, ...prev].slice(0, SPECIAL_CONTROLS_CAP));
     pushSpecialControl('thermal', activeTenant.id, thermalRecord);
     setProduct(''); setQuantity(''); setEquipment(''); setTempTarget('');
     setTempReached(''); setTimeReached(''); setHoldTime(''); setResultado(''); setResultadoTouched(false); setJustificativa(''); setObs('');

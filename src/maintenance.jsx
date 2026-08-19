@@ -428,7 +428,20 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
                 <div style={{ display:'flex', gap:6 }}>
                   {o.status !== 'concluida' && (
                     <button className="primary-action" style={{ fontSize:11 }} onClick={() => {
-                      const updated = { ...o, status:'concluida', completedAt:new Date().toISOString(), completedBy:session?.user?.name };
+                      // updatedAt PRECISA bumpar aqui — é o campo que
+                      // mergeByKey usa pra decidir quem vence o sync (fica
+                      // dentro de `data`, o jsonb; a coluna solta updated_at
+                      // não volta em workOrderFromRow). Sem isto, "concluir"
+                      // fica com o MESMO carimbo de quando a OS foi criada; se
+                      // o clique aconteceu offline, syncWorkOrders (pull) roda
+                      // antes de syncQueue (push) no próximo boot, o empate
+                      // some pro `>=` de mergeByKey (o remoto, que entra
+                      // depois no array, vence) e a OS concluída volta a
+                      // aparecer aberta — mesmo com o registro de execução já
+                      // no Histórico. O modal de editar/criar (onSave, abaixo)
+                      // já bumpa; só este caminho de mutação não bumpava.
+                      // Achado da auditoria (19/08).
+                      const updated = { ...o, status:'concluida', completedAt:new Date().toISOString(), completedBy:session?.user?.name, updatedAt:new Date().toISOString() };
                       setOrders(prev => prev.map(x => x.id===o.id ? updated : x));
                       pushWorkOrder(activeTenant.id, updated);
                       // Auto-log maintenance
@@ -554,12 +567,21 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
             pushEquipAsset(activeTenant.id, eq);
             setEditEquip(null);
           }}
-          onDelete={(id) => {
+          onDelete={async (id) => {
             setEquipments(prev => prev.filter(e=>e.id!==id));
+            setEditEquip(null);
             // Offline o delete não propaga (a fila replayaria como upsert e
             // ressuscitaria o ativo) — remover online apaga em todo lugar.
-            deleteMaintenanceItem('equip_assets', activeTenant.id, id);
-            setEditEquip(null);
+            // deleteMaintenanceItem NUNCA lança — devolve {ok:false, reason}.
+            // Offline é esperado (é o comentário acima); falha REAL com
+            // internet presente precisa avisar, senão o ativo volta sozinho
+            // no próximo sync e parece que a remoção nunca aconteceu. Mesmo
+            // padrão de removeItem/removeAction (pages.jsx). Achado da
+            // auditoria (19/08).
+            const r = await deleteMaintenanceItem('equip_assets', activeTenant.id, id);
+            if (!r.ok && r.reason !== 'offline_or_disabled') {
+              window.alert('Não foi possível remover este equipamento na nuvem agora. Ele pode reaparecer na próxima sincronização — tente remover de novo.');
+            }
           }}
           onClose={() => setEditEquip(null)}
         />

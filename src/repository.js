@@ -189,11 +189,18 @@ export function clearOfflineQueue() { lw(OFFLINE_Q_KEY, []); }
 // A guarda do quiosque (kiosk.jsx) impede novos; isto limpa os que já existem.
 // Só descarta o que é comprovadamente insalvável: temperatura sem valor
 // numérico. Nada de heurística — na dúvida, o item FICA.
+//
+// Exportada pra ser reusada por qualquer outro caminho que empurre
+// temperature_records direto (hoje: migrateAllToSupabase) — a coluna é
+// `value numeric not null` em QUALQUER rota, não só na fila.
+export function valorTemperaturaValido(v) {
+  return v !== null && v !== undefined && Number.isFinite(Number(v));
+}
+
 export function purgarFilaEnvenenada(queue) {
   const limpa = (queue ?? []).filter((item) => {
     if (item?.table !== 'temperature_records') return true;
-    const v = item?.payload?.value;
-    return v !== null && v !== undefined && Number.isFinite(Number(v));
+    return valorTemperaturaValido(item?.payload?.value);
   });
   if (limpa.length !== (queue ?? []).length) {
     console.warn(`[repo] fila: descartados ${(queue ?? []).length - limpa.length} registro(s) de temperatura sem valor numérico — nunca subiriam (ver purgarFilaEnvenenada)`);
@@ -1018,6 +1025,12 @@ export async function uploadFormPhoto(tenantId, blob, meta) {
 
 // URL assinada pra exibir. O bucket é privado, então a foto NÃO abre por URL
 // pública — cada visualização pede um link temporário.
+//
+// Devolve `null` em QUALQUER falha (offline, RLS, link de assinatura recusado)
+// — de propósito, pra não vazar detalhe de rede pro chamador. Mas sem log, as
+// 3 falhas ficavam indistinguíveis até no console; PhotoField (forms.jsx) é
+// quem decide o que mostrar (carregando vs. falhou), aqui só registra o
+// motivo real pra quem for investigar depois.
 export async function signedPhotoUrl(tenantId, path, segundos = 3600) {
   if (!isSupabaseEnabled() || !path) return null;
   try {
@@ -1028,10 +1041,16 @@ export async function signedPhotoUrl(tenantId, path, segundos = 3600) {
       headers: { apikey: anonKey, Authorization, 'Content-Type': 'application/json' },
       body: JSON.stringify({ expiresIn: segundos }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`[repo] signedPhotoUrl falhou (${res.status}) pra ${path}`);
+      return null;
+    }
     const { signedURL } = await res.json();
     return signedURL ? `${sbStorageBase()}${signedURL.replace(/^\/storage\/v1/, '')}` : null;
-  } catch { return null; }
+  } catch (e) {
+    console.warn(`[repo] signedPhotoUrl falhou (${e?.message ?? e}) pra ${path}`);
+    return null;
+  }
 }
 
 export async function pushStaffMember(tenantId, member) {
@@ -1048,7 +1067,7 @@ export async function pushStaffMember(tenantId, member) {
 }
 
 export async function deleteStaffMember(tenantId, name) {
-  if (!isSupabaseEnabled() || !navigator.onLine) return { ok: false };
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok: false, reason: 'offline_or_disabled' };
   try {
     await sbFetch('tenant_staff', {
       method: 'DELETE',
@@ -1099,7 +1118,14 @@ export async function syncReceiving(tenantId) {
 export async function pushReceivingRecord(tenantId, record) {
   const localKey = `nutriops.receiving.${tenantId}`;
   const existing = ls(localKey, []);
-  lw(localKey, [record, ...existing].slice(0, 300));
+  // ORDENAR ANTES DE CORTAR — mesmo defeito já corrigido em temperature_records
+  // (supabaseRepository.list) e special_controls (syncSpecialControls): syncReceiving
+  // (syncModule) grava até 1000 itens SEM teto, local-primeiro-depois-remoto na
+  // ordem de inserção. Cortar por posição em vez de por data decepava
+  // sistematicamente os recebimentos que vieram do OUTRO aparelho (entram no
+  // fim do array), não os mais antigos. Achado da auditoria (19/08).
+  const merged = [record, ...existing].sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0));
+  lw(localKey, merged.slice(0, 300));
   if (!isSupabaseEnabled() || !navigator.onLine) {
     enqueue('receiving_records', 'insert', recvToRow(record));
     return;
@@ -1174,6 +1200,24 @@ export async function fetchProductById(tenantId, productId) {
     console.warn('[repo] fetchProductById failed:', e.message);
     return null;
   }
+}
+
+// "Remover produto" (validity.jsx) só mexia no state local — diferente de
+// equipamento/colaborador/POP/ASO/ativo de manutenção, não existia NENHUM
+// caminho de delete pra `products` na nuvem, nem online-only. syncProducts
+// faz merge local+remoto por id (syncModule), então o produto apagado
+// voltava no próximo sync/troca de loja. Online-only, mesmo motivo do
+// deleteEquipmentItem: a fila offline replaya tudo como POST
+// merge-duplicates, então um DELETE enfileirado ressuscitaria o produto.
+// Achado da auditoria (19/08). Nome com sufixo Cloud porque validity.jsx já
+// tem um `deleteProduct` local (mexe só no state) — mesma convenção de
+// deletePOPCloud/deleteFormTemplateCloud.
+export async function deleteProductCloud(tenantId, id) {
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok: false, reason: 'offline_or_disabled' };
+  try {
+    await sbFetch('products', { method:'DELETE', filter:`tenant_id=eq.${tenantId}&id=eq.${id}` }, tenantId);
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.message }; }
 }
 
 function stockToRow(l, tenantId) {
@@ -1333,10 +1377,21 @@ function controlFromRow(row) {
   return { ...row.data, id: row.id, createdAt: row.created_at };
 }
 
+// Teto compartilhado pelos 5 controles especiais (óleo, descongelamento,
+// resfriamento, tratamento térmico, higienização das mãos) — push e sync
+// PRECISAM concordar entre si e com o teto que cada tela usa no seu próprio
+// state. Era 200 aqui mas 300 na tela de higiene das mãos: depois de
+// qualquer sync em segundo plano, o "Total geral" caía de 300 pra 200
+// sozinho, sem nada avisar. Achado da auditoria (19/08). Exportada porque
+// controls.jsx/extras.jsx recortam o MESMO array no próprio state ao
+// adicionar um registro novo — um número mágico duplicado é exatamente o
+// tipo de coisa que já divergiu uma vez.
+export const SPECIAL_CONTROLS_CAP = 300;
+
 export async function pushSpecialControl(type, tenantId, record) {
   const localKey = `nutriops.${type}.${tenantId}`;
   const existing = ls(localKey, []);
-  lw(localKey, [record, ...existing].slice(0, 200));
+  lw(localKey, [record, ...existing].slice(0, SPECIAL_CONTROLS_CAP));
   if (!isSupabaseEnabled() || !navigator.onLine) {
     enqueue('special_controls', 'insert', controlToRow(type, record, tenantId));
     return;
@@ -1348,12 +1403,22 @@ export async function pushSpecialControl(type, tenantId, record) {
 
 export async function syncSpecialControls(type, tenantId) {
   const localKey = `nutriops.${type}.${tenantId}`;
-  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false };
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false, reason:'offline_or_disabled' };
   try {
-    const rows = await sbFetch('special_controls', { filter:`tenant_id=eq.${tenantId}&control_type=eq.${type}&order=created_at.desc&limit=200` }, tenantId);
+    const rows = await sbFetch('special_controls', { filter:`tenant_id=eq.${tenantId}&control_type=eq.${type}&order=created_at.desc&limit=${SPECIAL_CONTROLS_CAP}` }, tenantId);
     const remote = rows.map(controlFromRow);
     const local  = ls(localKey, []);
-    lw(localKey, mergeByKey([...local, ...remote], 'id').slice(0, 200));
+    // ⚠️ ORDENAR ANTES DE CORTAR — mesmo defeito do cache de temperatura
+    // (supabaseRepository.list, v1.9.151): mergeByKey devolve local-primeiro,
+    // remoto-anexado-no-fim (ordem de INSERÇÃO, não de data). Cortando cru,
+    // um aparelho que já tinha 200+ registros locais nunca deixava NADA do
+    // outro aparelho entrar — o slice cortava exatamente e só os remotos, todo
+    // boot, pra sempre. Sintoma: "cobertura 4%" mas pros 5 controles especiais
+    // em vez de temperatura. Achado da auditoria (19/08), 2 lentes (nº era
+    // duplicado no pool).
+    const merged = mergeByKey([...local, ...remote], 'id')
+      .sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0));
+    lw(localKey, merged.slice(0, SPECIAL_CONTROLS_CAP));
     return { ok:true, count:remote.length };
   } catch (e) { return { ok:false, reason:e.message }; }
 }
@@ -1397,7 +1462,7 @@ export async function pushPOP(tenantId, pop) {
 // viraria upsert e RESSUSCITARIA o POP apagado. Offline devolve {ok:false} e
 // o POP some só localmente até alguém remover de novo online.
 export async function deletePOPCloud(tenantId, popId) {
-  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false };
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false, reason:'offline_or_disabled' };
   try {
     await sbFetch('pops', { method:'DELETE', filter:`tenant_id=eq.${tenantId}&id=eq.${popId}` }, tenantId);
     return { ok:true };
@@ -1601,7 +1666,7 @@ export async function pushComplianceDoc(tenantId, doc) {
 // Online-only, mesmo motivo do deletePOPCloud: a fila replaya tudo como POST
 // merge-duplicates, então um DELETE enfileirado ressuscitaria o documento.
 export async function deleteComplianceDoc(tenantId, docId) {
-  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false };
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false, reason:'offline_or_disabled' };
   try {
     await sbFetch('compliance_docs', { method:'DELETE', filter:`tenant_id=eq.${tenantId}&id=eq.${docId}` }, tenantId);
     return { ok:true };
@@ -1757,7 +1822,13 @@ export async function syncAllModules(tenantId) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function migrateAllToSupabase(tenants) {
-  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false };
+  // `pushed`/`failed` sempre presentes, mesmo no early-return: o caller
+  // (settings.jsx handleMigrate) monta a frase de resultado direto de
+  // `result.pushed`/`result.failed` sem checar `ok` antes — offline devolvia
+  // {ok:false} pelado e a tela exibia "✓ undefined registros migrados. Todos
+  // os módulos sincronizados.", um sucesso falso pro botão que existe
+  // justamente pra resgatar backlog local. Achado da auditoria (19/08).
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false, reason:'offline_or_disabled', pushed:0, failed:0 };
   let pushed = 0, failed = 0;
 
   for (const tenant of tenants) {
@@ -1766,6 +1837,16 @@ export async function migrateAllToSupabase(tenants) {
     // Temperature
     const temps = ls('nutriops.temperature.records', []).filter(r => r.tenantId === id);
     for (const r of temps) {
+      // Mesma guarda de purgarFilaEnvenenada: um valor não-finito (NaN, do
+      // bug do quiosque pré-v1.9.143) nunca vai ser aceito pelo Postgres
+      // (`value numeric not null` → 23502 em TODA tentativa). Sem pular aqui,
+      // o registro conta como `failed` pra sempre — e como o auto-backfill só
+      // marca "done" com failed===0 (pages.jsx), o aparelho refaz o backfill
+      // INTEIRO (todos os módulos) a cada boot, pra sempre. Diferente da fila,
+      // que É persistida e por isso precisa de log ao descartar: este cache
+      // não é fila, então só pula — sem regravar nada, sem alarme, porque o
+      // caller conta pushed/failed e o `[repo]` já loga falha de push alhures.
+      if (!valorTemperaturaValido(r.value)) continue;
       try { await sbFetch('temperature_records', { method:'POST', body:tempToRow(r), prefer:'resolution=merge-duplicates,return=minimal' }, id); pushed++; } catch { failed++; }
     }
 

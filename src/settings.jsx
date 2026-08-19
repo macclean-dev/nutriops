@@ -409,7 +409,18 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
     setMigrating(true); setMigrateResult(null);
     try {
       const result = await migrateAllToSupabase(activeTenants);
-      setMigrateResult({ tone: result.failed===0?'ok':'warn', text:`✓ ${result.pushed} registros migrados${result.failed>0?` · ${result.failed} falha(s)`:''}. Todos os módulos sincronizados.` });
+      // O botão só desabilita por `!isSupabaseEnabled()` (linha abaixo) —
+      // nunca por navigator.onLine. Sem checar `result.ok`, o aparelho sem
+      // internet no momento do clique caía no early-return de
+      // migrateAllToSupabase (sem `pushed`/`failed`) e a tela montava "✓
+      // undefined registros migrados. Todos os módulos sincronizados." — um
+      // sucesso falso pro botão que existe justamente pra resgatar backlog
+      // local. Achado da auditoria (19/08).
+      if (!result.ok) {
+        setMigrateResult({ tone:'warn', text:'Sem internet no momento — nada foi migrado. Tente de novo quando reconectar.' });
+      } else {
+        setMigrateResult({ tone: result.failed===0?'ok':'warn', text:`✓ ${result.pushed} registros migrados${result.failed>0?` · ${result.failed} falha(s)`:''}. Todos os módulos sincronizados.` });
+      }
     } catch (e) {
       setMigrateResult({ tone:'danger', text:`Erro na migração: ${e.message}` });
     }

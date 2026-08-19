@@ -205,8 +205,21 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
     // quem o gerente cadastrou aqui. Se editou e mudou o nome, a linha antiga
     // fica órfã na nuvem (chave é tenant_id+name) → apaga a anterior.
     const nomeAntigo = isEditing ? users[editingIndex]?.name : null;
-    import('./repository').then(m => {
-      if (nomeAntigo && nomeAntigo !== trimmedName) m.deleteStaffMember(activeTenant.id, nomeAntigo).catch(() => {});
+    import('./repository').then(async (m) => {
+      // deleteStaffMember NUNCA lança — devolve {ok:false, reason}, e o
+      // `.catch(() => {})` não pegava nada disso. Offline é esperado (a linha
+      // nova já subiu por pushStaffMember/fila; a antiga só apaga quando
+      // alguém repetir a ação online); falha REAL com internet presente
+      // precisa avisar — senão o cadastro antigo sobrevive na nuvem, o
+      // próximo sync traz OS DOIS nomes de volta, e nada na tela liga isso à
+      // edição feita antes. Mesmo padrão de removeItem/removeAction
+      // (pages.jsx). Achado da auditoria (19/08).
+      if (nomeAntigo && nomeAntigo !== trimmedName) {
+        const r = await m.deleteStaffMember(activeTenant.id, nomeAntigo);
+        if (!r.ok && r.reason !== 'offline_or_disabled') {
+          window.alert(`"${trimmedName}" foi salvo, mas não consegui apagar o cadastro antigo "${nomeAntigo}" na nuvem agora. Os dois nomes podem aparecer até você editar de novo online.`);
+        }
+      }
       m.pushStaffMember(activeTenant.id, user);
     }).catch(() => {});
     cancelEdit();
@@ -216,7 +229,14 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
     if (!window.confirm(`Remover "${alvo?.name}"?`)) return;
     setUsers((prev) => prev.filter((_, idx) => idx !== i));
     if (editingIndex === i) cancelEdit();
-    if (alvo?.name) import('./repository').then(m => m.deleteStaffMember(activeTenant.id, alvo.name)).catch(() => {});
+    if (alvo?.name) {
+      import('./repository').then(async (m) => {
+        const r = await m.deleteStaffMember(activeTenant.id, alvo.name);
+        if (!r.ok && r.reason !== 'offline_or_disabled') {
+          window.alert(`Não foi possível remover "${alvo.name}" na nuvem agora. Ele pode reaparecer na próxima sincronização — tente remover de novo.`);
+        }
+      }).catch(() => {});
+    }
   };
   const filtered = users.filter((u) => { const q = search.toLowerCase(); return (!q || u.name.toLowerCase().includes(q) || (u.location ?? '').toLowerCase().includes(q)) && (roleFilter === 'Todos' || u.role === roleFilter); }).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }));
   return (

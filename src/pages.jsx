@@ -7,7 +7,7 @@ import { trackUsage } from './repository';
 import { employeeTrainingStatus } from './training-status';
 import { readTurns } from './turns';
 import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, getStorageFull, clearStorageFull, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill, pushCorrectiveAction, syncCorrectiveActions, deleteCorrectiveAction } from './repository';
-import { notificarSyncAplicado } from './lista-local';
+import { notificarSyncAplicado, gravarMesclando, SYNC_EVENT } from './lista-local';
 // Central de Não-Conformidades (item 2 da revisão, 09/08) — puro, sem React;
 // `extractNonConformities` (forms.jsx) e os readers de controles especiais
 // (controls.jsx/extras.jsx) entram por IMPORT DINÂMICO dentro do próprio
@@ -1474,7 +1474,7 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
   };
   const cancelEdit = () => resetForm();
 
-  const saveItem = () => {
+  const saveItem = async () => {
     const label = labelInput.trim(); if (!label) return;
     const aliases = aliasInput.split(',').map((s) => s.trim()).filter(Boolean);
     const location = locationInput.trim() || null;
@@ -1517,8 +1517,16 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
     // depois, em outro aparelho, parecendo cadastro errado da equipe.
     // Apagar DEPOIS de subir a nova: se a ordem inverter e o push falhar,
     // o equipamento some da nuvem.
+    // deleteEquipmentItem NUNCA lança — devolve {ok:false, reason}, e o
+    // `.catch(() => {})` não pegava nada disso: falha real (com internet,
+    // erro do servidor) não avisava, a linha antiga ficava órfã na nuvem e o
+    // equipamento voltava duplicado no próximo sync, exatamente o defeito que
+    // este bloco existe pra evitar. Mesmo padrão de removeItem/removeAction.
     if (anterior?.label && anterior.label !== label) {
-      deleteEquipmentItem(activeTenant.id, anterior.label).catch(() => {});
+      const r = await deleteEquipmentItem(activeTenant.id, anterior.label);
+      if (!r.ok && r.reason !== 'offline_or_disabled') {
+        window.alert(`"${label}" foi salvo, mas não consegui apagar o cadastro antigo "${anterior.label}" na nuvem agora. Os dois podem aparecer duplicados até você editar de novo online.`);
+      }
     }
     cancelEdit();
   };
@@ -1723,8 +1731,19 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
   const [saving, setSaving]         = useState(false);
   const [saved, setSaved]           = useState(false);
 
-  useEffect(() => { setItems(recLoad(activeTenant.id)); }, [activeTenant.id]);
-  useEffect(() => { recSave(activeTenant.id, items); }, [activeTenant.id, items]);
+  // Relê no mount E quando o sync avisa, e grava MESCLANDO com o storage —
+  // mesma correção já aplicada em Oil/Thaw/Cool/Thermal/Handwash (achado nº1
+  // da auditoria, 18/08, ver lista-local.js). Esta tela tinha ficado de fora:
+  // o padrão antigo (lê uma vez no mount, regrava a lista inteira a cada
+  // mudança) apaga o que syncReceiving trouxe da nuvem assim que a pessoa
+  // registra o próximo recebimento. Achado da auditoria (19/08).
+  useEffect(() => {
+    const reler = () => setItems(recLoad(activeTenant.id));
+    reler();
+    window.addEventListener(SYNC_EVENT, reler);
+    return () => window.removeEventListener(SYNC_EVENT, reler);
+  }, [activeTenant.id]);
+  useEffect(() => { gravarMesclando(recLoad, recSave, activeTenant.id, items); }, [activeTenant.id, items]);
 
   const sugestaoResultado = receivingSuggestedResult(checks, RECEIVING_CHECKS.map((c) => c.id));
   const motivoObrigatorio = resultado === 'rejeitado' || resultado === 'aceito_parcial';

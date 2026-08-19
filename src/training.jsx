@@ -495,12 +495,21 @@ function AsoPanel({ tenant, allUsers }) {
     setEditando(null);
   };
 
-  const remover = (docId) => {
+  const remover = async (docId) => {
     if (!window.confirm('Remover este registro de ASO?')) return;
     const proximos = docs.filter((d) => d.id !== docId);
     setDocs(proximos);
     ts(complianceKey(tenant.id), proximos);
-    deleteComplianceDoc(tenant.id, docId);
+    // deleteComplianceDoc NUNCA lança — devolve {ok:false, reason}. Offline é
+    // esperado (delete é online-only de propósito: enfileirar seria replayado
+    // como upsert e ressuscitaria o registro); falha REAL com internet
+    // presente precisa avisar, senão o ASO volta sozinho no próximo sync e
+    // parece que a remoção nunca aconteceu. Mesmo padrão de
+    // removeItem/removeAction (pages.jsx). Achado da auditoria (19/08).
+    const r = await deleteComplianceDoc(tenant.id, docId);
+    if (!r.ok && r.reason !== 'offline_or_disabled') {
+      window.alert('Não foi possível remover este registro na nuvem agora. Ele pode reaparecer na próxima sincronização — tente remover de novo.');
+    }
   };
 
   const tone = { ok:'ok', warn:'warn', expired:'danger', never:'neutral' };

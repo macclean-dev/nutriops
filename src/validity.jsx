@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Th, useOrdenacao } from './tabela-ordenavel';
-import { pushProduct, pushValidityRules, syncValidityRules , lw as gravarLocal } from './repository';
+import { pushProduct, deleteProductCloud, pushValidityRules, syncValidityRules , lw as gravarLocal } from './repository';
 import {
   readOpenRules, resolveOpenRule, computeOpenedUntil,
   fmtRule, fmtDate, fmtDateTime, DEFAULT_OPEN_RULES, buildLabelTrace,
@@ -211,7 +211,21 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
     resetForm(); setTab('products');
   };
 
-  const deleteProduct = (id) => { if (!window.confirm('Remover produto?')) return; setProducts(prev => prev.filter(p => p.id !== id)); };
+  // Até aqui só mexia no state local — diferente de equipamento/colaborador/
+  // POP/ASO/ativo de manutenção, não existia NENHUM caminho de delete pra
+  // `products` na nuvem (nem online-only). syncProducts faz merge local+
+  // remoto por id, então o produto apagado voltava no próximo sync/troca de
+  // loja, sem aviso. deleteProductCloud é online-only, mesmo motivo do
+  // deleteEquipmentItem/deleteStaffMember (delete enfileirado seria replayado
+  // como upsert e ressuscitaria o produto). Achado da auditoria (19/08).
+  const deleteProduct = async (id) => {
+    if (!window.confirm('Remover produto?')) return;
+    setProducts(prev => prev.filter(p => p.id !== id));
+    const r = await deleteProductCloud(activeTenant.id, id);
+    if (!r.ok && r.reason !== 'offline_or_disabled') {
+      window.alert('Não foi possível remover este produto na nuvem agora. Ele pode reaparecer na próxima sincronização — tente remover de novo.');
+    }
+  };
 
   const printLabel = async (product) => {
     // QR com o rastreio da abertura; perfil da empresa é o mesmo dos PDFs BPF.

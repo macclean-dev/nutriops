@@ -261,13 +261,24 @@ function PhotoField({ value, onChange, tenantId, formId, periodKey, fieldId }) {
   const [erro, setErro]   = useState('');
   const [subindo, setSub] = useState(false);
   const [url, setUrl]     = useState(null);
+  // Distingue "ainda buscando o link assinado" de "busquei e não consegui" —
+  // sem isto as duas telas eram IDÊNTICAS ("abrindo…" pra sempre): offline,
+  // sessão sem permissão pra essa loja e falha ao assinar o link devolvem
+  // `null` por caminhos diferentes em signedPhotoUrl, e o quadrado tracejado
+  // nunca saía do estado de carregando — a leitura natural virava "a foto
+  // quebrou", e o único botão ao lado ("Remover") descarta de vez o caminho
+  // da evidência no registro. Achado da auditoria (19/08).
+  const [carregandoUrl, setCarregandoUrl] = useState(Boolean(value?.path));
 
   useEffect(() => {
     let cancelado = false;
-    if (!value?.path) { setUrl(null); return; }
+    if (!value?.path) { setUrl(null); setCarregandoUrl(false); return; }
+    setCarregandoUrl(true);
     // Bucket privado → cada exibição pede um link temporário.
     import('./repository').then(m => m.signedPhotoUrl(tenantId, value.path))
-      .then(u => { if (!cancelado) setUrl(u); }).catch(() => {});
+      .then(u => { if (!cancelado) setUrl(u); })
+      .catch(() => { if (!cancelado) setUrl(null); })
+      .finally(() => { if (!cancelado) setCarregandoUrl(false); });
     return () => { cancelado = true; };
   }, [value?.path, tenantId]);
 
@@ -291,7 +302,9 @@ function PhotoField({ value, onChange, tenantId, formId, periodKey, fieldId }) {
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           {url
             ? <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="Evidência" style={{ width:88, height:88, objectFit:'cover', borderRadius:'var(--r)', border:'1px solid var(--border)' }} /></a>
-            : <div style={{ width:88, height:88, borderRadius:'var(--r)', border:'1px dashed var(--border)', display:'grid', placeItems:'center', fontSize:11, color:'var(--text-secondary)' }}>abrindo…</div>}
+            : carregandoUrl
+              ? <div style={{ width:88, height:88, borderRadius:'var(--r)', border:'1px dashed var(--border)', display:'grid', placeItems:'center', fontSize:11, color:'var(--text-secondary)' }}>abrindo…</div>
+              : <div title="Não consegui carregar a foto agora — pode ser falta de internet ou de permissão. Tente sair e voltar nesta planilha." style={{ width:88, height:88, borderRadius:'var(--r)', border:'1px dashed var(--red)', display:'grid', placeItems:'center', fontSize:11, color:'var(--red)', textAlign:'center', padding:4 }}>falha ao abrir</div>}
           <button className="ghost-action danger" style={{ fontSize:11 }} onClick={() => onChange(null)}>Remover</button>
         </div>
       ) : (

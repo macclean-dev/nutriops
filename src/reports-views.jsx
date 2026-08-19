@@ -1,7 +1,7 @@
 import React, { lazy, Suspense, useState, useMemo, useEffect } from 'react';
 import { Th, useOrdenacao } from './tabela-ordenavel';
 import { getTemperatureRepository, pushRtValidation } from './repository';
-import { resolveLimits as resolveLimitsFromCatalog, resolveRecordTone as resolveTemperatureTone, conformityStats, byWorstConformity } from './limits';
+import { resolveLimits as resolveLimitsFromCatalog, resolveRecordTone as resolveTemperatureTone, conformityStats, byWorstConformity, parseTemperatura } from './limits';
 import { employeeTrainingStatus } from './training-status';
 import CountUp from './count-up';
 
@@ -254,6 +254,12 @@ export function DashboardView({ allTenants, records, activeTenant, onTenantChang
       <td>${s.today}</td><td>${s.trend !== null ? `${s.trend}%` : '—'}</td>
     </tr>`).join('');
     const win = window.open('', '_blank');
+    // window.open devolve null com pop-up bloqueado (ou PWA em modo
+    // standalone) — sem a guarda, o `win.document.write` seguinte estourava
+    // TypeError dentro do handler de clique, sem error boundary que pegue:
+    // a tela ficava parada e ninguém via nada. Mesma guarda que dossie-view.jsx
+    // já usa. Achado da auditoria (19/08).
+    if (!win) { window.alert('Não foi possível abrir a janela de impressão — o navegador pode estar bloqueando pop-ups. Libere pop-ups para este site e toque em "↓ PDF executivo" de novo.'); return; }
     win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Dashboard Executivo — NutriOPS</title>
     <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#1c2128;padding:24px}
     h1{font-size:18px;font-weight:800;margin-bottom:4px}.meta{color:#656d76;font-size:9px;margin-bottom:16px}
@@ -529,6 +535,34 @@ const COLS_AUDITORIA = {
   status:     { valor: (r) => resolveTemperatureTone(r), tipo: 'texto' },
 };
 
+// repository.update NUNCA lança — offline vira fila (esperado, ver regra
+// "todo push enfileira" no CLAUDE.md), e falha ONLINE (RLS, sessão expirada,
+// timeout) vira `{ _pending: true }` igualmente silencioso (repository.js).
+// Sem distinguir os dois casos, a RT nunca sabia quando uma correção não
+// chegou na nuvem por um motivo real. Exportada pra testar a decisão sem
+// montar o componente. Achado da auditoria (19/08).
+export function shouldWarnPendingCorrection(result, online) {
+  return Boolean(result?._pending) && Boolean(online);
+}
+
+// Uma assinatura de RT com "Empresa: Todas" cria 1 validação POR LOJA
+// presente no período (ver saveValidation, abaixo) — a tira de chips da
+// Auditoria precisa mostrar TODAS elas: um corte fixo em 3 escondia a 4ª loja
+// em silêncio, sem dizer qual ficou de fora nem de qual loja é cada chip.
+// Também filtra pelo `tenantFilter` da tela — sem isto, trocar pra uma loja
+// específica podia mostrar o chip de OUTRA loja, lido como "esta loja está
+// validada". Deduplicada por tenant (mais recente vence) pra não crescer sem
+// limite com o tempo. Achado da auditoria (19/08).
+export function visibleRtValidations(rtValidations, tenantFilter) {
+  const scoped = tenantFilter === 'all' ? rtValidations : rtValidations.filter((v) => v.tenantId === tenantFilter);
+  const porTenant = new Map();
+  for (const v of scoped) {
+    const atual = porTenant.get(v.tenantId);
+    if (!atual || new Date(v.at) > new Date(atual.at)) porTenant.set(v.tenantId, v);
+  }
+  return [...porTenant.values()].sort((a, b) => new Date(b.at) - new Date(a.at));
+}
+
 export function AuditView({ allTenants, records, session, onRecordSaved }) {
   const repository = useMemo(() => getTemperatureRepository(), []);
   const [tenantFilter, setTenantFilter] = useState('all');
@@ -574,20 +608,41 @@ export function AuditView({ allTenants, records, session, onRecordSaved }) {
 
   const startCorrection = (r) => { setCorrectingId(r.id); setCorrectionValue(String(r.value)); setCorrectionReason(''); };
   const cancelCorrection = () => setCorrectingId(null);
+  // `Number('4,5')` é NaN — o teclado inputMode="decimal" em pt-BR entrega
+  // vírgula. parseTemperatura (limits.js) já resolve isto (achado nº10 da
+  // auditoria, 18/08, usado em pages.jsx); esta tela ainda usava Number puro,
+  // então o botão "Salvar" ficava habilitado (o disabled só olhava o motivo)
+  // e o clique não fazia nada — sem erro, sem fechar o editor. Também cobre o
+  // efeito colateral de limpar o campo: Number('') é 0 (gravava 0° sem
+  // perguntar), parseTemperatura('') é NaN. Achado da auditoria (19/08).
+  const correctionInvalid = isNaN(parseTemperatura(correctionValue));
   const submitCorrection = async (r) => {
-    const val = Number(correctionValue);
+    const val = parseTemperatura(correctionValue);
     if (isNaN(val) || !correctionReason.trim()) return;
     setCorrectionSaving(true);
     try {
-      await repository.update(r.id, r.tenantId, {
+      const patch = {
         value: val,
         originalValue: r.originalValue ?? r.value,
         correctionReason: correctionReason.trim(),
         correctedBy: session.user.name,
         correctedAt: new Date().toISOString(),
-      });
+      };
+      const result = await repository.update(r.id, r.tenantId, patch);
+      // extraRecords ("Período: Todos") é buscado à parte da prop `records`
+      // (ver useEffect acima) e não se atualiza sozinho quando records muda —
+      // sem este patch local, a correção grava de verdade mas a linha só
+      // atualiza trocando o filtro de período ou recarregando o app. Acha o
+      // registro pelo id em vez de refazer o fetch: mais barato e o cache
+      // local (RECORDS_KEY) já recebeu este mesmo patch dentro de
+      // repository.update, então não há risco de divergir. Achado da
+      // auditoria (19/08).
+      setExtraRecords((prev) => prev?.map((x) => (x.id === r.id ? { ...x, ...patch } : x)) ?? prev);
       setCorrectingId(null);
       onRecordSaved?.();
+      if (shouldWarnPendingCorrection(result, navigator.onLine)) {
+        window.alert('A correção foi salva neste aparelho, mas a nuvem não confirmou agora (sessão expirada, permissão ou instabilidade). Ela ficou pendente de sincronização — confira depois se os outros aparelhos já mostram o valor corrigido.');
+      }
     } finally { setCorrectionSaving(false); }
   };
 
@@ -610,6 +665,11 @@ export function AuditView({ allTenants, records, session, onRecordSaved }) {
     localStorage.setItem('nutriops.rt.validations', JSON.stringify(updated.slice(0, 100)));
     setSigningPeriod(false); setRtNote('');
   };
+
+  const visibleValidations = useMemo(
+    () => visibleRtValidations(rtValidations, tenantFilter),
+    [rtValidations, tenantFilter],
+  );
 
   const filtered = useMemo(() => {
     const now = Date.now(), days = Number(periodFilter);
@@ -652,6 +712,11 @@ export function AuditView({ allTenants, records, session, onRecordSaved }) {
   const exportPDF = () => {
     const name = tenantFilter === 'all' ? null : allTenants.find((t) => t.id === tenantFilter)?.name;
     const win = window.open('', '_blank');
+    // Mesmo risco do printDashboard (DashboardView, acima): pop-up bloqueado
+    // devolve null e `win.document.write` estoura em silêncio dentro do
+    // handler de clique — sem esta guarda, era o botão que o fiscal usa na
+    // hora da fiscalização. Achado da auditoria (19/08).
+    if (!win) { window.alert('Não foi possível abrir a janela de impressão — o navegador pode estar bloqueando pop-ups. Libere pop-ups para este site e toque em "↓ PDF" de novo.'); return; }
     win.document.write(generateAuditHTML(filtered, name)); win.document.close();
     setTimeout(() => win.print(), 400);
   };
@@ -690,11 +755,11 @@ export function AuditView({ allTenants, records, session, onRecordSaved }) {
         </article>
       )}
 
-      {rtValidations.length > 0 && (
+      {visibleValidations.length > 0 && (
         <div style={{ marginBottom:16, display:'flex', gap:8, flexWrap:'wrap' }}>
-          {rtValidations.slice(0,3).map(v => (
+          {visibleValidations.map(v => (
             <div key={v.id} style={{ padding:'6px 12px', background:'var(--green-light)', border:'1px solid var(--green-border)', borderRadius:8, fontSize:12 }}>
-              <span style={{ color:'var(--green)', fontWeight:700 }}>✓ Validado por {v.by}</span>
+              <span style={{ color:'var(--green)', fontWeight:700 }}>✓ {allTenants.find(t => t.id === v.tenantId)?.name ?? 'Empresa removida'} · Validado por {v.by}</span>
               <span style={{ color:'var(--text-secondary)', marginLeft:8 }}>{new Date(v.at).toLocaleDateString('pt-BR')} · {v.recordCount} registros</span>
             </div>
           ))}
@@ -786,9 +851,18 @@ export function AuditView({ allTenants, records, session, onRecordSaved }) {
                   )}
                   {isRT && correctingId === r.id && (
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
-                      <input inputMode="decimal" value={correctionValue} onChange={(e) => setCorrectionValue(e.target.value)} style={{ width: 70 }} />
+                      <input inputMode="decimal" value={correctionValue} onChange={(e) => setCorrectionValue(e.target.value)} style={{ width: 60 }} />
+                      {/* Teclado decimal não tem tecla de menos (mesmo motivo do
+                          botão em pages.jsx:945) — sem isto, corrigir o sinal
+                          invertido de um freezer (caso real documentado no
+                          CLAUDE.md: Bancada congelada F.2) depende de digitar
+                          "-" num teclado que fisicamente não o oferece. */}
+                      <button type="button" className="secondary-action" title="Trocar sinal (+/−)" style={{ fontSize: 11, padding: '3px 8px' }}
+                        onClick={() => setCorrectionValue((v) => v.startsWith('-') ? v.slice(1) : (v.trim() ? `-${v.trim()}` : v))}>
+                        ±
+                      </button>
                       <input placeholder="Motivo (obrigatório)" value={correctionReason} onChange={(e) => setCorrectionReason(e.target.value)} style={{ flex: 1, minWidth: 140 }} />
-                      <button className="secondary-action" style={{ fontSize: 11, padding: '3px 8px' }} disabled={correctionSaving || !correctionReason.trim()} onClick={() => submitCorrection(r)}>Salvar</button>
+                      <button className="secondary-action" style={{ fontSize: 11, padding: '3px 8px' }} disabled={correctionSaving || !correctionReason.trim() || correctionInvalid} onClick={() => submitCorrection(r)}>Salvar</button>
                       <button className="secondary-action" style={{ fontSize: 11, padding: '3px 8px' }} onClick={cancelCorrection}>Cancelar</button>
                     </div>
                   )}

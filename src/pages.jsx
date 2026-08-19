@@ -1142,6 +1142,12 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
   // planilhas vêm de chunks pesados (controls.jsx/extras.jsx/forms.jsx) — só
   // carregados sob demanda, pra não engordar o bundle principal.
   const [otherPending, setOtherPending] = useState({ receiving: [], controls: [], forms: [] });
+  // Falha ao carregar os chunks de controles/planilhas (offline com bundle
+  // antigo em cache, sw.js só pré-cacheia '/'+'/index.html') — ver o catch
+  // mais abaixo. `retryTick` reabre a mesma tentativa sem precisar trocar de
+  // tela. Achado da auditoria (18/08).
+  const [otherPendingError, setOtherPendingError] = useState(false);
+  const [otherPendingRetryTick, setOtherPendingRetryTick] = useState(0);
 
   useEffect(() => {
     setActions(readActions(activeTenant.id)); setCreating(null); setEditingId(null);
@@ -1153,25 +1159,39 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
 
   useEffect(() => {
     let vivo = true;
+    setOtherPendingError(false);
     setOtherPending((prev) => ({ ...prev, receiving: pendingReceivingItems(load(recStorageKey(activeTenant.id), [])) }));
     (async () => {
-      const [controlsMod, extrasMod, formsMod] = await Promise.all([import('./controls'), import('./extras'), import('./forms')]);
-      if (!vivo) return;
-      const { readOil, readThaw, readCool, readThermal } = controlsMod;
-      const { readHandwash } = extrasMod;
-      const { readFormTemplates, readFormRecords, extractNonConformities } = formsMod;
-      const controls = [
-        ...pendingControlItems('oil', readOil(activeTenant.id)),
-        ...pendingControlItems('thaw', readThaw(activeTenant.id)),
-        ...pendingControlItems('cool', readCool(activeTenant.id)),
-        ...pendingControlItems('thermal', readThermal(activeTenant.id)),
-        ...pendingControlItems('handwash', readHandwash(activeTenant.id)),
-      ];
-      const forms = pendingFormItems(readFormTemplates(activeTenant), readFormRecords(activeTenant.id), extractNonConformities);
-      if (vivo) setOtherPending((prev) => ({ ...prev, controls, forms }));
+      try {
+        const [controlsMod, extrasMod, formsMod] = await Promise.all([import('./controls'), import('./extras'), import('./forms')]);
+        if (!vivo) return;
+        const { readOil, readThaw, readCool, readThermal } = controlsMod;
+        const { readHandwash } = extrasMod;
+        const { readFormTemplates, readFormRecords, extractNonConformities } = formsMod;
+        const controls = [
+          ...pendingControlItems('oil', readOil(activeTenant.id)),
+          ...pendingControlItems('thaw', readThaw(activeTenant.id)),
+          ...pendingControlItems('cool', readCool(activeTenant.id)),
+          ...pendingControlItems('thermal', readThermal(activeTenant.id)),
+          ...pendingControlItems('handwash', readHandwash(activeTenant.id)),
+        ];
+        const forms = pendingFormItems(readFormTemplates(activeTenant), readFormRecords(activeTenant.id), extractNonConformities);
+        if (vivo) setOtherPending((prev) => ({ ...prev, controls, forms }));
+      } catch (e) {
+        // SEM catch, a rejeição do import() sumia: otherPending.controls/forms
+        // ficavam [] PRA SEMPRE nesta sessão, sem spinner nem aviso. As NC de
+        // planilha BPF e dos 5 controles especiais desapareciam da Central —
+        // e se não houvesse NC de temperatura/recebimento pendente, o card
+        // inteiro nem renderizava (`pending.length > 0 &&`), fazendo a tela
+        // parecer dizer "está tudo em ordem". Achado da auditoria (18/08).
+        if (vivo) {
+          console.warn('[NutriOPS] carregar NC de controles/planilhas falhou:', e?.message ?? e);
+          setOtherPendingError(true);
+        }
+      }
     })();
     return () => { vivo = false; };
-  }, [activeTenant.id]);
+  }, [activeTenant.id, otherPendingRetryTick]);
 
   const users = readUsers(activeTenant);
 
@@ -1250,6 +1270,18 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
         </div>
       </div>
 
+      {/* Falha ao carregar controles/planilhas — fica ANTES do card de
+          pendências (não dentro do `pending.length > 0 &&`) porque o pior
+          caso é exatamente pending.length virar 0 por causa desta falha,
+          fazendo o card inteiro sumir e a tela parecer dizer "tudo em
+          ordem". Achado da auditoria (18/08). */}
+      {otherPendingError && (
+        <div role="alert" className="alert-banner" style={{ background: 'var(--amber-light)', borderColor: 'var(--amber-border)', marginBottom: 16 }}>
+          <span style={{ color: 'var(--amber)' }}>⚠ Não consegui carregar as não conformidades de planilhas BPF e controles especiais (óleo, descongelamento, resfriamento, térmico, higiene das mãos). A lista abaixo pode estar incompleta — confira a internet.</span>
+          <button className="secondary-action" style={{ fontSize: 12 }} onClick={() => setOtherPendingRetryTick((t) => t + 1)}>Tentar de novo</button>
+        </div>
+      )}
+
       {/* Itens sem ação corretiva ainda, de qualquer uma das 4 origens */}
       {pending.length > 0 && (
         <article className="management-card" style={{ marginBottom: 16 }}>
@@ -1299,7 +1331,14 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
               <label>Prazo<input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} /></label>
             </div>
             <div className="actions-row">
-              <button className="primary-action" onClick={saveAction}>Criar ação corretiva</button>
+              {/* saveAction já recusava descrição vazia — mas em silêncio: sem
+                  disabled, sem foco no campo, sem aviso. Desvio de temperatura
+                  LEVE (ou controle especial sem obs anotada) pré-preenche a
+                  descrição vazia (defaultDescriptionFor), e "Criar ação
+                  corretiva" parecia funcionar sem registrar nada. Mesmo padrão
+                  já usado em RecebimentoView (disabled amarrado às
+                  obrigatoriedades). Achado da auditoria (18/08). */}
+              <button className="primary-action" onClick={saveAction} disabled={!description.trim()}>Criar ação corretiva</button>
             </div>
           </div>
         </article>
@@ -1453,6 +1492,22 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
     if (catalogTenant !== activeTenant.id) return;
     writeEquipmentCatalog(activeTenant.id, catalog);
   }, [activeTenant.id, catalogTenant, catalog]);
+  // Relê quando o sync (automático ou o "Tentar de novo" do banner âmbar)
+  // grava um catálogo novo no localStorage — mesma correção já aplicada aos
+  // 5 controles especiais e às planilhas (v1.9.154). Sem isto, esta tela só
+  // relia no mount/troca de empresa: um device novo com o catálogo de
+  // fábrica preso via App corrigia o `catalogVersion` do App (a captura de
+  // temperatura usa) mas esta tela mantém o PRÓPRIO state — o banner "Tentar
+  // de novo" sumia (deu certo), e a lista aqui continuava travada nos 4
+  // genéricos até um F5 manual. Não relê com uma edição em andamento, pro
+  // sync não trocar a lista sob os pés de quem está cadastrando/editando um
+  // equipamento. Achado da auditoria (18/08).
+  useEffect(() => {
+    if (editingIndex !== null) return;
+    const reler = () => setCatalog(readEquipmentCatalog(activeTenant));
+    window.addEventListener(SYNC_EVENT, reler);
+    return () => window.removeEventListener(SYNC_EVENT, reler);
+  }, [activeTenant, editingIndex]);
 
   // Sugestão automática de faixa quando o usuário digita o nome (só preenche
   // se os campos estiverem vazios — não sobrescreve o que o user escolheu)
@@ -2768,11 +2823,22 @@ export function App() {
   }, [seesAllTenants, session?.tenantId, session?.memberTenants, activeTenant, activeTenants]);
 
   const handleTenantChange = useCallback((id) => {
-    if (!seesAllTenants) return;
+    // Antes bloqueava qualquer sessão que não fosse admin global
+    // (seesAllTenants = isGlobalAdmin). Uma RT/supervisora com memberTenants
+    // (login por e-mail, 2-3 unidades) NUNCA é isGlobalAdmin — então o
+    // seletor de empresa em Alertas/NC/Recebimento/Equipamentos/CompanyCards/
+    // MobileDrawer (todos chamam este handler com um id vindo de
+    // `visibleTenants`, a mesma lista que preenche o <select>) voltava
+    // sozinho pra loja anterior, sem aviso nenhum. A checagem certa é "o
+    // alvo está entre as empresas que esta sessão pode ver": cobre admin
+    // (visibleTenants=activeTenants), RT/supervisora (visibleTenants=suas
+    // memberTenants) e a conta de loja única (visibleTenants=[activeTenant],
+    // troca continua virando no-op, como antes). Achado da auditoria (18/08).
+    if (!visibleTenants.some((t) => t.id === id)) return;
     setActiveTenantId(id);
     const t = activeTenants.find(x => x.id === id);
     setActiveStoreId(t?.stores?.[0]?.id ?? null);
-  }, [seesAllTenants, activeTenants]);
+  }, [visibleTenants, activeTenants]);
 
   const handleStoreChange = useCallback((storeId) => {
     setActiveStoreId(storeId);
@@ -2787,6 +2853,14 @@ export function App() {
       if (eq.ok && eq.count > 0) {
         setCatalogVersion((v) => v + 1);
         setCatalogStale(false);
+        // Sem isto, só quem lê `catalogVersion` por prop (a captura de
+        // temperatura, via App) se atualizava. A tela de Equipamentos guarda
+        // o PRÓPRIO state, lido só no mount/troca de empresa — o banner
+        // sumia (deu certo), mas a lista continuava travada nos 4 genéricos
+        // até um F5 manual. notificarSyncAplicado alcança qualquer tela
+        // aberta inscrita em SYNC_EVENT (lista-local.js). Achado da
+        // auditoria (18/08).
+        notificarSyncAplicado({ tenantId: session.tenantId, trigger: 'retry-catalogo' });
       }
     } catch (e) {
       console.warn('[NutriOPS] retry do catálogo falhou:', e?.message ?? e);
@@ -2896,14 +2970,18 @@ export function App() {
   }, [session?.tenantId, session?.user?.storeId, seesAllTenants]);
 
   const refreshRecords = useCallback(async () => {
-    // Load records for all companies (RT/Admin) or just own company
-    // Mesmo motivo do visibleTenants: com o `tenants` do módulo, o admin global
-    // nunca carregava os registros de clientes da nuvem (CASA DOCE aparecia
-    // sempre com 0 leituras).
-    const tenantsToLoad = seesAllTenants ? activeTenants : [activeTenant];
-    const all = await Promise.all(tenantsToLoad.map(async (t) => { const items = await repository.list({ tenantId: t.id, days: 90 }); return items.map((r) => ({ ...r, tenantName: r.tenantName ?? t.name })); }));
+    // Load records for ALL tenants this session can see. visibleTenants já
+    // resolve isso certo (seesAllTenants → todas; RT/supervisora com
+    // memberTenants → só as dela; conta única → só a própria). Antes usava
+    // `seesAllTenants ? activeTenants : [activeTenant]`, que tratava toda
+    // sessão que não fosse admin global como se só enxergasse UMA loja — a
+    // RT com 3 unidades (memberTenants, isGlobalAdmin=false) só carregava
+    // registros da unidade ATIVA, e o dashboard dela (RTDashboard) mostrava
+    // as outras duas sempre zeradas, mesmo com dado real no Supabase.
+    // Achado da auditoria (18/08).
+    const all = await Promise.all(visibleTenants.map(async (t) => { const items = await repository.list({ tenantId: t.id, days: 90 }); return items.map((r) => ({ ...r, tenantName: r.tenantName ?? t.name })); }));
     setRecords(all.flat().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
-  }, [repository, seesAllTenants, activeTenant, activeTenants]);
+  }, [repository, visibleTenants]);
 
   useEffect(() => { refreshRecords(); }, [refreshRecords]);
 
@@ -2950,7 +3028,28 @@ export function App() {
       }).length;
     }, 0);
   }, [activeTenant.id]);
-  const actionCount = useMemo(() => readActions(activeTenant.id).filter((a) => a.status !== 'resolvida').length, [records, activeTenant.id]);
+  // O sinal certo pro badge do menu é "quantas NC ESPERAM ação", não "quantas
+  // ações estão abertas". Antes: 20 desvios sem NENHUMA ação = badge apagado
+  // (menu "limpo"); criar a 1ª ação ACENDIA o badge (1) — sinal invertido — e
+  // ele apaga de novo quando as ações são resolvidas, mesmo com NC atrás
+  // ainda sem tratamento. Mesma fonte que a Central de NC usa
+  // (nonconformities.js: pendingTemperatureItems/pendingReceivingItems/
+  // excludeWithAction), mas só com o que já está em memória (`records`) ou é
+  // leitura direta e barata de localStorage (recebimento) — controle
+  // especial e planilha exigem os chunks pesados de controls/extras/
+  // forms.jsx, carregados sob demanda só quando a Central de NC abre
+  // (CorrectiveActionsView); replicar isso aqui rodaria em TODO boot só pra
+  // alimentar um badge, o que o próprio arquivo evita de propósito noutro
+  // lugar. Undercount conhecido e aceito: fica sem contar NC de planilha/
+  // controle especial enquanto ninguém abriu a Central nesta sessão — ainda
+  // assim corrige o defeito relatado (o sinal nunca mais fica invertido para
+  // as duas fontes mais frequentes). Achado da auditoria (18/08).
+  const actionCount = useMemo(() => {
+    const acts = readActions(activeTenant.id);
+    const tempPending = pendingTemperatureItems(records, activeTenant.id, resolveTemperatureTone);
+    const recPending = pendingReceivingItems(load(recStorageKey(activeTenant.id), []));
+    return excludeWithAction([...tempPending, ...recPending], acts).length;
+  }, [records, activeTenant.id]);
   const { permission: notifPermission, request: requestNotif, notify: browserNotify } = useBrowserNotifications(turns, activeTenant.id);
 
   // Kiosk mode — restaura sozinho se o tablet recarregar (reload acidental,
@@ -3053,6 +3152,14 @@ export function App() {
           if (eq.ok && eq.count > 0) {
             setCatalogVersion((v) => v + 1);
             setCatalogStale(false);
+            // Segundo aviso: o de cima (notificarSyncAplicado logo após
+            // syncAllModules) já disparou ANTES deste syncEquipmentCatalog
+            // terminar, então quem releu no primeiro aviso pegou o catálogo
+            // AINDA provisório. Sem este segundo disparo, uma tela de
+            // Equipamentos já aberta durante o boot ficava presa nos 4
+            // genéricos mesmo com a auto-cura tendo funcionado por baixo.
+            // Achado da auditoria (18/08).
+            notificarSyncAplicado({ tenantId: session.tenantId, trigger: 'auto-cura-catalogo' });
           } else if (isPlaceholderCatalog(naTela)) {
             // Chegamos aqui de dois jeitos, e o alerta vale pros dois:
             //  · {ok:false} — rede/credencial caiu;

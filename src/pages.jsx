@@ -7,6 +7,7 @@ import { trackUsage } from './repository';
 import { employeeTrainingStatus } from './training-status';
 import { readTurns } from './turns';
 import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill, pushCorrectiveAction, syncCorrectiveActions } from './repository';
+import { notificarSyncAplicado } from './lista-local';
 // Central de Não-Conformidades (item 2 da revisão, 09/08) — puro, sem React;
 // `extractNonConformities` (forms.jsx) e os readers de controles especiais
 // (controls.jsx/extras.jsx) entram por IMPORT DINÂMICO dentro do próprio
@@ -2835,6 +2836,11 @@ export function App() {
         // O sync gravou catálogo/equipe direto no localStorage. Sem este bump a
         // tela segue mostrando o que leu no primeiro render (o bug dos 4).
         setCatalogVersion((v) => v + 1);
+        // Mesmo problema, outras telas: os 5 controles especiais e a higienização
+        // das mãos leem a lista deles no mount e nunca mais. O bump acima só
+        // alcança quem recebe `catalogVersion` por prop. Este evento alcança
+        // qualquer tela aberta — elas se reinscrevem sozinhas (ver lista-local.js).
+        notificarSyncAplicado({ tenantId: session.tenantId, trigger });
 
         // ── Auto-cura do catálogo de equipamentos ───────────────────────────
         // O bump acima só resolve quando o sync FUNCIONOU. Quando ele falha,

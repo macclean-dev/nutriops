@@ -21,6 +21,10 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.154', date: '2026-08-18', items: [
+    'Correção importante nos controles especiais (óleo, descongelamento, resfriamento, tratamento térmico) e na higiene das mãos: os registros feitos em outros aparelhos não apareciam, e o próximo registro feito neste aparelho apagava esses registros do celular. Nada se perdia na nuvem, mas o histórico da tela ficava incompleto — e a Prontidão, o Dossiê Fiscal e a Exportação mensal liam essa lista curta.',
+    'Agora essas telas se atualizam sozinhas quando a sincronização traz dados novos, e gravar um registro nunca mais apaga o que veio de outro aparelho.',
+  ]},
   { version: '1.9.153', date: '2026-08-18', items: [
     'Novo em Planilhas BPF (para a RT): botão "Organizar". Dá para renomear as abas — por exemplo, trocar "Faxina" por "Serviços gerais" — e escolher em qual aba cada planilha aparece, sem precisar pedir alteração no sistema. Vale só para a sua empresa; as outras continuam como estão.',
     'As 21 folhas de Higienização ficam fixas na aba delas: o setor de cada uma vem do próprio título, e fora dali o filtro por setor deixaria de funcionar. A tela explica isso em vez de apenas bloquear.',

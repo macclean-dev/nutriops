@@ -3,6 +3,7 @@ import { pushSpecialControl, pushPOP, deletePOPCloud } from './repository';
 import { resolveRecordTone, normalizeEquipmentName } from './limits';
 import { autoVerdict, verdictConflicts, thawCompliant, oilResultForAcidLevel, suggestionConflicts } from './verdict';
 import { readCatalog } from './maintenance';
+import { gravarMesclando, SYNC_EVENT } from './lista-local';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -295,8 +296,18 @@ export function OilControlView({ activeTenant, allTenants, onTenantChange, sessi
   const [obs, setObs]             = useState('');
   const [saved, setSaved]         = useState(false);
 
-  useEffect(() => { setRecords(readOil(activeTenant.id)); }, [activeTenant.id]);
-  useEffect(() => { writeOil(activeTenant.id, records); }, [activeTenant.id, records]);
+  // Relê no mount E quando o sync avisa: sem isto a tela mostra o retrato do
+  // momento em que montou, e o histórico que chegou da nuvem fica invisível.
+  useEffect(() => {
+    const reler = () => setRecords(readOil(activeTenant.id));
+    reler();
+    window.addEventListener(SYNC_EVENT, reler);
+    return () => window.removeEventListener(SYNC_EVENT, reler);
+  }, [activeTenant.id]);
+  // Grava MESCLANDO com o storage: regravar a lista da tela por cima apagava
+  // o que o sync tinha trazido entre a montagem e este registro (achado nº1 da
+  // auditoria de 18/08, com perda de dado).
+  useEffect(() => { gravarMesclando(readOil, writeOil, activeTenant.id, records); }, [activeTenant.id, records]);
 
   const acidSuggestion = oilResultForAcidLevel(acidez);
   const conflita = suggestionConflicts(acidSuggestion, resultado);
@@ -432,8 +443,18 @@ export function ThawControlView({ activeTenant, allTenants, onTenantChange, sess
   const [obs, setObs]           = useState('');
   const [saved, setSaved]       = useState(false);
 
-  useEffect(() => { setRecords(readThaw(activeTenant.id)); }, [activeTenant.id]);
-  useEffect(() => { writeThaw(activeTenant.id, records); }, [activeTenant.id, records]);
+  // Relê no mount E quando o sync avisa: sem isto a tela mostra o retrato do
+  // momento em que montou, e o histórico que chegou da nuvem fica invisível.
+  useEffect(() => {
+    const reler = () => setRecords(readThaw(activeTenant.id));
+    reler();
+    window.addEventListener(SYNC_EVENT, reler);
+    return () => window.removeEventListener(SYNC_EVENT, reler);
+  }, [activeTenant.id]);
+  // Grava MESCLANDO com o storage: regravar a lista da tela por cima apagava
+  // o que o sync tinha trazido entre a montagem e este registro (achado nº1 da
+  // auditoria de 18/08, com perda de dado).
+  useEffect(() => { gravarMesclando(readThaw, writeThaw, activeTenant.id, records); }, [activeTenant.id, records]);
 
   const METHODS = [
     { id:'refrigerador', label:'Sob refrigeração (até 4°C)', ok:'≤ 4°C' },
@@ -569,8 +590,18 @@ export function CoolingControlView({ activeTenant, allTenants, onTenantChange, s
   const [obs, setObs]           = useState('');
   const [saved, setSaved]       = useState(false);
 
-  useEffect(() => { setRecords(readCool(activeTenant.id)); }, [activeTenant.id]);
-  useEffect(() => { writeCool(activeTenant.id, records); }, [activeTenant.id, records]);
+  // Relê no mount E quando o sync avisa: sem isto a tela mostra o retrato do
+  // momento em que montou, e o histórico que chegou da nuvem fica invisível.
+  useEffect(() => {
+    const reler = () => setRecords(readCool(activeTenant.id));
+    reler();
+    window.addEventListener(SYNC_EVENT, reler);
+    return () => window.removeEventListener(SYNC_EVENT, reler);
+  }, [activeTenant.id]);
+  // Grava MESCLANDO com o storage: regravar a lista da tela por cima apagava
+  // o que o sync tinha trazido entre a montagem e este registro (achado nº1 da
+  // auditoria de 18/08, com perda de dado).
+  useEffect(() => { gravarMesclando(readCool, writeCool, activeTenant.id, records); }, [activeTenant.id, records]);
 
   // RDC 216: deve sair de 60°C para ≤10°C em até 2h, depois para ≤4°C em mais 4h
   const checkCompliance = () => {
@@ -714,8 +745,18 @@ export function ThermalControlView({ activeTenant, allTenants, onTenantChange, s
   const [obs, setObs]           = useState('');
   const [saved, setSaved]       = useState(false);
 
-  useEffect(() => { setRecords(readThermal(activeTenant.id)); }, [activeTenant.id]);
-  useEffect(() => { writeThermal(activeTenant.id, records); }, [activeTenant.id, records]);
+  // Relê no mount E quando o sync avisa: sem isto a tela mostra o retrato do
+  // momento em que montou, e o histórico que chegou da nuvem fica invisível.
+  useEffect(() => {
+    const reler = () => setRecords(readThermal(activeTenant.id));
+    reler();
+    window.addEventListener(SYNC_EVENT, reler);
+    return () => window.removeEventListener(SYNC_EVENT, reler);
+  }, [activeTenant.id]);
+  // Grava MESCLANDO com o storage: regravar a lista da tela por cima apagava
+  // o que o sync tinha trazido entre a montagem e este registro (achado nº1 da
+  // auditoria de 18/08, com perda de dado).
+  useEffect(() => { gravarMesclando(readThermal, writeThermal, activeTenant.id, records); }, [activeTenant.id, records]);
 
   // RDC 216: centro geométrico ≥ 70°C ou combinação tempo/temp equivalente
   const isCompliant = tempReached ? Number(tempReached) >= 70 : null;

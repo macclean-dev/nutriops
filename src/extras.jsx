@@ -9,6 +9,7 @@ import { getEffectivePin, writePinOverride, isWeakPin } from './pin';
 import { isGlobalAdmin } from './permissions';
 import { fetchAccessLog } from './tenant-sync';
 import { pushSpecialControl, getTemperatureRepository } from './repository';
+import { gravarMesclando, SYNC_EVENT } from './lista-local';
 import { resolveRecordTone } from './limits';
 import { employeeTrainingStatus } from './training-status';
 import { computeWeeklySummary, summaryToText } from './weekly-summary';
@@ -600,8 +601,15 @@ export function HandwashView({ activeTenant, allTenants, onTenantChange, session
   const MOMENTS = ['Início das atividades', 'Após usar o banheiro', 'Troca de atividade', 'Antes de colocar luvas', 'Após manipular alimento cru', 'Após tossir/espirrar', 'Após manipular lixo'];
   const STEPS   = ['Molhar as mãos', 'Aplicar sabonete', 'Esfregar por 20s', 'Enxaguar bem', 'Secar com papel toalha', 'Aplicar álcool 70%'];
 
-  useEffect(() => { setRecords(readHandwash(activeTenant.id)); }, [activeTenant.id]);
-  useEffect(() => { writeHandwash(activeTenant.id, records); }, [activeTenant.id, records]);
+  // Mesma correção dos 4 controles especiais (achado nº1 da auditoria, 18/08):
+  // relê quando o sync avisa, e grava mesclando em vez de sobrescrever.
+  useEffect(() => {
+    const reler = () => setRecords(readHandwash(activeTenant.id));
+    reler();
+    window.addEventListener(SYNC_EVENT, reler);
+    return () => window.removeEventListener(SYNC_EVENT, reler);
+  }, [activeTenant.id]);
+  useEffect(() => { gravarMesclando(readHandwash, writeHandwash, activeTenant.id, records); }, [activeTenant.id, records]);
 
   const handleSave = () => {
     if (!operator.trim() || !moment || !result) return;

@@ -1,4 +1,5 @@
 import React, { lazy, Suspense, useState, useMemo, useEffect } from 'react';
+import { Th, useOrdenacao } from './tabela-ordenavel';
 import { getTemperatureRepository, pushRtValidation } from './repository';
 import { resolveLimits as resolveLimitsFromCatalog, resolveRecordTone as resolveTemperatureTone, conformityStats, byWorstConformity } from './limits';
 import { employeeTrainingStatus } from './training-status';
@@ -515,6 +516,19 @@ export function ChartsView({ activeTenant, allTenants, onTenantChange, records }
   );
 }
 
+
+// Auditoria é a tela que o fiscal olha. Ordenar por Temp. acha o pior desvio do
+// período na hora; por Responsável, tudo de uma pessoa; por Status, os críticos
+// no topo. A coluna Observação fica de fora: texto livre, ordenar não ajuda.
+const COLS_AUDITORIA = {
+  createdAt:  { valor: (r) => r.createdAt,  tipo: 'data'   },
+  tenantName: { valor: (r) => r.tenantName, tipo: 'texto'  },
+  equip:      { valor: (r) => r.equipmentInput || r.equipment, tipo: 'texto' },
+  value:      { valor: (r) => r.value,      tipo: 'numero' },
+  user:       { valor: (r) => r.user,       tipo: 'texto'  },
+  status:     { valor: (r) => resolveTemperatureTone(r), tipo: 'texto' },
+};
+
 export function AuditView({ allTenants, records, session, onRecordSaved }) {
   const repository = useMemo(() => getTemperatureRepository(), []);
   const [tenantFilter, setTenantFilter] = useState('all');
@@ -609,6 +623,9 @@ export function AuditView({ allTenants, records, session, onRecordSaved }) {
     });
   }, [effectiveRecords, tenantFilter, periodFilter, statusFilter, equipFilter, searchFilter]);
 
+  const { ordem, aoClicar, ordenar } = useOrdenacao();
+  const linhasAuditoria = ordenar(filtered, COLS_AUDITORIA);
+
   const stats = useMemo(() => ({ total: filtered.length, ok: filtered.filter((r) => resolveTemperatureTone(r) === 'ok').length, warn: filtered.filter((r) => resolveTemperatureTone(r) === 'warn').length, danger: filtered.filter((r) => resolveTemperatureTone(r) === 'danger').length }), [filtered]);
 
   const drillHistory = useMemo(() => {
@@ -700,8 +717,17 @@ export function AuditView({ allTenants, records, session, onRecordSaved }) {
       </div>
       <div className="audit-table-wrap">
         {filtered.length === 0 ? <p className="muted" style={{ padding: '32px 20px' }}>Nenhum registro encontrado.</p>
-          : <table className="table"><thead><tr><th>Data / Hora</th><th>Empresa</th><th>Equipamento <small style={{ color:'var(--primary)', fontWeight:600, letterSpacing:'.04em', textTransform:'uppercase', fontSize:9 }}>click→</small></th><th>Temp.</th><th>Faixa</th><th>Responsável</th><th>Status</th><th>Observação</th></tr></thead>
-            <tbody>{filtered.map((r) => { const tone = resolveTemperatureTone(r); return (
+          : <table className="table"><thead><tr>
+            <Th id="createdAt"  ordem={ordem} onClick={aoClicar}>Data / Hora</Th>
+            <Th id="tenantName" ordem={ordem} onClick={aoClicar}>Empresa</Th>
+            <Th id="equip"      ordem={ordem} onClick={aoClicar} title="Ordenar por equipamento — clique na célula abre o histórico">Equipamento</Th>
+            <Th id="value"      ordem={ordem} onClick={aoClicar} num>Temp.</Th>
+            <th>Faixa</th>
+            <Th id="user"       ordem={ordem} onClick={aoClicar}>Responsável</Th>
+            <Th id="status"     ordem={ordem} onClick={aoClicar}>Status</Th>
+            <th>Observação</th>
+          </tr></thead>
+            <tbody>{linhasAuditoria.map((r) => { const tone = resolveTemperatureTone(r); return (
               <tr key={r.id} className={`audit-row-${tone}`}>
                 <td style={{ fontFamily: 'var(--mono)', fontSize: 12, whiteSpace: 'nowrap' }}>{formatCompactDateTime(r.createdAt)}</td>
                 <td>{r.tenantName}</td>

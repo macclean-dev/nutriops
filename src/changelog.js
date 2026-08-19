@@ -21,6 +21,10 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.156', date: '2026-08-19', items: [
+    'Os cabeçalhos das tabelas agora são clicáveis para ordenar. Um clique ordena do menor para o maior, o segundo inverte, e o terceiro devolve a ordem original. Aplicado em Relatórios (Temperatura, Planilhas BPF e Capacitação), na Auditoria e na lista de Produtos das Validades.',
+    'Colunas de número e de data ordenam de verdade — em Validades, ordenar por "Dias" traz o que vence primeiro no topo, e os produtos sem data de validade ficam sempre no fim, em vez de se misturarem à lista.',
+  ]},
   { version: '1.9.155', date: '2026-08-19', items: [
     'Correção importante: uma planilha BPF preenchida em dois aparelhos no mesmo período ficava presa para sempre na fila de envio do segundo aparelho — o servidor recusava por duplicidade e ninguém era avisado. Agora o segundo preenchimento atualiza o registro em vez de ser recusado.',
     'Corrigido: o filtro "Todos" da Auditoria podia mostrar MENOS registros que "90 dias", e ainda apagava do aparelho o histórico das outras empresas. Era o mesmo problema de limite corrigido ontem, num caminho que passou despercebido.',

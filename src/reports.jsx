@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Th, useOrdenacao } from './tabela-ordenavel';
 import { readFormRecords, readFormTemplates, catMeta, formatPeriodLabel, getPeriodKey, freqLabel } from './forms';
 import { readSessions } from './training';
 import { resolveRecordTone as resolveTemperatureTone } from './limits';
@@ -11,6 +12,24 @@ function formatDate(iso) {
 function pct(n, total) { return total > 0 ? Math.round((n/total)*100) : 0; }
 
 // ─── Temperature Report ────────────────────────────────────────────────────
+
+
+// Colunas ordenáveis da tabela por equipamento. `tipo` explícito: 'numero' pra
+// tudo que é medida — média/mín/máx vêm como string formatada ('-11.5') e
+// comparadas como texto ficam fora de ordem — e 'data' pro último registro.
+const COLS_EQUIP = {
+  tenant:     { valor: (s) => s.tenant,     tipo: 'texto'  },
+  equip:      { valor: (s) => s.equip,      tipo: 'texto'  },
+  total:      { valor: (s) => s.total,      tipo: 'numero' },
+  avg:        { valor: (s) => s.avg,        tipo: 'numero' },
+  min:        { valor: (s) => s.min,        tipo: 'numero' },
+  max:        { valor: (s) => s.max,        tipo: 'numero' },
+  ok:         { valor: (s) => s.ok,         tipo: 'numero' },
+  warn:       { valor: (s) => s.warn,       tipo: 'numero' },
+  danger:     { valor: (s) => s.danger,     tipo: 'numero' },
+  compliance: { valor: (s) => s.compliance, tipo: 'numero' },
+  last:       { valor: (s) => s.last?.createdAt, tipo: 'data' },
+};
 
 function TemperatureReport({ allTenants, records, periodDays, tenantFilter }) {
   const filtered = useMemo(() => {
@@ -45,6 +64,9 @@ function TemperatureReport({ allTenants, records, periodDays, tenantFilter }) {
     }).sort((a,b) => a.tenant.localeCompare(b.tenant,'pt-BR'));
   }, [filtered]);
 
+  const { ordem, aoClicar, ordenar } = useOrdenacao();
+  const linhasEquip = ordenar(equipStats, COLS_EQUIP);
+
   const totals = { total: filtered.length, ok: filtered.filter(r=>resolveTemperatureTone(r)==='ok').length, warn: filtered.filter(r=>resolveTemperatureTone(r)==='warn').length, danger: filtered.filter(r=>resolveTemperatureTone(r)==='danger').length };
 
   return (
@@ -62,12 +84,20 @@ function TemperatureReport({ allTenants, records, periodDays, tenantFilter }) {
       <div className="audit-table-wrap">
         <table className="table">
           <thead><tr>
-            <th>Empresa</th><th>Equipamento</th><th>Registros</th>
-            <th>Média</th><th>Mín.</th><th>Máx.</th>
-            <th>Conformes</th><th>Desvios</th><th>Críticos</th><th>Conformidade</th><th>Último registro</th>
+            <Th id="tenant" ordem={ordem} onClick={aoClicar}>Empresa</Th>
+            <Th id="equip"  ordem={ordem} onClick={aoClicar}>Equipamento</Th>
+            <Th id="total"  ordem={ordem} onClick={aoClicar} num>Registros</Th>
+            <Th id="avg"    ordem={ordem} onClick={aoClicar} num>Média</Th>
+            <Th id="min"    ordem={ordem} onClick={aoClicar} num>Mín.</Th>
+            <Th id="max"    ordem={ordem} onClick={aoClicar} num>Máx.</Th>
+            <Th id="ok"     ordem={ordem} onClick={aoClicar} num>Conformes</Th>
+            <Th id="warn"   ordem={ordem} onClick={aoClicar} num>Desvios</Th>
+            <Th id="danger" ordem={ordem} onClick={aoClicar} num>Críticos</Th>
+            <Th id="compliance" ordem={ordem} onClick={aoClicar} num>Conformidade</Th>
+            <Th id="last"   ordem={ordem} onClick={aoClicar}>Último registro</Th>
           </tr></thead>
           <tbody>
-            {equipStats.map((s, i) => (
+            {linhasEquip.map((s, i) => (
               <tr key={i}>
                 <td>{s.tenant}</td>
                 <td><strong>{s.equip}</strong></td>
@@ -98,6 +128,18 @@ function TemperatureReport({ allTenants, records, periodDays, tenantFilter }) {
 
 // ─── BPF Forms Report ──────────────────────────────────────────────────────
 
+
+// As 3 colunas de período são o histórico daquela planilha, não um valor
+// comparável entre linhas — não entram como ordenáveis.
+const COLS_BPF = {
+  tenant:    { valor: (s) => s.tenant,    tipo: 'texto'  },
+  title:     { valor: (s) => s.title,     tipo: 'texto'  },
+  category:  { valor: (s) => s.meta?.label ?? s.category, tipo: 'texto' },
+  frequency: { valor: (s) => s.frequency, tipo: 'texto'  },
+  total:     { valor: (s) => s.total,     tipo: 'numero' },
+  validated: { valor: (s) => s.validated, tipo: 'numero' },
+};
+
 function BPFReport({ allTenants, tenantFilter }) {
   const stats = useMemo(() => {
     const result = [];
@@ -125,16 +167,23 @@ function BPFReport({ allTenants, tenantFilter }) {
     return result;
   }, [allTenants, tenantFilter]);
 
+  const { ordem: ordemBpf, aoClicar: clicarBpf, ordenar: ordenarBpf } = useOrdenacao();
+  const linhasBpf = ordenarBpf(stats, COLS_BPF);
+
   return (
     <div className="audit-table-wrap">
       <table className="table">
         <thead><tr>
-          <th>Empresa</th><th>Planilha</th><th>Categoria</th><th>Frequência</th>
+          <Th id="tenant"    ordem={ordemBpf} onClick={clicarBpf}>Empresa</Th>
+          <Th id="title"     ordem={ordemBpf} onClick={clicarBpf}>Planilha</Th>
+          <Th id="category"  ordem={ordemBpf} onClick={clicarBpf}>Categoria</Th>
+          <Th id="frequency" ordem={ordemBpf} onClick={clicarBpf}>Frequência</Th>
           <th>Período atual</th><th>Período anterior</th><th>2 períodos atrás</th>
-          <th>Total preenchimentos</th><th>Validados RT</th>
+          <Th id="total"     ordem={ordemBpf} onClick={clicarBpf} num>Total preenchimentos</Th>
+          <Th id="validated" ordem={ordemBpf} onClick={clicarBpf} num>Validados RT</Th>
         </tr></thead>
         <tbody>
-          {stats.map((s, i) => (
+          {linhasBpf.map((s, i) => (
             <tr key={i}>
               <td>{s.tenant}</td>
               <td><strong>{s.title}</strong></td>
@@ -163,6 +212,17 @@ function BPFReport({ allTenants, tenantFilter }) {
 
 // ─── Training Report ───────────────────────────────────────────────────────
 
+
+const COLS_TREINO = {
+  tenant:        { valor: (r) => r.tenant,        tipo: 'texto'  },
+  name:          { valor: (r) => r.name,          tipo: 'texto'  },
+  role:          { valor: (r) => r.role,          tipo: 'texto'  },
+  lastDate:      { valor: (r) => r.lastDate,      tipo: 'data'   },
+  daysAgo:       { valor: (r) => r.daysAgo,       tipo: 'numero' },
+  totalSessions: { valor: (r) => r.totalSessions, tipo: 'numero' },
+  status:        { valor: (r) => r.status,        tipo: 'texto'  },
+};
+
 function TrainingReport({ allTenants, tenantFilter }) {
   const data = useMemo(() => {
     const tenants = tenantFilter === 'all' ? allTenants : allTenants.filter(t => t.id === tenantFilter);
@@ -181,6 +241,9 @@ function TrainingReport({ allTenants, tenantFilter }) {
     return rows;
   }, [allTenants, tenantFilter]);
 
+  const { ordem: ordemTr, aoClicar: clicarTr, ordenar: ordenarTr } = useOrdenacao();
+  const linhasTr = ordenarTr(data, COLS_TREINO);
+
   const stLabel = { ok:'Em dia', warn:'Renovar em breve', expired:'Vencido', never:'Nunca capacitado' };
   const stTone  = { ok:'ok', warn:'warn', expired:'danger', never:'danger' };
 
@@ -196,9 +259,16 @@ function TrainingReport({ allTenants, tenantFilter }) {
       </div>
       <div className="audit-table-wrap">
         <table className="table">
-          <thead><tr><th>Empresa</th><th>Colaborador</th><th>Perfil</th><th>Último treinamento</th><th>Há quantos dias</th><th>Total de sessões</th><th>Situação</th></tr></thead>
+          <thead><tr>
+            <Th id="tenant"        ordem={ordemTr} onClick={clicarTr}>Empresa</Th>
+            <Th id="name"          ordem={ordemTr} onClick={clicarTr}>Colaborador</Th>
+            <Th id="role"          ordem={ordemTr} onClick={clicarTr}>Perfil</Th>
+            <Th id="lastDate"      ordem={ordemTr} onClick={clicarTr}>Último treinamento</Th>
+            <Th id="daysAgo"       ordem={ordemTr} onClick={clicarTr} num>Há quantos dias</Th>
+            <Th id="totalSessions" ordem={ordemTr} onClick={clicarTr} num>Total de sessões</Th>
+            <Th id="status"        ordem={ordemTr} onClick={clicarTr}>Situação</Th></tr></thead>
           <tbody>
-            {data.map((r,i) => (
+            {linhasTr.map((r,i) => (
               <tr key={i}>
                 <td>{r.tenant}</td>
                 <td><strong>{r.name}</strong></td>

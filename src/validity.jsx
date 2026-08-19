@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Th, useOrdenacao } from './tabela-ordenavel';
 import { pushProduct, pushValidityRules, syncValidityRules } from './repository';
 import {
   readOpenRules, resolveOpenRule, computeOpenedUntil,
@@ -129,6 +130,18 @@ export function generateLabel(product, tenant, session, opts = {}) {
 // VALIDADES — MAIN VIEW
 // ═══════════════════════════════════════════════════════════════════════════
 
+
+// Ordenar por "Dias" é o uso real desta tabela: a RT quer o que vence primeiro
+// no topo. `daysLeft` pode ser null (produto sem validade) — o motor manda
+// vazio pro fim nas duas direções, então esses não poluem a lista.
+const COLS_VALIDADE = {
+  name:         { valor: (p) => p.name,         tipo: 'texto'  },
+  category:     { valor: (p) => p.category,     tipo: 'texto'  },
+  conservation: { valor: (p) => p.conservation, tipo: 'texto'  },
+  expiry:       { valor: (p) => p.openedUntil ?? p.expiryDate, tipo: 'data' },
+  daysLeft:     { valor: (p) => p.daysLeft,     tipo: 'numero' },
+};
+
 export function ValidityStockView({ activeTenant, allTenants, onTenantChange, session }) {
   const [products, setProducts] = useState(() => readProducts(activeTenant.id));
   const [tab, setTab]           = useState('dashboard'); // dashboard | products | add | rules
@@ -254,6 +267,9 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
     return true;
   });
 
+  const { ordem, aoClicar, ordenar } = useOrdenacao();
+  const linhasValidade = ordenar(filtered, COLS_VALIDADE);
+
   // ─── Dashboard tab ───────────────────────────────────────────────────────
 
   const renderDashboard = () => (
@@ -368,11 +384,15 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
         {filtered.length === 0 ? <p className="muted" style={{ padding:'24px 20px' }}>Nenhum produto encontrado.</p> : (
           <table className="table">
             <thead><tr>
-              <th>Produto</th><th>Categoria</th><th>Conservação</th>
-              <th>Validade</th><th>Dias</th><th></th>
+              <Th id="name"         ordem={ordem} onClick={aoClicar}>Produto</Th>
+              <Th id="category"     ordem={ordem} onClick={aoClicar}>Categoria</Th>
+              <Th id="conservation" ordem={ordem} onClick={aoClicar}>Conservação</Th>
+              <Th id="expiry"       ordem={ordem} onClick={aoClicar}>Validade</Th>
+              <Th id="daysLeft"     ordem={ordem} onClick={aoClicar} num>Dias</Th>
+              <th></th>
             </tr></thead>
             <tbody>
-              {filtered.map(p => {
+              {linhasValidade.map(p => {
                 const c = TONE_COLOR[p.tone];
                 return (
                   <tr key={p.id}>

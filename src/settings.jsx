@@ -328,10 +328,29 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
         const backup = JSON.parse(ev.target.result);
         if (!backup.data) { alert('Arquivo de backup inválido.'); return; }
         if (!window.confirm(`Restaurar backup de ${backup.tenantName} (${backup.exportedAt?.slice(0,10)})?\n\nIsso vai sobrescrever os dados locais.`)) return;
+        // Cada chave que falhava era engolida por um catch vazio e o alerta
+        // dizia "✓ Backup restaurado!" mesmo assim. Restaurar backup é o
+        // último recurso de quem já perdeu dado — confirmar sucesso sem ter
+        // restaurado é a pior mentira possível aqui. A falha real é
+        // localStorage cheio (QuotaExceeded): as primeiras chaves entram, as
+        // últimas não, e a pessoa segue achando que recuperou tudo.
+        // Achado nº5 da triagem da auditoria (18/08).
+        const falharam = [];
         Object.entries(backup.data).forEach(([key, value]) => {
-          try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+          try { localStorage.setItem(key, JSON.stringify(value)); }
+          catch (e) { falharam.push(key); console.warn(`[backup] não restaurou ${key}:`, e?.message); }
         });
-        alert('✓ Backup restaurado! A página será recarregada.');
+        if (falharam.length) {
+          alert(
+            `⚠ Backup restaurado PARCIALMENTE.\n\n` +
+            `${falharam.length} de ${Object.keys(backup.data).length} itens NÃO foram restaurados — ` +
+            `o armazenamento do navegador provavelmente está cheio.\n\n` +
+            `Não restaurados: ${falharam.join(', ')}\n\n` +
+            `Libere espaço (ou use outro aparelho) e restaure de novo antes de confiar nestes dados.`
+          );
+        } else {
+          alert('✓ Backup restaurado! A página será recarregada.');
+        }
         window.location.reload();
       } catch { alert('Erro ao ler o arquivo de backup.'); }
     };

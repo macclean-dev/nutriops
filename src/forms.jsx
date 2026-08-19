@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FormKioskApp } from './kiosk';
 import { pushFormRecord } from './repository';
 import { ImportTemplateModal } from './import-template-modal';
 import { isFieldDue, dueFields } from './field-frequency';
+import { gravarMesclando, SYNC_EVENT } from './lista-local';
 import { prefsFromProfile, profileWithPrefs, catLabelFor, podeMoverPara, applyCategoryPrefs, enxugarPrefs, CATEGORIA_COM_COMPORTAMENTO } from './form-prefs';
 import { readCompanyProfile, saveCompanyProfile } from './settings';
 
@@ -1534,11 +1535,24 @@ function DateSigField({ value={}, onChange, currentName }) {
 // ─── Form Fill ─────────────────────────────────────────────────────────────
 
 function FormFill({ template, record, onSave, onBack, session, tenant }) {
-  const [responses, setResponses] = useState(() => record?.responses ?? {});
+  const respostasIniciais = useRef(record?.responses ?? {});
+  const [responses, setResponses] = useState(() => respostasIniciais.current);
   const [saving, setSaving] = useState(false);
   const pct = completionPct(template, { responses });
 
   const setField = (id, val) => setResponses((prev) => ({ ...prev, [id]:val }));
+
+  // "← Voltar" e "Confirmar preenchimento" terminam na MESMA tela (a lista) —
+  // handleSave também chama setFilling(null). Sem aviso, voltar por reflexo
+  // no meio do preenchimento é indistinguível de ter salvado: nenhuma tela
+  // denuncia que a planilha inteira (evidência RDC) acabou de ser descartada.
+  // Achado da auditoria de 18/08. `window.confirm` é o padrão já usado nesta
+  // mesma função pra "menos de 100%" — não é UI nova.
+  const temAlteracaoNaoSalva = JSON.stringify(responses) !== JSON.stringify(respostasIniciais.current);
+  const voltar = () => {
+    if (temAlteracaoNaoSalva && !window.confirm('Sair sem salvar? O que foi preenchido nesta planilha será perdido.')) return;
+    onBack();
+  };
 
   const handleSave = async (status) => {
     // Antes dava pra "Confirmar preenchimento" com 7% e o card virava
@@ -1564,7 +1578,7 @@ function FormFill({ template, record, onSave, onBack, session, tenant }) {
   return (
     <div className="form-fill-view">
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20 }}>
-        <button className="ghost-action" onClick={onBack} style={{ padding:'6px 10px' }}>← Voltar</button>
+        <button className="ghost-action" onClick={voltar} style={{ padding:'6px 10px' }}>← Voltar</button>
         <div style={{ flex:1 }}>
           <span className="eyebrow">{freqLabel(template.frequency)} · {catMeta(template.category).label}</span>
           <h2 style={{ fontSize:18, fontWeight:800, letterSpacing:'-.03em', marginTop:2 }}>{template.title}</h2>
@@ -1784,12 +1798,39 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
     pickCategory('all');
   }, [activeTenant.id]);
 
+  // Relê quando o sync avisa — mesma correção dos 5 controles especiais
+  // (v1.9.154). Sem isto a tela mostra o retrato do momento em que montou, e a
+  // planilha preenchida em outro aparelho não aparece.
+  //
+  // NÃO relê enquanto alguém está preenchendo (`filling`): o sync chegando no
+  // meio do preenchimento trocaria a lista sob os pés de quem digita.
+  useEffect(() => {
+    if (filling) return;
+    const reler = () => {
+      setTemplates(readFormTemplates(activeTenant));
+      setRecords(readFormRecords(activeTenant.id));
+      setPrefs(prefsFromProfile(readCompanyProfile(activeTenant.id)));
+    };
+    window.addEventListener(SYNC_EVENT, reler);
+    return () => window.removeEventListener(SYNC_EVENT, reler);
+  }, [activeTenant, filling]);
+
   useEffect(() => {
     if (formsTenant !== activeTenant.id) return;   // troca de loja em andamento
-    writeFormRecords(activeTenant.id, records);
+    // Mescla, não sobrescreve: o registro que o sync trouxe entre a montagem e
+    // este "Confirmar preenchimento" era apagado do aparelho. Seguro aqui
+    // porque registro de planilha só nasce ou é atualizado (upsert por
+    // formId+periodKey) — esta tela nunca apaga nenhum.
+    gravarMesclando(readFormRecords, writeFormRecords, activeTenant.id, records);
   }, [activeTenant.id, formsTenant, records]);
   useEffect(() => {
     if (formsTenant !== activeTenant.id) return;
+    // Templates NÃO mesclam, de propósito. A limpeza de planilhas duplicadas
+    // (Configurações → "Planilhas BPF duplicadas", v1.9.139) APAGA templates;
+    // mesclar aqui ressuscitaria as cópias que ela acabou de remover. É a
+    // mesma razão que deixou POPs de fora da correção dos controles.
+    // O risco oposto — sobrescrever um template novo vindo do sync — se cura
+    // no sync seguinte, porque syncModule funde nuvem→local por id.
     writeFormTemplates(activeTenant.id, templates);
   }, [activeTenant.id, formsTenant, templates]);
 

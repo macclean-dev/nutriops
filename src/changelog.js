@@ -21,6 +21,12 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.158', date: '2026-08-19', items: [
+    'Novo aviso: se o armazenamento do aparelho encher, aparece uma tarja vermelha avisando que os registros podem NÃO estar sendo salvos. Antes isso era completamente invisível — o aparelho parava de gravar e todas as telas continuavam confirmando que tinha salvado.',
+    'Sair de uma planilha pela seta "← Voltar" com campos preenchidos agora pede confirmação. Antes descartava a planilha inteira sem avisar, e a tela ficava idêntica à de quem tinha salvado.',
+    'As Planilhas BPF agora se atualizam sozinhas quando a sincronização traz dados novos, e confirmar um preenchimento não apaga mais o que veio de outro aparelho.',
+    'Restaurar um backup agora avisa quando algum item NÃO pôde ser restaurado, em vez de dizer "restaurado" de qualquer jeito.',
+  ]},
   { version: '1.9.157', date: '2026-08-19', items: [
     'Os cards de resumo dos Relatórios (Registros, Conformes, Desvio leve, Fora da faixa, Conformidade) também ficaram clicáveis. Em Temperatura, clicar num card ordena a tabela por aquele número — "Conformidade geral" traz primeiro o equipamento com mais desvio. Em Capacitação e na Auditoria, clicar filtra a lista para mostrar só aquele grupo; clicar de novo no mesmo card volta a mostrar tudo.',
   ]},

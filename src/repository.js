@@ -11,7 +11,31 @@ const OFFLINE_Q_KEY = 'nutriops.offline.queue';
 const SYNC_STATUS_KEY = 'nutriops.sync.status';
 
 export const ls = (k, fb) => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : fb; } catch { return fb; } };
-export const lw = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+// Toda gravação local do app passa por aqui (30 pontos). O `catch {}` vazio
+// engolia QUALQUER falha — e a falha real é localStorage cheio: a partir do
+// momento em que enche, nada mais é salvo e cada tela segue confirmando
+// sucesso. Não dá pra fazer `lw` lançar (os 30 chamadores não tratam), então:
+// devolve booleano pra quem quiser checar, loga, e levanta uma bandeira
+// persistente que o app mostra num banner. Achado nº15 da auditoria (18/08).
+export const STORAGE_FULL_KEY = 'nutriops.storage.full';
+export const lw = (k, v) => {
+  try {
+    localStorage.setItem(k, JSON.stringify(v));
+    return true;
+  } catch (e) {
+    console.error(`[repo] FALHA ao gravar ${k} — armazenamento cheio?`, e?.name, e?.message);
+    try {
+      localStorage.setItem(STORAGE_FULL_KEY, JSON.stringify({ chave: k, at: new Date().toISOString() }));
+    } catch {}   // se nem isto cabe, o console é o que sobra
+    return false;
+  }
+};
+export function getStorageFull() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_FULL_KEY) ?? 'null'); } catch { return null; }
+}
+export function clearStorageFull() {
+  try { localStorage.removeItem(STORAGE_FULL_KEY); } catch {}
+}
 
 // ─── Supabase config ───────────────────────────────────────────────────────
 

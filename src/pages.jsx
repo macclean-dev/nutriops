@@ -6,7 +6,7 @@ import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
 import { trackUsage } from './repository';
 import { employeeTrainingStatus } from './training-status';
 import { readTurns } from './turns';
-import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill, pushCorrectiveAction, syncCorrectiveActions } from './repository';
+import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, getStorageFull, clearStorageFull, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill, pushCorrectiveAction, syncCorrectiveActions } from './repository';
 import { notificarSyncAplicado } from './lista-local';
 // Central de Não-Conformidades (item 2 da revisão, 09/08) — puro, sem React;
 // `extractNonConformities` (forms.jsx) e os readers de controles especiais
@@ -1856,6 +1856,43 @@ function countLocalRecords(tenantId) {
 // Banner pra quando Supabase retorna 401/403 — anon key inválida (rotacionada
 // ou RLS bloqueando). Sem isso, os pushes caem na queue silenciosamente
 // e o user nunca sabe que precisa reconectar.
+
+// Armazenamento do aparelho cheio. Quando isso acontece, TODA gravação local
+// falha (ver lw em repository.js) e cada tela segue confirmando sucesso — a
+// pessoa registra o dia inteiro e nada é salvo. É a falha mais silenciosa que
+// a auditoria de 18/08 encontrou (achado nº15), e a única que não tem
+// auto-cura: só liberando espaço.
+function StorageFullBanner() {
+  const [full, setFull] = useState(() => getStorageFull());
+  useEffect(() => {
+    const t = setInterval(() => setFull(getStorageFull()), 10_000);
+    return () => clearInterval(t);
+  }, []);
+  if (!full) return null;
+  return (
+    <div role="alert" style={{
+      display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
+      padding:'10px 16px', marginBottom:16,
+      background:'var(--red-light)', border:'1px solid var(--red-border)',
+      borderRadius:'var(--r-lg)', flexWrap:'wrap',
+    }}>
+      <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+        <strong style={{ color:'var(--red)', fontSize:13 }}>
+          ⚠ O armazenamento deste aparelho está cheio — registros podem NÃO estar sendo salvos
+        </strong>
+        <span style={{ color:'var(--text-secondary)', fontSize:12 }}>
+          Última falha ao gravar em {new Date(full.at).toLocaleString('pt-BR')}. Feche abas, limpe o cache de
+          outros sites, ou use outro aparelho — e confira se as últimas leituras aparecem no histórico.
+        </span>
+      </div>
+      <button onClick={() => { clearStorageFull(); setFull(null); }}
+        style={{ padding:'6px 10px', borderRadius:'var(--r)', border:'1px solid var(--red-border)', background:'transparent', color:'var(--red)', fontSize:12, fontWeight:500, cursor:'pointer', fontFamily:'var(--font)' }}>
+        Dispensar
+      </button>
+    </div>
+  );
+}
+
 function SupabaseAuthErrorBanner({ session, setActiveView }) {
   const [err, setErr] = useState(() => getSupabaseAuthError());
   useEffect(() => {
@@ -3105,6 +3142,7 @@ export function App() {
           </div>
         )}
         <LocalModeBanner session={session} activeTenant={activeTenant} setActiveView={setActiveView} />
+        <StorageFullBanner />
         <SupabaseAuthErrorBanner session={session} setActiveView={setActiveView} />
         {catalogStale && <CatalogStaleBanner onRetry={retryCatalogSync} retrying={catalogRetrying} />}
         {activeTenant.implantacao === true && (

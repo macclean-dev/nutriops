@@ -22,116 +22,26 @@ export function compareVersions(a, b) {
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
   { version: '1.9.165', date: '2026-08-19', items: [
-    'Correção importante: um equipamento cadastrado sem internet podia ser apagado pela sincronização antes de chegar à nuvem. Agora o que ainda está na fila de envio é preservado.',
-    'Na Manutenção, cadastrar um equipamento com o mesmo nome de um que já aparece na lista agora é bloqueado — antes o outro sumia da tela e as ordens de serviço dele ficavam sem equipamento. Para dar plano de manutenção a um equipamento do catálogo, use "Editar" no card dele.',
-    'No editor de planilha, sair pelo "Cancelar" com alterações não salvas agora pede confirmação. Antes descartava tudo sem avisar, e a tela ficava igual à de quem tinha salvado.',
-  ]},
-  { version: '1.9.164', date: '2026-08-19', items: [
-    'Correção importante: uma correção de temperatura feita na Auditoria podia sumir da tela na atualização seguinte, antes de subir para a nuvem. O valor corrigido e a trilha (valor original, quem corrigiu) voltavam ao que eram. Agora a correção permanece.',
-    'Corrigido: concluir o PIN de setup de uma empresa apagava do aparelho as outras empresas já carregadas nele.',
-    'Ao preencher uma planilha atravessando a meia-noite, o app agora pergunta em qual dia registrar, mostrando os dois. Antes gravava no dia em que a planilha foi aberta — por cima da folha daquele dia, se já estivesse preenchida.',
-  ]},
-  { version: '1.9.163', date: '2026-08-19', items: [
-    'Correção importante no backup: o arquivo exportado de uma empresa levava junto os dados das OUTRAS empresas do aparelho — e restaurá-lo sobrescrevia todas. Agora o backup leva só a empresa escolhida, e a restauração ignora (avisando) o que não for dela.',
-    'O arquivo de backup também deixou de carregar credenciais — sessão, chave de acesso e PINs não entram mais nele. Se você tem backups antigos guardados fora do aparelho, vale apagá-los: eles contêm esses dados.',
-    'O aviso de "armazenamento cheio" agora alcança todas as telas. Antes só o registro de temperatura sabia avisar; planilhas, controles, validades, manutenção e capacitação continuavam confirmando sucesso sem ter gravado.',
-    'Corrigido: apagar o campo de data numa ação corretiva, numa execução de manutenção ou na validade de um produto fazia o registro ser recusado pelo servidor para sempre, sem aviso.',
-    'Corrigido: o histórico de manutenção e as ordens de serviço descartavam os registros MAIS NOVOS quando a lista ficava longa, em vez dos mais antigos.',
-  ]},
-  { version: '1.9.162', date: '2026-08-19', items: [
-    'O "Organizar" das Planilhas BPF agora edita também o nome, a frequência e a descrição de cada planilha — não só a aba. A RT pode confirmar a frequência que as próprias descrições pediam ("a confirmar com a RT") e renomear planilhas sem depender de alteração no sistema. Vale só para a sua empresa.',
-    'Mudar a frequência avisa na hora que isso altera o período a partir de agora; o que já foi preenchido continua no histórico com a frequência antiga.',
-    'As 21 folhas de Higienização têm o nome fixo (o setor de cada uma vem dele), mas frequência e descrição podem ser ajustadas normalmente.',
-  ]},
-  { version: '1.9.161', date: '2026-08-19', items: [
-    'O nome de aba escolhido em "Organizar" agora aparece em todo lugar: no card de cada planilha, no cabeçalho do preenchimento e no PDF. Antes só a aba mudava — se você renomeasse "Faxina" para "Serviços gerais", os cards embaixo dela continuavam dizendo FAXINA.',
-  ]},
-  { version: '1.9.160', date: '2026-08-19', items: [
-    'Correção importante: a planilha "Higienização do Reservatório de Água" era compartilhada entre as empresas por engano — quando a RT de uma loja ajustava as tarefas, sobrescrevia a planilha de outra loja na nuvem, e a segunda voltava ao modelo padrão. Cada empresa passa a ter a sua. As planilhas já preenchidas continuam onde estão.',
-    'Cadastrar dois equipamentos com o mesmo nome na mesma empresa agora é bloqueado, com sugestão de como diferenciar. Antes o segundo apagava o primeiro (faixa, setor e apelidos) na sincronização, sem avisar.',
-    'No painel administrativo, o botão de remover cliente agora diz a verdade: ele oculta o cliente da lista — e isso passa a valer de verdade, antes o cliente reaparecia sozinho na abertura seguinte. Os dados não são apagados e o acesso continua; para cortar o acesso, use Desativar.',
-  ]},
-  { version: '1.9.159', date: '2026-08-19', items: [
-    'Correções internas na tela antiga de registro de temperatura (hoje fora do menu): o número no botão "Registrar N temperaturas" podia não bater com o que era realmente gravado, valores digitados com vírgula não eram salvos, e corrigir uma medição já registrada não tinha efeito. Nada disso afeta o uso atual do app — está corrigido caso a tela volte.',
-  ]},
-  { version: '1.9.158', date: '2026-08-19', items: [
-    'Novo aviso: se o armazenamento do aparelho encher, aparece uma tarja vermelha avisando que os registros podem NÃO estar sendo salvos. Antes isso era completamente invisível — o aparelho parava de gravar e todas as telas continuavam confirmando que tinha salvado.',
-    'Sair de uma planilha pela seta "← Voltar" com campos preenchidos agora pede confirmação. Antes descartava a planilha inteira sem avisar, e a tela ficava idêntica à de quem tinha salvado.',
-    'As Planilhas BPF agora se atualizam sozinhas quando a sincronização traz dados novos, e confirmar um preenchimento não apaga mais o que veio de outro aparelho.',
-    'Restaurar um backup agora avisa quando algum item NÃO pôde ser restaurado, em vez de dizer "restaurado" de qualquer jeito.',
-  ]},
-  { version: '1.9.157', date: '2026-08-19', items: [
-    'Os cards de resumo dos Relatórios (Registros, Conformes, Desvio leve, Fora da faixa, Conformidade) também ficaram clicáveis. Em Temperatura, clicar num card ordena a tabela por aquele número — "Conformidade geral" traz primeiro o equipamento com mais desvio. Em Capacitação e na Auditoria, clicar filtra a lista para mostrar só aquele grupo; clicar de novo no mesmo card volta a mostrar tudo.',
-  ]},
-  { version: '1.9.156', date: '2026-08-19', items: [
-    'Os cabeçalhos das tabelas agora são clicáveis para ordenar. Um clique ordena do menor para o maior, o segundo inverte, e o terceiro devolve a ordem original. Aplicado em Relatórios (Temperatura, Planilhas BPF e Capacitação), na Auditoria e na lista de Produtos das Validades.',
-    'Colunas de número e de data ordenam de verdade — em Validades, ordenar por "Dias" traz o que vence primeiro no topo, e os produtos sem data de validade ficam sempre no fim, em vez de se misturarem à lista.',
-  ]},
-  { version: '1.9.155', date: '2026-08-19', items: [
-    'Correção importante: uma planilha BPF preenchida em dois aparelhos no mesmo período ficava presa para sempre na fila de envio do segundo aparelho — o servidor recusava por duplicidade e ninguém era avisado. Agora o segundo preenchimento atualiza o registro em vez de ser recusado.',
-    'Corrigido: o filtro "Todos" da Auditoria podia mostrar MENOS registros que "90 dias", e ainda apagava do aparelho o histórico das outras empresas. Era o mesmo problema de limite corrigido ontem, num caminho que passou despercebido.',
-    'Corrigido: salvar os dados do estabelecimento podia apagar alterações que a sincronização tinha acabado de trazer — inclusive a organização das abas de planilhas feita pela RT em outro aparelho.',
-    'Corrigido: transformar um equipamento do catálogo em ativo de manutenção desvinculava, sem avisar, as execuções e ordens de serviço já registradas nele.',
+    'Nos últimos dias fizemos uma revisão ativa do sistema, testando fluxo por fluxo em busca de falhas silenciosas — casos em que a tela dizia "salvo" sem ter salvo de verdade. As correções abaixo vêm dessa revisão: a maioria são falhas antigas que passamos a encontrar de forma sistemática, não problemas que surgiram agora.',
+    'Relatórios: cabeçalhos e cards de resumo (Temperatura, Planilhas BPF, Capacitação, Auditoria, Validades) agora são clicáveis — um clique ordena a tabela, outro filtra por um grupo, e dá pra voltar ao normal a qualquer momento.',
+    'A RT ganhou autonomia total para organizar as Planilhas BPF: nome das abas, em qual aba cada planilha aparece, e o nome, a frequência e a descrição de cada uma — sem precisar pedir alteração no sistema. Vale só para a sua empresa.',
+    'Sincronização entre empresas ficou mais precisa: a planilha do Reservatório de Água, o catálogo de equipamentos e o backup agora respeitam corretamente os limites entre empresas — cada uma só vê e edita os próprios dados.',
+    'Backup mais seguro: o arquivo exportado deixou de carregar senha de acesso e sessão, e cada backup passa a pertencer a uma única empresa. Backups antigos guardados fora do aparelho ainda contêm esses dados — vale substituí-los pelos novos.',
+    'Uma correção de leitura de temperatura feita na Auditoria agora fica registrada de forma definitiva, sem risco de reverter sozinha na sincronização seguinte.',
+    'Mais avisos para nunca confirmar "salvo" sem ter salvo: armazenamento cheio, alterações não salvas ao sair de uma tela, data inválida num campo, e nome de equipamento repetido dentro da mesma empresa.',
   ]},
   { version: '1.9.154', date: '2026-08-18', items: [
-    'Correção importante nos controles especiais (óleo, descongelamento, resfriamento, tratamento térmico) e na higiene das mãos: os registros feitos em outros aparelhos não apareciam, e o próximo registro feito neste aparelho apagava esses registros do celular. Nada se perdia na nuvem, mas o histórico da tela ficava incompleto — e a Prontidão, o Dossiê Fiscal e a Exportação mensal liam essa lista curta.',
-    'Agora essas telas se atualizam sozinhas quando a sincronização traz dados novos, e gravar um registro nunca mais apaga o que veio de outro aparelho.',
-  ]},
-  { version: '1.9.153', date: '2026-08-18', items: [
-    'Novo em Planilhas BPF (para a RT): botão "Organizar". Dá para renomear as abas — por exemplo, trocar "Faxina" por "Serviços gerais" — e escolher em qual aba cada planilha aparece, sem precisar pedir alteração no sistema. Vale só para a sua empresa; as outras continuam como estão.',
-    'As 21 folhas de Higienização ficam fixas na aba delas: o setor de cada uma vem do próprio título, e fora dali o filtro por setor deixaria de funcionar. A tela explica isso em vez de apenas bloquear.',
-    'Correção: renomear um equipamento no catálogo criava uma cópia em vez de renomear. O nome antigo continuava na nuvem e voltava na próxima sincronização — foi o que duplicou o "Banho-maria — BM.1". Agora o nome antigo é removido, e as duplicatas que já existiam são unificadas automaticamente quando têm o mesmo código, local e faixa.',
-  ]},
-  { version: '1.9.152', date: '2026-08-18', items: [
-    'A tela inicial agora mostra "Atividade da loja hoje" — todas as leituras do dia, com o equipamento, a temperatura e o nome de quem mediu. Antes essa lista só existia no perfil de supervisor: quem entrava como colaborador via apenas as próprias leituras e não tinha como saber o que a equipe já havia registrado.',
-    'O card "Suas leituras hoje" passou a mostrar também o total da loja ao lado. Num aparelho compartilhado, o número pessoal costuma ser bem menor que o do dia — e era isso que fazia parecer que as leituras não estavam sendo registradas.',
-  ]},
-  { version: '1.9.151', date: '2026-08-18', items: [
-    'Correção importante: as leituras do dia feitas em OUTROS aparelhos paravam de aparecer. O app guarda uma cópia local das leituras para funcionar sem internet, e essa cópia tem um limite. Quando enchia, as leituras que chegavam da nuvem eram descartadas em vez das mais antigas — então só sobravam as registradas naquele mesmo aparelho.',
-    'Era isso que fazia a "Cobertura de registro hoje" mostrar um número muito baixo (ex.: 6 de 138) mesmo com a equipe registrando normalmente, e cada aparelho mostrar uma contagem diferente. Nenhuma leitura foi perdida — todas sempre estiveram na nuvem; o que falhava era a exibição.',
-    'Agora o limite descarta as mais antigas, e ele foi ampliado para caber o dia inteiro de todas as unidades com folga.',
-  ]},
-  { version: '1.9.150', date: '2026-08-18', items: [
-    'Agora cada setor preenche a sua própria via, no mesmo dia. Antes, planilhas com campo "Setor" — Higienização de Hortifrutícolas, Higiene Pessoal e Controle de Vetores e Pragas — só aceitavam um preenchimento por dia: se a Confeitaria registrasse de manhã e o Café registrasse à tarde, o segundo substituía o primeiro, junto com o nome de quem preencheu. Nada avisava.',
-    'No card da planilha há um seletor de setor. Escolha o setor antes de preencher; os setores já registrados hoje aparecem com um ✓ na lista, para a equipe ver o que falta.',
-    'Os registros que já existem continuam como estão — nada foi reescrito.',
-  ]},
-  { version: '1.9.149', date: '2026-08-18', items: [
-    'Corrigido: a tela de Nova Ordem de Serviço (Manutenção) não mostrava os equipamentos já monitorados na Visão Geral — só apareciam ativos cadastrados manualmente em Manutenção. Se a loja nunca tinha usado a aba Equipamentos da Manutenção, o menu de equipamento ficava vazio mesmo com o catálogo cheio. Agora os dois aparecem juntos.',
-    'Corrigido também: transformar um equipamento do catálogo em ativo de manutenção completo (com plano preventivo) podia gerar um cadastro que nunca sincronizava com a nuvem. Já ficou resolvido antes de qualquer loja sentir o efeito.',
+    'A tela inicial passou a mostrar a atividade da loja no dia inteiro — quem registrou o quê, mesmo em contas compartilhadas por vários colaboradores.',
+    'Planilhas com campo Setor (Hortifrutícolas, Higiene Pessoal, Vetores e Pragas) agora deixam cada setor preencher a própria via no mesmo dia, sem um sobrescrever o outro.',
+    'A Manutenção passou a enxergar todos os equipamentos monitorados na hora de abrir uma Ordem de Serviço, e os controles especiais (óleo, resfriamento, descongelamento, tratamento térmico) e a higiene das mãos passaram a sincronizar entre aparelhos em tempo real.',
+    'Renomear um equipamento no catálogo deixou de criar uma cópia — o nome antigo some de verdade.',
   ]},
   { version: '1.9.148', date: '2026-08-17', items: [
-    'Corrigido: os equipamentos cadastrados na Manutenção não estavam subindo para a nuvem. Os mais antigos não tinham um código interno que o servidor exige, e eram recusados a cada tentativa. Agora o app gera esse código e envia — nada precisa ser recadastrado.',
-    'Corrigido também: reenviar um recebimento já salvo dava erro de duplicado em vez de simplesmente não fazer nada. Como o app reenvia o acervo antigo a cada abertura, isso se repetia todo dia e travava a sincronização de fundo — que nunca terminava e recomeçava do zero na abertura seguinte.',
-    'Com os dois, o envio do acervo antigo finalmente conclui e para de repetir.',
-  ]},
-  { version: '1.9.147', date: '2026-08-17', items: [
-    'O aviso vermelho de sincronização parou de acusar a chave sem saber. Ele dizia "chave do Supabase inválida" para qualquer recusa do servidor — inclusive quando a chave estava perfeita e o que faltava era o vínculo do acesso com a loja. Agora ele diz o que realmente aconteceu, e some sozinho em até 10 segundos depois que a sincronização volta.',
-    'Uma falha isolada de rede não pinta mais a tela de vermelho: o aviso só aparece se o problema insistir. Antes ele surgia e sumia sozinho, assustando sem motivo.',
-    'Em todos os casos o aviso agora lembra que nenhum registro se perde — o que não subiu fica na fila e sobe depois.',
-  ]},
-  { version: '1.9.146', date: '2026-08-17', items: [
-    'O registro rápido agora confirma na tela: "✓ Registrado: 3,4°C em Vitrine Refrigerada". Antes a janela apenas fechava — exatamente igual a fechar sem querer tocando fora dela. Não havia como saber se a leitura tinha sido gravada ou perdida. A tela inicial sempre confirmou, e era a única em que as equipes confiavam.',
-    'Tocar fora da janela não descarta mais um número já digitado. Para sair sem registrar, use o Cancelar.',
-    'E se der erro ao salvar, agora aparece um aviso vermelho dizendo que a leitura NÃO foi registrada. Antes o erro era engolido e a janela ficava parada, sem explicar nada.',
-  ]},
-  { version: '1.9.145', date: '2026-08-17', items: [
-    'Correção importante no registro rápido (o "+ Registrar" do card do equipamento): quando o app suspeitava que faltou o sinal de menos — digitar 20 num freezer que trabalha a −20°C, por exemplo — ele bloqueava para você confirmar, mas o botão continuava verde escrito "Registrar" e simplesmente não fazia nada. Dava pra medir, tocar e ir embora achando que registrou. Agora o botão fica cinza e diz "Confirme o sinal acima".',
-    'No celular, a janela de registro rápido agora rola. Quando o aviso de sinal aparecia com o teclado aberto, o botão ficava embaixo da borda da tela e não tinha como alcançar.',
-  ]},
-  { version: '1.9.144', date: '2026-08-17', items: [
-    'Os aparelhos agora se atualizam sozinhos. Antes, quem registrava no computador não aparecia nos tablets até alguém sair e entrar de novo — o app só buscava dados ao abrir. Agora ele busca a cada 2 minutos e sempre que a tela volta a ser usada, inclusive no Modo Quiosque.',
-    'Corrigido: "Suas leituras hoje" não contava as leituras feitas pelo Modo Quiosque. O registro sempre esteve certo, com o nome de quem mediu — quem estava errado era o contador da tela inicial.',
-    'Correção importante: quando a nuvem não responde (queda de internet ou problema de permissão), a tela passa a mostrar o histórico guardado no aparelho em vez de aparecer vazia. Era isso que fazia parecer que os registros de uma loja tinham sumido.',
-  ]},
-  { version: '1.9.143', date: '2026-08-17', items: [
-    'Correção importante no Modo Quiosque: quando a temperatura está bem fora da faixa, o app pede uma observação antes de salvar — mas o botão ✓ ficava apenas cinza e não dizia nada. O dedo sentia que apertou e a leitura não era gravada. Agora aparece um aviso vermelho, bem visível: "Ainda não salvou" e o motivo.',
-    'Também corrigido: se ficasse só um sinal de menos no visor (ao apagar dígitos, por exemplo), o app gravava um valor vazio que nunca conseguia subir e travava a fila de envio. Agora ele avisa que o número está incompleto.',
-    'E as leituras que ainda não subiram para a nuvem passam a aparecer na tela normalmente. Antes elas ficavam salvas e seguras no aparelho, mas invisíveis — parecia que não tinham sido registradas, e só apareciam depois de sair e entrar de novo.',
-  ]},
-  { version: '1.9.140', date: '2026-08-17', items: [
-    'Manutenção agora fica guardada na nuvem — ativos, execuções e ordens de serviço. Era o último módulo que vivia só no aparelho: trocar ou limpar o celular apagava o histórico de manutenção, que a RDC 216 exige manter. Com isso, nenhuma evidência do app depende mais de um aparelho específico.',
-    'Na tela de Prontidão, o item "a evidência sobrevive a uma troca de aparelho?" passa a responder que sim para todos os módulos.',
+    'Manutenção (ativos, execuções e ordens de serviço) passou a sincronizar com a nuvem — era o último módulo que dependia só do aparelho.',
+    'Os aparelhos passaram a se atualizar sozinhos entre si, sem precisar sair e entrar para ver o que outro dispositivo já registrou.',
+    'No Modo Quiosque e no registro rápido, uma leitura fora da faixa agora avisa claramente quando NÃO foi salva, em vez de dar a impressão de que salvou.',
+    'O aviso de sincronização parou de acusar "chave inválida" sem necessidade, e passou a explicar a causa certa.',
+    'Corrigidas travas na fila de envio que deixavam equipamentos de Manutenção e recebimentos presos sem subir para a nuvem.',
   ]},
   { version: '1.9.139', date: '2026-08-16', items: [
     'Novo em Configurações: "Planilhas BPF duplicadas". Mostra quantas cópias repetidas a loja acumulou e limpa com um clique — sempre mostrando antes o que vai acontecer, e sem apagar nenhum registro preenchido.',

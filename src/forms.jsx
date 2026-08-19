@@ -207,6 +207,45 @@ export function formatPeriodLabel(frequency, key) {
 
 export function freqLabel(f) { return {daily:'Diária',weekly:'Semanal',biweekly:'Quinzenal',monthly:'Mensal',semiannual:'Semestral'}[f]??f; }
 
+// Histórico do card. Nas 3 planilhas com escopo por setor (Higiene Pessoal,
+// Hortifrutícolas, Vetores e Pragas — CD_SETORES_EQUIPE, até 12 setores) um
+// corte fixo de REGISTROS tinha viés: o desempate de mesma data é o próprio
+// nome do setor (sufixo da chave, "2026-08-18::Confeitaria"), e slice(0,8)
+// descartava sempre os setores alfabeticamente PRIMEIROS — todo dia, pra
+// sempre, mesmo tendo preenchido (achado da auditoria, 18/08). O corte de 8
+// nasceu quando havia 1 registro por dia (=8 dias de histórico); hoje pode
+// haver até N por dia (N = opções do campo de escopo). Multiplicar o limite
+// por N preserva "N dias de histórico" como intenção original — um dia nunca
+// tem mais que N registros, então o corte nunca cai NO MEIO de um dia.
+export function templateHistory(records, tpl, campoEscopo, limit = 8) {
+  const porPeriodo = campoEscopo?.options?.length || 1;
+  return records
+    .filter((r) => r.formId === tpl.id)
+    .sort((a, b) => b.periodKey.localeCompare(a.periodKey))
+    .slice(0, limit * porPeriodo);
+}
+
+// Progresso agregado de uma planilha com escopo por setor, pra quando NENHUM
+// setor foi escolhido ainda no card. Sem isto, badge/barra liam sempre a
+// chave-base (pkBase) — que nenhum registro passa a usar depois do fix de
+// v1.9.133, porque os botões de ação ficam disabled até escolher um setor —
+// e o card mostrava "Pendente"/0% pra sempre, mesmo com todos os setores
+// concluídos no dia (achado da auditoria, 18/08).
+export function scopedSectorProgress(tpl, records, today, campoEscopo) {
+  const options = campoEscopo?.options ?? [];
+  if (options.length === 0) return { total: 0, done: 0, validated: 0, pct: 0 };
+  let done = 0, validated = 0;
+  for (const o of options) {
+    const pk = makePeriodKey(tpl.frequency, today, o);
+    const rec = records.find((r) => r.formId === tpl.id && r.periodKey === pk);
+    if (rec?.status === 'submitted') {
+      done++;
+      if (rec.validation) validated++;
+    }
+  }
+  return { total: options.length, done, validated, pct: Math.round((done / options.length) * 100) };
+}
+
 // "Minha lista de hoje" (item 4 da revisão de produto) — o app cobra o
 // colaborador por temperatura mas nunca por planilha; essa informação só
 // existia dentro do relatório BPF, pra RT. Mesmo cálculo de período que
@@ -1641,7 +1680,18 @@ function FormFill({ template, record, onSave, onBack, session, tenant, rotuloCat
   const respostasIniciais = useRef(record?.responses ?? {});
   const [responses, setResponses] = useState(() => respostasIniciais.current);
   const [saving, setSaving] = useState(false);
-  const pct = completionPct(template, { responses });
+  // Ancorado na criação do registro, não em "agora": sem isto, isFieldDue
+  // muda de ideia conforme os dias passam com a MESMA folha ainda aberta —
+  // quem preenche domingo e volta terça pra continuar (mesmo periodKey, mesmo
+  // registro) via a tarefa mensal/quinzenal já respondida SUMIR da tela, e o
+  // percentual andar pra TRÁS (o campo sai do numerador e do denominador ao
+  // mesmo tempo). O valor em si não se perde — continua em `responses`,
+  // salvo e no PDF — só a lista visível ficava instável. Registro novo
+  // (`record` ainda null, primeiro acesso ao período) não tem o que ancorar:
+  // usa "agora" mesmo, idêntico ao comportamento de sempre. Achado da
+  // auditoria (18/08).
+  const anchorNow = record?.createdAt ? new Date(record.createdAt) : new Date();
+  const pct = completionPct(template, { responses }, anchorNow);
 
   const setField = (id, val) => setResponses((prev) => ({ ...prev, [id]:val }));
 
@@ -1702,7 +1752,7 @@ function FormFill({ template, record, onSave, onBack, session, tenant, rotuloCat
             <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'var(--text-secondary)', marginBottom:12, paddingBottom:8, borderBottom:'1px solid var(--border-subtle)' }}>{sec.title}</div>
           )}
           <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-            {dueFields(sec.fields, template.frequency).map((field) => (
+            {dueFields(sec.fields, template.frequency, anchorNow).map((field) => (
               <div key={field.id} className="form-field-row">
                 <div>
                   <div style={{ fontSize:13, fontWeight:600, color:'var(--text)' }}>{field.label}</div>
@@ -1752,12 +1802,28 @@ function FormFill({ template, record, onSave, onBack, session, tenant, rotuloCat
 
 // ─── RT Validation Panel ───────────────────────────────────────────────────
 
+// "Recentemente validadas pelo RT": sem ordenar por r.validation.at, um
+// slice(0,10) cru pegava os 10 PRIMEIROS na ordem do array — que não é ordem
+// de validação nem de data. `handleValidate` usa `.map` (preserva posição) e
+// registro novo entra no FIM (`[...prev, up]`); num aparelho recém-
+// sincronizado a ordem vem de `created_at.desc` do Supabase. Com 10+
+// validações no acervo, a assinatura que a RT ACABOU de fazer nunca entrava
+// nesse card — e a MESMA loja mostrava listas diferentes em devices
+// diferentes. Achado da auditoria (18/08).
+export function recentlyValidated(records, limit = 10) {
+  return records
+    .filter((r) => r.validation)
+    .slice()
+    .sort((a, b) => new Date(b.validation.at) - new Date(a.validation.at))
+    .slice(0, limit);
+}
+
 function RTValidationPanel({ records, templates, onValidate, session }) {
   const [validatingId, setValidatingId] = useState(null);
   const [note, setNote] = useState('');
 
   const pending = records.filter((r) => r.status==='submitted' && !r.validation);
-  const validated = records.filter((r) => r.validation).slice(0,10);
+  const validated = recentlyValidated(records);
 
   const confirm = (record) => {
     onValidate(record.id, {
@@ -1838,6 +1904,19 @@ function RTValidationPanel({ records, templates, onValidate, session }) {
   );
 }
 
+// Aviso rápido depois de "Salvar rascunho"/"Confirmar preenchimento". Sem
+// ele, as duas ações fechavam a tela e chegavam na MESMA grade que "←
+// Voltar" descartando chegaria — zero toast, zero faixa verde. Numa grade de
+// 36 cards (CASA DOCE) a única pista de que salvou era o badge do card
+// certo, que exige achar o card entre os 36 depois de a página voltar pro
+// topo. Achado da auditoria (18/08) — vale pro preenchimento normal e pro
+// modo quiosque (kiosk.jsx "Continuar depois" chama onSave e depois onExit).
+export function saveFlashMessage(templateTitle, status) {
+  return status === 'submitted'
+    ? `✓ "${templateTitle}" confirmada.`
+    : `Rascunho de "${templateTitle}" salvo — continue quando quiser.`;
+}
+
 // ─── Main Forms View ───────────────────────────────────────────────────────
 
 export function FormsView({ activeTenant, allTenants, onTenantChange, session }) {
@@ -1857,6 +1936,14 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   const [histId,    setHistId]    = useState(null);
   const [tab,       setTab]       = useState('forms'); // 'forms' | 'validation'
   const [editingTpl, setEditingTpl] = useState(null);
+  // Aviso de "salvei" depois de fechar o preenchimento — ver saveFlashMessage.
+  // Autolimpa sozinho; não precisa de botão de fechar.
+  const [flash, setFlash] = useState(null);
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(null), 5000);
+    return () => clearTimeout(t);
+  }, [flash]);
 
   // Salva a planilha editada pela RT: state → localStorage (pelo efeito) e
   // nuvem. O push é o que faz a mudança chegar nos OUTROS aparelhos da loja —
@@ -1897,7 +1984,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
     setRecords(readFormRecords(activeTenant.id));
     setPrefs(prefsFromProfile(readCompanyProfile(activeTenant.id)));
     setFormsTenant(activeTenant.id);
-    setFilling(null); setHistId(null);
+    setFilling(null); setHistId(null); setFlash(null);
     pickCategory('all');
   }, [activeTenant.id]);
 
@@ -1981,6 +2068,10 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
       return ex ? prev.map((r) => r.id===ex.id?up:r) : [...prev, up];
     });
     setFilling(null);
+    // "Salvar rascunho"/"Confirmar preenchimento" chegam na MESMA grade que
+    // "← Voltar" descartando chegaria — sem isto, salvar e perder eram
+    // visualmente idênticos. Ver saveFlashMessage.
+    setFlash({ text: saveFlashMessage(template.title, status), at: Date.now() });
   }, [filling, activeTenant.id, session]);
 
   const handleValidate = useCallback((recordId, validation) => {
@@ -2051,6 +2142,10 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
           // perda silenciosa de registro de conformidade RDC 216.
           pushFormRecord(activeTenant.id, updated);
           setRecords(prev => existing ? prev.map(r => r.id === existing.id ? updated : r) : [...prev, updated]);
+          // Mesmo aviso do preenchimento normal — "Continuar depois" do
+          // quiosque chama isto e depois onExit(); sem o flash, o retorno pra
+          // grade era idêntico a sair sem salvar (achado da auditoria, 18/08).
+          setFlash({ text: saveFlashMessage(template.title, status), at: Date.now() });
         }}
       />
     );
@@ -2095,6 +2190,20 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
           {isRT && <button className="secondary-action" style={{ fontSize:12 }} onClick={() => setImportOpen(true)}>Importar por IA</button>}
         </div>
       </div>
+
+      {/* Aviso de "salvei" — chega exatamente onde a pessoa pousa depois de
+          "Salvar rascunho"/"Confirmar preenchimento" (ou do quiosque), no
+          topo da grade. Sem isto essa tela era idêntica à de "← Voltar"
+          descartando. Autolimpa sozinho (ver o useEffect do `flash`). */}
+      {flash && (
+        <div role="status" style={{
+          display:'flex', alignItems:'center', gap:8, padding:'10px 16px', marginBottom:16,
+          background:'var(--green-light)', border:'1px solid var(--green-border)',
+          borderRadius:'var(--r-lg)', color:'var(--green)', fontSize:13, fontWeight:600,
+        }}>
+          {flash.text}
+        </div>
+      )}
 
       {/* Tab bar */}
       <div style={{ display:'flex', gap:6, marginBottom:20 }}>
@@ -2154,12 +2263,29 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
               const pk     = campoEscopo ? makePeriodKey(tpl.frequency, today, setorSel) : pkBase;
               const escopoPendente = Boolean(campoEscopo) && !setorSel;
               const rec    = getRecord(tpl, pk);
-              const pct    = completionPct(tpl, rec);
+              // Mesma âncora do FormFill (achado da auditoria, 18/08): sem
+              // isto, o card de uma folha semanal com tarefa mensal/quinzenal
+              // ia mostrando um percentual DIFERENTE dia a dia, mesmo sem
+              // ninguém tocar em nada — porque completionPct comparava contra
+              // "agora" em vez da data em que o registro nasceu.
+              const pct    = completionPct(tpl, rec, rec?.createdAt ? new Date(rec.createdAt) : today);
               const meta   = catMeta(tpl.category);
               const isDone = rec?.status==='submitted';
               const isDraft= rec?.status==='draft';
               const isValidated = Boolean(rec?.validation);
-              const history = records.filter((r) => r.formId===tpl.id).sort((a,b) => b.periodKey.localeCompare(a.periodKey)).slice(0,8);
+              const history = templateHistory(records, tpl, campoEscopo);
+              // Sem setor escolhido ainda, não existe UM registro pra badge/
+              // barra lerem — existem até N (um por setor). Antes disso elas
+              // liam sempre `rec` (chave-base, que fica pra sempre null nas
+              // planilhas com escopo — os botões de ação ficam disabled até
+              // escolher um setor), e o card mostrava "Pendente"/0% eterno
+              // mesmo com todos os setores concluídos. Achado da auditoria
+              // (18/08). Fora do caso "pendente de escolha", nada muda.
+              const scoped = escopoPendente ? scopedSectorProgress(tpl, records, today, campoEscopo) : null;
+              const cardPct         = scoped ? scoped.pct : pct;
+              const cardIsDone      = scoped ? (scoped.total>0 && scoped.done===scoped.total) : isDone;
+              const cardIsDraft     = scoped ? scoped.done>0 && !cardIsDone : isDraft;
+              const cardIsValidated = scoped ? (scoped.total>0 && scoped.validated===scoped.total) : isValidated;
 
               return (
                 <article key={tpl.id} className="form-card" style={{ borderTopColor:meta.color }}>
@@ -2173,10 +2299,10 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
                       <h3 style={{ fontSize:14, fontWeight:700, marginTop:3, marginBottom:0 }}>{tpl.title}</h3>
                     </div>
                     <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4 }}>
-                      {isValidated
+                      {cardIsValidated
                         ? <span className="badge ok">✓ RT validado</span>
-                        : isDone ? <span className="badge subtle">✓ Concluído</span>
-                        : isDraft ? <span className="badge warn">Rascunho</span>
+                        : cardIsDone ? <span className="badge subtle">✓ Concluído</span>
+                        : cardIsDraft ? <span className="badge warn">{scoped ? `${scoped.done}/${scoped.total} setores` : 'Rascunho'}</span>
                         : <span className="badge neutral">Pendente</span>}
                     </div>
                   </div>
@@ -2203,7 +2329,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
                     </div>
                   )}
                   <div style={{ height:4, background:'var(--border-subtle)', borderRadius:2, marginBottom:12, overflow:'hidden' }}>
-                    <div style={{ height:'100%', width:`${pct}%`, background:isValidated?'var(--green)':isDone?meta.color:meta.color, borderRadius:2, transition:'width .3s', opacity:isDone?1:0.6 }} />
+                    <div style={{ height:'100%', width:`${cardPct}%`, background:cardIsValidated?'var(--green)':cardIsDone?meta.color:meta.color, borderRadius:2, transition:'width .3s', opacity:cardIsDone?1:0.6 }} />
                   </div>
                   <div style={{ display:'flex', gap:8, justifyContent:'space-between', alignItems:'center' }}>
                     <button className="ghost-action" style={{ fontSize:11 }} onClick={() => setHistId(histId===tpl.id?null:tpl.id)}>

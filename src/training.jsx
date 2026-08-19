@@ -3,7 +3,7 @@ import { employeeTrainingStatus } from './training-status';
 // Fatia 3 (15/08): sessões e config sobem pra nuvem — antes viviam só no
 // localStorage do device da RT, e um wipe apagava os comprovantes de
 // capacitação da rede inteira (auditoria RDC §3.5).
-import { pushTrainingSession, pushTrainingConfig, pushComplianceDoc, deleteComplianceDoc } from './repository';
+import { pushTrainingSession, pushTrainingConfig, pushComplianceDoc, deleteComplianceDoc , lw as gravarLocal } from './repository';
 // ASO mora aqui e não numa tela própria porque a RDC 216 trata capacitação e
 // controle de saúde no MESMO §4.6 — pra RT são as duas metades da mesma
 // pergunta ("este manipulador está apto?").
@@ -22,7 +22,12 @@ const configKey   = (id) => `nutriops.training.config.${id}`;
 const usersKey    = (id) => `nutriops.users.${id}`;
 
 const tl = (k, fb) => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : fb; } catch { return fb; } };
-const ts = (k, v)  => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+// Grava pelo `lw` do repositório em vez de engolir a falha: quando o
+// localStorage enche, o setItem estoura e o app inteiro segue confirmando
+// sucesso. O `lw` loga e levanta a bandeira que o banner de "armazenamento
+// cheio" lê (v1.9.158) — este arquivo tinha a própria cópia muda do helper,
+// e a bandeira nunca chegava aqui. Achado da auditoria (18/08).
+const ts = (k, v) => gravarLocal(k, v);
 
 export const readSessions    = (id)    => tl(sessionsKey(id), []);
 export const writeSessions   = (id, v) => ts(sessionsKey(id), v);

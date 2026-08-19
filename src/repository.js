@@ -1097,7 +1097,7 @@ function productToRow(p) {
   return {
     id: p.id, tenant_id: p.tenantId ?? p.id, name: p.name, category: p.category,
     conservation: p.conservation, unit: p.unit, min_stock: p.minStock, current_stock: p.currentStock,
-    expiry_date: p.expiryDate ?? null, supplier: p.supplier, lot: p.lot,
+    expiry_date: dataOuNulo(p.expiryDate), supplier: p.supplier, lot: p.lot,
     days_after_open: p.daysAfterOpen ?? null, is_diamond: p.isDiamond ?? false,
     opened_at: p.openedAt ?? null, opened_until: p.openedUntil ?? null, opened_by: p.openedBy ?? null,
     created_at: p.createdAt, updated_at: p.updatedAt ?? new Date().toISOString(),
@@ -1232,13 +1232,24 @@ export async function syncValidityRules(tenantId) {
 // actionSourceKey em pages.jsx) — não precisa migrar dado antigo.
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Coluna `date` do Postgres NÃO aceita string vazia — devolve 22007 e o POST é
+// recusado em TODA tentativa, ficando na fila pra sempre sem nada na tela.
+// `?? null` não protege: só pega undefined/null, e o campo LIMPO pelo usuário
+// chega como ''. Mesma família do `value: null` que envenenava a fila de
+// temperatura (v1.9.143). Três colunas expostas: corrective_actions.deadline,
+// maint_logs.executed_at e products.expiry_date. Achado da auditoria (18/08).
+export function dataOuNulo(v) {
+  const t = typeof v === 'string' ? v.trim() : v;
+  return t === '' || t === undefined ? null : t;
+}
+
 function actionToRow(a, tenantId) {
   return {
     id: a.id, tenant_id: tenantId,
     source: a.source ?? 'temperature', source_id: a.sourceId ?? a.recordId ?? null,
     source_label: a.sourceLabel ?? a.equipment ?? null,
     source_detail: a.sourceDetail ?? (a.temperature != null ? `${a.temperature}°C` : null),
-    description: a.description, responsible: a.responsible ?? null, deadline: a.deadline ?? null,
+    description: a.description, responsible: a.responsible ?? null, deadline: dataOuNulo(a.deadline),
     status: a.status, resolution: a.resolution ?? null,
     created_at: a.createdAt, updated_at: a.updatedAt ?? new Date().toISOString(), closed_at: a.closedAt ?? null,
   };
@@ -1592,7 +1603,7 @@ function maintLogToRow(tenantId, l) {
   return {
     id: l.id, tenant_id: tenantId, equipment_id: l.equipmentId ?? null,
     plan_id: l.planId ?? null, type: l.type ?? null, title: l.title ?? null,
-    executed_by: l.executedBy ?? null, executed_at: l.executedAt ?? null,
+    executed_by: l.executedBy ?? null, executed_at: dataOuNulo(l.executedAt),
     data: l, created_at: l.createdAt ?? new Date().toISOString(),
   };
 }

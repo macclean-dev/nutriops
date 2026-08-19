@@ -21,6 +21,13 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.163', date: '2026-08-19', items: [
+    'Correção importante no backup: o arquivo exportado de uma empresa levava junto os dados das OUTRAS empresas do aparelho — e restaurá-lo sobrescrevia todas. Agora o backup leva só a empresa escolhida, e a restauração ignora (avisando) o que não for dela.',
+    'O arquivo de backup também deixou de carregar credenciais — sessão, chave de acesso e PINs não entram mais nele. Se você tem backups antigos guardados fora do aparelho, vale apagá-los: eles contêm esses dados.',
+    'O aviso de "armazenamento cheio" agora alcança todas as telas. Antes só o registro de temperatura sabia avisar; planilhas, controles, validades, manutenção e capacitação continuavam confirmando sucesso sem ter gravado.',
+    'Corrigido: apagar o campo de data numa ação corretiva, numa execução de manutenção ou na validade de um produto fazia o registro ser recusado pelo servidor para sempre, sem aviso.',
+    'Corrigido: o histórico de manutenção e as ordens de serviço descartavam os registros MAIS NOVOS quando a lista ficava longa, em vez dos mais antigos.',
+  ]},
   { version: '1.9.162', date: '2026-08-19', items: [
     'O "Organizar" das Planilhas BPF agora edita também o nome, a frequência e a descrição de cada planilha — não só a aba. A RT pode confirmar a frequência que as próprias descrições pediam ("a confirmar com a RT") e renomear planilhas sem depender de alteração no sistema. Vale só para a sua empresa.',
     'Mudar a frequência avisa na hora que isso altera o período a partir de agora; o que já foi preenchido continua no histórico com a frequência antiga.',

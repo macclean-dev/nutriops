@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Th, useOrdenacao } from './tabela-ordenavel';
-import { pushProduct, pushValidityRules, syncValidityRules } from './repository';
+import { pushProduct, pushValidityRules, syncValidityRules , lw as gravarLocal } from './repository';
 import {
   readOpenRules, resolveOpenRule, computeOpenedUntil,
   fmtRule, fmtDate, fmtDateTime, DEFAULT_OPEN_RULES, buildLabelTrace,
@@ -11,7 +11,12 @@ import { LabelScannerModal } from './label-scanner';
 
 const sk = (k, id) => `nutriops.${k}.${id}`;
 const sl = (k, fb) => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : fb; } catch { return fb; } };
-const ss = (k, v)  => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+// Grava pelo `lw` do repositório em vez de engolir a falha: quando o
+// localStorage enche, o setItem estoura e o app inteiro segue confirmando
+// sucesso. O `lw` loga e levanta a bandeira que o banner de "armazenamento
+// cheio" lê (v1.9.158) — este arquivo tinha a própria cópia muda do helper,
+// e a bandeira nunca chegava aqui. Achado da auditoria (18/08).
+const ss = (k, v) => gravarLocal(k, v);
 
 export const readProducts    = (id) => sl(sk('products', id), []);
 export const writeProducts   = (id, v) => ss(sk('products', id), v);

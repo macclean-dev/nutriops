@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FormKioskApp } from './kiosk';
-import { pushFormRecord } from './repository';
+import { pushFormRecord, lw as gravarLocal } from './repository';
 import { ImportTemplateModal } from './import-template-modal';
 import { isFieldDue, dueFields } from './field-frequency';
 import { gravarMesclando, SYNC_EVENT } from './lista-local';
@@ -18,7 +18,12 @@ const tplKey = (id) => `nutriops.forms.templates.${id}`;
 const recKey = (id) => `nutriops.forms.records.${id}`;
 
 const fl = (k, fb) => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : fb; } catch { return fb; } };
-const fs = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+// Grava pelo `lw` do repositório em vez de engolir a falha: quando o
+// localStorage enche, o setItem estoura e o app inteiro segue confirmando
+// sucesso. O `lw` loga e levanta a bandeira que o banner de "armazenamento
+// cheio" lê (v1.9.158) — este arquivo tinha a própria cópia muda do helper,
+// e a bandeira nunca chegava aqui. Achado da auditoria (18/08).
+const fs = (k, v) => gravarLocal(k, v);
 
 // Planilhas da loja = cache local + as do seed que ainda não chegaram nele.
 // Antes era `if (cache) return cache`, com dois furos que só apareciam depois:

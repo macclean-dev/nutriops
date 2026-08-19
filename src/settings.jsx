@@ -11,6 +11,44 @@ import { DOC_TYPES } from './compliance';
 
 const COMPANY_PROFILE_KEY = (tenantId) => `nutriops.company.profile.${tenantId}`;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// O que entra e o que sai do arquivo de backup.
+//
+// O filtro era `k.includes(tenantId) || k.includes('nutriops.')` — o segundo
+// termo tornava o primeiro inútil e levava TUDO: o "backup da Swiss" carregava
+// também CASA DOCE, Bäckerei e DBK, e restaurar sobrescrevia as quatro lojas.
+// Achado da auditoria (18/08).
+//
+// E levava junto credencial: `nutriops.auth.session` (JWT + refresh token),
+// `nutriops.supabase.config` e `nutriops.pin.overrides.*` — que o CLAUDE.md diz
+// explicitamente que não pode sair do aparelho. Um backup é um arquivo que a
+// pessoa manda por e-mail.
+//
+// Denylist explícita em vez de heurística: chave nova sensível que apareça
+// depois entra aqui, e o teste cobra.
+const CHAVES_SENSIVEIS = [
+  'nutriops.auth.session',
+  'nutriops.session',
+  'nutriops.supabase.config',
+  'nutriops.supabase.auth_error',
+  'nutriops.pin.overrides',
+  'nutriops.admin.auth',
+  'nutriops.operator',
+];
+
+export function ehChaveSensivel(k) {
+  return CHAVES_SENSIVEIS.some((p) => String(k).startsWith(p));
+}
+
+// Uma chave pertence à loja se termina com o id dela. As globais (fila offline,
+// cache de temperatura das 4 lojas) NÃO entram: restaurar um backup de uma loja
+// não pode reescrever dado das outras.
+export function chavesDoBackup(todasAsChaves, tenantId) {
+  if (!tenantId) return [];
+  return todasAsChaves.filter((k) =>
+    String(k).startsWith('nutriops.') && String(k).endsWith(tenantId) && !ehChaveSensivel(k));
+}
+
 export function readCompanyProfile(tenantId) {
   try { const r = localStorage.getItem(COMPANY_PROFILE_KEY(tenantId)); return r ? JSON.parse(r) : {}; } catch { return {}; }
 }
@@ -299,9 +337,7 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
       };
 
       const tenantId = activeTenant?.id;
-      const keys = Object.keys(localStorage).filter(k =>
-        k.includes(tenantId) || k.includes('nutriops.')
-      );
+      const keys = chavesDoBackup(Object.keys(localStorage), tenantId);
 
       keys.forEach(key => {
         try { backup.data[key] = JSON.parse(localStorage.getItem(key)); } catch { backup.data[key] = localStorage.getItem(key); }
@@ -335,8 +371,13 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
         // localStorage cheio (QuotaExceeded): as primeiras chaves entram, as
         // últimas não, e a pessoa segue achando que recuperou tudo.
         // Achado nº5 da triagem da auditoria (18/08).
+        // Restaura só o que é DESTA loja. Backup antigo (gerado antes da
+        // correção) carrega chave das outras — ignorar é o certo: a pessoa
+        // pediu pra restaurar uma loja, não pra reescrever as quatro.
+        const doTenant = new Set(chavesDoBackup(Object.keys(backup.data), backup.tenantId ?? activeTenant?.id));
+        const ignoradas = Object.keys(backup.data).filter((k) => !doTenant.has(k));
         const falharam = [];
-        Object.entries(backup.data).forEach(([key, value]) => {
+        Object.entries(backup.data).filter(([key]) => doTenant.has(key)).forEach(([key, value]) => {
           try { localStorage.setItem(key, JSON.stringify(value)); }
           catch (e) { falharam.push(key); console.warn(`[backup] não restaurou ${key}:`, e?.message); }
         });
@@ -347,6 +388,12 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
             `o armazenamento do navegador provavelmente está cheio.\n\n` +
             `Não restaurados: ${falharam.join(', ')}\n\n` +
             `Libere espaço (ou use outro aparelho) e restaure de novo antes de confiar nestes dados.`
+          );
+        } else if (ignoradas.length) {
+          alert(
+            `✓ Backup restaurado.\n\n` +
+            `${ignoradas.length} itens do arquivo foram IGNORADOS por não pertencerem a esta empresa ` +
+            `(ou por serem credenciais, que backup não deve carregar). Isso é esperado em backups antigos.`
           );
         } else {
           alert('✓ Backup restaurado! A página será recarregada.');

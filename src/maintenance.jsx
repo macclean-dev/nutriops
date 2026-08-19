@@ -2,13 +2,18 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { dedupeCatalog } from './limits';
 // 16/08: manutenção era o ÚLTIMO módulo local-only da auditoria RDC (§3.15).
 // Limpar o aparelho apagava o histórico que a RDC 216 §4.1 manda manter.
-import { pushEquipAsset, pushMaintLog, pushWorkOrder, deleteMaintenanceItem } from './repository';
+import { pushEquipAsset, pushMaintLog, pushWorkOrder, deleteMaintenanceItem , lw as gravarLocal } from './repository';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
 const sk = (k, id) => `nutriops.${k}.${id}`;
 const sl = (k, fb) => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : fb; } catch { return fb; } };
-const ss = (k, v)  => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+// Grava pelo `lw` do repositório em vez de engolir a falha: quando o
+// localStorage enche, o setItem estoura e o app inteiro segue confirmando
+// sucesso. O `lw` loga e levanta a bandeira que o banner de "armazenamento
+// cheio" lê (v1.9.158) — este arquivo tinha a própria cópia muda do helper,
+// e a bandeira nunca chegava aqui. Achado da auditoria (18/08).
+const ss = (k, v) => gravarLocal(k, v);
 
 // Filtra lixo sem nome — antes da v1.9.60, syncEquipmentCatalog gravava o
 // catálogo de temperatura (shape {label,...}, sem `name`) nessa MESMA chave
@@ -21,10 +26,21 @@ export const writeEquipments    = (id, v) => ss(sk('equip_assets', id), v);
 // Catálogo de temperatura (mesmo que a tela "Equipamentos" usa). A Manutenção
 // mescla ele na lista pra você não recadastrar tudo — ver mergedEquipments.
 export const readCatalog        = (t) => dedupeCatalog(sl(sk('equipment.catalog', t.id), t.equipmentCatalog ?? []));
+// ⚠️ ORDENAR ANTES DE CORTAR. Estas listas crescem por APPEND
+// (setLogs/setOrders fazem [...prev, novo]), então `slice(0, N)` guardava os
+// MAIS VELHOS e descartava os novos — inclusive o que o sync acabou de trazer
+// da nuvem. Terceira vez que este padrão aparece no projeto: o cache de
+// temperatura teve o mesmo defeito nos dois ramos (v1.9.151 e v1.9.155).
+// Achado da auditoria (18/08).
+const maisNovoPrimeiro = (a, b) =>
+  new Date(b?.createdAt ?? b?.executedAt ?? 0) - new Date(a?.createdAt ?? a?.executedAt ?? 0);
+const cortarMantendoRecentes = (lista, teto) =>
+  [...(Array.isArray(lista) ? lista : [])].sort(maisNovoPrimeiro).slice(0, teto);
+
 export const readMaintenanceLogs = (id) => sl(sk('maint_logs', id), []);
-export const writeMaintenanceLogs = (id, v) => ss(sk('maint_logs', id), v.slice(0, 500));
+export const writeMaintenanceLogs = (id, v) => ss(sk('maint_logs', id), cortarMantendoRecentes(v, 500));
 export const readWorkOrders     = (id) => sl(sk('work_orders', id), []);
-export const writeWorkOrders    = (id, v) => ss(sk('work_orders', id), v.slice(0, 200));
+export const writeWorkOrders    = (id, v) => ss(sk('work_orders', id), cortarMantendoRecentes(v, 200));
 
 function uid() { return crypto.randomUUID(); }
 function fmtDate(iso) { try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return '—'; } }

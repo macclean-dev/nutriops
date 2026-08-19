@@ -199,23 +199,32 @@ export async function bumpSetupAttempts(tenantId, { maxBeforeLock = 3, lockMinut
 // O /admin e o Super Admin listavam clientes só do localStorage (por-device) →
 // um cliente criado noutro aparelho não aparecia. Aqui a lista vem do banco via
 // RPC admin_list_tenants (gated por app_metadata.role='admin', com o JWT do
-// admin). Dev-safe: sem token / RPC ausente / erro → devolve [] e o caller
-// mantém a lista local (não derruba o painel).
+// admin).
+//
+// [] = "perguntei e a resposta confirmada é zero" (sync desligado — modo
+// local por device, de propósito — ou RPC respondeu OK com array vazio).
+// null = "não deu pra perguntar" (sessão expirada, rede fora, RPC ausente).
+// Mesma distinção de fetchMemberTenants logo abaixo (fix de 30/07): antes os
+// dois casos devolviam [] e o painel não tinha como saber se "0 clientes" era
+// fato ou falha — o rodapé e o estado vazio afirmavam "Nenhum cliente
+// cadastrado ainda" mesmo quando a causa real era sessão de admin expirada ou
+// SQL da RPC não rodado (achados da auditoria de 18/08, T7 e T6). O caller
+// decide o que fazer com null (normalmente: avisar e manter a lista local).
 export async function fetchAllTenantsFromCloud() {
   if (!isTenantSyncEnabled()) return [];
   try {
     const { getValidAccessToken } = await import('./auth');
     const token = await getValidAccessToken();
-    if (!token) return [];
+    if (!token) return null; // sessão sem token válido — não é "zero clientes"
     const res = await fetch(`${sbBase()}/rpc/admin_list_tenants`, {
       method: 'POST',
       headers: { apikey: SB_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: '{}',
     });
-    if (!res.ok) return []; // 404 (RPC ausente) / 401 / etc → mantém local
+    if (!res.ok) return null; // 404 (RPC ausente) / 401 / etc ≠ "zero clientes"
     const rows = await res.json();
-    return Array.isArray(rows) ? rows : [];
-  } catch { return []; }
+    return Array.isArray(rows) ? rows : null;
+  } catch { return null; }
 }
 
 // ─── Empresas do MEMBRO logado (Fase 3 — login por e-mail/senha) ─────────────

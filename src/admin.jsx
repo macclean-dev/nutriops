@@ -176,6 +176,13 @@ export function ClientModal({ client, onSave, onClose }) {
   const [regenerate, setRegenerate]     = useState(false);
   const [busy, setBusy]                 = useState(false);
   const [pushError, setPushError]       = useState('');
+  // Salvar sem PIN novo e sem falha de push fechava na hora — pixel a pixel
+  // igual a apertar Cancelar/✕. Quando o campo editado não muda coluna
+  // nenhuma da tabela (telefone, CNPJ, responsável, observações,
+  // faturamento), não sobrava NENHUM sinal de que gravou (achado da
+  // auditoria de 18/08, T2). Mostra "✓ Salvo" um instante — busy continua
+  // true, então os botões ficam travados — e só então fecha sozinho.
+  const [savedFlash, setSavedFlash]     = useState(false);
 
   const trialEndsAt  = plan === 'trial' && !editing
     ? new Date(Date.now() + 14 * 86400000).toISOString()
@@ -265,18 +272,22 @@ export function ClientModal({ client, onSave, onClose }) {
         : null,
     });
 
-    setBusy(false);
     if (pushFailed) {
       // NÃO entrega link+PIN de um cliente que não chegou na nuvem: o cliente
       // abriria o ?token= e receberia "not-found". Mantém o modal aberto com o
       // erro à vista pro admin corrigir a sessão e regerar o PIN.
+      setBusy(false);
       setRegenerate(false);
     } else if (setupPinPlain) {
       // Não fecha o modal — admin precisa copiar o PIN antes
+      setBusy(false);
       setGeneratedPin(setupPinPlain);
       setRegenerate(false);
     } else {
-      onClose();
+      // Ver comentário do savedFlash acima: fecha com atraso, não na hora,
+      // pra deixar visível que Salvar != Cancelar.
+      setSavedFlash(true);
+      setTimeout(() => onClose(), 900);
     }
   };
 
@@ -423,8 +434,8 @@ export function ClientModal({ client, onSave, onClose }) {
         <div style={{ display:'flex', gap:10, marginTop:20 }}>
           <button onClick={onClose} disabled={busy} style={{ flex:1, padding:'10px', borderRadius:8, border:'1px solid #c1ccd6', background:'white', cursor:busy?'wait':'pointer', fontSize:14, fontWeight:600, fontFamily:'inherit', opacity:busy?0.6:1 }}>Cancelar</button>
           <button onClick={handleSave} disabled={!name.trim()||!email.trim()||busy}
-            style={{ flex:2, padding:'10px', borderRadius:8, border:'none', background:(name.trim()&&email.trim()&&!busy)?'#00684a':'#c1ccd6', color:'white', cursor:(name.trim()&&email.trim()&&!busy)?'pointer':'not-allowed', fontSize:14, fontWeight:700, fontFamily:'inherit' }}>
-            {busy ? 'Salvando…' : (editing ? 'Salvar alterações' : 'Criar cliente')}
+            style={{ flex:2, padding:'10px', borderRadius:8, border:'none', background:((name.trim()&&email.trim()&&!busy)||savedFlash)?'#00684a':'#c1ccd6', color:'white', cursor:(name.trim()&&email.trim()&&!busy)?'pointer':'not-allowed', fontSize:14, fontWeight:700, fontFamily:'inherit' }}>
+            {savedFlash ? '✓ Salvo' : busy ? 'Salvando…' : (editing ? 'Salvar alterações' : 'Criar cliente')}
           </button>
         </div>
 
@@ -439,12 +450,22 @@ export function ClientModal({ client, onSave, onClose }) {
 
 function SetupPinReveal({ pin, onAck }) {
   const [copied, setCopied] = useState(false);
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(pin);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {}
+  const [copyFailed, setCopyFailed] = useState(false);
+  // Mesmo defeito do "Copiar SQL" (settings.jsx, achado da auditoria de
+  // 18/08, T3): sem Clipboard API (contexto inseguro, webview antiga) ou
+  // write rejeitado (permissão negada) o catch vazio comia o erro — o botão
+  // continuava "Copiar PIN" sem nenhum aviso, e este é o ÚNICO momento em que
+  // o PIN existe em claro (só o hash persiste depois de fechar). O PIN grande
+  // acima do botão continua sendo o fallback manual — a falha só precisa
+  // ficar visível pra avisar que é ELE que precisa ser copiado à mão.
+  const handleCopy = () => {
+    if (!navigator.clipboard?.writeText) {
+      setCopyFailed(true); setTimeout(() => setCopyFailed(false), 4000);
+      return;
+    }
+    navigator.clipboard.writeText(pin)
+      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })
+      .catch(() => { setCopyFailed(true); setTimeout(() => setCopyFailed(false), 4000); });
   };
   return (
     <div style={{ position:'absolute', inset:0, background:'rgba(20,20,19,.85)', borderRadius:16, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
@@ -475,8 +496,8 @@ function SetupPinReveal({ pin, onAck }) {
           Ele expira após o 1º uso e bloqueia após 3 tentativas erradas.
         </p>
         <div style={{ display:'flex', gap:8 }}>
-          <button onClick={handleCopy} style={{ flex:1, padding:'10px', borderRadius:8, border:'1px solid #00684a', background:'white', color:'#00684a', cursor:'pointer', fontSize:13, fontWeight:700, fontFamily:'inherit' }}>
-            {copied ? '✓ Copiado' : 'Copiar PIN'}
+          <button onClick={handleCopy} style={{ flex:1, padding:'10px', borderRadius:8, border:`1px solid ${copyFailed?'#c0392b':'#00684a'}`, background:'white', color:copyFailed?'#c0392b':'#00684a', cursor:'pointer', fontSize:13, fontWeight:700, fontFamily:'inherit' }}>
+            {copied ? '✓ Copiado' : copyFailed ? '✕ Falha — copie manualmente' : 'Copiar PIN'}
           </button>
           <button onClick={onAck} style={{ flex:1, padding:'10px', borderRadius:8, border:'none', background:'#00684a', color:'white', cursor:'pointer', fontSize:13, fontWeight:700, fontFamily:'inherit' }}>
             Já copiei
@@ -1345,6 +1366,35 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
   );
 }
 
+// Coluna "Uso" da tabela de clientes — lê getAllUsageStats(), que é
+// localStorage NESTE navegador (trackUsage grava no device onde a SESSÃO DA
+// LOJA rodou — normalmente o tablet da cozinha, não onde o admin abre o
+// painel). Como o /admin roda num browser que nunca teve aquela sessão, a
+// chave quase sempre está vazia — e o rótulo antigo era "Sem uso", uma
+// afirmação sobre O CLIENTE quando o fato é só "sem dado NESTE navegador".
+// A aba Saúde (Supabase, cross-device) é quem tem o dado de verdade — por
+// isso já mostra a mesma loja como "Ativo" enquanto aqui dizia "Sem uso"
+// (achado da auditoria de 18/08, T6). Pura pra testar sem montar a tabela.
+export function describeLocalUsage(u) {
+  if (!u) {
+    return {
+      empty: true,
+      label: 'Sem dado local',
+      hint: 'Não é o cliente sem uso — é este navegador sem registro dele. Veja a aba "Saúde dos tenants" pro uso real (cross-device).',
+    };
+  }
+  const lastSeen = u.lastSeen ? new Date(u.lastSeen) : null;
+  const daysAgo = lastSeen ? Math.floor((Date.now() - lastSeen.getTime()) / 86400000) : null;
+  const active7d = Object.keys(u.actions || {}).filter(d => (Date.now() - new Date(d).getTime()) / 86400000 <= 7).length;
+  return {
+    empty: false,
+    label: daysAgo === 0 ? '🟢 Hoje' : daysAgo === 1 ? '🟡 Ontem' : daysAgo != null ? `⚫ ${daysAgo}d atrás` : '—',
+    color: daysAgo === 0 ? '#00a35c' : daysAgo != null && daysAgo <= 3 ? '#8a4e00' : '#5c6c7a',
+    sub: `${active7d}d ativo nos últ. 7d (neste navegador)`,
+    hint: 'Medido só neste navegador. Pro uso real do cliente (todos os devices), veja a aba "Saúde dos tenants".',
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN ADMIN PANEL
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1372,6 +1422,15 @@ export function AdminPanel({ onExit }) {
   // Alertas elevados de HealthView pra que o tab Saúde mostre badge mesmo
   // quando o admin tá no tab Clientes. HealthView atualiza via onAlertsChange.
   const [healthAlerts, setHealthAlerts] = useState([]);
+  // true quando a hidratação da lista de clientes a partir da nuvem FALHOU
+  // (sessão expirada, RPC ausente, rede fora) — distinto de "consultei e a
+  // nuvem confirmou zero clientes". Sem isso a tabela caía pro cache local (ou
+  // pro estado vazio) em silêncio, e "Nenhum cliente cadastrado ainda" virava
+  // uma afirmação sobre a PLATAFORMA quando o que houve foi uma LEITURA que
+  // falhou — o caminho de escrita do mesmo painel já avisa direitinho
+  // ("Sua sessão de administrador expirou...", pushError acima), só o de
+  // leitura ficava mudo (achados da auditoria de 18/08, T7 e T6).
+  const [cloudSyncError, setCloudSyncError] = useState(false);
   const usageStats = useMemo(() => getAllUsageStats(), []);
 
   useEffect(() => { writeClients(clients); }, [clients]);
@@ -1384,13 +1443,18 @@ export function AdminPanel({ onExit }) {
       try {
         const { fetchAllTenantsFromCloud, mergeCloudTenants } = await import('./tenant-sync');
         const cloud = await fetchAllTenantsFromCloud();
-        if (cancelled || !cloud.length) return;
+        if (cancelled) return;
+        if (cloud === null) { setCloudSyncError(true); return; } // falha real — não é "zero clientes"
+        setCloudSyncError(false);
+        if (!cloud.length) return;
         // Filtra os ocultados ANTES do merge — senão eles voltam por serem
         // "novos" pro merge (não estão na lista local justamente porque foram
         // removidos).
         const ocultos = lerOcultos();
         setClients(prev => mergeCloudTenants(prev, cloud.filter(r => !ocultos.includes(r.id))));
-      } catch {}
+      } catch {
+        if (!cancelled) setCloudSyncError(true);
+      }
     })();
     return () => { cancelled = true; };
   }, []);
@@ -1508,6 +1572,14 @@ export function AdminPanel({ onExit }) {
         </div>
 
         {tab === 'clients' && <>
+        {cloudSyncError && (
+          <div style={{ padding:'12px 16px', background:'#fdecea', border:'1px solid #c0392b', borderRadius:10, color:'#c0392b', fontSize:13, marginBottom:16 }}>
+            <strong>Não deu pra confirmar a lista de clientes na nuvem.</strong> A tabela abaixo pode
+            estar mostrando só o cache deste dispositivo — pode faltar cliente cadastrado em outro
+            device, ou sobrar um que foi editado lá. Verifique sua sessão de administrador (pode ter
+            expirado) e recarregue a página.
+          </div>
+        )}
         {/* KPIs */}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:12, marginBottom:24 }}>
           {[
@@ -1546,14 +1618,20 @@ export function AdminPanel({ onExit }) {
         <div style={{ background:'white', border:'1px solid #c1ccd6', borderRadius:12, overflow:'hidden' }}>
           {filtered.length === 0 ? (
             <div style={{ padding:'40px 24px', textAlign:'center', color:'#5c6c7a' }}>
-              {clients.length === 0 ? 'Nenhum cliente cadastrado ainda.' : 'Nenhum cliente encontrado.'}
+              {clients.length === 0
+                ? (cloudSyncError
+                    ? 'Não foi possível confirmar a lista de clientes agora — não é o mesmo que "nenhum cadastrado". Veja o aviso acima.'
+                    : 'Nenhum cliente cadastrado ainda.')
+                : 'Nenhum cliente encontrado.'}
             </div>
           ) : (
             <table style={{ width:'100%', borderCollapse:'collapse', fontSize:14 }}>
               <thead>
                 <tr style={{ background:'#f9fbfa', borderBottom:'1px solid #c1ccd6' }}>
                   {['Cliente','Plano','Status','Faturamento','Uso',''].map(h => (
-                    <th key={h} style={{ padding:'10px 16px', textAlign:'left', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'#5c6c7a', whiteSpace:'nowrap' }}>{h}</th>
+                    <th key={h}
+                      title={h === 'Uso' ? 'Medido só neste navegador — não é telemetria do cliente. Veja a aba "Saúde dos tenants" pro uso real.' : undefined}
+                      style={{ padding:'10px 16px', textAlign:'left', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'#5c6c7a', whiteSpace:'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -1591,19 +1669,12 @@ export function AdminPanel({ onExit }) {
                       </td>
                       <td style={{ padding:'12px 16px', fontSize:12, color:'#5c6c7a' }}>
                         {(() => {
-                          const u = usageStats[client.id];
-                          if (!u) return <span style={{ color:'#9198a1' }}>Sem uso</span>;
-                          const lastSeen = u.lastSeen ? new Date(u.lastSeen) : null;
-                          const daysAgo = lastSeen ? Math.floor((Date.now()-lastSeen.getTime())/86400000) : null;
-                          const active7d = Object.keys(u.actions||{}).filter(d => {
-                            return (Date.now()-new Date(d).getTime())/86400000 <= 7;
-                          }).length;
+                          const info = describeLocalUsage(usageStats[client.id]);
+                          if (info.empty) return <span style={{ color:'#9198a1' }} title={info.hint}>{info.label}</span>;
                           return (
-                            <div>
-                              <div style={{ fontWeight:600, color: daysAgo===0?'#00a35c':daysAgo<=3?'#8a4e00':'#5c6c7a' }}>
-                                {daysAgo === 0 ? '🟢 Hoje' : daysAgo === 1 ? '🟡 Ontem' : daysAgo !== null ? `⚫ ${daysAgo}d atrás` : '—'}
-                              </div>
-                              <div style={{ fontSize:11, color:'#9198a1' }}>{active7d}d ativo nos últ. 7d</div>
+                            <div title={info.hint}>
+                              <div style={{ fontWeight:600, color: info.color }}>{info.label}</div>
+                              <div style={{ fontSize:11, color:'#9198a1' }}>{info.sub}</div>
                             </div>
                           );
                         })()}
@@ -1638,7 +1709,9 @@ export function AdminPanel({ onExit }) {
 
         {/* Notes */}
         <p style={{ marginTop:12, fontSize:12, color:'#9198a1', textAlign:'center' }}>
-          NutriOPS Admin · {clients.length} cliente{clients.length!==1?'s':''} cadastrado{clients.length!==1?'s':''} · Última atualização: {new Date().toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}
+          NutriOPS Admin · {clients.length} cliente{clients.length!==1?'s':''} cadastrado{clients.length!==1?'s':''}
+          {cloudSyncError ? ' (pode estar desatualizado — falha ao confirmar com a nuvem)' : ''}
+          {' '}· Última atualização: {new Date().toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}
         </p>
         </>}
       </div>

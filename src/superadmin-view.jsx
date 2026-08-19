@@ -265,13 +265,25 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
 
   // Hidrata a lista da fonte da verdade (Supabase) no load — vê clientes criados
   // em qualquer device. Dev-safe: sem token/RPC → mantém local.
+  //
+  // fetchAllTenantsFromCloud devolve null quando a leitura FALHOU (sessão
+  // expirada, RPC ausente, rede fora) — distinto de [] (nuvem confirmou zero
+  // clientes, ou sync desligado). Mesmo achado da auditoria de 18/08 (T7/T6)
+  // corrigido no /admin (admin.jsx): sem essa distinção, `!cloud.length` num
+  // `null` estoura TypeError (comido calado pelo catch aqui embaixo) e o
+  // painel não tem como avisar que a lista pode estar desatualizada.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const { fetchAllTenantsFromCloud, mergeCloudTenants } = await import('./tenant-sync');
         const cloud = await fetchAllTenantsFromCloud();
-        if (cancelled || !cloud.length) return;
+        if (cancelled) return;
+        if (cloud === null) {
+          setMsg({ tone:'warn', text:'Não deu pra confirmar a lista de tenants na nuvem agora — a tabela pode estar mostrando só o cache deste dispositivo.' });
+          return;
+        }
+        if (!cloud.length) return;
         persistClients(mergeCloudTenants(readClients(), cloud));
       } catch {}
     })();

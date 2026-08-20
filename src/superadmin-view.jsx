@@ -306,7 +306,24 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
   };
   const closeNewClient = () => {
     setNewClientOpen(false);
-    if (createdClient) { setTokenModal(createdClient); setCreatedClient(null); }
+    if (!createdClient) return;
+    // Mesma recusa que o ClientModal já faz sozinho no /admin (comentário
+    // original em admin.jsx: "NÃO entrega link+PIN de um cliente que não
+    // chegou na nuvem"). Antes deste guard, fechar o form (mesmo pelo ✕/
+    // Cancelar, logo depois de ler o aviso amarelo de push falho) abria o
+    // AccessTokenModal na mesma hora — o admin via a tarja VERDE "PIN de
+    // configuração ativo" com "Enviar link por e-mail" liberado, mandava o
+    // link, e o cliente caía num ?token= que a nuvem não conhece (achado da
+    // auditoria de 19/08, alta). AccessTokenModal (admin.jsx) também ganhou a
+    // mesma guarda via client.pushFailed, pra cobrir quem clicar "Link"
+    // manualmente mais tarde nesta mesma linha — esta checagem aqui evita que
+    // o modal errado nem chegue a abrir sozinho.
+    if (createdClient.pushFailed) {
+      setMsg({ tone:'warn', text:`${createdClient.name} foi salvo só neste dispositivo — não chegou no servidor (sessão de admin expirada ou Supabase fora do ar). Abra "Editar" e salve de novo com a sessão ativa antes de enviar o link ao cliente.` });
+    } else {
+      setTokenModal(createdClient);
+    }
+    setCreatedClient(null);
   };
 
   // Editar cliente (inclui "Gerar novo PIN") + ver o link — reusa os mesmos
@@ -355,7 +372,22 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
     const next = setClientActive(clients, tenant.id, !tenant.active);
     persistClients(next);
     logAction({ type: tenant.active ? 'suspend' : 'activate', tenantId: tenant.id, tenantName: tenant.name });
-    setMsg({ tone: tenant.active?'warn':'ok', text:`${tenant.name} ${tenant.active?'suspenso':'reativado'} (aplica via ?token= neste projeto; enforcement server-side entra com o Auth+RLS).` });
+    // A mensagem antiga ("aplica via ?token= neste projeto") sugeria
+    // enforcement real — não existe (achado da auditoria de 19/08, alta).
+    // `active` só é gravado NESTE navegador (localStorage
+    // nutriops.admin.clients, via persistClients/writeClients); a tabela
+    // `tenants` nem tem essa coluna ainda (tenant-sync.js: cloudRowToClient
+    // usa "row.active ?? true — gap conhecido"), e os 3 pontos que checam
+    // client.active (trial.jsx checkTrialStatus, main.jsx handleAccessToken,
+    // pages.jsx App) só leem esse mesmo localStorage — o dispositivo do
+    // CLIENTE nunca teve essa chave escrita, então o check passa direto. É o
+    // mesmo MVP client-side já documentado no topo deste arquivo e em
+    // superadmin.js ("suspensão é local" / "suspender é cosmético até o
+    // épico Auth+RLS") e listado como apara aceita em docs/HISTORICO.md
+    // ("Suspensão por active sem enforcement server-side") — não é uma
+    // decisão nova desta rodada, só a MENSAGEM parou de alegar um efeito que
+    // não acontece.
+    setMsg({ tone: tenant.active?'warn':'ok', text:`${tenant.name} ${tenant.active?'suspenso':'reativado'} — só neste navegador (admin). Isso NÃO bloqueia o dispositivo do cliente: enforcement server-side ainda não existe (épico Auth+RLS, ver docs/HISTORICO.md). Pra cortar o acesso de verdade agora, avise o cliente por outro canal.` });
   };
 
   const planTone = (t) => t.plan === 'trial' ? 'warn' : t.active ? 'ok' : 'neutral';

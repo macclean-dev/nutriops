@@ -379,6 +379,14 @@ export function mergeCloudTenants(localClients = [], cloudRows = []) {
         stores:           row.stores ?? existing.stores,
         trialEndsAt:      row.trial_ends_at ?? existing.trialEndsAt,
         updatedAt:        row.updated_at ?? existing.updatedAt,
+        // A nuvem confirmou que este id existe na tabela `tenants` — qualquer
+        // pushFailed local (marcado por um ClientModal.handleSave anterior
+        // que não conseguiu subir) está desatualizado. A presença aqui É a
+        // prova de sync que faltava (achado da auditoria de 19/08, alta —
+        // "registro não guarda que o push falhou"); sem isto o aviso
+        // "Não sincronizado" do AccessTokenModal continuaria preso mesmo após
+        // o cliente ter sido confirmado na nuvem por outro caminho.
+        pushFailed: false,
       });
     } else {
       byId.set(row.id, cloudRowToClient(row));

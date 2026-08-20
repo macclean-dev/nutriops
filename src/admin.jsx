@@ -183,6 +183,18 @@ export function ClientModal({ client, onSave, onClose }) {
   // auditoria de 18/08, T2). Mostra "✓ Salvo" um instante — busy continua
   // true, então os botões ficam travados — e só então fecha sozinho.
   const [savedFlash, setSavedFlash]     = useState(false);
+  // id/accessToken viram estado (gerados 1x por montagem do modal), não mais
+  // recalculados a cada handleSave: se o push falhar (sessão expirada,
+  // Supabase fora do ar) e o admin clicar "Criar cliente" de novo NO MESMO
+  // modal — que fica aberto de propósito quando pushFailed, ver abaixo —, o
+  // retry reusa o MESMO id/token em vez de cunhar outro uid(). Sem isso a 2ª
+  // tentativa bem-sucedida nascia como tenant IRMÃO (id/token/PIN novos), não
+  // substituía a 1ª, e o registro fantasma (só local, nunca chegou na nuvem)
+  // ficava pra sempre na tabela sem nenhuma marca de qual era o real (achado
+  // da auditoria de 19/08, alta — "Repetir Criar cliente depois de push falho
+  // gera OUTRO id + OUTRO token + OUTRO PIN").
+  const [id]           = useState(() => client?.id ?? uid());
+  const [accessToken]  = useState(() => client?.accessToken ?? `nt_${uid()}${uid()}`);
 
   const trialEndsAt  = plan === 'trial' && !editing
     ? new Date(Date.now() + 14 * 86400000).toISOString()
@@ -193,8 +205,6 @@ export function ClientModal({ client, onSave, onClose }) {
     setBusy(true);
     setPushError('');
 
-    const id            = client?.id ?? uid();
-    const accessToken   = client?.accessToken ?? `nt_${uid()}${uid()}`;
     const isNew         = !editing;
     const needsNewPin   = isNew || regenerate;
 
@@ -260,6 +270,14 @@ export function ClientModal({ client, onSave, onClose }) {
       updatedAt: new Date().toISOString(),
       accessToken,
       setupPinHash,
+      // Acompanha o REGISTRO (não só o estado local do modal): a próxima
+      // sessão que abrir o AccessTokenModal pra este cliente — mesmo depois
+      // de fechar/recarregar — precisa saber que o último push falhou (achado
+      // da auditoria de 19/08, alta — "o registro não guarda que o push
+      // falhou"). false quando o push deu certo OU quando o sync está
+      // desligado neste build (modo local por device, estado normal — não é
+      // falha pra avisar).
+      pushFailed,
       setupPinGeneratedAt: needsNewPin ? new Date().toISOString() : client?.setupPinGeneratedAt,
       brandColor: tenantPayload.brandColor,
       brandSoft:  tenantPayload.brandSoft,
@@ -517,6 +535,17 @@ export function AccessTokenModal({ client, onClose, onClientUpdate }) {
   const [emailState, setEmailState] = useState('idle'); // idle | sending | sent | error
   const [emailMsg, setEmailMsg] = useState('');
   const url = `https://nutriops.uniwares.net?token=${client.accessToken}`;
+  // Guarda compartilhada por /admin E Super Admin (este modal é reusado pelos
+  // dois — superadmin-view.jsx importa direto daqui). Se o ClientModal.
+  // handleSave que criou/editou este cliente teve o push pro Supabase
+  // recusado (sessão de admin expirada, Supabase fora do ar), o registro
+  // nunca chegou na tabela `tenants`: o link ?token= devolveria "not-found" e
+  // o PIN mostrado aqui nunca existiu de verdade no servidor. Sem essa
+  // checagem os dois callers mostravam "PIN de configuração ativo" e
+  // liberavam o envio como se estivesse tudo certo (achados da auditoria de
+  // 19/08, alta — superadmin-view.jsx entrega link+PIN de cliente que não
+  // subiu, e admin.jsx não guardava que o push tinha falhado).
+  const notSynced = client.pushFailed === true;
 
   const copy = async (text) => {
     await navigator.clipboard.writeText(text);
@@ -525,6 +554,11 @@ export function AccessTokenModal({ client, onClose, onClientUpdate }) {
   };
 
   const handleSendEmail = async () => {
+    if (notSynced) {
+      setEmailState('error');
+      setEmailMsg('Não dá pra enviar: este cadastro não chegou no servidor (push falhou). Edite o cliente com a sessão de admin ativa pra tentar de novo antes de enviar o link.');
+      return;
+    }
     if (!client.email) {
       setEmailState('error');
       setEmailMsg('Cliente sem e-mail cadastrado.');
@@ -568,11 +602,19 @@ export function AccessTokenModal({ client, onClose, onClientUpdate }) {
         {/* Status do setup PIN */}
         <div style={{
           padding:'10px 14px', marginBottom:16, borderRadius:8,
-          background: client.setupPinHash ? '#e3fcef' : '#fdf6e8',
-          border: `1px solid ${client.setupPinHash ? '#00a35c33' : '#8a4e0033'}`,
-          fontSize:12, color: client.setupPinHash ? '#00a35c' : '#8a4e00',
+          background: notSynced ? '#fdecea' : client.setupPinHash ? '#e3fcef' : '#fdf6e8',
+          border: `1px solid ${notSynced ? '#c0392b33' : client.setupPinHash ? '#00a35c33' : '#8a4e0033'}`,
+          fontSize:12, color: notSynced ? '#c0392b' : client.setupPinHash ? '#00a35c' : '#8a4e00',
         }}>
-          {client.setupPinHash ? (
+          {notSynced ? (
+            <>
+              <strong>Não sincronizado com o servidor.</strong> O último salvamento deste cliente
+              não chegou na nuvem (sessão de admin expirada ou Supabase fora do ar) — o link abaixo
+              ainda não funciona em outro dispositivo, e o PIN gerado nunca existiu de verdade no
+              servidor. Edite o cliente com a sessão de admin ativa pra tentar salvar de novo antes
+              de enviar.
+            </>
+          ) : client.setupPinHash ? (
             <>
               <strong>PIN de configuração ativo.</strong> Lembre de enviar o PIN ao cliente por
               canal separado do link (WhatsApp/SMS). Se ele esqueceu, edite o cliente e marque
@@ -599,10 +641,11 @@ export function AccessTokenModal({ client, onClose, onClientUpdate }) {
         )}
 
         <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-          <button onClick={handleSendEmail} disabled={emailState==='sending'}
+          <button onClick={handleSendEmail} disabled={emailState==='sending' || notSynced}
+            title={notSynced ? 'Bloqueado: este cadastro não chegou no servidor ainda.' : undefined}
             style={{ flex:'2 1 200px', padding:'10px', borderRadius:8, border:'none',
-              background: emailState==='sending' ? '#a8b3bc' : '#00684a',
-              color:'white', cursor: emailState==='sending' ? 'wait' : 'pointer',
+              background: notSynced ? '#c1ccd6' : emailState==='sending' ? '#a8b3bc' : '#00684a',
+              color:'white', cursor: notSynced ? 'not-allowed' : emailState==='sending' ? 'wait' : 'pointer',
               fontSize:14, fontWeight:600, fontFamily:'inherit' }}>
             {emailState==='sending' ? 'Enviando...' :
              client.welcomeEmailSentAt ? `Reenviar link pro e-mail` : `Enviar link por e-mail`}
@@ -1206,10 +1249,40 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
 
   const defaultMetrics = { recordsLast7d:0, activeUsers7d:0, lastActivity:null, conformity:null, nonCompliant:0 };
 
+  // Tenants pra renderizar aqui: os 3 seeds (tenants-public.js) + qualquer
+  // cliente criado via "+ Novo cliente" (id de uid(), fora de tenantsBase) que
+  // ainda não seja um deles. metricsByTenant/historyByTenant já cobrem TODOS
+  // os tenants — a RPC admin_recent_temperature_records devolve registro de
+  // qualquer um —, mas os 3 pontos abaixo (alertas, tendência 30d, cards)
+  // iteravam só tenantsBase: um cliente novo (ex.: CASA DOCE) podia ficar 30
+  // dias sem registrar sem que nenhum alerta de inatividade disparasse e sem
+  // aparecer na tendência/cards — só o contador do rodapé (que já usa
+  // historyByTenant) o citava, sem dizer qual sumiu (achado da auditoria de
+  // 19/08, alta). Mesmo fuzzy-match de nome que findClientForTenant já usa
+  // pra anexar dado comercial aos seeds — evita duplicar Swiss/Bäckerei/DBK
+  // caso também tenham registro comercial no /admin com id diferente do seed.
+  const healthTenants = useMemo(() => {
+    const seedNames = tenantsBase.map(t => (t.name ?? '').toLowerCase()).filter(Boolean);
+    const matchesSeed = (name) => {
+      const n = (name ?? '').toLowerCase();
+      return Boolean(n) && seedNames.some(sn => sn.includes(n) || n.includes(sn));
+    };
+    const clientTenants = (clients ?? [])
+      .filter(c => c.id && !matchesSeed(c.name))
+      .map(c => ({
+        id: c.id,
+        name: c.name,
+        segment: c.segment,
+        brandColor: c.brandColor,
+        equipmentCatalog: c.equipmentCatalog,
+      }));
+    return [...tenantsBase, ...clientTenants];
+  }, [clients]);
+
   // Alertas operacionais — combina métricas do Supabase com config dos clientes
   const alerts = useMemo(
-    () => computeTenantAlerts(metricsByTenant, tenantsBase, clients),
-    [metricsByTenant, clients],
+    () => computeTenantAlerts(metricsByTenant, healthTenants, clients),
+    [metricsByTenant, healthTenants, clients],
   );
 
   // Notifica parent (AdminPanel) pra mostrar badge no tab
@@ -1260,7 +1333,7 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
           </div>
 
           <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-            {tenantsBase.map(t => {
+            {healthTenants.map(t => {
               const days = historyByTenant[t.id] ?? bucketByDay([], 30);
               const total = days.reduce((sum, d) => sum + d.count, 0);
               const half = Math.floor(days.length / 2);
@@ -1331,7 +1404,7 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
       )}
 
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(380px, 1fr))', gap:14 }}>
-        {tenantsBase.map(t => {
+        {healthTenants.map(t => {
           const matchingClient = clients.find(c =>
             c.name?.toLowerCase().includes(t.name.toLowerCase()) ||
             t.name.toLowerCase().includes(c.name?.toLowerCase() ?? '')

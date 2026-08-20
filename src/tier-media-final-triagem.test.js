@@ -138,11 +138,12 @@ describe('overview-v2.jsx — buildEquipmentHistory casa por label OU alias, cas
     expect(map.get('Freezer 01').map((r) => r.id)).toEqual(['antigo', 'novo']);
   });
 
-  it('SupervisorDashboard e ColaboradorDashboard delegam pro mesmo helper — o bug era duplicado byte-a-byte nos dois, agora é uma fonte só', () => {
+  it('SupervisorDashboard delega pro mesmo helper (definição + 1 call site) — ColaboradorDashboard tinha um 2º call site aqui, mas passou a resolver "pending" via computeTurnAlertsPure numa rodada posterior da triagem (tier alta, achado "Pendentes no turno mede o DIA, não o turno"); a garantia de matching case-insensitive/alias pra essa tela NÃO sumiu, só mudou de mecanismo — normaliza records com o MESMO getEquipmentEntry antes de checar turno (ver tier-alta-final-triagem.test.js)', () => {
     const ocorrencias = fonteOverviewV2.split('buildEquipmentHistory(equipmentCatalog, tenantRecords)').length - 1;
-    // 1 na definição + 2 nos call sites (Supervisor e Colaborador)
-    expect(ocorrencias).toBe(3);
+    // 1 na definição + 1 call site (só SupervisorDashboard agora)
+    expect(ocorrencias).toBe(2);
     expect(fonteOverviewV2).not.toContain('map.get(r.equipmentInput) ?? map.get(r.equipmentKey)');
+    expect(fonteOverviewV2).toContain('getEquipmentEntry(equipmentCatalog || [], r.equipmentInput) ?? getEquipmentEntry(equipmentCatalog || [], r.equipmentKey)');
   });
 });
 

@@ -10,14 +10,28 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { resolveLimits, resolveTone, suspectMissingMinus, getEquipmentEntry } from './limits';
+import { resolveLimits, resolveTone, suspectMissingMinus, getEquipmentEntry, dedupeCatalog } from './limits';
 import { ordenarPorSetor, agruparPorSetor } from './setores';
 import { detectTrend } from './trend';
 import { readTurns } from './turns';
+import { computeTurnAlertsPure } from './turn-alerts';
 import { EquipmentDetailModal, EquipmentChart, toneColor, toneBg } from './equipment-detail';
 import { getTemperatureRepository } from './repository';
 import { readOperator } from './operator';
 import CountUp from './count-up';
+
+// Mesmo idioma de reports-views.jsx/team-views.jsx/maintenance.jsx: o
+// catálogo VIVO mora em `nutriops.equipment.catalog.{id}` (o que
+// syncEquipmentCatalog e a tela Equipamentos escrevem), não em
+// `t.equipmentCatalog` — esse é só a semente (tenants-public.js ou o payload
+// de criação do /admin), nunca atualizado depois. Ler direto de `t.` faz
+// equipamento cadastrado depois da criação da loja nunca aparecer no que
+// itera por TODOS os tenants (WeeklyHeatmap, abaixo). dedupeCatalog porque a
+// nuvem pode chegar com linha duplicada (Swiss, ver CLAUDE.md pendências).
+// Achado da auditoria (19/08).
+const catalogKey = (id) => `nutriops.equipment.catalog.${id}`;
+const load = (key, fallback) => { try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : fallback; } catch { return fallback; } };
+const readEquipmentCatalog = (t) => dedupeCatalog(load(catalogKey(t.id), t.equipmentCatalog ?? []));
 
 function fmtRelative(iso) {
   if (!iso) return '—';
@@ -427,7 +441,7 @@ function WeeklyHeatmap({ tenants, records, onCellClick }) {
   const rows = useMemo(() => {
     const out = [];
     for (const t of tenants) {
-      for (const eq of (t.equipmentCatalog || [])) {
+      for (const eq of readEquipmentCatalog(t)) {
         const cells = days.map(d => {
           const dayEnd = d.ms + 86400000;
           const dayRecords = records.filter(r =>
@@ -925,17 +939,41 @@ function ColaboradorDashboard({ session, activeTenant, equipmentCatalog, records
   // "as leituras de hoje" acha o número na hora, seja qual for o tipo de conta.
   const mostrarTotalDaLoja = lojaHoje.length !== myToday.length;
 
-  // Equipamentos pendentes = não tem leitura no turno atual
-  const equipmentHistory = useMemo(() => buildEquipmentHistory(equipmentCatalog, tenantRecords),
-  [tenantRecords, equipmentCatalog]);
-
+  // Equipamentos pendentes = sem leitura no turno ATUAL — não no dia inteiro.
+  // Media por `todayMs` (meia-noite): 1 leitura de manhã zerava a pendência
+  // dos turnos seguintes, e a equipe da Tarde/Noite abria a tela e via "tudo
+  // registrado" com a seção "Registrar agora" sumida — sem medir nada desde
+  // o início do PRÓPRIO turno. computeTurnAlertsPure (turn-alerts.js) já é a
+  // fonte canônica de pendência por faixa de horário — o mesmo motor do badge
+  // de alertas e da Prontidão; esta tela reimplementava a própria conta (por
+  // dia) e discordava do resto do app, como o comentário antigo aqui mesmo
+  // já constatava. Só o nível 'warn' entra (turno ativo agora) — 'danger' é
+  // turno já encerrado sem registro, que é papel do badge de alertas, não
+  // deste checklist de "o que fazer agora". Achado da auditoria (19/08).
+  //
+  // computeTurnAlertsPure casa equipamento por igualdade EXATA de string
+  // (mesma limitação de WeeklyHeatmap/RTDashboard, já sinalizada à parte).
+  // Sem normalizar antes, um equipamento renomeado (label novo, nome velho
+  // virou alias) voltaria a aparecer "pendente" mesmo já medido sob o nome
+  // velho neste turno — regredindo a correção de matching case-insensitive/
+  // alias que buildEquipmentHistory já garante nesta MESMA tela desde a tier
+  // média (ver SupervisorDashboard, acima). Resolve pro label canônico do
+  // catálogo ANTES de checar turno, com o mesmo getEquipmentEntry que
+  // buildEquipmentHistory usa por baixo — sem precisar montar o Map inteiro
+  // só pra isso.
+  const normalizedForTurns = useMemo(() => tenantRecords.map((r) => {
+    const entry = getEquipmentEntry(equipmentCatalog || [], r.equipmentInput) ?? getEquipmentEntry(equipmentCatalog || [], r.equipmentKey);
+    return entry ? { ...r, equipment: entry.label, equipmentInput: entry.label } : r;
+  }), [tenantRecords, equipmentCatalog]);
+  const turns = readTurns(activeTenant);
+  const turnAlerts = useMemo(
+    () => computeTurnAlertsPure(turns, normalizedForTurns, equipmentCatalog, activeTenant.id, activeTenant.implantacao === true),
+    [turns, normalizedForTurns, equipmentCatalog, activeTenant.id, activeTenant.implantacao],
+  );
   const pending = useMemo(() => {
-    return (equipmentCatalog || []).filter(eq => {
-      const history = equipmentHistory.get(eq.label) ?? [];
-      const lastToday = history.find(r => new Date(r.createdAt).getTime() >= todayMs);
-      return !lastToday;
-    });
-  }, [equipmentCatalog, equipmentHistory, todayMs]);
+    const pendentesAgora = new Set(turnAlerts.filter(a => a.level === 'warn').map(a => a.equipment));
+    return (equipmentCatalog || []).filter(eq => pendentesAgora.has(eq.label));
+  }, [equipmentCatalog, turnAlerts]);
 
   const lastRecord = tenantRecords[0];
   const [quickRegEq, setQuickRegEq] = useState(null);

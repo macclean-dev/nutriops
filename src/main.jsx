@@ -102,8 +102,9 @@ async function handleAccessToken() {
 
   // Caminho 2 — cliente abriu em outro device. Busca no Supabase.
   let remoteTenant = null;
+  let lookupInconclusive = false;
   if (!client) {
-    const { fetchTenantByToken, isTenantSyncEnabled } = await import('./tenant-sync');
+    const { fetchTenantByToken, isTenantSyncEnabled, isTokenLookupInconclusive } = await import('./tenant-sync');
     if (isTenantSyncEnabled()) {
       console.info('[NutriOPS] token não encontrado no localStorage; consultando Supabase…');
       const result = await fetchTenantByToken(token);
@@ -112,11 +113,19 @@ async function handleAccessToken() {
         console.info(`[NutriOPS] tenant ${remoteTenant.id} (${remoteTenant.name}) carregado do Supabase`);
       } else {
         console.warn('[NutriOPS] tenant não encontrado:', result.reason);
+        // 'not-found' = consultou e confirmou que o link é mesmo inválido.
+        // Qualquer outro motivo (rede, 5xx, sessão) é "não deu pra saber" —
+        // isso NÃO pode virar silêncio: a pessoa cairia na tela de login
+        // comum achando que o link está quebrado. Achado da auditoria (19/08).
+        lookupInconclusive = isTokenLookupInconclusive(result);
       }
     }
   }
 
   if (!client && !remoteTenant) {
+    if (lookupInconclusive) {
+      alert('Não foi possível confirmar seu link de acesso agora (conexão instável ou serviço fora do ar). Toque em OK e abra o link de novo — se continuar assim, avise quem te enviou antes de pedir um novo link.');
+    }
     // Token inválido ou Supabase off. Não bloqueamos a app — só não popula
     // nada. O App() detecta a falta de tenant e mostra erro adequado.
     return;

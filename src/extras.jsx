@@ -34,6 +34,19 @@ function uid() { return crypto.randomUUID(); }
 function fmtDT(iso) { try { return new Date(iso).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }); } catch { return iso; } }
 function fmtDate(iso) { try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return iso; } }
 
+// repo.list() (repository.js) NUNCA lança quando a nuvem falha — já cai
+// sozinho pro cache local e loga um console.warn. Pra mês fora da janela de
+// 90 dias (MonthlyExportView), esse cache não cobre o período: a falha de
+// rede/RLS/token virava silenciosamente "0 registros", idêntico a "a loja
+// não registrou nada naquele mês", num PDF que é evidência de fiscalização.
+// `_fromCache` (repository.js) marca o array devolvido quando isso acontece;
+// esta função só agrega o sinal de todos os tenants pedidos. Pura e
+// exportada pra testar sem mês real nem mock de fetch. Achado da auditoria
+// (19/08).
+export function anyFromCache(perTenantResults) {
+  return (perTenantResults ?? []).some((r) => Boolean(r?.fromCache));
+}
+
 // ─── Session logger ────────────────────────────────────────────────────────
 
 export function logSession(tenantId, user) {
@@ -752,18 +765,32 @@ export function MonthlyExportView({ allTenants, records, session }) {
   // sob demanda com o alcance exato.
   const [extraRecords, setExtraRecords] = useState(null);
   const [loadingExtra, setLoadingExtra] = useState(false);
+  // repo.list() NUNCA lança quando a nuvem falha (repository.js já cai pro
+  // cache local sozinho e só loga um console.warn) — mas o cache local não
+  // cobre mês fora da janela recente, então a falha de rede/RLS/token virava
+  // silenciosamente "0 registros no período", idêntico a "a loja não
+  // registrou nada naquele mês", num documento que é evidência de
+  // fiscalização (RDC 216). `_fromCache` (repository.js) é o sinal que
+  // distingue os dois casos — precisa ser lido ANTES do .map() abaixo, que
+  // descarta a propriedade (não é índice do array). Achado da auditoria
+  // (19/08).
+  const [extraFailed, setExtraFailed] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const daysNeeded = Math.ceil((Date.now() - monthStart) / 86400000) + 2;
-    if (daysNeeded <= 90) { setExtraRecords(null); return; }
+    if (daysNeeded <= 90) { setExtraRecords(null); setExtraFailed(false); return; }
     setLoadingExtra(true);
     const repo = getTemperatureRepository();
     Promise.all(tenants.map(async (t) => {
       const items = await repo.list({ tenantId: t.id, days: daysNeeded });
-      return items.map((r) => ({ ...r, tenantName: r.tenantName ?? t.name }));
+      return { fromCache: Boolean(items._fromCache), items: items.map((r) => ({ ...r, tenantName: r.tenantName ?? t.name })) };
     })).then((all) => {
-      if (!cancelled) { setExtraRecords(all.flat()); setLoadingExtra(false); }
-    }).catch(() => { if (!cancelled) setLoadingExtra(false); });
+      if (!cancelled) {
+        setExtraRecords(all.flatMap((a) => a.items));
+        setExtraFailed(anyFromCache(all));
+        setLoadingExtra(false);
+      }
+    }).catch(() => { if (!cancelled) { setLoadingExtra(false); setExtraFailed(true); } });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedMonth, tenantFilter, allTenants]);
@@ -816,9 +843,11 @@ export function MonthlyExportView({ allTenants, records, session }) {
     td{padding:5px 6px;border-bottom:1px solid #eaeef2;font-size:9px}
     .sig{display:flex;gap:40px;margin-top:32px}.sig-line{flex:1;border-top:1px solid #374151;padding-top:4px;font-size:9px;color:#5c6c7a;text-align:center}
     .footer{margin-top:16px;padding-top:8px;border-top:1px solid #c1ccd6;font-size:8px;color:#9198a1;display:flex;justify-content:space-between}
+    .warn-banner{margin-bottom:14px;padding:8px 10px;background:#fdf6e3;border:1px solid #e0b04c;border-radius:6px;font-size:9px;color:#8a4e00;font-weight:700}
     @page{size:A4;margin:12mm}</style></head><body>
     <h1>Relatório Mensal de Conformidade Sanitária</h1>
     <div class="meta">${tenantFilter === 'all' ? 'Todas as empresas' : allTenants.find(t=>t.id===tenantFilter)?.name} · ${monthLabel} · Gerado por ${session?.user?.name||'—'} em ${date} · RDC 216/2004</div>
+    ${extraFailed ? '<div class="warn-banner">⚠ AVISO: a nuvem não confirmou o histórico completo deste mês no momento da geração — os números abaixo podem estar incompletos. Gerar novamente com conexão estável antes de usar como evidência definitiva.</div>' : ''}
     <div class="kpi-row">
       <div class="kpi"><span>Total de registros</span><strong>${monthRecords.length}</strong></div>
       <div class="kpi"><span>Conformes</span><strong style="color:#00a35c">${monthRecords.filter(r=>resolveRecordTone(r)==='ok').length}</strong></div>
@@ -861,6 +890,11 @@ export function MonthlyExportView({ allTenants, records, session }) {
             </label>
           </div>
           {loadingExtra && <p className="muted" style={{ fontSize:11 }}>Buscando histórico mais antigo que 90 dias…</p>}
+          {!loadingExtra && extraFailed && (
+            <div className="submission warn" style={{ fontSize:12 }}>
+              ⚠ Não foi possível confirmar na nuvem o histórico completo deste mês agora (sem internet, sessão expirada ou permissão) — só o cache deste aparelho entrou na conta abaixo, e pode estar incompleto ou zerado mesmo que a loja tenha registrado. O PDF vai sair com este mesmo aviso. Tente de novo com conexão estável antes de arquivar como evidência de fiscalização.
+            </div>
+          )}
           <div className="audit-stats" style={{ margin:'4px 0' }}>
             <div className="audit-stat"><span>Registros no período</span><strong>{monthRecords.length}</strong></div>
             <div className="audit-stat ok"><span>Conformes</span><strong>{monthRecords.filter(r=>resolveRecordTone(r)==='ok').length}</strong></div>

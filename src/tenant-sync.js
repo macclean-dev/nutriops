@@ -136,6 +136,22 @@ export async function fetchTenantByToken(token) {
   }
 }
 
+// `fetchTenantByToken` devolve {ok:false, reason} tanto pra "consultei e o
+// token não existe" (reason:'not-found' — a RPC/REST respondeu, o link está
+// mesmo errado) quanto pra "não deu pra consultar" (rede caiu, Supabase 5xx,
+// sessão) — main.jsx (handleAccessToken) tratava os dois IGUAL: um
+// console.warn que ninguém lê no celular, e a pessoa cai direto na tela de
+// login comum, sem uma palavra sobre o link. Só o 2º caso merece avisar quem
+// abriu: dizer "link inválido" quando na verdade foi uma rede instável manda
+// a pessoa (e o suporte) pro caminho errado — o link BOM é invalidado sem
+// necessidade (caso real: a dona liga dizendo que o link não funciona, o
+// admin regenera token/PIN). Pura e exportada pra testar sem montar main.jsx,
+// que dispara ReactDOM.createRoot como efeito colateral do import — não dá
+// pra montar em teste unitário. Achado da auditoria (19/08).
+export function isTokenLookupInconclusive(result) {
+  return Boolean(result) && result.ok !== true && result.reason !== 'not-found';
+}
+
 function rowToTenant(row) {
   return {
     id: row.id,

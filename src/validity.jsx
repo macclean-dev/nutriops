@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Th, useOrdenacao } from './tabela-ordenavel';
 import { pushProduct, deleteProductCloud, pushValidityRules, syncValidityRules , lw as gravarLocal } from './repository';
 import {
-  readOpenRules, resolveOpenRule, computeOpenedUntil,
+  readOpenRules, resolveOpenRule, computeOpenedUntil, readRulesUpdatedAt,
   fmtRule, fmtDate, fmtDateTime, DEFAULT_OPEN_RULES, buildLabelTrace,
 } from './validity-rules';
 import { LabelScannerModal } from './label-scanner';
@@ -145,6 +145,22 @@ const COLS_VALIDADE = {
   daysLeft:     { valor: (p) => p.daysLeft,     tipo: 'numero' },
 };
 
+// syncValidityRules (repository.js) NUNCA rejeita — falha de rede/RLS/token
+// vira `{ok:false, reason}`, não uma exception. Sem checar o resultado, o
+// `.then()` sempre relia do local e a falha ficava indistinguível de sucesso.
+// Isso só é um problema de verdade quando este aparelho NUNCA teve nenhuma
+// versão confirmada das regras (nem edição local, nem sync anterior): aí
+// `readOpenRules` devolve DEFAULT_OPEN_RULES inteirinho (prazo de fábrica) e
+// a tela mostra como se fosse a regra da loja. Se já havia uma versão
+// confirmada antes (local ou de um sync anterior), a falha atual só significa
+// "ficou com o valor de antes" — sem novidade, sem aviso necessário. Pura e
+// exportada pra testar sem montar o componente (mesmo padrão de
+// shouldWarnPendingCorrection em reports-views.jsx). Achado da auditoria
+// (19/08).
+export function areRulesUnconfirmed(syncResult, hasConfirmedLocal) {
+  return Boolean(syncResult) && syncResult.ok !== true && !hasConfirmedLocal;
+}
+
 export function ValidityStockView({ activeTenant, allTenants, onTenantChange, session }) {
   const [products, setProducts] = useState(() => readProducts(activeTenant.id));
   const [tab, setTab]           = useState('dashboard'); // dashboard | products | add | rules
@@ -154,6 +170,7 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
   const [catFilter, setCatFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [search, setSearch]     = useState('');
+  const [rulesUnconfirmed, setRulesUnconfirmed] = useState(false);
 
   // Form state
   const [name, setName]           = useState('');
@@ -176,8 +193,11 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
     // sido quem de fato gravou; o que importa é o estado final gravado no
     // momento em que ESTA chamada termina, não quem venceu a corrida.
     let vivo = true;
-    syncValidityRules(activeTenant.id).then(() => {
-      if (vivo) setRules(readOpenRules(activeTenant.id));
+    setRulesUnconfirmed(false);
+    syncValidityRules(activeTenant.id).then((result) => {
+      if (!vivo) return;
+      setRules(readOpenRules(activeTenant.id));
+      setRulesUnconfirmed(areRulesUnconfirmed(result, Boolean(readRulesUpdatedAt(activeTenant.id))));
     });
     return () => { vivo = false; };
   }, [activeTenant.id]);
@@ -574,6 +594,12 @@ export function ValidityStockView({ activeTenant, allTenants, onTenantChange, se
           <button className="primary-action" onClick={() => { resetForm(); setTab('add'); }}>+ Produto</button>
         </div>
       </div>
+
+      {rulesUnconfirmed && (
+        <div className="submission warn" style={{ marginBottom:16 }}>
+          ⚠ Não foi possível confirmar as regras de validade após abertura com a nuvem agora (sem internet, sessão expirada ou permissão), e este aparelho nunca sincronizou nenhuma versão antes. O que a aba <strong>Regras</strong> mostra e o botão <strong>Abrir</strong> usa pra calcular a etiqueta é o prazo de fábrica do sistema — pode não ser o que a RT configurou pra esta loja. Abra esta tela com internet estável antes de imprimir etiquetas com esse prazo.
+        </div>
+      )}
 
       {scanning && (
         <LabelScannerModal

@@ -452,7 +452,19 @@ export const supabaseRepository = {
         rows = await sbFetch('temperature_records', { filter }, tenantId);
       } catch (e) {
         console.warn(`[repo] list(temperature_records) falhou (${e?.message}) — exibindo o cache local`);
-        return localRepository.list({ tenantId, days });
+        // Sinaliza pro chamador que isto NÃO é o dado completo da nuvem — só o
+        // que sobrou no cache local. Sem isso, quem lê meses fora da janela de
+        // 90 dias (MonthlyExportView, extras.jsx) não tinha como distinguir
+        // "mês sem registro" de "a leitura falhou": o cache local não cobre
+        // mês antigo (é alimentado só pelos últimos MAX_CACHE_RECORDS), então a
+        // falha virava silenciosamente "0 registros" num PDF de fiscalização.
+        // Mesmo idioma do `_pending` que create()/update() já usam pra marcar
+        // gravação que não confirmou na nuvem. `.map()`/`.flat()` descartam
+        // esta propriedade (não é índice), então cada chamador precisa checar
+        // ANTES de transformar o array. Achado da auditoria (19/08).
+        const cached = await localRepository.list({ tenantId, days });
+        cached._fromCache = true;
+        return cached;
       }
       const local = ls(RECORDS_KEY, []);
       const merged = mergeByKey([...local, ...rows.map(tempFromRow)], 'id');
@@ -501,7 +513,10 @@ export const supabaseRepository = {
         rows = await sbFetch('temperature_records', { filter }, tenantId);
       } catch (e) {
         console.warn(`[repo] list("Todos") falhou (${e?.message}) — exibindo o cache local`);
-        return localRepository.list({ tenantId, days });
+        // Mesmo sinalizador do ramo days>0 acima — ver comentário lá.
+        const cached = await localRepository.list({ tenantId, days });
+        cached._fromCache = true;
+        return cached;
       }
       allRows = allRows.concat(rows);
       if (rows.length < 1000) break;

@@ -1723,6 +1723,15 @@ function FormFill({ template, record, onSave, onBack, session, tenant, rotuloCat
   const handlePDF = () => {
     const rec = { ...record, responses, updatedAt:new Date().toISOString(), user:session?.user?.name??'—', role:session?.user?.role??'' };
     const win = window.open('','_blank');
+    // window.open devolve null com pop-up bloqueado (padrão no Safari/iOS, PWA
+    // em modo standalone) — sem a guarda, o write seguinte estourava TypeError
+    // dentro do onClick, sem error boundary que pegue: o toque não fazia nada
+    // visível. Mesma guarda que reports-views.jsx/maintenance.jsx já usam.
+    // Achado da auditoria (19/08).
+    if (!win) {
+      window.alert('Não foi possível abrir a janela de impressão — o navegador pode estar bloqueando pop-ups. Libere pop-ups para este site e toque em "↓ Exportar PDF" de novo.');
+      return;
+    }
     win.document.write(generateFormPDF(template, rec, tenant, rotuloCategoria));
     win.document.close();
     setTimeout(() => win.print(), 400);
@@ -1961,6 +1970,13 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   const criarTemplate = useCallback((novo) => {
     setTemplates((prev) => [novo, ...prev]);
     setImportOpen(false);
+    // Publicar com um filtro de categoria/setor diferente do da planilha nova
+    // fazia o card sumir da grade — sem erro, sem toast — igual a ter tocado
+    // "Cancelar". A RT concluía que a importação falhou e publicava de novo,
+    // duplicando (cada publicação gera id novo, sem dedupe). Salta pro filtro
+    // de onde a planilha está — mesmo fallback que salvarOrganizacao já usa
+    // pra não deixar o filtro apontar pra um vazio. Achado da auditoria (19/08).
+    pickCategory(novo.category);
     import('./repository').then(m => m.pushFormTemplate(activeTenant.id, novo)).catch(() => {});
   }, [activeTenant.id]);
 
@@ -2351,6 +2367,14 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
                       {isDone && (
                         <button className="secondary-action" style={{ fontSize:11, padding:'5px 10px' }} onClick={() => {
                           const win = window.open('','_blank');
+                          // Mesma guarda de handlePDF acima — window.open devolve null
+                          // com pop-up bloqueado e o write seguinte estourava TypeError
+                          // sem nenhum sinal pra quem tocou o botão. Achado da
+                          // auditoria (19/08).
+                          if (!win) {
+                            window.alert('Não foi possível abrir a janela de impressão — o navegador pode estar bloqueando pop-ups. Libere pop-ups para este site e toque em "↓ PDF" de novo.');
+                            return;
+                          }
                           win.document.write(generateFormPDF(tpl, rec, activeTenant, rotuloCat(tpl.category)));
                           win.document.close(); setTimeout(() => win.print(), 400);
                         }}>↓ PDF</button>

@@ -3,7 +3,7 @@ import { tenants as defaultTenants } from './data';
 import { readOnboardingTenants, writeOnboardingTenants } from './onboarding-storage';
 import { readAdminAuth, writeAdminAuth, clearAdminAuth, readClients } from './admin-storage';
 import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
-import { trackUsage } from './repository';
+import { trackUsage, ls, lw } from './repository';
 import { employeeTrainingStatus } from './training-status';
 import { readTurns } from './turns';
 import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, getStorageFull, clearStorageFull, getQueueOverflow, clearQueueOverflow, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill, pushCorrectiveAction, syncCorrectiveActions, deleteCorrectiveAction } from './repository';
@@ -2665,7 +2665,21 @@ export function App() {
     setSession(s);
     // logSession é uma chamada one-shot — usa dynamic import pra não puxar
     // extras.jsx no boot (33KB+).
-    import('./extras').then(m => m.logSession(s.tenantId, s.user)).catch(() => {});
+    import('./extras').then(m => m.logSession(s.tenantId, s.user)).catch(() => {
+      // O catch vazio engolia falha de CHUNK (aparelho offline no boot, ou
+      // sw.js ainda sem ter cacheado extras.jsx logo após um deploy — o SW só
+      // precacha '/' e '/index.html', o resto é runtime cache) — o login
+      // acontecia normal, mas a entrada nunca nascia em
+      // nutriops.sessions.{tenantId}, e Equipe › Histórico de acessos
+      // mostrava um turno sem ninguém logado, sem nenhum aviso de que foi
+      // falha de carregamento. logSession só grava 3 campos em localStorage
+      // (extras.jsx:52-60) — reescrevo a mesma escrita aqui com ls/lw, já
+      // estáticos neste arquivo, sem precisar do chunk de UI inteiro só pra
+      // isto. Achado da auditoria (19/08).
+      const key = `nutriops.sessions.${s.tenantId}`;
+      const entry = { id: crypto.randomUUID(), user: s.user.name, role: s.user.role, loginAt: new Date().toISOString(), device: navigator.userAgent.slice(0, 80) };
+      lw(key, [entry, ...ls(key, [])].slice(0, 100));
+    });
     // Auto-config Supabase a partir do tenant (env vars / onboarding) — liga o
     // sync pra devices que não entraram via link ?token=.
     maybeAutoConfigSupabase(s.tenantId, activeTenants);
@@ -3053,10 +3067,31 @@ export function App() {
   const turns       = readTurns(activeTenant);
   const [alertsTick, setAlertsTick] = useState(0); // bump ao dar ciência → recomputa badge/lista
   const alertCount  = useMemo(() => computeTurnAlerts(turns, records, equipmentCatalog, activeTenant.id, activeTenant.implantacao === true).length, [records, activeTenant.id, activeTenant.implantacao, equipmentCatalog, alertsTick]);
+  // Antes recomputava só ao trocar de empresa (deps = [activeTenant.id]): num
+  // aparelho novo o boot sync grava equip_assets/maint_logs DEPOIS do primeiro
+  // render, e o badge ficava em branco a sessão inteira mesmo com plano
+  // vencido já sincronizado; registrar uma execução na própria tela de
+  // Manutenção também não abaixava o número — só um F5 manual atualizava.
+  // Não escuto isto de dentro de maintenance.jsx (que TAMBÉM ouve SYNC_EVENT
+  // pra reler o próprio state, v1.9.178): disparar o evento a partir de lá
+  // fecharia um ciclo escreve→avisa→relê→escreve→avisa sem fim. Em vez disso,
+  // dois gatilhos seguros só neste arquivo: SYNC_EVENT (cobre o aparelho
+  // novo/boot sem precisar navegar) e activeView (trocar de tela já é sinal
+  // barato de "a pessoa pode estar olhando o badge agora" — cobre
+  // registrar-e-sair sem esperar reload manual). Achado da auditoria (19/08).
+  const [maintTick, setMaintTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setMaintTick((v) => v + 1);
+    window.addEventListener(SYNC_EVENT, bump);
+    return () => window.removeEventListener(SYNC_EVENT, bump);
+  }, []);
   const maintAlertCount = useMemo(() => {
     const equips = JSON.parse(localStorage.getItem(`nutriops.equip_assets.${activeTenant.id}`) ?? '[]');
     const logs   = JSON.parse(localStorage.getItem(`nutriops.maint_logs.${activeTenant.id}`) ?? '[]');
-    return equips.reduce((count, eq) => {
+    // Mesmo filtro que readEquipments (maintenance.jsx) aplica — sem ele o
+    // badge contava ativo sem `name` que a própria tela de Manutenção
+    // descarta e nunca mostra, divergindo do que a pessoa vê ao abrir lá.
+    return equips.filter((e) => e && e.name).reduce((count, eq) => {
       return count + (eq.maintenancePlans ?? []).filter(plan => {
         const last = logs.filter(l=>l.equipmentId===eq.id&&l.planId===plan.id).sort((a,b)=>new Date(b.executedAt)-new Date(a.executedAt))[0];
         const nextDue = last ? addDays(last.executedAt, plan.frequencyDays) : plan.nextDue;
@@ -3064,7 +3099,7 @@ export function App() {
         return days <= 7;
       }).length;
     }, 0);
-  }, [activeTenant.id]);
+  }, [activeTenant.id, activeView, maintTick]);
   // O sinal certo pro badge do menu é "quantas NC ESPERAM ação", não "quantas
   // ações estão abertas". Antes: 20 desvios sem NENHUMA ação = badge apagado
   // (menu "limpo"); criar a 1ª ação ACENDIA o badge (1) — sinal invertido — e

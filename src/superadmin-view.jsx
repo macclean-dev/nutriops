@@ -30,6 +30,17 @@ const AUDIT_LABELS = {
   access: 'Acessou Super Admin', create: 'Cadastrou empresa',
 };
 
+// Quantas entradas do audit log (readAudit, cap de 500 em superadmin.js) a
+// lista mostra de cada vez. Achado baixa 19/08 (T6): o badge do card
+// mostrava audit.length inteiro (ex.: 137) enquanto a lista renderizada
+// cortava fixo em 30 sem paginação nem aviso — quem procurasse uma ação de
+// mais de 30 entradas atrás (ex.: quem suspendeu um tenant no mês passado)
+// não tinha como chegar lá pela tela, mesmo com o dado intacto no
+// localStorage. Corrigido com "Mostrar mais" (client-side, zero fetch — o
+// array já está todo carregado) + badge que para de prometer o total quando
+// só uma fatia está visível.
+const AUDIT_PAGE = 30;
+
 // ─── Gate 2FA (TOTP) — protege a entrada no Super Admin ─────────────────────
 // Roda uma vez por sessão do navegador (sessionStorage). Se não houver fator
 // TOTP ainda, faz o enroll (mostra QR); se houver, pede o código do app.
@@ -236,6 +247,7 @@ export function SuperAdminGate({ session, onExit, children }) {
 export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExit }) {
   const [clients, setClients] = useState(() => readClients());
   const [audit, setAudit]     = useState(() => readAudit());
+  const [auditVisible, setAuditVisible] = useState(AUDIT_PAGE); // corte da lista renderizada — ver comentário no card
   const [msg, setMsg]         = useState(null);
   const [search, setSearch]   = useState('');
   const [newClientOpen, setNewClientOpen] = useState(false); // form "Novo cliente"
@@ -480,11 +492,16 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
 
       {/* Audit log */}
       <article className="management-card">
-        <div className="card-head"><div><span className="eyebrow">Audit log</span><h2>Últimas ações</h2></div><span className="badge neutral">{audit.length}</span></div>
+        <div className="card-head">
+          <div><span className="eyebrow">Audit log</span><h2>Últimas ações</h2></div>
+          <span className="badge neutral">
+            {audit.length > auditVisible ? `${auditVisible} de ${audit.length}` : audit.length}
+          </span>
+        </div>
         <div className="equipment-maintenance-list">
           {audit.length === 0
             ? <p className="muted" style={{ padding:'20px' }}>Nenhuma ação registrada ainda.</p>
-            : audit.slice(0, 30).map((a, i) => (
+            : audit.slice(0, auditVisible).map((a, i) => (
               <div key={a.at + i} className="equipment-maintenance-row">
                 <div>
                   <strong style={{ color: a.type==='suspend'?'var(--red)':a.type==='plan_change'?'var(--primary)':'var(--text)' }}>
@@ -499,6 +516,12 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
               </div>
             ))}
         </div>
+        {audit.length > auditVisible && (
+          <button className="ghost-action" style={{ marginTop:10, fontSize:12 }}
+            onClick={() => setAuditVisible(v => v + AUDIT_PAGE)}>
+            Mostrar mais {Math.min(AUDIT_PAGE, audit.length - auditVisible)} (restam {audit.length - auditVisible})
+          </button>
+        )}
       </article>
 
       {/* Novo cliente / Editar (inclui regerar PIN) — reusa o form do /admin.

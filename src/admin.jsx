@@ -531,7 +531,18 @@ const inputStyle = { padding:'8px 10px', borderRadius:8, border:'1px solid #c1cc
 // ─── ACCESS TOKEN MODAL ────────────────────────────────────────────────────
 
 export function AccessTokenModal({ client, onClose, onClientUpdate }) {
-  const [copied, setCopied] = useState(false);
+  // { field: 'url'|'token'|null, status: 'copied'|'failed'|null } — antes era
+  // um único `copied` boolean compartilhado pelos dois botões ("Copiar link"
+  // e "Só token"): clicar em "Só token" acendia "Copiado" no botão VIZINHO
+  // (o rótulo de "Só token" era string fixa, nunca refletia estado nenhum),
+  // então quem clicava nele via o feedback errado acender e concluía ter
+  // copiado o que não copiou. E `copy` não tinha try/catch nem checagem da
+  // Clipboard API: falha (documento sem foco, permissão negada, contexto
+  // inseguro) virava unhandled rejection muda — nenhum dos dois rótulos
+  // mudava, e quem colava em seguida mandava o conteúdo ANTIGO do
+  // clipboard pro cliente (achados baixa 19/08, T2+T3). Campo próprio por
+  // botão + guarda de falha, mesmo padrão que o SetupPinReveal já usa.
+  const [copyState, setCopyState] = useState({ field: null, status: null });
   const [emailState, setEmailState] = useState('idle'); // idle | sending | sent | error
   const [emailMsg, setEmailMsg] = useState('');
   const url = `https://nutriops.uniwares.net?token=${client.accessToken}`;
@@ -547,10 +558,21 @@ export function AccessTokenModal({ client, onClose, onClientUpdate }) {
   // subiu, e admin.jsx não guardava que o push tinha falhado).
   const notSynced = client.pushFailed === true;
 
-  const copy = async (text) => {
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copy = (text, field) => {
+    if (!navigator.clipboard?.writeText) {
+      setCopyState({ field, status: 'failed' });
+      setTimeout(() => setCopyState({ field: null, status: null }), 4000);
+      return;
+    }
+    navigator.clipboard.writeText(text)
+      .then(() => {
+        setCopyState({ field, status: 'copied' });
+        setTimeout(() => setCopyState({ field: null, status: null }), 2000);
+      })
+      .catch(() => {
+        setCopyState({ field, status: 'failed' });
+        setTimeout(() => setCopyState({ field: null, status: null }), 4000);
+      });
   };
 
   const handleSendEmail = async () => {
@@ -650,15 +672,23 @@ export function AccessTokenModal({ client, onClose, onClientUpdate }) {
             {emailState==='sending' ? 'Enviando...' :
              client.welcomeEmailSentAt ? `Reenviar link pro e-mail` : `Enviar link por e-mail`}
           </button>
-          <button onClick={() => copy(url)}
-            style={{ flex:'1 1 120px', padding:'10px', borderRadius:8, border:'1px solid #c1ccd6',
-              background:'white', cursor:'pointer', fontSize:13, fontWeight:600, fontFamily:'inherit' }}>
-            {copied ? 'Copiado' : 'Copiar link'}
+          <button onClick={() => copy(url, 'url')}
+            style={{ flex:'1 1 120px', padding:'10px', borderRadius:8,
+              border:`1px solid ${copyState.field==='url' && copyState.status==='failed' ? '#c0392b' : '#c1ccd6'}`,
+              background:'white', color: copyState.field==='url' && copyState.status==='failed' ? '#c0392b' : undefined,
+              cursor:'pointer', fontSize:13, fontWeight:600, fontFamily:'inherit' }}>
+            {copyState.field==='url' && copyState.status==='copied' ? 'Copiado'
+              : copyState.field==='url' && copyState.status==='failed' ? 'Falha — copie manualmente'
+              : 'Copiar link'}
           </button>
-          <button onClick={() => copy(client.accessToken)}
-            style={{ flex:'1 1 100px', padding:'10px', borderRadius:8, border:'1px solid #c1ccd6',
-              background:'white', cursor:'pointer', fontSize:13, fontWeight:600, fontFamily:'inherit' }}>
-            Só token
+          <button onClick={() => copy(client.accessToken, 'token')}
+            style={{ flex:'1 1 100px', padding:'10px', borderRadius:8,
+              border:`1px solid ${copyState.field==='token' && copyState.status==='failed' ? '#c0392b' : '#c1ccd6'}`,
+              background:'white', color: copyState.field==='token' && copyState.status==='failed' ? '#c0392b' : undefined,
+              cursor:'pointer', fontSize:13, fontWeight:600, fontFamily:'inherit' }}>
+            {copyState.field==='token' && copyState.status==='copied' ? 'Copiado'
+              : copyState.field==='token' && copyState.status==='failed' ? 'Falha — copie manualmente'
+              : 'Só token'}
           </button>
           <button onClick={onClose}
             style={{ flex:'0 0 auto', padding:'10px 14px', borderRadius:8, border:'1px solid #c1ccd6',
@@ -1036,8 +1066,27 @@ function HistoryChart({ days, color = '#00684a', maxOverride = null }) {
   );
 }
 
+// Chave de dia em horário LOCAL — ver comentário do bucketByDay abaixo.
+function localDateKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 // Agrega registros do tenant em buckets diários nos últimos N dias.
 // Devolve array [{ date: 'YYYY-MM-DD', count: n }] ordenado cronologicamente.
+// Chaveia por data LOCAL, não UTC. created_at vem do Supabase (timestamptz)
+// serializado em UTC; a versão antiga fatiava a string ISO direto
+// (r.created_at.slice(0,10)), que é sempre data UTC. No Brasil (UTC-3), todo
+// registro feito a partir de ~21h local já cai no dia UTC SEGUINTE: pro
+// último bucket ("hoje", que é sempre a data local de quem está olhando o
+// gráfico) essa chave de amanhã não existe no Map — o registro sumia sem
+// nenhum sinal; pros dias do MEIO da janela a chave existe, só que é a
+// ERRADA, deslocando o registro um dia pra frente (achado baixa 19/08, T6:
+// Bäckerei registrando 22h30, pico da noite não aparecia no dia certo). Ler
+// com `new Date(...)` e extrair ano/mês/dia LOCAIS (em vez de fatiar a
+// string, que é sempre UTC) alinha bucket e registro na mesma régua.
 export function bucketByDay(records, days = 30) {
   const buckets = new Map();
   const today = new Date();
@@ -1047,12 +1096,15 @@ export function bucketByDay(records, days = 30) {
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    buckets.set(d.toISOString().slice(0, 10), 0);
+    buckets.set(localDateKey(d), 0);
   }
 
   for (const r of records) {
-    const day = r.created_at?.slice(0, 10);
-    if (day && buckets.has(day)) {
+    if (!r.created_at) continue;
+    const d = new Date(r.created_at);
+    if (Number.isNaN(d.getTime())) continue;
+    const day = localDateKey(d);
+    if (buckets.has(day)) {
       buckets.set(day, buckets.get(day) + 1);
     }
   }
@@ -1170,6 +1222,61 @@ function UsageDrilldownModal({ tenant, days, metrics, onClose }) {
   );
 }
 
+// Aggregate metrics per tenant a partir dos registros brutos (fetch de 30d).
+// recordsLast7d/activeUsers7d/conformity ficam escopados a 7d de propósito —
+// é "saúde RECENTE" (comentário original). MAS lastActivity precisa do
+// histórico COMPLETO dos 30d buscados: antes ele vinha de dentro do mesmo
+// agregado filtrado a 7d, então só existia pra tenant com registro nos
+// últimos 7 dias — ou seja, "dias desde a última atividade" nunca podia
+// passar de 6~7 na prática. computeTenantAlerts faz `if (!m) continue` e
+// calcula a escalada (5d=warn / 10d=danger) a partir de m.lastActivity: com
+// lastActivity preso a 7d, a chave do tenant (e o lastActivity junto)
+// desaparecia no 8º dia sem registro — ANTES do alerta ter a chance de
+// escalar — e o tier "danger" (10d+) ficava estruturalmente inalcançável:
+// pra qualquer tenant chegar a 10 dias parado, ele já tinha perdido a
+// própria entrada dois dias antes (achado baixa 19/08, T6).
+export function buildTenantMetrics(records) {
+  const sevenDaysAgoMs = Date.now() - 7 * 86400000;
+  const recent = {};          // agregação 7d — igual a antes, pras métricas "recentes"
+  const lastActivityByTenant = {}; // MAX de created_at em toda a janela buscada (30d)
+
+  for (const r of records) {
+    const tid = r.tenant_id;
+    if (!tid) continue;
+    if (!lastActivityByTenant[tid] || new Date(r.created_at) > new Date(lastActivityByTenant[tid])) {
+      lastActivityByTenant[tid] = r.created_at;
+    }
+    if (new Date(r.created_at).getTime() < sevenDaysAgoMs) continue;
+    if (!recent[tid]) recent[tid] = { records: [], users: new Set() };
+    recent[tid].records.push(r);
+    if (r.user_name) recent[tid].users.add(r.user_name);
+  }
+
+  const final = {};
+  const allTenantIds = new Set([...Object.keys(recent), ...Object.keys(lastActivityByTenant)]);
+  for (const tid of allTenantIds) {
+    const { records: recs = [], users = new Set() } = recent[tid] ?? {};
+    const ok = recs.filter(r => {
+      const min = r.min_value != null ? r.min_value : resolveLimits(r.equipment_input).min;
+      const max = r.max_value != null ? r.max_value : resolveLimits(r.equipment_input).max;
+      return resolveTone(r.value, min, max) === 'ok';
+    }).length;
+    const nonCompliant = recs.filter(r => {
+      const min = r.min_value != null ? r.min_value : resolveLimits(r.equipment_input).min;
+      const max = r.max_value != null ? r.max_value : resolveLimits(r.equipment_input).max;
+      return resolveTone(r.value, min, max) === 'danger';
+    }).length;
+    final[tid] = {
+      recordsLast7d: recs.length,
+      activeUsers7d: users.size,
+      lastActivity: lastActivityByTenant[tid] ?? null,
+      conformity: recs.length > 0 ? Math.round((ok / recs.length) * 100) : null,
+      nonCompliant,
+    };
+  }
+  return final;
+}
+
 function HealthView({ clients, onAlertsChange, onEditClient }) {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
@@ -1196,41 +1303,8 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
     return () => { cancelled = true; };
   }, [refreshAt]);
 
-  // Aggregate metrics per tenant — métricas usam só os últimos 7d pra continuar
-  // sendo "saúde recente"; sparkline usa os 30d completos.
-  const metricsByTenant = useMemo(() => {
-    const sevenDaysAgoMs = Date.now() - 7 * 86400000;
-    const out = {};
-    for (const r of records) {
-      if (new Date(r.created_at).getTime() < sevenDaysAgoMs) continue;
-      const tid = r.tenant_id;
-      if (!out[tid]) out[tid] = { records: [], users: new Set() };
-      out[tid].records.push(r);
-      if (r.user_name) out[tid].users.add(r.user_name);
-    }
-    const final = {};
-    for (const [tid, { records, users }] of Object.entries(out)) {
-      const lastActivity = records[0]?.created_at;
-      const ok = records.filter(r => {
-        const min = r.min_value != null ? r.min_value : resolveLimits(r.equipment_input).min;
-        const max = r.max_value != null ? r.max_value : resolveLimits(r.equipment_input).max;
-        return resolveTone(r.value, min, max) === 'ok';
-      }).length;
-      const nonCompliant = records.filter(r => {
-        const min = r.min_value != null ? r.min_value : resolveLimits(r.equipment_input).min;
-        const max = r.max_value != null ? r.max_value : resolveLimits(r.equipment_input).max;
-        return resolveTone(r.value, min, max) === 'danger';
-      }).length;
-      final[tid] = {
-        recordsLast7d: records.length,
-        activeUsers7d: users.size,
-        lastActivity,
-        conformity: records.length > 0 ? Math.round((ok / records.length) * 100) : null,
-        nonCompliant,
-      };
-    }
-    return final;
-  }, [records]);
+  // Aggregate metrics per tenant — ver comentário de buildTenantMetrics acima.
+  const metricsByTenant = useMemo(() => buildTenantMetrics(records), [records]);
 
   // Histórico 30d por tenant — sparkline cumulativa por dia
   const historyByTenant = useMemo(() => {

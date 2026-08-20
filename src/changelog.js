@@ -21,6 +21,17 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.185', date: '2026-08-20', items: [
+    'Concluímos a revisão ativa do sistema que começamos em 17/08 — de ponta a ponta, tela por tela, sempre em busca da mesma coisa: casos em que o app dizia "salvo" ou "sincronizado" sem ter feito de verdade. Passamos os últimos dias corrigindo o que essa revisão encontrou. Como da vez passada, a maioria são falhas antigas que passamos a pegar de forma sistemática, não problemas novos.',
+    'Mais confiável quando algo falha: agora o app avisa (em vez de ficar quieto) quando o armazenamento do aparelho está cheio ao salvar os dados da empresa, quando a sincronização não confirma nada de verdade com a nuvem, quando um backup não consegue ser lido, e quando a fila de envio pendente fica tão cheia que precisa descartar os itens mais antigos.',
+    'Dois colaboradores com o mesmo nome na mesma empresa agora são bloqueados no cadastro — nomes duplicados podiam fazer um substituir o outro silenciosamente na nuvem.',
+    'A tela de Manutenção passou a atualizar sozinha quando a sincronização termina (equipamentos, ordens de serviço, histórico de execuções), em vez de exigir recarregar a página. O mesmo vale para o badge de manutenções pendentes no menu lateral.',
+    'A Central de Não-conformidades ganhou avisos mais claros: o botão de criar ação corretiva agora exige uma descrição, e a tela avisa quando não consegue carregar as pendências de planilhas ou controles especiais, em vez de parecer que está tudo em ordem.',
+    'Correções de leitura de temperatura feitas pela RT agora deixam claro quando a nuvem não confirma o salvamento, e o gráfico de temperatura por equipamento avisa quando está mostrando só uma parte do período (para não ficar pesado com centenas de pontos).',
+    'A tela "Saúde dos Tenants" (uso interno da administração) tinha uma falha que impedia o alerta mais grave de inatividade de disparar; corrigido, junto com o gráfico de atividade que perdia registros feitos à noite por causa do fuso horário.',
+    'Vários botões desabilitados (por exemplo, "Testar conexão" sem os dados preenchidos) continuavam parecendo clicáveis — agora ficam visualmente apagados, principalmente perceptível em tablets.',
+    'Diversos ajustes menores de sincronização entre aparelhos e lojas — catálogo de equipamentos, planilhas, controles especiais e cadastro de clientes — para que o que um aparelho registra sempre chegue aos outros de forma confiável.',
+  ]},
   { version: '1.9.165', date: '2026-08-19', items: [
     'Nos últimos dias fizemos uma revisão ativa do sistema, testando fluxo por fluxo em busca de falhas silenciosas — casos em que a tela dizia "salvo" sem ter salvo de verdade. As correções abaixo vêm dessa revisão: a maioria são falhas antigas que passamos a encontrar de forma sistemática, não problemas que surgiram agora.',
     'Relatórios: cabeçalhos e cards de resumo (Temperatura, Planilhas BPF, Capacitação, Auditoria, Validades) agora são clicáveis — um clique ordena a tabela, outro filtra por um grupo, e dá pra voltar ao normal a qualquer momento.',

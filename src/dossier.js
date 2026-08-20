@@ -176,7 +176,7 @@ function renderSection(section, index) {
   <tbody>${section.rowsHtml || `<tr><td colspan="${cols}">${esc(section.emptyMessage)}</td></tr>`}</tbody></table>`;
 }
 
-export function buildDossierHtml({ tenantName, periodLabel, companyProfile, sections, generatedAt }) {
+export function buildDossierHtml({ tenantName, periodLabel, companyProfile, sections, generatedAt, deviceMismatch = false }) {
   const p = companyProfile ?? {};
   const date = new Date(generatedAt ?? Date.now()).toLocaleString('pt-BR');
   const sectionsHtml = sections.map((s, i) => renderSection(s, i + 1)).join('');
@@ -198,6 +198,7 @@ export function buildDossierHtml({ tenantName, periodLabel, companyProfile, sect
     .sig{display:flex;gap:40px;margin-top:32px}
     .sig-line{flex:1;border-top:1px solid #374151;padding-top:4px;font-size:9px;color:#5c6c7a;text-align:center}
     .footer{margin-top:16px;padding-top:8px;border-top:1px solid #c1ccd6;font-size:8px;color:#9198a1;display:flex;justify-content:space-between}
+    .device-warning{background:#fdf3e0;border:1px solid #e0a72e;color:#7a4a00;padding:8px 12px;border-radius:4px;margin-bottom:12px;font-size:9px;font-weight:700;line-height:1.4}
     @page{size:A4;margin:12mm}
   </style></head><body>
   <div class="company-header">
@@ -209,6 +210,7 @@ export function buildDossierHtml({ tenantName, periodLabel, companyProfile, sect
     ${p.atividade ? `<div style="font-size:10px;font-weight:700;color:#00684a">${esc(p.atividade)}</div>` : ''}
   </div>
   <h1>Dossiê de Fiscalização Sanitária</h1>
+  ${deviceMismatch ? `<div class="device-warning">⚠ Gerado neste aparelho para uma empresa diferente da sessão ativa. As seções abaixo (exceto Temperatura) refletem só o que este dispositivo já sincronizou localmente para ${esc(tenantName)} e podem estar incompletas ou desatualizadas — confirme num aparelho que sincroniza esta empresa como principal antes de apresentar ao fiscal.</div>` : ''}
   <div class="meta">
     <strong>${esc(tenantName)}</strong> · Período: ${esc(periodLabel)} · Gerado em ${date} · RDC 216/2004 · NutriOPS
   </div>

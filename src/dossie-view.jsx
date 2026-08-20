@@ -12,7 +12,7 @@ import { computeTempStats, computeBpfStats, computeTrainingStats, renderTempRows
 const readActions = (id) => { try { const r = localStorage.getItem(`nutriops.corrective_actions.${id}`); return r ? JSON.parse(r) : []; } catch { return []; } };
 const readReceiving = (id) => { try { const r = localStorage.getItem(`nutriops.receiving.${id}`); return r ? JSON.parse(r) : []; } catch { return []; } };
 
-async function generateTenantDossier({ tenant, records, periodDays, periodLabel }) {
+async function generateTenantDossier({ tenant, records, periodDays, periodLabel, session }) {
   const [
     { readFormTemplates, readFormRecords, extractNonConformities },
     { readOil, readThaw, readCool, readThermal, readPOPs },
@@ -59,7 +59,24 @@ async function generateTenantDossier({ tenant, records, periodDays, periodLabel 
     dossier.sectionPOPs(readPOPs(tenant.id)),
   ];
 
-  return dossier.buildDossierHtml({ tenantName: tenant.name, periodLabel, companyProfile: readCompanyProfile(tenant.id), sections, generatedAt: Date.now() });
+  // As 8 seções acima (tudo menos Temperatura, que vem de `records` — esse
+  // sim cruza o repository e cobre todas as lojas) leem SÓ o localStorage
+  // DESTE aparelho, por tenant. O único jeito desse cache existir é o
+  // auto-sync do boot, syncAllModules(session.tenantId) — um tenant só, e
+  // `null` na sessão de admin global. Gerando pra uma empresa diferente da
+  // sessão ativa (RT/Admin com várias lojas visíveis, "Todas as empresas" ou
+  // trocando no seletor), nada aqui garante que este aparelho já sincronizou
+  // aquela loja: as seções saem vazias e caem no emptyMessage ("Nenhuma não
+  // conformidade — parabéns.", "Sem dados de capacitação"...) como se
+  // estivesse tudo conforme, sem avisar que é só ausência de dado LOCAL.
+  // Não dá pra saber com certeza se falta dado (exigiria sincronizar cada
+  // módulo de cada tenant visível antes de gerar — mudança de arquitetura,
+  // fora do escopo deste conserto); o que dá pra fazer sem mexer em como os
+  // dados são buscados é avisar sempre que o alvo não é a própria empresa da
+  // sessão, que é exatamente quando o risco existe. Achado da auditoria
+  // (19/08).
+  const deviceMismatch = tenant.id !== session?.tenantId;
+  return dossier.buildDossierHtml({ tenantName: tenant.name, periodLabel, companyProfile: readCompanyProfile(tenant.id), sections, generatedAt: Date.now(), deviceMismatch });
 }
 
 // Resultado a mostrar pra tela dado quantas empresas foram PEDIDAS vs quantas
@@ -77,7 +94,7 @@ export function summarizeDossieRun(requested, opened) {
   return { ok: false, message };
 }
 
-export function DossieView({ allTenants, records }) {
+export function DossieView({ allTenants, records, session }) {
   const [tenantFilter, setTenantFilter] = useState('all');
   const [periodDays, setPeriodDays] = useState(30);
   const [generating, setGenerating] = useState(false);
@@ -92,7 +109,7 @@ export function DossieView({ allTenants, records }) {
     try {
       let opened = 0;
       for (const tenant of tenants) {
-        const html = await generateTenantDossier({ tenant, records, periodDays, periodLabel });
+        const html = await generateTenantDossier({ tenant, records, periodDays, periodLabel, session });
         const win = window.open('', '_blank');
         if (!win) continue; // bloqueado pelo navegador — não conta como gerado
         win.document.write(html);

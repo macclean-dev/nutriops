@@ -3,6 +3,7 @@ import { dedupeCatalog } from './limits';
 // 16/08: manutenção era o ÚLTIMO módulo local-only da auditoria RDC (§3.15).
 // Limpar o aparelho apagava o histórico que a RDC 216 §4.1 manda manter.
 import { pushEquipAsset, pushMaintLog, pushWorkOrder, deleteMaintenanceItem , lw as gravarLocal } from './repository';
+import { gravarMesclando, SYNC_EVENT } from './lista-local';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -119,7 +120,15 @@ export function printMaintenanceReport(activeTenant, equipments, logs, orders) {
     </tr>`;
   }).join('');
 
-  const logRows = sortLogsByExecution(logs).slice(0,100).map(l => {
+  // Corte em 100 pra não gerar um PDF gigante — mas precisa DIZER que cortou.
+  // O cabeçalho (linha abaixo) anuncia `${logs.length} registros` (o TOTAL),
+  // e sem aviso nenhum na seção a tabela para em 100 silenciosamente: um
+  // relatório que diz "340 registros" e lista 100 linhas, sem "primeiros 100
+  // de 340" em lugar nenhum. É o documento que vai pro fiscal. Achado da
+  // auditoria (19/08).
+  const logsOrdenados = sortLogsByExecution(logs);
+  const logsTruncados = logsOrdenados.length > 100;
+  const logRows = logsOrdenados.slice(0,100).map(l => {
     const eq = equipments.find(e=>e.id===l.equipmentId);
     const mt = MAINTENANCE_TYPES.find(t=>t.id===l.type);
     return `<tr><td>${fmtDate(l.executedAt)}</td><td>${eq?.name||'—'}</td><td>${mt?.label||l.type}</td><td>${l.title}</td><td>${l.executedBy}</td></tr>`;
@@ -159,9 +168,10 @@ export function printMaintenanceReport(activeTenant, equipments, logs, orders) {
   <h2>Equipamentos cadastrados</h2>
   <table><thead><tr><th>Equipamento</th><th>Local</th><th>Marca/Modelo</th><th>Status</th><th>Planos</th><th>Última manutenção</th></tr></thead>
   <tbody>${equipRows||'<tr><td colspan="6">Nenhum equipamento</td></tr>'}</tbody></table>
-  <h2>Histórico de execuções</h2>
+  <h2>Histórico de execuções${logsTruncados ? ` — mostrando as 100 mais recentes de ${logs.length}` : ''}</h2>
   <table><thead><tr><th>Data</th><th>Equipamento</th><th>Tipo</th><th>Tarefa</th><th>Executado por</th></tr></thead>
   <tbody>${logRows||'<tr><td colspan="5">Sem registros</td></tr>'}</tbody></table>
+  ${logsTruncados ? `<p style="font-size:9px;color:#9198a1;margin:-4px 0 8px">As demais ${logs.length-100} execuções não couberam neste PDF — consulte o histórico completo no app se precisar delas.</p>` : ''}
   <div class="footer"><span>NutriOPS · RDC 216/2004 · ${p.razaoSocial||activeTenant.name}</span>${p.rtNome?`<span>RT: ${p.rtNome}${p.rtCrn?` · ${p.rtCrn}`:''}</span>`:''}<span>${date}</span></div>
   </body></html>`);
   win.document.close();
@@ -217,9 +227,36 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
   const isManager = ['Supervisor','Nutricionista RT','Administrador','Super-admin'].includes(session?.user?.role);
 
   useEffect(() => { setEquipments(readEquipments(activeTenant.id)); setCatalog(readCatalog(activeTenant)); setLogs(readMaintenanceLogs(activeTenant.id)); setOrders(readWorkOrders(activeTenant.id)); setTab('dashboard'); }, [activeTenant.id]);
+  // Relê quando o sync avisa que terminou — mesma correção já aplicada aos 5
+  // controles especiais, às planilhas e ao catálogo de temperatura (v1.9.154 e
+  // 18/08). Sem isto, um aparelho novo ou recém-limpo (o caso da DBK Produção)
+  // mostra "Nenhum equipamento cadastrado" / "Nenhuma ordem de serviço" /
+  // "Nenhum registro ainda" nos primeiros segundos após o boot: o
+  // doSync('boot') já gravou o acervo da nuvem no localStorage, mas esta tela
+  // só lê no mount/troca de empresa e nunca relia depois. Não relê com um
+  // modal aberto (equipamento, OS ou execução), pro sync não trocar a lista
+  // sob os pés de quem está cadastrando. Achado da auditoria (19/08).
+  useEffect(() => {
+    if (editEquip !== null || editOrder !== null || showLogModal !== null) return;
+    const reler = () => {
+      setEquipments(readEquipments(activeTenant.id));
+      setCatalog(readCatalog(activeTenant));
+      setLogs(readMaintenanceLogs(activeTenant.id));
+      setOrders(readWorkOrders(activeTenant.id));
+    };
+    window.addEventListener(SYNC_EVENT, reler);
+    return () => window.removeEventListener(SYNC_EVENT, reler);
+  }, [activeTenant, editEquip, editOrder, showLogModal]);
   useEffect(() => { writeEquipments(activeTenant.id, equipments); }, [activeTenant.id, equipments]);
-  useEffect(() => { writeMaintenanceLogs(activeTenant.id, logs); }, [activeTenant.id, logs]);
-  useEffect(() => { writeWorkOrders(activeTenant.id, orders); }, [activeTenant.id, orders]);
+  // Logs e OS gravam MESCLANDO com o que está no storage (não substituindo):
+  // se a tela partiu de um retrato vazio/antigo (lido antes do sync
+  // terminar), sobrescrever a lista inteira nesse instante apagaria o que o
+  // sync acabou de trazer — mesma doença corrigida em controls.jsx/forms.jsx/
+  // extras.jsx (lista-local.js). Só vale pra estas duas: equip_assets tem
+  // exclusão pela UI (onDelete, abaixo) e a mescla ressuscitaria um ativo
+  // removido, então esse continua com write direto.
+  useEffect(() => { gravarMesclando(readMaintenanceLogs, writeMaintenanceLogs, activeTenant.id, logs); }, [activeTenant.id, logs]);
+  useEffect(() => { gravarMesclando(readWorkOrders, writeWorkOrders, activeTenant.id, orders); }, [activeTenant.id, orders]);
 
   // Mescla os ativos de manutenção com o catálogo de temperatura: mostra os
   // equipamentos já cadastrados (Freezer, Refrigerador…) sem duplicar por nome.
@@ -615,6 +652,24 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
             if (idAntigo && idAntigo !== eq.id) {
               setLogs(prev => prev.map(l => l.equipmentId === idAntigo ? { ...l, equipmentId: eq.id } : l));
               setOrders(prev => prev.map(o => o.equipmentId === idAntigo ? { ...o, equipmentId: eq.id } : o));
+              // Religar só no state local não bastava: maint_logs não carrega
+              // updatedAt na linha da nuvem (maintLogToRow só manda
+              // created_at), então o registro religado e a cópia velha que já
+              // estava na nuvem (equipmentId ainda "cat-<label>") empatam no
+              // desempate do mergeByKey — e o `>=` favorece quem entra por
+              // ÚLTIMO no array, que é sempre o remoto (repository.js,
+              // syncModule: [...local, ...remoteRecords]). No próximo sync
+              // (deste aparelho ou de QUALQUER outro da loja) a cópia velha
+              // da nuvem ganha e desfaz o religamento em silêncio — o
+              // Histórico volta a mostrar "—" depois de já ter parecido
+              // corrigido. Empurra os mesmos registros religados de volta pra
+              // nuvem — OS bumpa updatedAt pra vencer o desempate mesmo antes
+              // do push chegar (workOrderToRow manda updated_at; mesmo padrão
+              // do "✓ Concluir" logo abaixo). Achado da auditoria (19/08).
+              logs.filter(l => l.equipmentId === idAntigo)
+                .forEach(l => pushMaintLog(activeTenant.id, { ...l, equipmentId: eq.id }));
+              orders.filter(o => o.equipmentId === idAntigo)
+                .forEach(o => pushWorkOrder(activeTenant.id, { ...o, equipmentId: eq.id, updatedAt: new Date().toISOString() }));
             }
             setEquipments(prev => prev.some(e=>e.id===eq.id) ? prev.map(e=>e.id===eq.id?eq:e) : [...prev, eq]);
             pushEquipAsset(activeTenant.id, eq);

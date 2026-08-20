@@ -2445,7 +2445,7 @@ function ReportsHub({ activeView, setActiveView, session, allTenants, records, .
       {current === 'reports'   && <ReportsView   allTenants={allTenants} records={records} />}
       {current === 'monthly'   && <MonthlyExportView allTenants={allTenants} records={records} session={session} />}
       {current === 'audit'     && <AuditView     allTenants={allTenants} records={records} session={session} onRecordSaved={rest.onRecordSaved} />}
-      {current === 'dossie'    && <DossieView    allTenants={allTenants} records={records} />}
+      {current === 'dossie'    && <DossieView    allTenants={allTenants} records={records} session={session} />}
     </>
   );
 }

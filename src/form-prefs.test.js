@@ -104,13 +104,13 @@ describe('convivência com o perfil do estabelecimento', () => {
   });
 
   it('perfil sem preferências devolve vazio, não quebra', () => {
-    expect(prefsFromProfile(perfil)).toEqual({ categoryLabels: {}, templateCategory: {}, templateMeta: {} });
-    expect(prefsFromProfile(null)).toEqual({ categoryLabels: {}, templateCategory: {}, templateMeta: {} });
+    expect(prefsFromProfile(perfil)).toEqual({ categoryLabels: {}, templateCategory: {}, templateMeta: {}, templateSector: {} });
+    expect(prefsFromProfile(null)).toEqual({ categoryLabels: {}, templateCategory: {}, templateMeta: {}, templateSector: {} });
   });
 
   it('lixo no lugar das preferências não derruba nada', () => {
-    expect(prefsFromProfile({ formPrefs: 'nao é objeto' })).toEqual({ categoryLabels: {}, templateCategory: {}, templateMeta: {} });
-    expect(normalizePrefs({ categoryLabels: null })).toEqual({ categoryLabels: {}, templateCategory: {}, templateMeta: {} });
+    expect(prefsFromProfile({ formPrefs: 'nao é objeto' })).toEqual({ categoryLabels: {}, templateCategory: {}, templateMeta: {}, templateSector: {} });
+    expect(normalizePrefs({ categoryLabels: null })).toEqual({ categoryLabels: {}, templateCategory: {}, templateMeta: {}, templateSector: {} });
   });
 });
 
@@ -256,6 +256,6 @@ describe('forms.jsx — a terceira seção do Organizar', () => {
   });
 
   it('o salvar leva a meta junto', () => {
-    expect(fonte).toContain('onSave({ categoryLabels: labels, templateCategory: cats, templateMeta: meta })');
+    expect(fonte).toContain('onSave({ categoryLabels: labels, templateCategory: cats, templateMeta: meta, templateSector: setores })');
   });
 });

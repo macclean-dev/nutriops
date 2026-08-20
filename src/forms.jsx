@@ -1297,6 +1297,11 @@ function OrganizarPlanilhasModal({ templates, prefs, onSave, onClose, error }) {
   const [labels, setLabels] = useState(() => ({ ...(prefs?.categoryLabels ?? {}) }));
   const [cats, setCats]     = useState(() => ({ ...(prefs?.templateCategory ?? {}) }));
   const [meta, setMeta]     = useState(() => ({ ...(prefs?.templateMeta ?? {}) }));
+  const [setores, setSetores] = useState(() => ({ ...(prefs?.templateSector ?? {}) }));
+  // Ids em modo "digitar aba nova" — separado de `setores` porque a pessoa
+  // escolhe "criar nova" ANTES de ter digitado o nome, e nesse intervalo o
+  // valor ainda é vazio (não dá pra inferir o modo só pelo valor).
+  const [criandoAba, setCriandoAba] = useState(() => new Set());
 
   // Categorias presentes na loja + as que ela já renomeou (pra poder desfazer
   // mesmo que a última planilha daquela aba tenha saído).
@@ -1306,13 +1311,40 @@ function OrganizarPlanilhasModal({ templates, prefs, onSave, onClose, error }) {
     return [...set].sort((a, b) => catMeta(a).label.localeCompare(catMeta(b).label, 'pt-BR'));
   }, [templates, labels]);
 
-  const destinos = useMemo(
-    () => catsPresentes.filter((c) => c !== CATEGORIA_COM_COMPORTAMENTO),
-    [catsPresentes]);
+  // Higienização ENTRA na lista de destinos (v1.9.189): agora dá pra mover uma
+  // planilha pra lá, desde que escolhendo o setor. Só as 21 nativas seguem
+  // sem poder sair.
+  const destinos = catsPresentes;
 
   const ordenadas = useMemo(
     () => [...templates].sort((a, b) => a.title.localeCompare(b.title, 'pt-BR')),
     [templates]);
+
+  // Setores que já existem na loja — vêm das 21 folhas nativas (título) e de
+  // qualquer planilha que a RT já tenha movido pra cá antes.
+  const setoresExistentes = useMemo(
+    () => [...new Set(templates.map(templateSector).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity:'base' })),
+    [templates]);
+
+  // Planilha mandada pra Higienização sem setor escolhido: o save fica travado
+  // até resolver, senão ela sumiria de todos os filtros (é a razão original da
+  // trava que este recurso está afrouxando).
+  const semSetor = ordenadas.filter((t) => {
+    if (t.category === CATEGORIA_COM_COMPORTAMENTO) return false;
+    return (cats[t.id] ?? t.category) === CATEGORIA_COM_COMPORTAMENTO
+      && !String(setores[t.id] ?? '').trim();
+  });
+
+  const escolherSetor = (id, valor) => {
+    if (valor === '__nova__') {
+      setCriandoAba((s) => new Set(s).add(id));
+      setSetores((p) => ({ ...p, [id]: '' }));
+      return;
+    }
+    setCriandoAba((s) => { const n = new Set(s); n.delete(id); return n; });
+    setSetores((p) => ({ ...p, [id]: valor }));
+  };
 
   return (
     <div onClick={onClose} style={{ position:'fixed', inset:0, zIndex:1000, background:'rgba(20,20,19,.55)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
@@ -1349,29 +1381,54 @@ function OrganizarPlanilhasModal({ templates, prefs, onSave, onClose, error }) {
           <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
             {ordenadas.map((tpl) => {
               const atual = cats[tpl.id] ?? tpl.category;
-              const travada = podeMoverPara(tpl, destinos.find((d) => d !== tpl.category) ?? tpl.category);
               const ehHigienizacao = tpl.category === CATEGORIA_COM_COMPORTAMENTO;
+              const travada = podeMoverPara(tpl, destinos.find((d) => d !== tpl.category) ?? tpl.category);
+              const vaiPraHigienizacao = !ehHigienizacao && atual === CATEGORIA_COM_COMPORTAMENTO;
+              const setorAtual = String(setores[tpl.id] ?? '').trim();
+              const modoNova = criandoAba.has(tpl.id) || (setorAtual !== '' && !setoresExistentes.includes(setorAtual));
               return (
-                <div key={tpl.id} style={{ display:'flex', alignItems:'center', gap:10, fontSize:13, padding:'6px 0', borderBottom:'1px solid var(--border-subtle)' }}>
-                  <span style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{tpl.title}</span>
-                  {ehHigienizacao ? (
-                    <span title={travada.motivo} style={{ fontSize:11, color:'var(--text-secondary)', fontStyle:'italic', flexShrink:0, maxWidth:230, textAlign:'right' }}>
-                      fixa em {catMeta(CATEGORIA_COM_COMPORTAMENTO).label} — organizada por setor
-                    </span>
-                  ) : (
-                    <select value={atual} onChange={(e) => setCats((p) => ({ ...p, [tpl.id]: e.target.value }))}
-                      style={{ width:190, flexShrink:0, fontSize:12, padding:'5px 8px' }}>
-                      {destinos.map((c) => (
-                        <option key={c} value={c}>{labels[c]?.trim() || catMeta(c).label}</option>
-                      ))}
-                    </select>
+                <div key={tpl.id} style={{ display:'flex', flexDirection:'column', gap:6, fontSize:13, padding:'6px 0', borderBottom:'1px solid var(--border-subtle)' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <span style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{tpl.title}</span>
+                    {ehHigienizacao ? (
+                      <span title={travada.motivo} style={{ fontSize:11, color:'var(--text-secondary)', fontStyle:'italic', flexShrink:0, maxWidth:230, textAlign:'right' }}>
+                        fixa em {catMeta(CATEGORIA_COM_COMPORTAMENTO).label} — organizada por setor
+                      </span>
+                    ) : (
+                      <select value={atual} onChange={(e) => setCats((p) => ({ ...p, [tpl.id]: e.target.value }))}
+                        style={{ width:190, flexShrink:0, fontSize:12, padding:'5px 8px' }}>
+                        {destinos.map((c) => (
+                          <option key={c} value={c}>{labels[c]?.trim() || catMeta(c).label}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  {/* Segunda linha só pra quem está sendo movido PRA Higienização:
+                      lá a aba é o SETOR, não a categoria — sem escolher um, a
+                      planilha ficaria fora de todos os filtros. */}
+                  {vaiPraHigienizacao && (
+                    <div style={{ display:'flex', alignItems:'center', gap:8, paddingLeft:12 }}>
+                      <span style={{ fontSize:11, color:'var(--text-secondary)', flexShrink:0 }}>↳ em qual setor:</span>
+                      <select value={modoNova ? '__nova__' : setorAtual}
+                        onChange={(e) => escolherSetor(tpl.id, e.target.value)}
+                        style={{ width:190, flexShrink:0, fontSize:12, padding:'5px 8px' }}>
+                        <option value="">Escolha o setor…</option>
+                        {setoresExistentes.map((s) => <option key={s} value={s}>{s}</option>)}
+                        <option value="__nova__">+ Criar aba nova…</option>
+                      </select>
+                      {modoNova && (
+                        <input value={setorAtual} placeholder="Nome da aba nova"
+                          onChange={(e) => setSetores((p) => ({ ...p, [tpl.id]: e.target.value }))}
+                          style={{ flex:1, minWidth:0, fontSize:12, padding:'5px 8px' }} />
+                      )}
+                    </div>
                   )}
                 </div>
               );
             })}
           </div>
           <p style={{ fontSize:11, color:'var(--text-secondary)', marginTop:6, marginBottom:0 }}>
-            As planilhas de {catMeta(CATEGORIA_COM_COMPORTAMENTO).label} não mudam de aba: o setor de cada uma vem do título dela, e fora dessa aba o filtro por setor deixaria de funcionar.
+            As 21 planilhas que já nascem em {catMeta(CATEGORIA_COM_COMPORTAMENTO).label} não mudam de aba: o setor de cada uma vem do título dela, e fora dessa aba o filtro por setor deixaria de funcionar. Qualquer outra planilha pode ir pra lá — basta dizer em qual setor ela entra (ou criar uma aba nova pra ela).
           </p>
         </section>
 
@@ -1428,10 +1485,19 @@ function OrganizarPlanilhasModal({ templates, prefs, onSave, onClose, error }) {
           </div>
         )}
 
+        {/* Trava explícita em vez de deixar salvar e a planilha sumir: sem
+            setor ela não entra em nenhum filtro da aba de Higienização. */}
+        {semSetor.length > 0 && (
+          <div role="alert" className="submission warn" style={{ marginBottom:10, fontSize:12 }}>
+            Escolha o setor de {semSetor.length === 1 ? '"' + semSetor[0].title + '"' : semSetor.length + ' planilhas'} antes de salvar — sem isso {semSetor.length === 1 ? 'ela ficaria' : 'elas ficariam'} fora de todos os filtros da aba {catMeta(CATEGORIA_COM_COMPORTAMENTO).label}.
+          </div>
+        )}
+
         <div style={{ display:'flex', gap:10 }}>
           <button onClick={onClose} style={{ flex:1, padding:'10px', borderRadius:'var(--r)', border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', cursor:'pointer', fontSize:13, fontWeight:600, fontFamily:'var(--font)' }}>Cancelar</button>
-          <button onClick={() => onSave({ categoryLabels: labels, templateCategory: cats, templateMeta: meta })}
-            style={{ flex:2, padding:'10px', borderRadius:'var(--r)', border:'none', background:'var(--primary)', color:'white', cursor:'pointer', fontSize:13, fontWeight:700, fontFamily:'var(--font)' }}>
+          <button onClick={() => onSave({ categoryLabels: labels, templateCategory: cats, templateMeta: meta, templateSector: setores })}
+            disabled={semSetor.length > 0}
+            style={{ flex:2, padding:'10px', borderRadius:'var(--r)', border:'none', background: semSetor.length > 0 ? 'var(--border)' : 'var(--primary)', color:'white', cursor: semSetor.length > 0 ? 'not-allowed' : 'pointer', fontSize:13, fontWeight:700, fontFamily:'var(--font)' }}>
             Salvar organização
           </button>
         </div>
@@ -1442,6 +1508,12 @@ function OrganizarPlanilhasModal({ templates, prefs, onSave, onClose, error }) {
 
 export function templateSector(tpl) {
   if (tpl?.category !== 'higienizacao') return null;
+  // Setor escolhido à mão vence o título (v1.9.189): é assim que uma planilha
+  // que não segue o padrão de nome "Higienização — X" — ex.: "Lavagem do
+  // Filtro de Café" — consegue aparecer numa aba de setor sem ser renomeada.
+  // `setorPref` é posto por applyCategoryPrefs a partir das prefs da loja.
+  const escolhido = String(tpl?.setorPref ?? '').trim();
+  if (escolhido) return escolhido;
   const i = (tpl.title ?? '').indexOf('—');
   return i < 0 ? null : tpl.title.slice(i + 1).trim() || null;
 }

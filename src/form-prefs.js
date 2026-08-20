@@ -19,7 +19,7 @@
 // escolha — que a tela de perfil sobrescreva estas chaves ao salvar.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const VAZIO = { categoryLabels: {}, templateCategory: {}, templateMeta: {} };
+const VAZIO = { categoryLabels: {}, templateCategory: {}, templateMeta: {}, templateSector: {} };
 
 // Frequências que o app sabe agrupar (getPeriodKey/formatPeriodLabel em
 // forms.jsx). Qualquer outra viraria período sem rótulo.
@@ -37,6 +37,10 @@ export function normalizePrefs(bruto) {
     categoryLabels:   (p.categoryLabels   && typeof p.categoryLabels   === 'object') ? { ...p.categoryLabels }   : {},
     templateCategory: (p.templateCategory && typeof p.templateCategory === 'object') ? { ...p.templateCategory } : {},
     templateMeta:     (p.templateMeta     && typeof p.templateMeta     === 'object') ? { ...p.templateMeta }     : {},
+    // Setor ESCOLHIDO pela RT pra uma planilha que ela moveu pra dentro de
+    // Higienização. As 21 folhas nativas não usam isto — o setor delas vem do
+    // título. Ver podeMoverPara/applyCategoryPrefs abaixo.
+    templateSector:   (p.templateSector   && typeof p.templateSector   === 'object') ? { ...p.templateSector }   : {},
   };
 }
 
@@ -75,11 +79,20 @@ export function podeEditarTitulo(template) {
   return { ok: false, motivo: 'O setor desta planilha vem do título dela (ex.: "Higienização — Padaria"). Renomear tiraria ela do filtro por setor.' };
 }
 
-export function podeMoverPara(template, destino) {
+// `setor` é o setor escolhido À MÃO pela RT (v1.9.189). Antes, mover qualquer
+// coisa PRA DENTRO de Higienização era proibido sem exceção — o motivo era que
+// o setor vinha só do título, então a planilha chegaria lá sem setor nenhum e
+// sumiria de todos os filtros. Com o setor escolhido explicitamente esse motivo
+// deixa de existir: ela chega COM setor, porque a pessoa disse qual. Sem setor,
+// a trava continua valendo igual (pedido da RT da CASA DOCE, 20/08: pôr a
+// "Lavagem do Filtro de Café" ao lado da "Higienização — Atendimento Pães e
+// Café", sem renomear a planilha).
+export function podeMoverPara(template, destino, setor) {
   const origem = template?.category;
   if (!destino || destino === origem) return { ok: true };
   if (destino === CATEGORIA_COM_COMPORTAMENTO) {
-    return { ok: false, motivo: 'A aba de Higienização é organizada por setor, e o setor vem do título da planilha (ex.: "Higienização — Padaria"). Uma planilha movida pra cá ficaria sem setor.' };
+    if (String(setor ?? '').trim()) return { ok: true };
+    return { ok: false, motivo: 'A aba de Higienização é organizada por setor. Escolha em qual setor esta planilha deve aparecer — sem isso ela ficaria fora de todos os filtros.' };
   }
   if (origem === CATEGORIA_COM_COMPORTAMENTO) {
     return { ok: false, motivo: 'Esta planilha faz parte do conjunto por setor da Higienização. Tirá-la daqui a removeria do filtro por setor.' };
@@ -96,8 +109,16 @@ export function applyCategoryPrefs(templates, prefs) {
   return (templates ?? []).map((t) => {
     let out = t;
     const destino = p.templateCategory[t?.id];
-    if (destino && destino !== t.category && podeMoverPara(t, destino).ok) {
+    const setorEscolhido = String(p.templateSector?.[t?.id] ?? '').trim();
+    if (destino && destino !== t.category && podeMoverPara(t, destino, setorEscolhido).ok) {
       out = { ...out, category: destino };
+      // `setorPref` viaja NO template porque templateSector(tpl) recebe só o
+      // template — é chamada de vários pontos da tela (filtro, lista de
+      // setores) que não têm prefs à mão. Só existe pra planilha movida pra
+      // Higienização; as 21 nativas continuam derivando do título.
+      if (destino === CATEGORIA_COM_COMPORTAMENTO && setorEscolhido) {
+        out = { ...out, setorPref: setorEscolhido };
+      }
     }
     // Título/frequência/descrição por loja. Cada campo é validado na aplicação,
     // não só na gravação: preferência antiga, gravada antes de uma trava nova,
@@ -140,7 +161,16 @@ export function enxugarPrefs(prefs, padroes, templatesOriginais) {
     if (desc && desc !== orig.description)           limpo.description = desc;
     if (Object.keys(limpo).length) meta[id] = limpo;
   }
-  return { categoryLabels: labels, templateCategory: cats, templateMeta: meta };
+  // Setor só faz sentido pra planilha que de fato está indo pra Higienização
+  // (`cats`, já enxugado acima). Se a RT mover de volta pra outra aba, a
+  // escolha de setor cai junto — senão ficaria um resíduo invisível que
+  // voltaria a valer sozinho se ela movesse pra lá de novo meses depois.
+  const setores = {};
+  for (const [id, s] of Object.entries(p.templateSector ?? {})) {
+    const v = String(s ?? '').trim();
+    if (v && cats[id] === CATEGORIA_COM_COMPORTAMENTO) setores[id] = v;
+  }
+  return { categoryLabels: labels, templateCategory: cats, templateMeta: meta, templateSector: setores };
 }
 
 export { VAZIO as PREFS_VAZIAS };

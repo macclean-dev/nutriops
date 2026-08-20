@@ -21,6 +21,12 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.189', date: '2026-08-20', items: [
+    'Agora dá pra colocar qualquer planilha dentro de uma aba de setor da Higienização — é só escolher em qual setor ela entra. Antes só as planilhas cujo nome já começava com "Higienização — " conseguiam ficar lá, e as outras não tinham como entrar.',
+    'Na prática: a "Lavagem do Filtro de Café" pode aparecer na aba Atendimento Pães e Café, ao lado da higienização daquele setor, sem precisar mudar o nome dela (o nome é o que sai no PDF do fiscal). E dá pra criar uma aba nova pra uma planilha que não se encaixa em nenhuma das existentes.',
+    'Em Planilhas BPF → Organizar. Vale só para a sua empresa, como o resto da organização de planilhas.',
+    'Corrigido junto: se o armazenamento do aparelho estiver cheio na hora de salvar a organização, o app agora avisa em vez de mostrar a mudança na tela e perdê-la ao recarregar.',
+  ]},
   { version: '1.9.185', date: '2026-08-20', items: [
     'Concluímos a revisão ativa do sistema que começamos em 17/08 — de ponta a ponta, tela por tela, sempre em busca da mesma coisa: casos em que o app dizia "salvo" ou "sincronizado" sem ter feito de verdade. Passamos os últimos dias corrigindo o que essa revisão encontrou. Como da vez passada, a maioria são falhas antigas que passamos a pegar de forma sistemática, não problemas novos.',
     'Mais confiável quando algo falha: agora o app avisa (em vez de ficar quieto) quando o armazenamento do aparelho está cheio ao salvar os dados da empresa, quando a sincronização não confirma nada de verdade com a nuvem, quando um backup não consegue ser lido, e quando a fila de envio pendente fica tão cheia que precisa descartar os itens mais antigos.',

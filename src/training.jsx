@@ -146,9 +146,25 @@ export function generateCertificatePDF(session, participant, tenant, config) {
 
 function TopicEditor({ topics, onChange }) {
   const [input, setInput] = useState('');
-  const add = () => { const t = input.trim(); if (!t || topics.includes(t)) return; onChange([...topics, t]); setInput(''); };
+  // Achado da auditoria (19/08, tier baixa): quando o texto já estava na
+  // lista, `add` só dava `return` — o botão nunca ficava disabled (parecia
+  // clicável) e o Enter caía no mesmo `return` mudo. Fácil de disparar: os 5
+  // tópicos padrão do MBPF são frases longas, e "Restaurar padrão MBPF"
+  // enche a lista de novo, então colar um que já existe é comum. Sem
+  // feedback a pessoa só via o campo intacto e nada de novo na lista.
+  // `dup` dá o aviso pro caminho do Enter; `disabled` (idem
+  // .secondary-action:disabled já coberto em styles.css) cobre o clique.
+  const [dup, setDup] = useState(false);
+  const isDuplicate = (t) => topics.includes(t);
+  const add = () => {
+    const t = input.trim();
+    if (!t) return;
+    if (isDuplicate(t)) { setDup(true); return; }
+    onChange([...topics, t]); setInput(''); setDup(false);
+  };
   const remove = (i) => onChange(topics.filter((_, idx) => idx !== i));
   const reset  = () => onChange([...DEFAULT_TOPICS]);
+  const trimmedInput = input.trim();
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', gap: 6, justifyContent: 'space-between', alignItems: 'center' }}>
@@ -163,11 +179,12 @@ function TopicEditor({ topics, onChange }) {
         </div>
       ))}
       <div style={{ display: 'flex', gap: 8 }}>
-        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Adicionar tópico personalizado…"
+        <input value={input} onChange={(e) => { setInput(e.target.value); setDup(false); }} placeholder="Adicionar tópico personalizado…"
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
           style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, fontFamily: 'inherit' }} />
-        <button className="secondary-action" onClick={add} style={{ fontSize: 12 }}>Adicionar</button>
+        <button className="secondary-action" onClick={add} disabled={!trimmedInput || isDuplicate(trimmedInput)} style={{ fontSize: 12 }}>Adicionar</button>
       </div>
+      {dup && <span style={{ fontSize: 11, color: 'var(--red)' }}>Esse tópico já está na lista.</span>}
     </div>
   );
 }

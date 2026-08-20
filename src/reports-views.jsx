@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useState, useMemo, useEffect } from 'react';
 import { Th, useOrdenacao } from './tabela-ordenavel';
-import { getTemperatureRepository, pushRtValidation } from './repository';
+import { getTemperatureRepository, pushRtValidation, mergeByKey } from './repository';
 import { resolveLimits as resolveLimitsFromCatalog, resolveRecordTone as resolveTemperatureTone, conformityStats, byWorstConformity, parseTemperatura } from './limits';
 import { employeeTrainingStatus } from './training-status';
 import CountUp from './count-up';
@@ -27,10 +27,16 @@ function generateAuditHTML(records, tenantName) {
 
 function TempLineChart({ records, equipment, height = 180 }) {
   const [hover, setHover] = useState(null); // índice do ponto sob o mouse
-  const data = useMemo(() => records
+  const filtered = useMemo(() => records
     .filter((r) => (r.equipment || r.equipmentInput) === equipment && !isNaN(Number(r.value)))
-    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
-    .slice(-30), [records, equipment]);
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)), [records, equipment]);
+  // Plota só as últimas 30 (SVG com centenas de pontos fica ilegível/pesado
+  // — é proposital), mas o chip e o card ao lado contam o PERÍODO INTEIRO
+  // sem esse corte (equipStats, sem slice). Sem aviso os dois números não
+  // batiam: card dizia "Crítico 5", o gráfico só desenhava 1 ponto vermelho,
+  // e trocar o período de 30→90 dias não mudava o desenho — parecia filtro
+  // quebrado. Achado da auditoria (19/08, tier baixa).
+  const data = useMemo(() => filtered.slice(-30), [filtered]);
   // Limpa o hover ao trocar de equipamento pra não mostrar ponto stale
   useEffect(() => { setHover(null); }, [equipment]);
 
@@ -59,7 +65,13 @@ function TempLineChart({ records, equipment, height = 180 }) {
   const xLabels = [0, Math.floor((data.length - 1) / 2), data.length - 1];
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}>
+    <>
+      {filtered.length > data.length && (
+        <p className="muted" style={{ fontSize: 11, marginBottom: 6 }}>
+          Mostrando as últimas {data.length} de {filtered.length} leituras do período selecionado.
+        </p>
+      )}
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}>
       <g transform={`translate(${pad.left},${pad.top})`}>
         <rect x={0} y={bandTop} width={cW} height={Math.max(0, bandBot - bandTop)} fill="rgba(26,127,55,.07)" rx={2} />
         <line x1={0} y1={bandTop} x2={cW} y2={bandTop} stroke="#4ac26b" strokeDasharray="4 3" strokeWidth={1} opacity={.7} />
@@ -112,7 +124,8 @@ function TempLineChart({ records, equipment, height = 180 }) {
           );
         })()}
       </g>
-    </svg>
+      </svg>
+    </>
   );
 }
 
@@ -660,9 +673,22 @@ export function AuditView({ allTenants, records, session, onRecordSaved }) {
       at, periodFilter, recordCount: count, note: note.trim(),
     }));
     for (const v of created) pushRtValidation(v.tenantId, v); // nuvem (ou fila offline)
-    const updated = [...created, ...rtValidations];
+    // `rtValidations` é a foto do MOUNT deste componente — mas
+    // `nutriops.rt.validations` é uma chave GLOBAL (sem sufixo de tenant,
+    // compartilhada pelas 4 lojas) que o syncRtValidations (repository.js)
+    // também escreve, por fora do React, no boot e a cada evento 'online'.
+    // Gravar em cima do snapshot velho apagava qualquer validação que o sync
+    // tivesse acabado de trazer (inclusive de OUTRA loja) enquanto esta tela
+    // ficava aberta — mesmo padrão do ManualBpCard (settings.jsx). Relê AGORA
+    // e mescla por id em vez de confiar no state. Achado da triagem da
+    // auditoria (19/08, tier baixa, COM perda de dado).
+    let noStorage = [];
+    try { noStorage = JSON.parse(localStorage.getItem('nutriops.rt.validations') ?? '[]'); } catch { noStorage = []; }
+    const updated = mergeByKey([...created, ...rtValidations, ...noStorage], 'id')
+      .sort((a, b) => new Date(b.at) - new Date(a.at))
+      .slice(0, 200); // mesmo teto do syncRtValidations — não reintroduzir o descompasso 100×200
     setRtValidations(updated);
-    localStorage.setItem('nutriops.rt.validations', JSON.stringify(updated.slice(0, 100)));
+    localStorage.setItem('nutriops.rt.validations', JSON.stringify(updated));
     setSigningPeriod(false); setRtNote('');
   };
 

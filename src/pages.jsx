@@ -6,7 +6,7 @@ import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
 import { trackUsage } from './repository';
 import { employeeTrainingStatus } from './training-status';
 import { readTurns } from './turns';
-import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, getStorageFull, clearStorageFull, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill, pushCorrectiveAction, syncCorrectiveActions, deleteCorrectiveAction } from './repository';
+import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, getStorageFull, clearStorageFull, getQueueOverflow, clearQueueOverflow, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill, pushCorrectiveAction, syncCorrectiveActions, deleteCorrectiveAction } from './repository';
 import { notificarSyncAplicado, gravarMesclando, SYNC_EVENT } from './lista-local';
 // Central de Não-Conformidades (item 2 da revisão, 09/08) — puro, sem React;
 // `extractNonConformities` (forms.jsx) e os readers de controles especiais
@@ -2081,6 +2081,43 @@ function StorageFullBanner() {
   );
 }
 
+// Fila offline no teto (5000 itens) descartando os mais antigos. Sinal de que
+// algum módulo está tomando erro permanente (404/RLS) há muito tempo — cada
+// salvamento novo empurra pra fora um registro que nunca chegou na nuvem, e
+// antes disso só existia um console.warn (ninguém abre o console no tablet da
+// loja). Mesmo padrão do StorageFullBanner acima. Achado da auditoria, tier
+// baixa — perda de dado (19/08).
+function QueueOverflowBanner() {
+  const [overflow, setOverflow] = useState(() => getQueueOverflow());
+  useEffect(() => {
+    const t = setInterval(() => setOverflow(getQueueOverflow()), 10_000);
+    return () => clearInterval(t);
+  }, []);
+  if (!overflow) return null;
+  return (
+    <div role="alert" style={{
+      display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
+      padding:'10px 16px', marginBottom:16,
+      background:'var(--red-light)', border:'1px solid var(--red-border)',
+      borderRadius:'var(--r-lg)', flexWrap:'wrap',
+    }}>
+      <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+        <strong style={{ color:'var(--red)', fontSize:13 }}>
+          ⚠ A fila de sincronização está cheia — {overflow.descartados} registro(s) antigo(s) nunca chegaram na nuvem e foram descartados
+        </strong>
+        <span style={{ color:'var(--text-secondary)', fontSize:12 }}>
+          Último descarte em {new Date(overflow.at).toLocaleString('pt-BR')}. Algum módulo provavelmente está com a
+          sincronização quebrada há muito tempo — avise o suporte antes de continuar registrando neste aparelho.
+        </span>
+      </div>
+      <button onClick={() => { clearQueueOverflow(); setOverflow(null); }}
+        style={{ padding:'6px 10px', borderRadius:'var(--r)', border:'1px solid var(--red-border)', background:'transparent', color:'var(--red)', fontSize:12, fontWeight:500, cursor:'pointer', fontFamily:'var(--font)' }}>
+        Dispensar
+      </button>
+    </div>
+  );
+}
+
 function SupabaseAuthErrorBanner({ session, setActiveView }) {
   const [err, setErr] = useState(() => getSupabaseAuthError());
   useEffect(() => {
@@ -3407,6 +3444,7 @@ export function App() {
         )}
         <LocalModeBanner session={session} activeTenant={activeTenant} setActiveView={setActiveView} />
         <StorageFullBanner />
+        <QueueOverflowBanner />
         <SupabaseAuthErrorBanner session={session} setActiveView={setActiveView} />
         {catalogStale && <CatalogStaleBanner onRetry={retryCatalogSync} retrying={catalogRetrying} />}
         {activeTenant.implantacao === true && (

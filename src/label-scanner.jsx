@@ -34,10 +34,19 @@ export async function resolveScannedLabel(text, { activeTenantId, activeTenantPr
   let product = parsed.tenantId === activeTenantId
     ? activeTenantProducts.find((p) => p.id === parsed.productId)
     : null;
-  if (!product) product = await fetchProductById(parsed.tenantId, parsed.productId);
+  // checkFailed distingue "a nuvem não respondeu" de "chequei e não existe" —
+  // ver fetchProductById (repository.js). Só fica false quando o produto já
+  // veio do cache em memória (achou sem precisar perguntar pra nuvem) ou
+  // quando a nuvem respondeu de verdade (achado ou confirmadamente ausente).
+  let checkFailed = false;
+  if (!product) {
+    const r = await fetchProductById(parsed.tenantId, parsed.productId);
+    product = r.product;
+    checkFailed = r.checkFailed;
+  }
 
   const tenantMeta = allTenants?.find((t) => t.id === parsed.tenantId) ?? null;
-  return { ...parsed, product, tenantMeta, wrongTenant: parsed.tenantId !== activeTenantId };
+  return { ...parsed, product, checkFailed, tenantMeta, wrongTenant: parsed.tenantId !== activeTenantId };
 }
 
 export function LabelScannerModal({ activeTenant, activeTenantProducts, allTenants, onClose }) {
@@ -184,12 +193,28 @@ const overlayMsgStyle = {
 };
 
 function ScanResult({ result, onScanAgain, onClose }) {
-  const { product, tenantMeta, wrongTenant, invalid } = result;
+  const { product, checkFailed, tenantMeta, wrongTenant, invalid } = result;
 
   if (invalid) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <p className="muted">Esse código não é de uma etiqueta do NutriOPS.</p>
+        <button className="primary-action" onClick={onScanAgain}>Tentar de novo</button>
+      </div>
+    );
+  }
+
+  // Falha de rede/RLS é uma afirmação sobre a CONEXÃO, não sobre o produto —
+  // diferente do card abaixo (nuvem respondeu e confirmou que não existe).
+  // Achado da auditoria (19/08): os dois casos mostravam a mesma frase, e
+  // quem lia concluía que o produto tinha sido excluído do sistema.
+  if (!product && checkFailed) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <p className="muted">
+          Não consegui verificar esse produto agora — sem conexão ou a nuvem não respondeu.
+          Isso NÃO significa que o produto não existe. Tente de novo em instantes.
+        </p>
         <button className="primary-action" onClick={onScanAgain}>Tentar de novo</button>
       </div>
     );

@@ -224,12 +224,38 @@ export function purgarFilaEnvenenada(queue) {
 // 5000 é > 1 ano de uso normal (15 registros/dia × 365 ≈ 5500).
 const OFFLINE_Q_CAP = 5000;
 
+// Bandeira persistente pro descarte por teto — MESMO padrão do STORAGE_FULL_KEY
+// (achado nº15): um console.warn sozinho não avisa ninguém, porque é
+// exatamente no aparelho onde ninguém abre o console que a fila cresce sem
+// parar (um módulo tomando 404/RLS permanente empurra a fila a cada novo
+// salvamento, e o botão "Sincronizar" segue respondendo "0 sincronizado" em
+// verde — nada denuncia a causa). O descarte tira sempre os MAIS ANTIGOS
+// (splice(0, …) num array que cresce por append) — são justamente os que
+// esperam há mais tempo pra subir, ou seja, dado que NUNCA chegou na nuvem.
+// Sem esta bandeira, ninguém percebe até reparar que um registro antigo
+// sumiu. Achado da auditoria, tier baixa — perda de dado (19/08).
+export const QUEUE_OVERFLOW_KEY = 'nutriops.offline.queue.overflow';
+export function getQueueOverflow() {
+  try { return JSON.parse(localStorage.getItem(QUEUE_OVERFLOW_KEY) ?? 'null'); } catch { return null; }
+}
+export function clearQueueOverflow() {
+  try { localStorage.removeItem(QUEUE_OVERFLOW_KEY); } catch {}
+}
+
 function enqueue(table, operation, payload) {
   const q = getOfflineQueue();
   const next = [...q, { table, operation, payload, _at: new Date().toISOString() }];
   if (next.length > OFFLINE_Q_CAP) {
-    console.warn(`[repo] offline queue atingiu ${OFFLINE_Q_CAP} items — descartando os mais antigos`);
-    next.splice(0, next.length - OFFLINE_Q_CAP);
+    const descartados = next.length - OFFLINE_Q_CAP;
+    console.warn(`[repo] offline queue atingiu ${OFFLINE_Q_CAP} items — descartando os ${descartados} mais antigos`);
+    next.splice(0, descartados);
+    try {
+      const anterior = getQueueOverflow();
+      localStorage.setItem(QUEUE_OVERFLOW_KEY, JSON.stringify({
+        descartados: (anterior?.descartados ?? 0) + descartados,
+        at: new Date().toISOString(),
+      }));
+    } catch {}
   }
   lw(OFFLINE_Q_KEY, next);
 }
@@ -1020,6 +1046,25 @@ function staffFromRow(row) {
   };
 }
 
+// Colisão na chave real da nuvem — `primary key (tenant_id, name)`, sem id
+// nenhum (docs/tenant-staff.sql). Duas pessoas com o mesmo nome (homônimo, ou
+// a loja só cadastra o primeiro nome) fazem o upsert da segunda SOBRESCREVER
+// a linha da primeira — não cria uma segunda linha, porque a chave é só o
+// nome. syncTenantStaff (abaixo) substitui a lista local pela nuvem quando ela
+// não vem vazia, e uma das duas pessoas desaparece da tela sem nenhum aviso.
+// Migrar a tabela pra um id de verdade é mudança de schema (fora do escopo
+// desta correção); esta guarda evita a colisão ANTES dela acontecer, barrando
+// o cadastro/edição no cliente. Comparação normalizada (trim + minúsculo)
+// porque é assim que o Postgres compara texto por igualdade também.
+// Achado da auditoria, tier baixa — perda de dado (19/08).
+export function staffNameJaExiste(lista, name, { excludeName } = {}) {
+  const norm = (v) => String(v ?? '').trim().toLowerCase();
+  const alvo = norm(name);
+  if (!alvo) return false;
+  const excluir = norm(excludeName);
+  return (lista ?? []).some((u) => norm(u?.name) === alvo && norm(u?.name) !== excluir);
+}
+
 export async function syncTenantStaff(tenantId) {
   if (!isSupabaseEnabled() || !navigator.onLine) return { ok: false, reason: 'offline_or_disabled' };
   try {
@@ -1246,14 +1291,22 @@ export async function pushProduct(tenantId, product) {
 // aqui, ou o usuário tem acesso a mais de uma loja). O RLS já protege sozinho:
 // se o JWT de quem está lendo não cobre esse tenant, a resposta vem vazia —
 // não dá pra usar isto pra "ver se existe" um produto de loja alheia.
+//
+// Devolve { product, checkFailed }. `checkFailed:true` distingue "não deu pra
+// checar" (offline, RLS, rede) de "chequei e não existe de verdade" — os dois
+// casos derivam pra product:null, mas só o segundo é uma afirmação honesta
+// sobre o produto. Antes os dois colapsavam no mesmo `null` cru e
+// label-scanner.jsx mostrava "não encontrei esse produto" pra uma simples
+// falha de rede — quem está na bancada decidia sobre o alimento achando que a
+// etiqueta era inválida. Achado da auditoria, tier baixa (19/08).
 export async function fetchProductById(tenantId, productId) {
-  if (!isSupabaseEnabled() || !navigator.onLine) return null;
+  if (!isSupabaseEnabled() || !navigator.onLine) return { product: null, checkFailed: true };
   try {
     const rows = await sbFetch('products', { filter: `tenant_id=eq.${tenantId}&id=eq.${productId}&limit=1` }, tenantId);
-    return rows?.[0] ? productFromRow(rows[0]) : null;
+    return { product: rows?.[0] ? productFromRow(rows[0]) : null, checkFailed: false };
   } catch (e) {
     console.warn('[repo] fetchProductById failed:', e.message);
-    return null;
+    return { product: null, checkFailed: true };
   }
 }
 

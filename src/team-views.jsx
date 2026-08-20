@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { loginHandle } from './user-match';
 import { writePinOverride, isWeakPin } from './pin';
-import { isSupabaseEnabled as supabaseEnabled } from './repository';
+import { isSupabaseEnabled as supabaseEnabled, staffNameJaExiste } from './repository';
 import { isGlobalAdmin } from './permissions';
 import { readTurns, writeTurns } from './turns';
 
@@ -190,6 +190,21 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
     if (!nameInput.trim()) return;
     const isEditing = editingIndex !== null;
     const trimmedName = nameInput.trim();
+    // Sobe pra nuvem (sem o PIN — ver staffToRow) pra o tablet da loja enxergar
+    // quem o gerente cadastrou aqui. Se editou e mudou o nome, a linha antiga
+    // fica órfã na nuvem (chave é tenant_id+name) → apaga a anterior.
+    const nomeAntigo = isEditing ? users[editingIndex]?.name : null;
+    // Colisão de nome — ver staffNameJaExiste (repository.js). A chave real na
+    // nuvem é (tenant_id, name) SEM id (docs/tenant-staff.sql): duas pessoas
+    // com o mesmo nome (homônimo, ou a loja só cadastra o primeiro nome) fazem
+    // o upsert da segunda apagar a primeira em silêncio no próximo sync — a
+    // pessoa some da lista sem nenhuma mensagem. Barra ANTES de gravar, tanto
+    // pro cadastro novo quanto pra edição que renomeia pra um nome já usado
+    // por outra pessoa. Achado da auditoria, tier baixa — perda de dado (19/08).
+    if (staffNameJaExiste(users, trimmedName, { excludeName: nomeAntigo })) {
+      alert(`Já existe um colaborador chamado "${trimmedName}" nesta loja. Nomes iguais colidem na nuvem e um dos dois desaparece da lista sem aviso — use algo que distinga os dois (sobrenome, inicial, setor).`);
+      return;
+    }
     // Novo usuário: pinInput é o PIN de FÁBRICA (troca obrigatória no 1º login),
     // então 0000 é aceitável de propósito. Edição com campo preenchido = reset
     // explícito → vai pro OVERRIDE (o que o login lê), com veto a PIN fraco.
@@ -201,10 +216,6 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
     const user = { name: trimmedName, role: roleInput, location: locationInput.trim(), status: statusInput, pin: factoryPin };
     setUsers((prev) => isEditing ? prev.map((u, i) => i === editingIndex ? user : u) : [...prev, user]);
     if (isEditing && pinInput) writePinOverride(activeTenant.id, trimmedName, pinInput);
-    // Sobe pra nuvem (sem o PIN — ver staffToRow) pra o tablet da loja enxergar
-    // quem o gerente cadastrou aqui. Se editou e mudou o nome, a linha antiga
-    // fica órfã na nuvem (chave é tenant_id+name) → apaga a anterior.
-    const nomeAntigo = isEditing ? users[editingIndex]?.name : null;
     import('./repository').then(async (m) => {
       // deleteStaffMember NUNCA lança — devolve {ok:false, reason}, e o
       // `.catch(() => {})` não pegava nada disso. Offline é esperado (a linha

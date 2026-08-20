@@ -1293,7 +1293,7 @@ const higSetor = (uuid, slug, setor, tarefas) => () => ({
 // Uma tela só com as duas coisas, porque o pedido dela é uma reorganização —
 // não um ajuste pontual.
 // ─────────────────────────────────────────────────────────────────────────────
-function OrganizarPlanilhasModal({ templates, prefs, onSave, onClose }) {
+function OrganizarPlanilhasModal({ templates, prefs, onSave, onClose, error }) {
   const [labels, setLabels] = useState(() => ({ ...(prefs?.categoryLabels ?? {}) }));
   const [cats, setCats]     = useState(() => ({ ...(prefs?.templateCategory ?? {}) }));
   const [meta, setMeta]     = useState(() => ({ ...(prefs?.templateMeta ?? {}) }));
@@ -1417,6 +1417,16 @@ function OrganizarPlanilhasModal({ templates, prefs, onSave, onClose }) {
             Deixe em branco para voltar ao texto original. As planilhas de {catMeta(CATEGORIA_COM_COMPORTAMENTO).label} têm o nome fixo — o setor de cada uma vem dele — mas frequência e descrição você pode ajustar.
           </p>
         </section>
+
+        {/* Fica ACIMA dos botões (não some junto com o modal): quando a
+            gravação local falha, `onSave` não fecha mais o modal — a pessoa
+            continua vendo o que escolheu, com o motivo à vista, em vez de a
+            reorganização desaparecer em silêncio no próximo reload. */}
+        {error && (
+          <div role="alert" className="submission danger" style={{ marginBottom:10, fontSize:12 }}>
+            ✕ {error}
+          </div>
+        )}
 
         <div style={{ display:'flex', gap:10 }}>
           <button onClick={onClose} style={{ flex:1, padding:'10px', borderRadius:'var(--r)', border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', cursor:'pointer', fontSize:13, fontWeight:600, fontFamily:'var(--font)' }}>Cancelar</button>
@@ -1994,6 +2004,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   // planilha aparece). Moram no blob do perfil, que já sincroniza.
   const [prefs, setPrefs] = useState(() => prefsFromProfile(readCompanyProfile(activeTenant.id)));
   const [organizando, setOrganizando] = useState(false);
+  const [organizarError, setOrganizarError] = useState(null);
   const [formsTenant, setFormsTenant] = useState(activeTenant.id);
   useEffect(() => {
     setTemplates(readFormTemplates(activeTenant));
@@ -2110,13 +2121,28 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   const salvarOrganizacao = (novas) => {
     const padroes = Object.fromEntries(categories.map((c) => [c, catMeta(c).label]));
     const enxutas = enxugarPrefs(novas, padroes, templates);
-    setPrefs(enxutas);
     // Grava no blob do perfil (local + nuvem). readCompanyProfile devolve o
     // objeto inteiro, então CNPJ/alvará/resto seguem intactos — há teste disso
     // em form-prefs.test.js.
     const perfil = profileWithPrefs(readCompanyProfile(activeTenant.id), enxutas);
-    saveCompanyProfile(activeTenant.id, perfil);
+    // saveCompanyProfile devolve se a gravação local REALMENTE aconteceu (lw,
+    // repository.js) — igual ao mesmo achado já corrigido em
+    // settings.jsx/handleSaveProfile (auditoria, tier baixa, 19/08). Aqui
+    // ficou de fora na hora: o retorno era descartado, `setPrefs`/fechar o
+    // modal rodavam incondicionalmente. Com o storage cheio, a tela mostrava
+    // a reorganização na hora (só estado do React) mas ela nunca chegava no
+    // localStorage — reabrir "Organizar" (que relê do storage) trazia de
+    // volta o valor antigo, sem nenhum aviso do motivo. Achado real de
+    // cliente (RT da CASA DOCE, 20/08): duas planilhas presas em "Faxina"
+    // sem conseguir mover, sintoma idêntico a este bug.
+    const salvou = saveCompanyProfile(activeTenant.id, perfil);
+    if (!salvou) {
+      setOrganizarError('Não consegui salvar agora (armazenamento do aparelho cheio). A organização acima NÃO foi salva — libere espaço ou tente em outro aparelho antes de tentar de novo.');
+      return;
+    }
+    setPrefs(enxutas);
     import('./repository').then((m) => m.pushCompanyProfile(activeTenant.id, perfil)).catch(() => {});
+    setOrganizarError(null);
     setOrganizando(false);
     if (catFilter !== 'all' && !categories.includes(catFilter)) pickCategory('all');
   };
@@ -2190,7 +2216,8 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
           templates={templatesOrganizados}
           prefs={prefs}
           onSave={salvarOrganizacao}
-          onClose={() => setOrganizando(false)} />
+          onClose={() => setOrganizando(false)}
+          error={organizarError} />
       )}
       <div className="page-header">
         <div>
@@ -2202,7 +2229,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
           <select value={activeTenant.id} onChange={(e) => onTenantChange(e.target.value)} style={{ width:'auto' }}>
             {allTenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
-          {isRT && <button className="secondary-action" style={{ fontSize:12 }} onClick={() => setOrganizando(true)}>Organizar</button>}
+          {isRT && <button className="secondary-action" style={{ fontSize:12 }} onClick={() => { setOrganizarError(null); setOrganizando(true); }}>Organizar</button>}
           {isRT && <button className="secondary-action" style={{ fontSize:12 }} onClick={() => setImportOpen(true)}>Importar por IA</button>}
         </div>
       </div>

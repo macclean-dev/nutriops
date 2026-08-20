@@ -294,14 +294,13 @@ label {
   box-shadow: 0 1px 0 rgba(0,0,0,.08);
 }
 .primary-action:hover:not(:disabled) { background: var(--primary-2); }
-.primary-action:disabled { opacity: .4; cursor: not-allowed; }
 .primary-action.attention {
   background: var(--green);
   border-color: transparent;
   box-shadow: 0 0 0 3px rgba(0,163,92,.15), 0 1px 0 rgba(0,0,0,.08);
 }
 .secondary-action { background: var(--surface); color: var(--text); }
-.secondary-action:hover { background: var(--surface-muted); border-color: var(--blue-border); }
+.secondary-action:hover:not(:disabled) { background: var(--surface-muted); border-color: var(--blue-border); }
 .secondary-action.observing { border-color: var(--amber-border); color: var(--amber); }
 .ghost-action {
   background: transparent;
@@ -310,9 +309,20 @@ label {
   padding: 5px 8px;
   font-size: 12px;
 }
-.ghost-action:hover { background: var(--surface-muted); color: var(--text); border-color: var(--border); }
+.ghost-action:hover:not(:disabled) { background: var(--surface-muted); color: var(--text); border-color: var(--border); }
 .ghost-action.danger { color: var(--red); }
-.ghost-action.danger:hover { background: var(--red-light); border-color: transparent; }
+.ghost-action.danger:hover:not(:disabled) { background: var(--red-light); border-color: transparent; }
+/* Estado desabilitado — comum aos três. Achado da triagem da auditoria
+   (19/08, tier baixa): só .primary-action tinha isto; um .secondary-action
+   ou .ghost-action desabilitado (ex.: "Testar conexão" sem Anon Key,
+   "Recalcular"/"↓ Exportar backup completo" durante a operação) mantinha
+   cursor de mão e reagia ao hover — ficava visualmente idêntico a um botão
+   vivo, e o toque não fazia nada nem explicava por quê. No tablet (sem
+   hover/cursor) era 100% indistinguível. */
+.primary-action:disabled, .secondary-action:disabled, .ghost-action:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
 
 /* ===== CARDS ===== */
 .capture-card, .history-card, .management-card {
@@ -1184,10 +1194,10 @@ label {
   color: var(--text);
   border-color: var(--border);
 }
-[data-theme="dark"] .secondary-action:hover {
+[data-theme="dark"] .secondary-action:hover:not(:disabled) {
   background: var(--surface);
 }
-[data-theme="dark"] .ghost-action:hover {
+[data-theme="dark"] .ghost-action:hover:not(:disabled) {
   background: var(--surface-muted);
 }
 

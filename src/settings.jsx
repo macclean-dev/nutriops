@@ -5,7 +5,7 @@ import { isGlobalAdmin } from './permissions';
 import {
   getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled,
   supabaseRepository, SUPABASE_SQL, migrateAllToSupabase,
-  getOfflineQueue, getSyncStatus, pushCompanyProfile, pushComplianceDoc,
+  getOfflineQueue, getSyncStatus, pushCompanyProfile, pushComplianceDoc, lw,
 } from './repository';
 import { DOC_TYPES, latestManualBp } from './compliance';
 
@@ -53,8 +53,16 @@ export function readCompanyProfile(tenantId) {
   try { const r = localStorage.getItem(COMPANY_PROFILE_KEY(tenantId)); return r ? JSON.parse(r) : {}; } catch { return {}; }
 }
 
+// Antes gravava com um try/catch PRÓPRIO (vazio) em vez de usar o `lw`
+// compartilhado (repository.js) — a falha real (localStorage cheio) sumia em
+// silêncio e handleSaveProfile confirmava "✓ Dados salvos" mesmo sem ter
+// salvo nada. `lw` é o helper que toda outra gravação local do app já usa
+// desde o achado nº15 da auditoria original (18/08): devolve booleano, loga
+// e liga o banner global "armazenamento cheio" (pages.jsx StorageFullBanner).
+// Reaproveitar em vez de duplicar o catch vazio. Achado da triagem da
+// auditoria (19/08, tier baixa COM perda de dado).
 export function saveCompanyProfile(tenantId, profile) {
-  try { localStorage.setItem(COMPANY_PROFILE_KEY(tenantId), JSON.stringify(profile)); } catch {}
+  return lw(COMPANY_PROFILE_KEY(tenantId), profile);
 }
 
 // ─── Manual de Boas Práticas (Fatia 2b) ────────────────────────────────────
@@ -163,12 +171,32 @@ function LimpezaPlanilhasCard({ tenantId, tenantNome }) {
   // duplicatas": ver o comentário em `aplicar` sobre por que reusar o plano
   // do state ali era o bug.
   const montarPlano = useCallback(async () => {
-    const [{ planejarDedupe }, { readFormTemplates, readFormRecords }] = await Promise.all([
+    const [{ planejarDedupe }, { readFormTemplates, readFormRecords, extractNonConformities }] = await Promise.all([
       import('./forms-dedupe'), import('./forms'),
     ]);
     const templates = readFormTemplates({ id: tenantId, name: tenantNome });
     const records = readFormRecords(tenantId);
-    return { ...planejarDedupe(templates, records), templates, records };
+    const plano = planejarDedupe(templates, records);
+    // `orfaosRecuperados` (forms-dedupe.js) conta TODO registro órfão
+    // reconectado a uma planilha viva — mas a Central de Não-Conformidades só
+    // lista registro com uma seção "-nc" com DESCRIÇÃO preenchida
+    // (extractNonConformities, forms.jsx). Medido na Swiss (16/08): 35
+    // órfãos recuperados — a maioria era planilha preenchida sem nenhuma NC
+    // relatada, então nunca apareceu (nem vai aparecer) na Central. O card
+    // prometia "35 voltam a aparecer na Central" e quem conferia lá achava
+    // quase nada — a limpeza tinha funcionado (os 35 reconectaram e voltam a
+    // contar em Planilhas/Dossiê), só a mensagem apontava pra tela errada.
+    // Recalcula aqui com o MESMO extractNonConformities que a Central usa de
+    // verdade, pra não prometer um número que a tela seguinte não confirma.
+    // Achado da triagem da auditoria (19/08, tier baixa).
+    const templatesPorId = new Map(templates.map((t) => [t.id, t]));
+    const recordsPorId   = new Map(records.map((r) => [r.id, r]));
+    const ncRecuperadas = plano.orfaosRecuperados.filter((o) => {
+      const tpl = templatesPorId.get(o.para);
+      const rec = recordsPorId.get(o.recordId);
+      return tpl && rec && extractNonConformities(tpl, rec).length > 0;
+    }).length;
+    return { ...plano, templates, records, resumo: { ...plano.resumo, ncRecuperadas } };
   }, [tenantId, tenantNome]);
 
   const calcular = useCallback(async () => {
@@ -222,10 +250,22 @@ function LimpezaPlanilhasCard({ tenantId, tenantNome }) {
       return;
     }
 
+    // A promessa de "volta a aparecer na Central de Não-conformidades" só
+    // vale pra quem tem NC descrita (r.ncRecuperadas, ver montarPlano acima)
+    // — o total de órfãos reconectados (r.orfaosRecuperados) sempre volta a
+    // valer em Planilhas/Dossiê, mas nem todo mundo tinha NC pra começo de
+    // conversa. Prometer o número errado mandava a pessoa conferir na tela
+    // errada e concluir "a limpeza não funcionou". Achado da triagem da
+    // auditoria (19/08, tier baixa).
     const ok = window.confirm(
       `Limpar as planilhas de ${tenantNome}?\n\n`
       + `• ${r.templatesAntes} planilhas viram ${r.templatesDepois}\n`
-      + `• ${r.orfaosRecuperados} registro(s) voltam a aparecer na Central de Não-conformidades\n`
+      + (r.orfaosRecuperados > 0
+          ? `• ${r.orfaosRecuperados} registro(s) órfão(s) voltam a aparecer nas Planilhas e no Dossiê`
+            + (r.ncRecuperadas > 0
+                ? ` — ${r.ncRecuperadas} deles também na Central de Não-conformidades\n`
+                : ' (nenhum tem não-conformidade descrita, então nenhum aparece na Central)\n')
+          : '')
       + `• ${r.registrosPreservados} registros preservados — nenhum é apagado\n\n`
       + 'Pode ser feito de novo se algo ficar pra trás.'
     );
@@ -268,7 +308,10 @@ function LimpezaPlanilhasCard({ tenantId, tenantNome }) {
             </div>
             {r.orfaosRecuperados > 0 && (
               <div className="submission ok" style={{ fontSize: 12 }}>
-                ✓ {r.orfaosRecuperados} registro(s) estão hoje INVISÍVEIS na Central de Não-conformidades (apontam pra uma cópia que não existe mais) e voltam a aparecer com a limpeza.
+                ✓ {r.orfaosRecuperados} registro(s) estão hoje INVISÍVEIS (apontam pra uma cópia que não existe mais) e voltam a aparecer nas Planilhas e no Dossiê com a limpeza.{' '}
+                {r.ncRecuperadas > 0
+                  ? `${r.ncRecuperadas} deles têm não-conformidade descrita e voltam a valer também na Central de Não-conformidades.`
+                  : 'Nenhum tem não-conformidade descrita nesses registros — não é esperado que apareçam na Central de Não-conformidades, mesmo depois da limpeza.'}
               </div>
             )}
             {r.orfaosSemDestino > 0 && (
@@ -327,6 +370,7 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
   const [pinMsg,     setPinMsg]     = useState(null);
   const [profile, setProfile] = useState(() => readCompanyProfile(activeTenant?.id ?? 'global'));
   const [profileSaved, setProfileSaved] = useState(false);
+  const [profileSaveFailed, setProfileSaveFailed] = useState(false);
 
   useEffect(() => {
     setProfile(readCompanyProfile(activeTenant?.id ?? 'global'));
@@ -351,13 +395,25 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
     // conhece é preservado. Achado nº7/9 da auditoria de 18/08.
     const atual = readCompanyProfile(id);
     const mesclado = { ...atual, ...profile };
-    saveCompanyProfile(id, mesclado);
+    // saveCompanyProfile agora devolve se a gravação local REALMENTE
+    // aconteceu (lw, repository.js) — "✓ Dados salvos" só aparece quando
+    // isso é verdade. Antes era incondicional e o catch vazio escondia
+    // exatamente o caso em que mais importa avisar: armazenamento cheio, os
+    // campos voltam vazios no próximo reload (o useEffect logo acima relê o
+    // localStorage) e a pessoa redigita sem nunca saber por quê. Achado da
+    // triagem da auditoria (19/08, tier baixa COM perda de dado).
+    const salvou = saveCompanyProfile(id, mesclado);
     // Fatia 2b: o perfil era local-only (auditoria §3.21) — a validade do
     // alvará nasceria evaporando junto com o aparelho. pushCompanyProfile
     // regrava local com o carimbo e sobe (ou enfileira offline).
     pushCompanyProfile(id, mesclado);
-    setProfileSaved(true);
-    setTimeout(() => setProfileSaved(false), 2500);
+    setProfileSaveFailed(!salvou);
+    if (salvou) {
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 2500);
+    } else {
+      setTimeout(() => setProfileSaveFailed(false), 6000);
+    }
   };
 
   const handleSave = () => {
@@ -414,35 +470,53 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
   };
 
   const [exporting, setExporting] = useState(false);
+  const [exportMsg, setExportMsg] = useState(null);
 
   const handleExportBackup = () => {
     setExporting(true);
-    try {
-      const backup = {
-        version: APP_VERSION,
-        exportedAt: new Date().toISOString(),
-        tenantId: activeTenant?.id,
-        tenantName: activeTenant?.name,
-        data: {},
-      };
+    setExportMsg(null);
+    // setTimeout(0), não trabalho direto: o handler antigo era 100%
+    // síncrono — setExporting(true) e o setExporting(false) do finally caíam
+    // no MESMO lote de atualização do React, então "⏳ Exportando…" nunca
+    // chegava a renderizar (código morto). E não existia NENHUMA confirmação
+    // de sucesso: o único sinal era a barra de download do navegador — ausente
+    // em PWA instalado ou navegador que bloqueia o download, deixando o botão
+    // indistinguível de um botão morto. Cede um tick pro React pintar o
+    // estado "Exportando…" antes do trabalho (JSON.stringify do histórico
+    // inteiro da loja pode não ser instantâneo) e SEMPRE fecha com uma
+    // mensagem real na tela. Achado da triagem da auditoria (19/08, tier
+    // baixa).
+    setTimeout(() => {
+      try {
+        const backup = {
+          version: APP_VERSION,
+          exportedAt: new Date().toISOString(),
+          tenantId: activeTenant?.id,
+          tenantName: activeTenant?.name,
+          data: {},
+        };
 
-      const tenantId = activeTenant?.id;
-      const keys = chavesDoBackup(Object.keys(localStorage), tenantId);
+        const tenantId = activeTenant?.id;
+        const keys = chavesDoBackup(Object.keys(localStorage), tenantId);
 
-      keys.forEach(key => {
-        try { backup.data[key] = JSON.parse(localStorage.getItem(key)); } catch { backup.data[key] = localStorage.getItem(key); }
-      });
+        keys.forEach(key => {
+          try { backup.data[key] = JSON.parse(localStorage.getItem(key)); } catch { backup.data[key] = localStorage.getItem(key); }
+        });
 
-      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href     = url;
-      a.download = `nutriops-backup-${tenantId}-${new Date().toISOString().slice(0,10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } finally {
-      setExporting(false);
-    }
+        const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = `nutriops-backup-${tenantId}-${new Date().toISOString().slice(0,10)}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setExportMsg({ tone:'ok', text:`✓ Backup exportado — ${keys.length} chave(s) de ${activeTenant?.name ?? 'dado local'}. Confira a pasta de downloads do aparelho.` });
+      } catch (e) {
+        setExportMsg({ tone:'danger', text:`✕ Não consegui gerar o backup: ${e?.message ?? 'erro desconhecido'}.` });
+      } finally {
+        setExporting(false);
+      }
+    }, 0);
   };
 
   const handleImportBackup = (e) => {
@@ -456,6 +530,16 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
     // (19/08).
     e.target.value = '';
     const reader = new FileReader();
+    // Sem isto, um erro de LEITURA do arquivo (NotReadableError — comum em
+    // .json que só existe na nuvem, tipo iCloud Drive sem cópia local, ou
+    // pendrive removido antes de terminar) dispara `onerror`, não `onload`:
+    // nem o try/catch de dentro de onload nem o alert dele entravam em cena.
+    // A tela ficava exatamente igual a antes do toque — sem erro, sem
+    // confirmação, parecendo travada. Achado da triagem da auditoria (19/08,
+    // tier baixa).
+    reader.onerror = () => {
+      alert('Não consegui ler o arquivo de backup. Verifique se ele ainda existe no aparelho (um arquivo só na nuvem, como iCloud Drive, pode falhar até baixar uma cópia local) e tente de novo.');
+    };
     reader.onload = (ev) => {
       try {
         const backup = JSON.parse(ev.target.result);
@@ -615,6 +699,7 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
             <button className="primary-action attention" onClick={handleSaveProfile}>Salvar dados do estabelecimento</button>
           </div>
           {profileSaved && <div className="submission ok">✓ Dados salvos. Todos os PDFs usarão essas informações.</div>}
+          {profileSaveFailed && <div className="submission danger">✕ Não consegui salvar — o armazenamento deste aparelho está cheio ou bloqueado. Os dados acima NÃO estão garantidos; libere espaço (ou use outro aparelho) e salve de novo antes de confiar neles.</div>}
         </div>
       </article>
 
@@ -700,6 +785,7 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
               <input type="file" accept=".json" onChange={handleImportBackup} style={{ display:'none' }} />
             </label>
           </div>
+          {exportMsg && <div className={`submission ${exportMsg.tone}`}>{exportMsg.text}</div>}
           <div style={{ padding:'10px 12px', background:'var(--amber-light)', border:'1px solid var(--amber-border)', borderRadius:'var(--r)', fontSize:12, color:'var(--amber)' }}>
             ⚠ Restaurar substitui os dados locais. Faça um backup antes.
           </div>

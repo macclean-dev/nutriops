@@ -21,6 +21,10 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.194', date: '2026-08-21', items: [
+    'Sumiu o aviso vermelho de "sincronização falhando — sem permissão para esta loja". Era alarme falso: a verificação automática que o app faz ao abrir não estava usando o seu login, e o banco recusava por isso — não por falta de permissão sua. Seu acesso sempre esteve certo, e nenhum registro foi afetado.',
+    'Se você chegou a ver esse aviso, ele some sozinho na primeira vez que abrir o app depois desta atualização.',
+  ]},
   { version: '1.9.193', date: '2026-08-21', items: [
     'Quem tem mais de uma unidade agora usa UM login só. Em Equipe → Usuários apareceu "Vincular conta existente": você informa o e-mail de quem já usa o NutriOPS em outra empresa, escolhe o perfil dela aqui, e pronto — ela entra com a mesma senha de sempre e troca de empresa dentro do app.',
     'Serve pra dono de várias lojas, nutricionista RT que responde por mais de uma unidade e supervisora que cobre duas. Antes só dava pra criar conta NOVA: quem já tinha e-mail cadastrado precisava pedir pro suporte fazer o vínculo à mão.',

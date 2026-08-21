@@ -680,7 +680,21 @@ export const supabaseRepository = {
   // bloqueando insert mesmo com GET funcionando. Bug observado na Swiss:
   // form_records sincronizava (RLS off) mas temperature_records não (RLS on
   // ou outro motivo) — falha silenciosa porque catch só enfileirava.
-  async testWrite() {
+  //
+  // ⚠️ `tenantId` é OBRIGATÓRIO na prática (21/08). Esta função chamava
+  // `sbHeaders()` SEM argumento, e sbHeaders só anexa o JWT `if (tenantId)` —
+  // ou seja, o healthcheck saía com a CHAVE ANÔNIMA, sempre, pra todo mundo.
+  // Com RLS ligado isso é falha garantida: a policy `tenant_isolation` chama
+  // `public.is_member()`, que `docs/rls-policies.sql` revoga de anon de
+  // propósito, e o Postgres recusa com 42501 antes mesmo de olhar o
+  // `tenant_id = '__healthcheck__'`. O erro era então marcado como kind 'rls',
+  // e o banner dizia "sem permissão para esta loja — falta o vínculo do seu
+  // acesso" — diagnóstico ERRADO: o vínculo estava perfeito, o healthcheck é
+  // que nunca usava a credencial da pessoa. Como o flag só é limpo por um
+  // sucesso, o vermelho ficava permanente e as falhas se acumulavam a cada
+  // boot. Quebrado desde que o RLS ligou (18/07); virou visível na v1.9.176,
+  // que passou a mostrar o banner. Reclamação da RT da CASA DOCE em 21/08.
+  async testWrite(tenantId = null) {
     // ID precisa ser UUID válido (coluna é tipo uuid). Sem prefix.
     // Identificamos como healthcheck via tenant_id='__healthcheck__' pra delete.
     const fakeId = crypto.randomUUID();
@@ -688,9 +702,15 @@ export const supabaseRepository = {
     // header HTTP, e é ele que diz QUAL credencial foi usada. Sem ler isso, as
     // marcações abaixo caíam todas no default 'anon' e a tela acusava "chave
     // inválida" mesmo com chave boa e sessão válida (incidente de 16/08).
-    const hcHeaders = { ...(await sbHeaders()) };
+    const hcHeaders = { ...(await sbHeaders(tenantId)) };
     const hcComJwt = hcHeaders._comJwt === true;
     delete hcHeaders._comJwt;
+    // Sem JWT não há healthcheck possível: como toda tabela de tenant tem a
+    // policy com is_member(), anon leva 42501 SEMPRE — o resultado não
+    // distingue "banco com problema" de "eu não me autentiquei". Sondar assim
+    // só produz alarme falso, então desiste sem marcar nada. Quem tem sessão
+    // com problema já é avisado pelo caminho do 401 com JWT (kind 'session').
+    if (!hcComJwt) return { ok: false, reason: 'sem_sessao' };
     try {
       // INSERT
       const insertRes = await fetch(`${sbBase()}/temperature_records`, {

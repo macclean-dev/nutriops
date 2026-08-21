@@ -3202,12 +3202,21 @@ export function App() {
       // __healthcheck__ extra em todo boot), MAS roda sempre que há fila
       // pendente, porque aí queremos saber se a escrita voltou a funcionar.
       if (trigger === 'boot') {
-        const HC_KEY = 'nutriops.healthcheck.last';
+        // `.v2` (21/08): a sonda é throttled 1x/dia e grava a chave mesmo
+        // quando FALHA. Quem estava com o banner preso (todo mundo, ver
+        // testWrite) só voltaria a sondar até 24h depois de instalar o fix —
+        // e o vermelho, que só some com uma sonda bem-sucedida, ficaria na
+        // tela até lá. Trocar o nome zera o relógio e a primeira abertura já
+        // limpa. Mesmo recurso do `nutriops.autobackfill.v4`.
+        const HC_KEY = 'nutriops.healthcheck.v2';
         const lastHc = Number(localStorage.getItem(HC_KEY) || 0);
         const queueLen = getOfflineQueue().length;
         const stale = Date.now() - lastHc > 24 * 60 * 60 * 1000;
         if (stale || queueLen > 0) {
-          const probe = await supabaseRepository.testWrite();
+          // tenantAlvo, NÃO vazio: sem ele sbHeaders manda a chave anônima e a
+          // sonda falha por RLS sempre, pintando o banner de vermelho com o
+          // motivo errado (ver comentário em testWrite, repository.js).
+          const probe = await supabaseRepository.testWrite(tenantAlvo);
           try { localStorage.setItem(HC_KEY, String(Date.now())); } catch {}
           if (!probe.ok) {
             console.warn(`[NutriOPS] testWrite failed — ${probe.reason}`, probe);

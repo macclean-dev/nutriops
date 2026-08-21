@@ -22,6 +22,13 @@ const nega = (status, body) => Promise.resolve({
   ok: false, status, text: () => Promise.resolve(typeof body === 'string' ? body : JSON.stringify(body)),
 });
 
+// repository.js pega o JWT por `await import('./auth')` (linha 85). Sem este
+// mock não existe sessão de verdade no teste, memberTokenFor devolve null e
+// TODA requisição sairia como anon — que é exatamente o bug que os testes de
+// testWrite abaixo travam. O mock só entrega o token; quem decide usá-lo
+// continua sendo memberTokenFor (que exige a sessão cobrir o tenant).
+vi.mock('./auth', () => ({ getValidAccessToken: async () => 'jwt-de-teste' }));
+
 beforeEach(() => {
   localStorage.clear(); clearOfflineQueue(); clearSupabaseAuthError();
   saveSupabaseConfig({ url: 'https://x.test', anonKey: 'anon123', enabled: true });
@@ -59,24 +66,32 @@ describe('classificação do 401 — permissão não é chave', () => {
 });
 
 describe('testWrite — o healthcheck do boot classificava tudo como chave ruim', () => {
+  // A sonda agora EXIGE a credencial da pessoa (ver comSessao). Sem isso ela
+  // saía como anon e a classificação abaixo nunca era exercitada de verdade.
+  const comSessao = () => localStorage.setItem('nutriops.session',
+    JSON.stringify({ tenantId: 'casadoce', accessToken: 'jwt-de-teste' }));
+
   it('RLS no healthcheck vira "rls"', async () => {
+    comSessao();
     vi.stubGlobal('fetch', vi.fn(() => nega(401, { code: '42501', message: 'row-level security' })));
-    const r = await supabaseRepository.testWrite();
+    const r = await supabaseRepository.testWrite('casadoce');
     expect(r.reason).toBe('rls_blocked');
     expect(getSupabaseAuthError()?.kind).toBe('rls');   // antes: 'anon' → "chave inválida"
   });
 
   it('401 sem RLS no healthcheck NÃO é classificado como rls', async () => {
+    comSessao();
     vi.stubGlobal('fetch', vi.fn(() => nega(401, { message: 'Invalid API key' })));
-    const r = await supabaseRepository.testWrite();
+    const r = await supabaseRepository.testWrite('casadoce');
     expect(r.reason).toBe('auth_error');
     expect(getSupabaseAuthError()?.kind).not.toBe('rls');
   });
 
   it('não vaza o marcador interno _comJwt como header HTTP', async () => {
+    comSessao();
     const spy = vi.fn(() => nega(500, 'erro qualquer'));
     vi.stubGlobal('fetch', spy);
-    await supabaseRepository.testWrite();
+    await supabaseRepository.testWrite('casadoce');
     const headers = spy.mock.calls[0][1].headers;
     expect(headers).not.toHaveProperty('_comJwt');
   });

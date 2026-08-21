@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.193', date: '2026-08-21', items: [
+    'Quem tem mais de uma unidade agora usa UM login só. Em Equipe → Usuários apareceu "Vincular conta existente": você informa o e-mail de quem já usa o NutriOPS em outra empresa, escolhe o perfil dela aqui, e pronto — ela entra com a mesma senha de sempre e troca de empresa dentro do app.',
+    'Serve pra dono de várias lojas, nutricionista RT que responde por mais de uma unidade e supervisora que cobre duas. Antes só dava pra criar conta NOVA: quem já tinha e-mail cadastrado precisava pedir pro suporte fazer o vínculo à mão.',
+    'Importante: não crie uma segunda conta pra mesma pessoa. Os registros dela ficariam divididos entre dois nomes na trilha de auditoria — use o vínculo.',
+  ]},
   { version: '1.9.189', date: '2026-08-20', items: [
     'Agora dá pra colocar qualquer planilha dentro de uma aba de setor da Higienização — é só escolher em qual setor ela entra. Antes só as planilhas cujo nome já começava com "Higienização — " conseguiam ficar lá, e as outras não tinham como entrar.',
     'Na prática: a "Lavagem do Filtro de Café" pode aparecer na aba Atendimento Pães e Café, ao lado da higienização daquele setor, sem precisar mudar o nome dela (o nome é o que sai no PDF do fiscal). E dá pra criar uma aba nova pra uma planilha que não se encaixa em nenhuma das existentes.',

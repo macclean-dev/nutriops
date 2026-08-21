@@ -149,6 +149,34 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
     }
     setInviting(false);
   };
+  // Vincular conta EXISTENTE a esta empresa (multi-unidade, 21/08). O convite
+  // acima só cria conta nova — com e-mail repetido ele recusa mandando "peça a
+  // um administrador para vincular", e esse administrador tinha que rodar SQL à
+  // mão. Caso real: a CASA DOCE abrindo unidades novas, onde cada unidade é um
+  // tenant novo e a dona/RT já têm conta.
+  const [lnkEmail, setLnkEmail] = useState('');
+  const [lnkRole, setLnkRole]   = useState('Colaborador');
+  const [lnkMsg, setLnkMsg]     = useState(null);
+  const [linking, setLinking]   = useState(false);
+  const handleLink = async () => {
+    setLnkMsg(null);
+    const email = lnkEmail.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setLnkMsg({ tone:'danger', text:'E-mail inválido.' }); return; }
+    setLinking(true);
+    try {
+      const { linkExistingMember } = await import('./tenant-sync');
+      const r = await linkExistingMember({ tenantId: activeTenant.id, email, role: lnkRole });
+      setLnkMsg({ tone:'ok', text: r.jaExistia
+        ? `✓ ${r.name} já fazia parte de ${activeTenant.name} — o perfil foi atualizado para ${lnkRole === 'tenant_admin' ? 'Administrador da loja' : lnkRole}.`
+        : `✓ ${r.name} agora também acessa ${activeTenant.name}. Entra com o MESMO e-mail e senha de sempre e troca de empresa dentro do app.` });
+      setLnkEmail('');
+      loadMembers(); // aparece na lista de membros na hora
+    } catch (e) {
+      setLnkMsg({ tone:'danger', text: e.message });
+    }
+    setLinking(false);
+  };
+
   const [resettingId, setResettingId] = useState(null);
   const resetPasswordFor = async (m) => {
     const newPwd = window.prompt(`Nova senha para ${m.name} (mín. 8 caracteres):`);
@@ -285,6 +313,31 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
             {invMsg && <p style={{ fontSize:13, fontWeight:600, color: invMsg.tone==='ok' ? 'var(--green)' : 'var(--red)' }}>{invMsg.text}</p>}
             <div className="actions-row">
               <button className="primary-action" onClick={handleInvite} disabled={inviting || !invEmail || !invPwd}>{inviting ? 'Convidando…' : 'Adicionar colaborador'}</button>
+            </div>
+          </div>
+        </article>
+      )}
+
+      {canInvite && (
+        <article className="management-card" style={{ marginBottom: 16 }}>
+          <div className="card-head"><div><span className="eyebrow">Já tem conta</span><h2>Vincular conta existente</h2></div></div>
+          <div className="capture-fields">
+            <p className="muted" style={{ fontSize:12 }}>
+              Para quem <strong>já usa o NutriOPS em outra empresa</strong> e passa a cobrir esta também —
+              dono de várias unidades, nutricionista RT, supervisora. Ela mantém o mesmo login e a mesma
+              senha, e troca de empresa dentro do app. <strong>Não</strong> crie uma segunda conta pra mesma
+              pessoa: os registros dela ficariam divididos entre dois nomes.
+            </p>
+            <label>E-mail da conta<input type="email" value={lnkEmail} onChange={(e)=>setLnkEmail(e.target.value)} placeholder="email@pessoa.com" /></label>
+            <label>Perfil nesta empresa<select value={lnkRole} onChange={(e)=>setLnkRole(e.target.value)}>
+              <option value="Colaborador">Colaborador</option>
+              <option value="Supervisor">Supervisor</option>
+              <option value="Nutricionista RT">Nutricionista RT</option>
+              <option value="tenant_admin">Administrador da loja</option>
+            </select></label>
+            {lnkMsg && <p style={{ fontSize:13, fontWeight:600, color: lnkMsg.tone==='ok' ? 'var(--green)' : 'var(--red)' }}>{lnkMsg.text}</p>}
+            <div className="actions-row">
+              <button className="primary-action" onClick={handleLink} disabled={linking || !lnkEmail}>{linking ? 'Vinculando…' : 'Vincular a esta empresa'}</button>
             </div>
           </div>
         </article>

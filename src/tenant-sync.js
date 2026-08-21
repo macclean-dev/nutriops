@@ -296,6 +296,46 @@ export async function fetchTenantMembers(tenantId) {
   } catch { return []; }
 }
 
+// Vincula uma conta JÁ EXISTENTE a esta empresa (multi-unidade). O convite
+// (Edge Function) só cria conta nova e recusa e-mail repetido mandando "peça a
+// um administrador para vincular" — até 21/08 esse administrador era o Mac,
+// rodando INSERT à mão em tenant_members. Isso travava o caso da CASA DOCE
+// abrindo unidades novas: cada uma é um tenant novo, e a dona/RT já têm conta.
+//
+// Não passa pela Edge Function porque não cria conta nem mexe em senha — não
+// precisa da service_role. A RPC é `security definer` e faz as checagens no
+// SERVIDOR (docs/vincular-conta-existente.sql): quem chama tem que ser dono ou
+// RT desta empresa (ou admin global), o papel tem que estar no allowlist, e há
+// veto explícito pra conta de admin da plataforma e pra conta de loja.
+//
+// Ao contrário das outras funções daqui, esta PROPAGA o erro em vez de devolver
+// vazio: quem chama é um formulário e a pessoa precisa ler o motivo ("não
+// existe conta com esse e-mail", "você não administra esta empresa") — engolir
+// viraria um botão que não faz nada.
+export async function linkExistingMember({ tenantId, email, role = 'Colaborador' }) {
+  if (!isTenantSyncEnabled()) throw new Error('Supabase não configurado.');
+  const { getValidAccessToken } = await import('./auth');
+  const token = await getValidAccessToken();
+  if (!token) throw new Error('Sua sessão expirou. Entre de novo.');
+  const res = await fetch(`${sbBase()}/rpc/link_existing_member`, {
+    method: 'POST',
+    headers: { apikey: SB_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_tenant_id: tenantId, p_email: email, p_role: role }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    // O PostgREST devolve a mensagem do `raise exception` em `message` — são
+    // frases escritas pra pessoa ler, então repassa direto. 404 é o caso de a
+    // RPC ainda não ter sido criada no banco (SQL não rodado).
+    if (res.status === 404) throw new Error('Recurso indisponível neste banco — rode docs/vincular-conta-existente.sql no Supabase.');
+    throw new Error(data?.message ?? data?.error ?? 'Não consegui vincular a conta.');
+  }
+  // A RPC devolve `returns table`, ou seja, um array de uma linha.
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('O servidor não confirmou o vínculo. Confira a lista de membros antes de tentar de novo.');
+  return { userId: row.user_id, email: row.email, name: row.name, role: row.role, jaExistia: row.ja_existia === true };
+}
+
 // Log de acessos (IP + horário + e-mail) — modelo e-mail só. p_tenant_id null
 // só funciona pro admin global (get_access_log barra o resto no servidor).
 // since/until (ISO ou Date) filtram NO SERVIDOR, antes do limit — a função já

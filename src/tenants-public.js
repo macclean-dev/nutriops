@@ -41,11 +41,23 @@ export const tenantsBase = [
     localityType: "Loja",
     multiStore: false,
     stores: [{ id: "back-bsb", name: "Bäckerei — Brasília Shopping", location: "Brasília Shopping" }],
+    // Espelha o catálogo REAL da nuvem depois da consolidação de 21/08 — o seed
+    // só é usado quando a nuvem está vazia, e antes ele ressuscitaria três
+    // erros de uma vez:
+    //   · "Cozinha" não existe na Bäckerei (confirmado pelo dono, 21/08). A
+    //     loja é toda Salão. Esse setor fantasma estava no seed desde sempre e
+    //     foi o que a tela mostrou quando perguntei em qual setor ficava —
+    //     ou seja, o código respondeu pela loja e eu propaguei o erro pra nuvem.
+    //   · "Balcão Refrigerado" não é outro equipamento: é o mesmo Refrigerador
+    //     da Bancada com nome antigo (55 das 75 leituras vieram assim). Vira
+    //     apelido, não linha própria — duas linhas geram dois cards e dividem
+    //     o histórico.
+    //   · "Máquina de Gelo" saiu de propósito: não tem visor de temperatura,
+    //     então não é equipamento monitorável. As 11 leituras antigas dela
+    //     continuam no banco (evidência não se apaga), só não têm cadastro.
     equipmentCatalog: [
-      { label: "Balcão Refrigerado",      aliases: ["balcão refrigerado","balcão","refrigerador"], location: "Salão"   },
-      { label: "Vitrine Confeitaria",      aliases: ["vitrine","vitrine confeitaria","expositor"],  location: "Salão"   },
-      { label: "Refrigerador da Bancada",  aliases: ["refrigerador bancada","geladeira bancada"],  location: "Cozinha" },
-      { label: "Máquina de Gelo",          aliases: ["máquina de gelo"],                           location: "Cozinha" },
+      { label: "Refrigerador da Bancada", aliases: ["Balcão Refrigerado","Balcão Refrigerado Horizontal","refrigerador bancada","geladeira bancada"], location: "Salão", minTemp: 0, maxTemp: 9 },
+      { label: "Vitrine Confeitaria",     aliases: ["vitrine","vitrine confeitaria","expositor"],                                                     location: "Salão", minTemp: 0, maxTemp: 9 },
     ],
     modules: ["Temperatura","Higiene Pessoal","Vetores e Pragas","Faxina","Dedetização","Potabilidade"],
     audit: [], forms: [], alertsList: [],

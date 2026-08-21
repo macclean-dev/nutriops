@@ -116,8 +116,22 @@ export function agruparForaPorSetor(itens = []) {
 }
 
 // Frase curta pra cada linha do card.
+//
+// DATA, não contagem de dias (21/08). A primeira versão dizia "há 2 dias sem
+// leitura" e brigava com o resto da própria tela: `fmtRelative` (overview-v2)
+// conta blocos de 24h e o mesmo equipamento aparecia como "há 1d" na grade
+// logo abaixo. Nenhum dos dois está errado pela própria régua — leitura de
+// 19/08 às 18h com agora 21/08 às 14h são 44h (1 bloco) e 2 dias de
+// calendário. Mas dois números diferentes pro mesmo equipamento na mesma tela
+// só confundem, e a data resolve os dois problemas de uma vez: é inequívoca e
+// diz exatamente onde está o buraco na planilha.
+//
+// A contagem de dias continua existindo — é ela que ordena e que compara com o
+// limite. Só não vai mais pra tela.
 export function descreverAtraso(item) {
   if (item?.nunca) return 'nunca medido';
-  const d = item?.dias ?? 0;
-  return d === 1 ? 'há 1 dia sem leitura' : `há ${d} dias sem leitura`;
+  if (!item?.ultimaLeitura) return 'sem leitura';
+  const d = new Date(item.ultimaLeitura);
+  if (Number.isNaN(d.getTime())) return 'sem leitura';
+  return `sem leitura desde ${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`;
 }

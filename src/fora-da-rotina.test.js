@@ -172,10 +172,30 @@ describe('agruparPorSetor — a RT pensa por setor, não por equipamento avulso'
   });
 });
 
-describe('descreverAtraso — texto que a RT lê', () => {
-  it('singular, plural e nunca', () => {
-    expect(descreverAtraso({ dias: 1, nunca: false })).toBe('há 1 dia sem leitura');
-    expect(descreverAtraso({ dias: 3, nunca: false })).toBe('há 3 dias sem leitura');
-    expect(descreverAtraso({ dias: null, nunca: true })).toBe('nunca medido');
+describe('descreverAtraso — data, não contagem de dias', () => {
+  // A contagem brigava com o `fmtRelative` da grade logo abaixo no mesmo
+  // dashboard, que conta blocos de 24h: o mesmo equipamento aparecia como
+  // "há 2 dias sem leitura" no card e "há 1d" na grade. A data não colide com
+  // nada e diz onde está o buraco na planilha.
+  it('mostra a data da última leitura', () => {
+    expect(descreverAtraso({ dias: 3, nunca: false, ultimaLeitura: '2026-08-18T09:34:00' }))
+      .toBe('sem leitura desde 18/08');
+  });
+
+  it('nunca medido continua distinto de qualquer atraso', () => {
+    expect(descreverAtraso({ dias: null, nunca: true, ultimaLeitura: null })).toBe('nunca medido');
+  });
+
+  it('não imprime "Invalid Date" quando a data vem podre', () => {
+    expect(descreverAtraso({ dias: 2, nunca: false, ultimaLeitura: 'lixo' })).toBe('sem leitura');
+    expect(descreverAtraso({ dias: 2, nunca: false })).toBe('sem leitura');
+    expect(descreverAtraso()).toBe('sem leitura');
+  });
+
+  it('a contagem de dias NÃO sumiu do objeto — é ela que ordena', () => {
+    const catalog = [{ label: 'A', location: 'X' }, { label: 'B', location: 'X' }];
+    const records = [leitura('A', '2026-08-18T09:00:00'), leitura('B', '2026-08-19T09:00:00')];
+    const fora = equipamentosForaDaRotina({ catalog, records, tenantId: 't1', limiteDias: 2, now: AGORA });
+    expect(fora.map((f) => f.dias)).toEqual([3, 2]);
   });
 });

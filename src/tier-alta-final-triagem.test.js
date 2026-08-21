@@ -299,8 +299,13 @@ describe('overview-v2.jsx — WeeklyHeatmap usa o catálogo sincronizado (nutrio
     const fim = fonteOverviewV2.indexOf('\nfunction ActivityTimeline', ini);
     expect(ini).toBeGreaterThan(-1);
     const corpo = fonteOverviewV2.slice(ini, fim);
-    expect(corpo).toContain('for (const eq of readEquipmentCatalog(t)) {');
+    // A chamada foi içada pra uma variável em 21/08 (recordBelongsTo precisa do
+    // catálogo INTEIRO pra resolver apelido, não só do item da vez). O que este
+    // teste protege é a FONTE do catálogo, não a forma do laço.
+    expect(corpo).toContain('const catalogoDoTenant = readEquipmentCatalog(t);');
+    expect(corpo).toContain('for (const eq of catalogoDoTenant) {');
     expect(corpo).not.toContain('for (const eq of (t.equipmentCatalog || [])) {');
+    expect(corpo).not.toContain('t.equipmentCatalog');
   });
 
   it('fonte: readEquipmentCatalog lê a MESMA chave que syncEquipmentCatalog/EquipmentView escrevem, com dedupeCatalog (mesmo idioma de reports-views.jsx/team-views.jsx/maintenance.jsx)', () => {

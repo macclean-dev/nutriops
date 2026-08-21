@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { resolveLimits, resolveTone, suspectMissingMinus, getEquipmentEntry, dedupeCatalog } from './limits';
+import { resolveLimits, resolveTone, suspectMissingMinus, getEquipmentEntry, dedupeCatalog, recordBelongsTo } from './limits';
 import { ordenarPorSetor, agruparPorSetor } from './setores';
 import { detectTrend } from './trend';
 import { readTurns } from './turns';
@@ -441,12 +441,13 @@ function WeeklyHeatmap({ tenants, records, onCellClick }) {
   const rows = useMemo(() => {
     const out = [];
     for (const t of tenants) {
-      for (const eq of readEquipmentCatalog(t)) {
+      const catalogoDoTenant = readEquipmentCatalog(t);
+      for (const eq of catalogoDoTenant) {
         const cells = days.map(d => {
           const dayEnd = d.ms + 86400000;
           const dayRecords = records.filter(r =>
             r.tenantId === t.id &&
-            (r.equipmentInput === eq.label || r.equipmentKey === eq.label) &&
+            recordBelongsTo(catalogoDoTenant, r, eq) &&
             new Date(r.createdAt).getTime() >= d.ms &&
             new Date(r.createdAt).getTime() < dayEnd
           );
@@ -1271,7 +1272,7 @@ function RTDashboard({ session, allTenants, records, onNavigate }) {
           history={records
             .filter(r =>
               r.tenantId === drill.tenant.id &&
-              (r.equipmentInput === drill.equipment.label || r.equipmentKey === drill.equipment.label))
+              recordBelongsTo(readEquipmentCatalog(drill.tenant), r, drill.equipment))
             .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
           }
           onClose={() => setDrill(null)}

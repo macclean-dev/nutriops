@@ -234,7 +234,48 @@ export function normalizeEquipmentName(input, catalog = []) {
   return raw || 'Equipamento sem nome';
 }
 
+// DUAS PASSADAS de propósito: o nome EXATO de um equipamento sempre vence o
+// APELIDO de outro. A versão de uma passada só percorria o catálogo testando
+// "label ou apelido" item a item, então o primeiro da lista com aquele apelido
+// vencia — e a CASA DOCE tem o mesmo apelido em duas linhas ("R.2" na Padaria
+// e na Confeitaria, "R.12" no Refeitório e no Setor Salgados). O equipamento
+// que aparecia antes na lista sequestrava a leitura do outro.
 export function getEquipmentEntry(catalog = [], label = '') {
-  const lower = String(label ?? '').toLowerCase();
-  return catalog.find((item) => item.label.toLowerCase() === lower || item.aliases?.some((a) => a.toLowerCase() === lower)) ?? null;
+  const lower = String(label ?? '').trim().toLowerCase();
+  if (!lower) return null;
+  const porNome = (catalog ?? []).find((item) => String(item?.label ?? '').trim().toLowerCase() === lower);
+  if (porNome) return porNome;
+  return (catalog ?? []).find((item) =>
+    Array.isArray(item?.aliases) && item.aliases.some((a) => String(a ?? '').trim().toLowerCase() === lower)) ?? null;
+}
+
+// "Esta leitura é deste equipamento?" — a pergunta que as telas faziam
+// comparando NOME COM NOME (`r.equipmentInput === eq.label`), sem olhar
+// apelido nenhum.
+//
+// POR QUE ISSO ERA UM BUG (CASA DOCE, 21/08): renomear um equipamento no app
+// não mexe nas leituras já gravadas — elas guardam o nome ANTIGO em
+// equipment_key/equipment_input. Com casamento exato, o histórico inteiro
+// somia do card no instante do rename. Caso real: "Banho-maria — BM.1" virou
+// "Banho-maria (Refeitório) — BM.1" e o equipamento passou a mostrar "sem
+// leitura" mesmo sendo medido todo dia. Pior: o próprio app SUGERE esse
+// rename ("Use um nome que os diferencie, ex.: 'X — Padaria'") quando barra
+// nome duplicado — ou seja, seguir o conselho da tela apagava a evidência da
+// tela. A RT registrou como "o preenchimento foi realizado e não constou".
+//
+// Resolve pelo catálogo INTEIRO e compara o resultado, em vez de casar nome
+// com nome: assim uma leitura pertence a UM equipamento só, mesmo com apelido
+// repetido entre setores — se casasse direto, a leitura de "R.2" apareceria
+// no card da Padaria E no da Confeitaria, dobrando evidência sanitária.
+export function recordBelongsTo(catalog, record, equipment) {
+  const alvo = String(equipment?.label ?? '').trim().toLowerCase();
+  if (!alvo) return false;
+  for (const nome of [record?.equipmentInput, record?.equipmentKey, record?.equipment]) {
+    const bruto = String(nome ?? '').trim();
+    if (!bruto) continue;
+    if (bruto.toLowerCase() === alvo) return true;
+    const entry = getEquipmentEntry(catalog, bruto);
+    if (entry && String(entry.label).trim().toLowerCase() === alvo) return true;
+  }
+  return false;
 }

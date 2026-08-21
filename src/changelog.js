@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.196', date: '2026-08-21', items: [
+    'Corrigido: renomear um equipamento fazia todo o histórico dele sumir da tela. As leituras antigas ficam gravadas com o nome de antes (é evidência sanitária, não se reescreve), e o app não sabia mais ligar uma coisa na outra — o equipamento passava a mostrar "sem leitura" mesmo sendo medido todo dia.',
+    'Era especialmente traiçoeiro porque o próprio app sugere renomear quando dois equipamentos têm nomes iguais ("use um nome que os diferencie"). Quem seguia o conselho zerava o histórico.',
+    'Agora, ao renomear, o nome antigo vira apelido automaticamente e o histórico continua no lugar. Vale para a Visão geral, o histórico do equipamento e os relatórios.',
+  ]},
   { version: '1.9.195', date: '2026-08-21', items: [
     'No relatório de temperatura, a coluna "Último registro" agora mostra o horário junto com a data. Antes só o dia — não dava pra conferir se a leitura de um turno específico tinha acontecido.',
     'Lembrete: pra ver o horário de TODAS as leituras (e não só da última), a tela de Auditoria já lista uma por uma com data e hora, e dá pra filtrar por equipamento e período.',

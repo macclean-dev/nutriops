@@ -1557,8 +1557,24 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
       );
       return;
     }
-    const next = { label, aliases, location, minTemp: minN, maxTemp: maxN };
     const anterior = editingIndex === null ? null : catalog[editingIndex];
+    // RENOMEAR APAGAVA O HISTÓRICO DA TELA (CASA DOCE, 21/08). As leituras já
+    // gravadas guardam o nome ANTIGO em equipment_key/equipment_input — nada
+    // as reescreve, e nem deve: são evidência sanitária. As telas casam
+    // leitura↔equipamento por nome+apelido (recordBelongsTo, limits.js), então
+    // sem carregar o nome velho pra `aliases` o equipamento passa a mostrar
+    // "sem leitura" no instante do rename, com o histórico inteiro invisível.
+    //
+    // O caso real veio do conselho da própria tela: o bloqueio de nome
+    // duplicado logo acima sugere "use um nome que os diferencie (ex.: 'X —
+    // Padaria')". Quem seguiu isso — "Banho-maria — BM.1" virou "Banho-maria
+    // (Refeitório) — BM.1" — viu o equipamento zerar. A RT reportou como "o
+    // preenchimento foi realizado e não constou".
+    const aliasesFinais = anterior?.label && norm(anterior.label) !== norm(label)
+      && !aliases.some((a) => norm(a) === norm(anterior.label))
+      ? [...aliases, anterior.label]
+      : aliases;
+    const next = { label, aliases: aliasesFinais, location, minTemp: minN, maxTemp: maxN };
     setCatalog((prev) => editingIndex === null
       ? [...prev, next]
       : prev.map((item, i) => i === editingIndex ? { ...item, ...next } : item));

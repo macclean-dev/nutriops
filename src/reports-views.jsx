@@ -1,7 +1,7 @@
 import React, { lazy, Suspense, useState, useMemo, useEffect } from 'react';
 import { Th, useOrdenacao } from './tabela-ordenavel';
 import { getTemperatureRepository, pushRtValidation, mergeByKey } from './repository';
-import { resolveLimits as resolveLimitsFromCatalog, resolveRecordTone as resolveTemperatureTone, conformityStats, byWorstConformity, parseTemperatura } from './limits';
+import { resolveLimits as resolveLimitsFromCatalog, resolveRecordTone as resolveTemperatureTone, conformityStats, byWorstConformity, parseTemperatura, recordBelongsTo } from './limits';
 import { employeeTrainingStatus } from './training-status';
 import CountUp from './count-up';
 
@@ -225,7 +225,7 @@ export function DashboardView({ allTenants, records, activeTenant, onTenantChang
     const today = tr.filter((r) => new Date(r.createdAt).toDateString() === new Date().toDateString()).length;
     const catalog = readEquipmentCatalog(tenant);
     const equipStats = catalog.map((eq) => {
-      const er = tr.filter((r) => (r.equipment || r.equipmentInput) === eq.label);
+      const er = tr.filter((r) => recordBelongsTo(catalog, r, eq));
       const eOk = er.filter((r) => resolveTemperatureTone(r) === 'ok').length;
       return { label: eq.label, location: eq.location || null, total: er.length, ok: eOk, pct: er.length > 0 ? Math.round((eOk / er.length) * 100) : null };
     });
@@ -417,15 +417,17 @@ export function ChartsView({ activeTenant, allTenants, onTenantChange, records }
   const drillHistory = useMemo(() => {
     if (!drillEq) return [];
     return tenantRecords
-      .filter(r => (r.equipment || r.equipmentInput || r.equipmentKey) === drillEq.label)
+      .filter(r => recordBelongsTo(catalog, r, drillEq))
       .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-  }, [tenantRecords, drillEq]);
+    // `catalog` nas deps porque agora o filtro depende dele (apelidos). Mesma
+    // escolha que equipStats logo abaixo já fazia.
+  }, [tenantRecords, drillEq, catalog]);
 
   // Uma conta só por equipamento, consumida pelos chips E pelos cards — antes
   // cada um refazia o próprio filtro/contagem sobre a mesma lista.
   const equipStats = useMemo(() => catalog.map((eq) => ({
     eq,
-    ...conformityStats(tenantRecords.filter((r) => (r.equipment || r.equipmentInput) === eq.label)),
+    ...conformityStats(tenantRecords.filter((r) => recordBelongsTo(catalog, r, eq))),
   })), [catalog, tenantRecords]);
 
   const ordered = useMemo(
@@ -497,7 +499,7 @@ export function ChartsView({ activeTenant, allTenants, onTenantChange, records }
 
       <div className="dashboard-grid fade-stagger" style={{ marginTop: 16 }}>
         {ordered.map(({ eq, total, ok: eOk, warn: eWarn, danger: eDanger, pct }) => {
-          const last = tenantRecords.find((r) => (r.equipment || r.equipmentInput) === eq.label);
+          const last = tenantRecords.find((r) => recordBelongsTo(catalog, r, eq));
           return (
             <article key={eq.label} className={`dash-card ${selectedEquipment === eq.label ? 'active' : ''}`} style={{ borderTopColor: pct === null ? 'var(--border)' : pct >= 90 ? 'var(--green)' : pct >= 70 ? 'var(--amber)' : 'var(--red)', cursor: 'pointer' }} onClick={() => setDrillEq(eq)} title="Abrir histórico completo">
               <div className="dash-card-head">

@@ -175,6 +175,12 @@ export function ClientModal({ client, onSave, onClose }) {
   const [generatedPin, setGeneratedPin] = useState(null);
   // Credenciais de e-mail do cliente novo (21/08) — ver criarContaDoCliente.
   const [novaConta, setNovaConta] = useState(null);
+  // E-mail da nutricionista RT (21/08). O cadastro criava conta só pro DONO, e
+  // a RT — que é figura obrigatória da RDC 216 e existe em toda loja — ficava
+  // de fora, exigindo um segundo passo manual em Equipe → Usuários pra cada
+  // cliente novo. Opcional de propósito: nem toda loja contrata a RT junto com
+  // a abertura, e travar o cadastro por isso seria pior.
+  const [rtEmail, setRtEmail] = useState('');
   const [regenerate, setRegenerate]     = useState(false);
   const [busy, setBusy]                 = useState(false);
   const [pushError, setPushError]       = useState('');
@@ -306,10 +312,26 @@ export function ClientModal({ client, onSave, onClose }) {
     // vincula em `tenant_members`. Se o e-mail já existe (dono de outra
     // unidade, RT que cobre várias), cai pro vínculo — sem criar conta
     // duplicada, que dividiria os registros da pessoa entre dois logins.
-    let conta = null;
+    // A RT entra junto quando informada — ela é figura obrigatória da RDC 216 e
+    // sem isso cada cliente novo exigia um segundo passo manual. Sequencial e
+    // não Promise.all: as duas chamadas batem na MESMA Edge Function e podem
+    // tocar a mesma conta (dono e RT com o mesmo e-mail, que acontece em loja
+    // pequena) — em paralelo isso vira corrida no upsert de tenant_members.
+    let contas = [];
     if (isNew && !pushFailed) {
-      conta = await criarContaDoCliente({ tenantId: id, email: email.trim(), nome: contact.trim() || name.trim() });
+      const dono = await criarContaDoCliente({ tenantId: id, email: email.trim(), nome: contact.trim() || name.trim(), papel: 'tenant_admin' });
+      contas.push({ ...dono, rotulo: 'Dono da loja' });
+      const rt = rtEmail.trim();
+      // Mesmo e-mail nos dois campos: não chama de novo. A segunda chamada
+      // rebaixaria o dono pra 'Nutricionista RT' (o upsert faz
+      // `do update set role`), tirando dele o poder de administrar a própria
+      // loja — sem nenhum aviso.
+      if (rt && rt.toLowerCase() !== email.trim().toLowerCase()) {
+        const contaRt = await criarContaDoCliente({ tenantId: id, email: rt, nome: 'Nutricionista RT', papel: 'Nutricionista RT' });
+        contas.push({ ...contaRt, rotulo: 'Nutricionista RT' });
+      }
     }
+    const conta = contas.length ? { ok: contas.every(c => c.ok), contas } : null;
 
     if (pushFailed) {
       // NÃO entrega link+PIN de um cliente que não chegou na nuvem: o cliente
@@ -331,7 +353,8 @@ export function ClientModal({ client, onSave, onClose }) {
       // entra num modo que não sincroniza. Silenciar aqui recriaria em uma
       // linha o bug que este commit existe pra matar.
       if (conta && !conta.ok) {
-        setPushError(`O cliente foi criado, mas não consegui criar a conta de e-mail dele (${conta.erro}). `
+        const falhas = (conta.contas ?? []).filter(c => !c.ok).map(c => `${c.rotulo}: ${c.erro}`).join(' · ');
+        setPushError(`O cliente foi criado, mas não consegui criar a(s) conta(s) de e-mail (${falhas}). `
           + `Ele vai entrar pelo PIN abaixo, que é o modo antigo e NÃO sincroniza com a nuvem. `
           + `Abra "Editar" e salve de novo pra tentar criar a conta, ou crie por Equipe → Usuários dentro da empresa.`);
       }
@@ -375,6 +398,17 @@ export function ClientModal({ client, onSave, onClose }) {
               <input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="(00) 9xxxx-xxxx" style={inputStyle} />
             </label>
           </div>
+          {!editing && (
+            <label style={{ display:'flex', flexDirection:'column', gap:5, fontSize:12, fontWeight:600, color:'#5c6c7a' }}>
+              E-mail da nutricionista RT (opcional)
+              <input type="email" value={rtEmail} onChange={e=>setRtEmail(e.target.value)} placeholder="nutricionista@empresa.com" style={inputStyle} />
+              <span style={{ fontSize:11, fontWeight:400, color:'#5c6c7a' }}>
+                Cria o acesso dela junto com o do dono. Se ela já atende outra loja no NutriOPS,
+                usa o mesmo e-mail — a conta é vinculada, não duplicada, e ela troca de empresa dentro do app.
+                Pode deixar em branco e cadastrar depois em Equipe → Usuários.
+              </span>
+            </label>
+          )}
           <label style={{ display:'flex', flexDirection:'column', gap:5, fontSize:12, fontWeight:600, color:'#5c6c7a' }}>
             Responsável pelo contrato
             <input value={contact} onChange={e=>setContact(e.target.value)} placeholder="Nome do responsável" style={inputStyle} />
@@ -516,14 +550,20 @@ export function ClientModal({ client, onSave, onClose }) {
 function CredenciaisReveal({ conta, onAck }) {
   const [copiado, setCopiado] = useState(false);
   const [falhou, setFalhou]   = useState(false);
-  const texto = conta.senha
-    ? `NutriOPS — acesso\nSite: https://nutriops.uniwares.net\nE-mail: ${conta.email}\nSenha inicial: ${conta.senha}`
-    : `NutriOPS — acesso\nSite: https://nutriops.uniwares.net\nE-mail: ${conta.email}\n(use a senha que você já tem)`;
+  const contas = conta?.contas ?? [];
+
+  // Um bloco por pessoa. Conta VINCULADA não ganha senha: quem já usava o
+  // NutriOPS continua com a dela, e imprimir "senha inicial" ali faria o admin
+  // mandar uma senha que não existe.
+  const linha = (c) => c.senha
+    ? `${c.rotulo}\n  E-mail: ${c.email}\n  Senha inicial: ${c.senha}`
+    : `${c.rotulo}\n  E-mail: ${c.email}\n  Senha: a que ela já usa hoje`;
+  const texto = [`NutriOPS — acesso`, `Site: https://nutriops.uniwares.net`, '', ...contas.map(linha)].join('\n');
 
   // Mesma guarda do SetupPinReveal: sem Clipboard API (contexto inseguro,
   // webview antiga) ou write rejeitado, o catch vazio comeria o erro e o admin
-  // mandaria pro cliente o conteúdo ANTIGO do clipboard. A senha grande acima
-  // é o fallback manual — a falha só precisa ficar visível.
+  // mandaria pro cliente o conteúdo ANTIGO do clipboard. Os dados grandes
+  // acima são o fallback manual — a falha só precisa ficar visível.
   const copiar = () => {
     if (!navigator.clipboard?.writeText) { setFalhou(true); setTimeout(() => setFalhou(false), 4000); return; }
     navigator.clipboard.writeText(texto)
@@ -531,29 +571,35 @@ function CredenciaisReveal({ conta, onAck }) {
       .catch(() => { setFalhou(true); setTimeout(() => setFalhou(false), 4000); });
   };
 
+  const temSenha = contas.some((c) => c.senha);
   return (
-    <div style={{ position:'absolute', inset:0, background:'rgba(20,20,19,.85)', borderRadius:16, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
-      <div style={{ background:'white', borderRadius:14, padding:'28px 32px', maxWidth:420, width:'100%', textAlign:'center', boxShadow:'0 12px 40px rgba(0,0,0,.4)' }}>
-        <div style={{ fontSize:10, fontWeight:700, letterSpacing:'.14em', textTransform:'uppercase', color:'#5c6c7a', marginBottom:8 }}>
-          {conta.vinculada ? 'Conta vinculada' : 'Acesso do cliente'}
+    <div style={{ position:'absolute', inset:0, background:'rgba(20,20,19,.85)', borderRadius:16, display:'flex', alignItems:'center', justifyContent:'center', padding:24, overflowY:'auto' }}>
+      <div style={{ background:'white', borderRadius:14, padding:'28px 32px', maxWidth:440, width:'100%', boxShadow:'0 12px 40px rgba(0,0,0,.4)' }}>
+        <div style={{ fontSize:10, fontWeight:700, letterSpacing:'.14em', textTransform:'uppercase', color:'#5c6c7a', marginBottom:8, textAlign:'center' }}>
+          Acesso do cliente
         </div>
-        <h3 style={{ fontFamily:'var(--serif, serif)', fontSize:20, fontWeight:400, margin:'0 0 10px', color:'#001e2b', letterSpacing:'-.02em' }}>
-          {conta.vinculada ? 'Essa pessoa já tinha conta' : 'Copie agora — a senha não será mostrada de novo'}
+        <h3 style={{ fontFamily:'var(--serif, serif)', fontSize:20, fontWeight:400, margin:'0 0 4px', color:'#001e2b', letterSpacing:'-.02em', textAlign:'center' }}>
+          {temSenha ? 'Copie agora — a senha não será mostrada de novo' : 'Contas vinculadas'}
         </h3>
 
-        <div style={{ margin:'18px 0', padding:'14px 16px', background:'#f9fbfa', border:'1px dashed #c1ccd6', borderRadius:10, textAlign:'left' }}>
-          <div style={{ fontSize:11, color:'#5c6c7a', fontWeight:600 }}>E-mail</div>
-          <div style={{ fontFamily:'monospace', fontSize:14, color:'#001e2b', wordBreak:'break-all', marginBottom:10 }}>{conta.email}</div>
-          <div style={{ fontSize:11, color:'#5c6c7a', fontWeight:600 }}>Senha inicial</div>
-          <div style={{ fontFamily:'monospace', fontSize: conta.senha ? 22 : 13, fontWeight: conta.senha ? 700 : 400, color: conta.senha ? '#00684a' : '#5c6c7a', letterSpacing: conta.senha ? '.08em' : 0 }}>
-            {conta.senha ?? 'a que ela já usa hoje'}
+        {contas.map((c) => (
+          <div key={c.rotulo} style={{ margin:'14px 0', padding:'14px 16px', background:'#f9fbfa', border:'1px dashed #c1ccd6', borderRadius:10 }}>
+            <div style={{ fontSize:10, fontWeight:700, letterSpacing:'.1em', textTransform:'uppercase', color:'#00684a', marginBottom:6 }}>
+              {c.rotulo}{c.vinculada ? ' · já tinha conta' : ''}
+            </div>
+            <div style={{ fontSize:11, color:'#5c6c7a', fontWeight:600 }}>E-mail</div>
+            <div style={{ fontFamily:'monospace', fontSize:13, color:'#001e2b', wordBreak:'break-all', marginBottom:8 }}>{c.email}</div>
+            <div style={{ fontSize:11, color:'#5c6c7a', fontWeight:600 }}>Senha inicial</div>
+            <div style={{ fontFamily:'monospace', fontSize: c.senha ? 20 : 13, fontWeight: c.senha ? 700 : 400, color: c.senha ? '#00684a' : '#5c6c7a', letterSpacing: c.senha ? '.08em' : 0 }}>
+              {c.senha ?? 'a que ela já usa hoje'}
+            </div>
           </div>
-        </div>
+        ))}
 
         <p style={{ fontSize:12, color:'#5c6c7a', lineHeight:1.5, margin:'0 0 18px' }}>
-          {conta.vinculada
-            ? 'A conta existente foi vinculada a esta empresa como administradora. Ela entra com o mesmo login de sempre e troca de empresa dentro do app — não crie uma segunda conta pra mesma pessoa.'
-            : <>Mande a senha por <strong>canal separado</strong> do e-mail (WhatsApp, SMS ou ligação). O cliente entra com esse e-mail e senha e pode trocá-la depois em Configurações.</>}
+          {temSenha
+            ? <>Mande as senhas por <strong>canal separado</strong> do e-mail (WhatsApp, SMS ou ligação). Cada um entra com o próprio e-mail e pode trocar a senha depois em Configurações.</>
+            : 'Quem já tinha conta entra com o mesmo login de sempre e troca de empresa dentro do app — não crie uma segunda conta pra mesma pessoa.'}
         </p>
 
         <div style={{ display:'flex', gap:8 }}>
@@ -578,11 +624,11 @@ function CredenciaisReveal({ conta, onAck }) {
 // derrubar o cadastro inteiro porque a criação de conta falhou seria pior que
 // o problema. Devolve `{ ok:false, erro }` e o modal cai pro PIN como plano B,
 // mostrando o motivo — o admin conserta pelo Editar depois.
-async function criarContaDoCliente({ tenantId, email, nome }) {
+async function criarContaDoCliente({ tenantId, email, nome, papel = 'tenant_admin' }) {
   const senha = generateInitialPassword();
   try {
     const { inviteCollaborator } = await import('./auth');
-    await inviteCollaborator({ email, name: nome, role: 'tenant_admin', tenantId, password: senha });
+    await inviteCollaborator({ email, name: nome, role: papel, tenantId, password: senha });
     return { ok: true, email, senha, vinculada: false };
   } catch (e) {
     // 409 da Edge Function: "Já existe uma conta com esse e-mail." Acontece de
@@ -593,7 +639,7 @@ async function criarContaDoCliente({ tenantId, email, nome }) {
     if (!jaExiste) return { ok: false, erro: e?.message ?? 'erro ao criar conta' };
     try {
       const { linkExistingMember } = await import('./tenant-sync');
-      await linkExistingMember({ tenantId, email, role: 'tenant_admin' });
+      await linkExistingMember({ tenantId, email, role: papel });
       return { ok: true, email, senha: null, vinculada: true };
     } catch (e2) {
       return { ok: false, erro: e2?.message ?? 'erro ao vincular conta existente' };

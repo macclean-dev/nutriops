@@ -24,6 +24,7 @@ export const CHANGELOG = [
   { version: '1.9.201', date: '2026-08-21', items: [
     'Correção importante no cadastro de novo cliente: ele agora cria a conta de acesso (e-mail e senha) de verdade. Antes gerava só um PIN de configuração — modelo antigo — e a empresa cadastrada por ali ficava sem sincronizar com a nuvem, sem avisar ninguém.',
     'Ao criar o cliente, o sistema mostra o e-mail e a senha inicial uma única vez, pra você enviar por um canal separado. Se a pessoa já tiver conta no NutriOPS (dono de várias unidades, nutricionista que cobre mais de uma loja), ela é vinculada à empresa nova em vez de ganhar uma segunda conta.',
+    'O cadastro também ganhou um campo opcional para o e-mail da nutricionista RT — o acesso dela é criado junto com o do dono, em vez de exigir um segundo passo depois.',
   ]},
   { version: '1.9.198', date: '2026-08-21', items: [
     'Novo na Visão geral: o bloco "Equipamentos fora da rotina" mostra o que está há dias sem nenhuma leitura, agrupado por setor e com o pior caso primeiro. Equipamento que nunca foi medido aparece destacado.',

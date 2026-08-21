@@ -48,8 +48,8 @@ describe('criarContaDoCliente — usa o caminho já provado do convite', () => {
     return admin.slice(ini, admin.indexOf('\n}', admin.indexOf('return { ok: false, erro: e2', ini)));
   })();
 
-  it('cria a conta pela Edge Function, com papel de dono da loja', () => {
-    expect(fn).toContain("await inviteCollaborator({ email, name: nome, role: 'tenant_admin', tenantId, password: senha });");
+  it('cria a conta pela Edge Function com o papel pedido', () => {
+    expect(fn).toContain('await inviteCollaborator({ email, name: nome, role: papel, tenantId, password: senha });');
   });
 
   it('e-mail que JÁ existe vira vínculo, nunca segunda conta', () => {
@@ -57,7 +57,7 @@ describe('criarContaDoCliente — usa o caminho já provado do convite', () => {
     // auditoria — e o caso é real (dono com mais de uma unidade, RT que
     // cobre várias lojas).
     expect(fn).toMatch(/const jaExiste = \/já existe\|already\|exist\|registered\/i\.test/);
-    expect(fn).toContain("await linkExistingMember({ tenantId, email, role: 'tenant_admin' });");
+    expect(fn).toContain('await linkExistingMember({ tenantId, email, role: papel });');
     expect(fn).toContain('vinculada: true');
   });
 
@@ -100,16 +100,23 @@ describe('CredenciaisReveal — a senha aparece uma vez só', () => {
     return admin.slice(ini, admin.indexOf('\n// ─── Conta de e-mail do cliente novo', ini));
   })();
 
-  it('mostra e-mail e senha, e o texto copiável traz o site junto', () => {
-    expect(comp).toContain('conta.email');
-    expect(comp).toContain('conta.senha');
+  it('mostra um bloco por pessoa, e o texto copiável traz o site junto', () => {
+    // Agora são N contas (dono + RT), não uma só.
+    expect(comp).toContain('const contas = conta?.contas ?? [];');
+    expect(comp).toContain('{contas.map((c) => (');
+    expect(comp).toContain('{c.email}');
     expect(comp).toContain('https://nutriops.uniwares.net');
+  });
+
+  it('cada bloco é rotulado — o admin precisa saber qual senha é de quem', () => {
+    expect(comp).toContain('{c.rotulo}');
   });
 
   it('conta VINCULADA não promete senha nova', () => {
     // Quem já tinha conta continua com a senha dela — dizer "senha inicial" ali
     // faria o admin mandar uma senha que não existe.
-    expect(comp).toContain("conta.senha ?? 'a que ela já usa hoje'");
+    expect(comp).toContain("c.senha ?? 'a que ela já usa hoje'");
+    expect(comp).toContain("c.vinculada ? ' · já tinha conta' : ''");
     expect(comp).toMatch(/não crie uma segunda conta pra mesma pessoa/);
   });
 
@@ -155,5 +162,48 @@ describe('generateInitialPassword', () => {
     // letras. Viés pequeno, mas é senha.
     expect(crypto).toContain('const limite = Math.floor(0x100000000 / ALFABETO_SENHA.length) * ALFABETO_SENHA.length;');
     expect(crypto).toContain('if (buf[i] >= limite) continue;');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A RT junto com o dono (21/08). O primeiro corte criava conta só pro DONO, e
+// a nutricionista RT — figura OBRIGATÓRIA da RDC 216, presente em toda loja —
+// ficava de fora, exigindo um segundo passo manual a cada cliente novo.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('a RT entra no mesmo cadastro', () => {
+  it('tem campo próprio, só no cadastro NOVO', () => {
+    expect(admin).toContain('E-mail da nutricionista RT (opcional)');
+    expect(admin).toContain('{!editing && (');
+  });
+
+  it('é opcional — loja sem RT contratada ainda cadastra', () => {
+    expect(admin).toContain('const rt = rtEmail.trim();');
+    expect(admin).toMatch(/if \(rt && rt\.toLowerCase\(\) !== email\.trim\(\)\.toLowerCase\(\)\)/);
+  });
+
+  it('MESMO e-mail nos dois campos não rebaixa o dono', () => {
+    // O upsert de tenant_members faz `do update set role`. Chamar de novo com
+    // 'Nutricionista RT' tiraria do dono o poder de administrar a própria
+    // loja, em silêncio. Por isso a comparação case-insensitive acima.
+    const ini = admin.indexOf('let contas = [];');
+    const corpo = admin.slice(ini, admin.indexOf('const conta = contas.length', ini));
+    expect(corpo).toMatch(/rt\.toLowerCase\(\) !== email\.trim\(\)\.toLowerCase\(\)/);
+  });
+
+  it('sequencial, não Promise.all — as duas tocam a mesma tabela', () => {
+    const ini = admin.indexOf('let contas = [];');
+    const corpo = admin.slice(ini, admin.indexOf('const conta = contas.length', ini));
+    expect(corpo).not.toContain('Promise.all');
+    expect(corpo).toContain('const dono = await criarContaDoCliente(');
+    expect(corpo).toContain('const contaRt = await criarContaDoCliente(');
+  });
+
+  it('ok só quando TODAS deram certo', () => {
+    // Se a do dono passa e a da RT falha, o modal não pode dizer "tudo certo".
+    expect(admin).toContain('const conta = contas.length ? { ok: contas.every(c => c.ok), contas } : null;');
+  });
+
+  it('a mensagem de falha diz QUAL das duas quebrou', () => {
+    expect(admin).toContain("const falhas = (conta.contas ?? []).filter(c => !c.ok).map(c => `${c.rotulo}: ${c.erro}`).join(' · ');");
   });
 });

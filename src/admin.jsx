@@ -54,14 +54,25 @@ function clientStatus(client) {
 const ENV_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD;
 const FALLBACK_PASSWORD = 'nutriops@admin2026';
 const ADMIN_PASSWORD = ENV_PASSWORD || FALLBACK_PASSWORD;
-if (!ENV_PASSWORD && import.meta.env.PROD) {
-  console.warn('[NutriOPS] VITE_ADMIN_PASSWORD ausente no build — /admin usando fallback público. Configure a env var no Vercel (Production).');
-}
 
 // Build de PROD (com env do Supabase) → login real via Supabase Auth, só admin
 // global entra (fecha o backdoor da VITE_ADMIN_PASSWORD). Build sem env (dev
 // local) → fallback de senha, pra não travar o desenvolvimento.
 const BUILD_HAS_SUPABASE = Boolean(import.meta.env.VITE_SB_URL && import.meta.env.VITE_SB_ANON_KEY);
+
+// O aviso só vale quando o fallback é REALMENTE alcançável (21/08). Antes ele
+// disparava com `!ENV_PASSWORD && PROD` e ignorava o BUILD_HAS_SUPABASE —
+// então a produção, que autentica pelo Supabase e nem chega na checagem de
+// senha (`handle` retorna antes), imprimia no console de todo mundo:
+// "/admin usando fallback público". Não estava: a senha é código morto ali.
+//
+// Alarme falso em console de produção é caro de duas formas — manda o dono
+// caçar uma vulnerabilidade que não existe, e ensina a ignorar o amarelo. É a
+// mesma classe do banner de RLS (v1.9.194) e do "Chave inválida" do
+// testConnection (v1.9.203): diagnóstico afirmando o que não conferiu.
+if (!ENV_PASSWORD && import.meta.env.PROD && !BUILD_HAS_SUPABASE) {
+  console.warn('[NutriOPS] /admin sem Supabase no build E sem VITE_ADMIN_PASSWORD — a senha de fallback do código está valendo. Configure as env vars no Vercel (Production).');
+}
 
 export function AdminLogin({ onLogin }) {
   const [email, setEmail] = useState('');

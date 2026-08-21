@@ -149,3 +149,43 @@ describe('o resto da varredura — o que ficou limpo', () => {
     expect(repo).not.toMatch(/await sbHeaders\(\)/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ACHADO 3 (21/08), visto no console de PRODUÇÃO pelo dono enquanto limpava a
+// lista de tenants: "/admin usando fallback público. Configure a env var".
+//
+// Não era vulnerabilidade — era alarme FALSO, e do mesmo tipo que passamos o
+// dia corrigindo: diagnóstico afirmando o que não conferiu. O aviso disparava
+// com `!ENV_PASSWORD && PROD` e ignorava se o fallback era alcançável. Em
+// produção `BUILD_HAS_SUPABASE` é true, o login vai por Supabase Auth e
+// `handle()` retorna ANTES da checagem de senha — a senha do código é morta
+// ali. Mesmo assim o console de todo mundo dizia que estava em uso.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('ACHADO 3 — aviso de senha do /admin gritava sem motivo', () => {
+  const adminSrc = readFileSync(`${process.cwd()}/src/admin.jsx`, 'utf8');
+
+  it('o aviso exige que o fallback seja ALCANÇÁVEL', () => {
+    expect(adminSrc).toContain("if (!ENV_PASSWORD && import.meta.env.PROD && !BUILD_HAS_SUPABASE) {");
+    // a condição antiga, que ignorava o BUILD_HAS_SUPABASE
+    expect(adminSrc).not.toContain("if (!ENV_PASSWORD && import.meta.env.PROD) {");
+  });
+
+  it('BUILD_HAS_SUPABASE é declarado ANTES do aviso que o consulta', () => {
+    // Sem isso o `const` daria TDZ e derrubaria o módulo inteiro no import.
+    const posConst = adminSrc.indexOf('const BUILD_HAS_SUPABASE =');
+    const posAviso = adminSrc.indexOf('if (!ENV_PASSWORD && import.meta.env.PROD');
+    expect(posConst).toBeGreaterThan(-1);
+    expect(posAviso).toBeGreaterThan(posConst);
+  });
+
+  it('com Supabase no build, a senha NÃO é caminho de login', () => {
+    // O early return é o que torna a senha inalcançável em produção. Se ele
+    // sumir, o backdoor volta — e aí o aviso antigo estaria certo.
+    const ini = adminSrc.indexOf('const handle = async () => {');
+    const corpo = adminSrc.slice(ini, adminSrc.indexOf('setError(\'Senha incorreta.\');', ini));
+    expect(corpo).toContain('if (BUILD_HAS_SUPABASE) {');
+    expect(corpo).toContain('if (!isGlobalAdmin(session)) {');
+    // o `return` que impede cair na comparação de senha
+    expect(corpo).toMatch(/setBusy\(false\);\s*\n\s*return;\s*\n\s*\}/);
+  });
+});

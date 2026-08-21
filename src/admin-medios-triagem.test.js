@@ -74,13 +74,22 @@ describe('Família A (T2) — ClientModal.handleSave mostra "✓ Salvo" antes de
     const posElseFinal = handleSave.lastIndexOf('} else {');
     const ramoSucesso = handleSave.slice(posElseFinal);
     expect(ramoSucesso).not.toContain('setBusy(false)');
-    // handleSave tem 3 ocorrências de setBusy(false) no total: (1) falha ao
-    // GERAR o PIN (early return, pré-existente), (2) pushFailed e (3) PIN
-    // novo gerado — os ramos que MANTÊM o modal aberto de propósito, então o
-    // botão tem que voltar a ficar clicável. Só o ramo de sucesso silencioso
-    // (o 4º desfecho) NÃO reseta busy — fica assim até o setTimeout fechar.
+    // A regra é "todo ramo que MANTÉM o modal aberto destrava o botão; só o de
+    // sucesso silencioso não". Hoje são 4: (1) falha ao GERAR o PIN (early
+    // return), (2) pushFailed, (3) conta de e-mail criada/vinculada — mostra
+    // as credenciais, 21/08 — e (4) PIN novo gerado como plano B. O ramo final
+    // (sucesso silencioso) NÃO reseta busy: fica assim até o setTimeout fechar.
     const ocorrencias = handleSave.split('setBusy(false)').length - 1;
-    expect(ocorrencias).toBe(3);
+    expect(ocorrencias).toBe(4);
+    // O que realmente importa não é o número, e sim que cada ramo de "modal
+    // continua aberto" destrave o botão. Sem isto o admin fica com Salvar e
+    // Cancelar mortos, olhando um modal que não responde.
+    for (const marcador of ['} else if (conta?.ok) {', '} else if (setupPinPlain) {']) {
+      const ini = handleSave.indexOf(marcador);
+      expect(ini).toBeGreaterThan(-1);
+      const corpo = handleSave.slice(ini, handleSave.indexOf('} else', ini + marcador.length));
+      expect(corpo).toContain('setBusy(false)');
+    }
   });
 
   it('o botão Salvar mostra "✓ Salvo" enquanto o flash está ativo', () => {

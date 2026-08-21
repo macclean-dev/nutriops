@@ -49,3 +49,38 @@ export function generateSetupPin(digits = 4) {
   const n = buf[0] % max;
   return String(n).padStart(digits, '0');
 }
+
+// ─── Senha inicial de cliente novo ──────────────────────────────────────────
+// Substitui o setup PIN no cadastro de cliente (21/08). O PIN levava o cliente
+// pro SetupPinScreen, que cria sessão LOCAL sem accessToken — e sem token toda
+// requisição sai com a chave anônima, que o RLS recusa. Cliente cadastrado
+// assim nascia sem sincronizar, em silêncio. Agora o cadastro cria conta de
+// e-mail de verdade, e isto gera a senha inicial que o cliente troca depois.
+//
+// Alfabeto sem 0/O/1/l/I: a senha é ditada por WhatsApp ou telefone, e esses
+// pares são o que mais gera "não consigo entrar". 10 caracteres do alfabeto
+// abaixo dão ~51 bits — folgado pra uma senha provisória de uso único, e o
+// mínimo da Edge Function é 8.
+const ALFABETO_SENHA = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+
+export function generateInitialPassword(len = 10) {
+  const buf = new Uint32Array(len);
+  crypto.getRandomValues(buf);
+  // Rejeita o resto que causaria viés em vez de fazer `% alfabeto` cru — o
+  // alfabeto (57) não divide 2^32, então o módulo puro favoreceria as
+  // primeiras letras. Com poucos caracteres o viés é pequeno, mas é senha:
+  // não custa nada fazer certo.
+  const limite = Math.floor(0x100000000 / ALFABETO_SENHA.length) * ALFABETO_SENHA.length;
+  let out = '';
+  for (let i = 0; out.length < len; i++) {
+    if (i >= buf.length) { // acabou o buffer (só acontece com muita rejeição)
+      const extra = new Uint32Array(len);
+      crypto.getRandomValues(extra);
+      buf.set(extra.subarray(0, Math.min(extra.length, buf.length)));
+      i = 0;
+    }
+    if (buf[i] >= limite) continue;
+    out += ALFABETO_SENHA[buf[i] % ALFABETO_SENHA.length];
+  }
+  return out;
+}

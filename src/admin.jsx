@@ -6,7 +6,7 @@ import { readClients, writeClients, readAdminAuth, writeAdminAuth, clearAdminAut
 import { sendWelcomeEmail, sendAccessGrantedEmail } from './email';
 import { tenantsBase } from './tenants-public';
 import { resolveLimits as resolveLimitsCat, resolveTone as resolveToneCat } from './limits';
-import { hashPin, generateSetupPin } from './crypto';
+import { hashPin, generateSetupPin, generateInitialPassword } from './crypto';
 import { pushTenant, isTenantSyncEnabled } from './tenant-sync';
 import { SEGMENTS, DEFAULT_EQUIPMENT, DEFAULT_MODULES, buildEquipmentCatalog, segmentLabel, segmentLocalityType } from './segments';
 
@@ -173,6 +173,8 @@ export function ClientModal({ client, onSave, onClose }) {
   // Setup PIN — visível só quando admin acabou de gerar (não persiste em plain
   // após o modal fechar pra evitar exposição no painel).
   const [generatedPin, setGeneratedPin] = useState(null);
+  // Credenciais de e-mail do cliente novo (21/08) — ver criarContaDoCliente.
+  const [novaConta, setNovaConta] = useState(null);
   const [regenerate, setRegenerate]     = useState(false);
   const [busy, setBusy]                 = useState(false);
   const [pushError, setPushError]       = useState('');
@@ -290,13 +292,49 @@ export function ClientModal({ client, onSave, onClose }) {
         : null,
     });
 
+    // ── Conta de e-mail do cliente ────────────────────────────────────────
+    // ISTO É O QUE FALTAVA (21/08). Até aqui o cadastro só gerava um setup PIN,
+    // e o cliente entrava pelo SetupPinScreen — que cria sessão LOCAL, sem
+    // accessToken. Sem token, `sbHeaders` (repository.js) manda a chave
+    // ANÔNIMA, e o RLS recusa tudo com 42501: o cliente nascia sem sincronizar
+    // NADA, em silêncio, e só descobriria quando fosse buscar a evidência pro
+    // fiscal. O PIN é modelo aposentado desde a v1.9.99 — o cadastro tinha
+    // ficado pra trás.
+    //
+    // Agora usa o MESMO caminho que já funciona no convite de colaborador
+    // (Equipe → Usuários): a Edge Function cria a conta no Supabase Auth e
+    // vincula em `tenant_members`. Se o e-mail já existe (dono de outra
+    // unidade, RT que cobre várias), cai pro vínculo — sem criar conta
+    // duplicada, que dividiria os registros da pessoa entre dois logins.
+    let conta = null;
+    if (isNew && !pushFailed) {
+      conta = await criarContaDoCliente({ tenantId: id, email: email.trim(), nome: contact.trim() || name.trim() });
+    }
+
     if (pushFailed) {
       // NÃO entrega link+PIN de um cliente que não chegou na nuvem: o cliente
       // abriria o ?token= e receberia "not-found". Mantém o modal aberto com o
       // erro à vista pro admin corrigir a sessão e regerar o PIN.
       setBusy(false);
       setRegenerate(false);
+    } else if (conta?.ok) {
+      // Conta criada/vinculada: o cliente entra por e-mail e senha, e o PIN
+      // vira irrelevante. Mostra as credenciais uma vez só.
+      setBusy(false);
+      setNovaConta(conta);
+      setRegenerate(false);
     } else if (setupPinPlain) {
+      // A conta NÃO pôde ser criada (Edge Function fora do ar, e-mail
+      // recusado, sessão de admin expirada). O cliente já existe local e na
+      // nuvem, então cai pro PIN como plano B — mas o admin precisa saber que
+      // o acesso por e-mail ficou faltando, senão manda só o link e o cliente
+      // entra num modo que não sincroniza. Silenciar aqui recriaria em uma
+      // linha o bug que este commit existe pra matar.
+      if (conta && !conta.ok) {
+        setPushError(`O cliente foi criado, mas não consegui criar a conta de e-mail dele (${conta.erro}). `
+          + `Ele vai entrar pelo PIN abaixo, que é o modo antigo e NÃO sincroniza com a nuvem. `
+          + `Abra "Editar" e salve de novo pra tentar criar a conta, ou crie por Equipe → Usuários dentro da empresa.`);
+      }
       // Não fecha o modal — admin precisa copiar o PIN antes
       setBusy(false);
       setGeneratedPin(setupPinPlain);
@@ -457,13 +495,110 @@ export function ClientModal({ client, onSave, onClose }) {
           </button>
         </div>
 
-        {/* Overlay PIN gerado — bloqueia fechar até admin copiar */}
-        {generatedPin && (
+        {/* Overlay de credenciais — bloqueia fechar até o admin copiar.
+            Conta criada vence o PIN: o cliente entra por e-mail/senha e nunca
+            precisa do ?token=. O PIN só aparece quando a conta NÃO pôde ser
+            criada (plano B), com o motivo à vista. */}
+        {novaConta && (
+          <CredenciaisReveal conta={novaConta} onAck={() => { setNovaConta(null); onClose(); }} />
+        )}
+        {!novaConta && generatedPin && (
           <SetupPinReveal pin={generatedPin} onAck={() => { setGeneratedPin(null); onClose(); }} />
         )}
       </div>
     </div>
   );
+}
+
+// Credenciais do cliente novo, mostradas UMA vez (a senha não persiste em
+// lugar nenhum — só o hash, no Supabase Auth). Substitui o SetupPinReveal no
+// caminho feliz.
+function CredenciaisReveal({ conta, onAck }) {
+  const [copiado, setCopiado] = useState(false);
+  const [falhou, setFalhou]   = useState(false);
+  const texto = conta.senha
+    ? `NutriOPS — acesso\nSite: https://nutriops.uniwares.net\nE-mail: ${conta.email}\nSenha inicial: ${conta.senha}`
+    : `NutriOPS — acesso\nSite: https://nutriops.uniwares.net\nE-mail: ${conta.email}\n(use a senha que você já tem)`;
+
+  // Mesma guarda do SetupPinReveal: sem Clipboard API (contexto inseguro,
+  // webview antiga) ou write rejeitado, o catch vazio comeria o erro e o admin
+  // mandaria pro cliente o conteúdo ANTIGO do clipboard. A senha grande acima
+  // é o fallback manual — a falha só precisa ficar visível.
+  const copiar = () => {
+    if (!navigator.clipboard?.writeText) { setFalhou(true); setTimeout(() => setFalhou(false), 4000); return; }
+    navigator.clipboard.writeText(texto)
+      .then(() => { setCopiado(true); setTimeout(() => setCopiado(false), 2000); })
+      .catch(() => { setFalhou(true); setTimeout(() => setFalhou(false), 4000); });
+  };
+
+  return (
+    <div style={{ position:'absolute', inset:0, background:'rgba(20,20,19,.85)', borderRadius:16, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+      <div style={{ background:'white', borderRadius:14, padding:'28px 32px', maxWidth:420, width:'100%', textAlign:'center', boxShadow:'0 12px 40px rgba(0,0,0,.4)' }}>
+        <div style={{ fontSize:10, fontWeight:700, letterSpacing:'.14em', textTransform:'uppercase', color:'#5c6c7a', marginBottom:8 }}>
+          {conta.vinculada ? 'Conta vinculada' : 'Acesso do cliente'}
+        </div>
+        <h3 style={{ fontFamily:'var(--serif, serif)', fontSize:20, fontWeight:400, margin:'0 0 10px', color:'#001e2b', letterSpacing:'-.02em' }}>
+          {conta.vinculada ? 'Essa pessoa já tinha conta' : 'Copie agora — a senha não será mostrada de novo'}
+        </h3>
+
+        <div style={{ margin:'18px 0', padding:'14px 16px', background:'#f9fbfa', border:'1px dashed #c1ccd6', borderRadius:10, textAlign:'left' }}>
+          <div style={{ fontSize:11, color:'#5c6c7a', fontWeight:600 }}>E-mail</div>
+          <div style={{ fontFamily:'monospace', fontSize:14, color:'#001e2b', wordBreak:'break-all', marginBottom:10 }}>{conta.email}</div>
+          <div style={{ fontSize:11, color:'#5c6c7a', fontWeight:600 }}>Senha inicial</div>
+          <div style={{ fontFamily:'monospace', fontSize: conta.senha ? 22 : 13, fontWeight: conta.senha ? 700 : 400, color: conta.senha ? '#00684a' : '#5c6c7a', letterSpacing: conta.senha ? '.08em' : 0 }}>
+            {conta.senha ?? 'a que ela já usa hoje'}
+          </div>
+        </div>
+
+        <p style={{ fontSize:12, color:'#5c6c7a', lineHeight:1.5, margin:'0 0 18px' }}>
+          {conta.vinculada
+            ? 'A conta existente foi vinculada a esta empresa como administradora. Ela entra com o mesmo login de sempre e troca de empresa dentro do app — não crie uma segunda conta pra mesma pessoa.'
+            : <>Mande a senha por <strong>canal separado</strong> do e-mail (WhatsApp, SMS ou ligação). O cliente entra com esse e-mail e senha e pode trocá-la depois em Configurações.</>}
+        </p>
+
+        <div style={{ display:'flex', gap:8 }}>
+          <button onClick={copiar} style={{ flex:1, padding:'10px', borderRadius:8, border:`1px solid ${falhou?'#c0392b':'#00684a'}`, background:'white', color:falhou?'#c0392b':'#00684a', cursor:'pointer', fontSize:13, fontWeight:700, fontFamily:'inherit' }}>
+            {copiado ? '✓ Copiado' : falhou ? '✕ Falha — copie manualmente' : 'Copiar acesso'}
+          </button>
+          <button onClick={onAck} style={{ flex:1, padding:'10px', borderRadius:8, border:'none', background:'#00684a', color:'white', cursor:'pointer', fontSize:13, fontWeight:700, fontFamily:'inherit' }}>
+            Já copiei
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Conta de e-mail do cliente novo ───────────────────────────────────────
+// Cria a conta do dono da loja no Supabase Auth e vincula em `tenant_members`,
+// pelo MESMO caminho do convite de colaborador (Equipe → Usuários) — Edge
+// Function `invite-collaborator`, que guarda a service_role no servidor.
+//
+// NUNCA lança: o cliente já está salvo local e na nuvem quando isto roda, e
+// derrubar o cadastro inteiro porque a criação de conta falhou seria pior que
+// o problema. Devolve `{ ok:false, erro }` e o modal cai pro PIN como plano B,
+// mostrando o motivo — o admin conserta pelo Editar depois.
+async function criarContaDoCliente({ tenantId, email, nome }) {
+  const senha = generateInitialPassword();
+  try {
+    const { inviteCollaborator } = await import('./auth');
+    await inviteCollaborator({ email, name: nome, role: 'tenant_admin', tenantId, password: senha });
+    return { ok: true, email, senha, vinculada: false };
+  } catch (e) {
+    // 409 da Edge Function: "Já existe uma conta com esse e-mail." Acontece de
+    // verdade — dono que já tem outra unidade, RT que cobre várias lojas. Aí o
+    // certo é VINCULAR a conta existente, nunca criar uma segunda: duas contas
+    // pra mesma pessoa dividem os registros dela na trilha de auditoria.
+    const jaExiste = /já existe|already|exist|registered/i.test(String(e?.message ?? ''));
+    if (!jaExiste) return { ok: false, erro: e?.message ?? 'erro ao criar conta' };
+    try {
+      const { linkExistingMember } = await import('./tenant-sync');
+      await linkExistingMember({ tenantId, email, role: 'tenant_admin' });
+      return { ok: true, email, senha: null, vinculada: true };
+    } catch (e2) {
+      return { ok: false, erro: e2?.message ?? 'erro ao vincular conta existente' };
+    }
+  }
 }
 
 function SetupPinReveal({ pin, onAck }) {

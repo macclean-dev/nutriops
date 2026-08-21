@@ -21,6 +21,10 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.201', date: '2026-08-21', items: [
+    'Correção importante no cadastro de novo cliente: ele agora cria a conta de acesso (e-mail e senha) de verdade. Antes gerava só um PIN de configuração — modelo antigo — e a empresa cadastrada por ali ficava sem sincronizar com a nuvem, sem avisar ninguém.',
+    'Ao criar o cliente, o sistema mostra o e-mail e a senha inicial uma única vez, pra você enviar por um canal separado. Se a pessoa já tiver conta no NutriOPS (dono de várias unidades, nutricionista que cobre mais de uma loja), ela é vinculada à empresa nova em vez de ganhar uma segunda conta.',
+  ]},
   { version: '1.9.198', date: '2026-08-21', items: [
     'Novo na Visão geral: o bloco "Equipamentos fora da rotina" mostra o que está há dias sem nenhuma leitura, agrupado por setor e com o pior caso primeiro. Equipamento que nunca foi medido aparece destacado.',
     'Serve pra pegar o setor esquecido — aquele que ninguém percebeu que parou de ser medido. Os alertas que já existiam olham só o dia de hoje e dependem dos turnos cadastrados; este olha o histórico.',

@@ -140,6 +140,6 @@ describe('as 5 telas não podem voltar a sobrescrever o sync', () => {
   });
 
   it('alguém realmente dispara o aviso — sem isso a releitura nunca acontece', () => {
-    expect(pages).toContain('notificarSyncAplicado({ tenantId: session.tenantId, trigger })');
+    expect(pages).toContain('notificarSyncAplicado({ tenantId: tenantAlvo, trigger })');
   });
 });

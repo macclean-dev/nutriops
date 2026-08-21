@@ -333,11 +333,11 @@ describe('achado 6/7 — tela de Equipamentos relê o catálogo quando o sync te
   });
 
   it('retryCatalogSync (o botão "Tentar de novo" do banner) agora avisa outras telas, não só o catalogVersion do App', () => {
-    expect(fonte).toContain("notificarSyncAplicado({ tenantId: session.tenantId, trigger: 'retry-catalogo' });");
+    expect(fonte).toContain("notificarSyncAplicado({ tenantId: alvo, trigger: 'retry-catalogo' });");
   });
 
   it('a auto-cura do boot TAMBÉM avisa — 2º disparo, depois que o catálogo já está de fato fresco', () => {
-    expect(fonte).toContain("notificarSyncAplicado({ tenantId: session.tenantId, trigger: 'auto-cura-catalogo' });");
+    expect(fonte).toContain("notificarSyncAplicado({ tenantId: tenantAlvo, trigger: 'auto-cura-catalogo' });");
   });
 
   it('SYNC_EVENT já está importado em pages.jsx (não precisou de import novo)', () => {

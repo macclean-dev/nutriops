@@ -2897,10 +2897,15 @@ export function App() {
 
   // Retry de um toque do CatalogStaleBanner — sem console, sem Configurações.
   const retryCatalogSync = useCallback(async () => {
-    if (!session?.tenantId) return;
+    // Mesmo motivo do auto-sync (ver o efeito lá embaixo): o admin global tem
+    // tenantId null, então este `return` fazia o botão "Tentar de novo" do
+    // banner não fazer NADA pra ele — sem erro, sem sinal. Cai na loja que
+    // ele está olhando, que é a que o banner está reclamando.
+    const alvo = session?.tenantId ?? activeTenant?.id ?? null;
+    if (!alvo) return;
     setCatalogRetrying(true);
     try {
-      const eq = await syncEquipmentCatalog(session.tenantId);
+      const eq = await syncEquipmentCatalog(alvo);
       if (eq.ok && eq.count > 0) {
         setCatalogVersion((v) => v + 1);
         setCatalogStale(false);
@@ -2911,13 +2916,13 @@ export function App() {
         // até um F5 manual. notificarSyncAplicado alcança qualquer tela
         // aberta inscrita em SYNC_EVENT (lista-local.js). Achado da
         // auditoria (18/08).
-        notificarSyncAplicado({ tenantId: session.tenantId, trigger: 'retry-catalogo' });
+        notificarSyncAplicado({ tenantId: alvo, trigger: 'retry-catalogo' });
       }
     } catch (e) {
       console.warn('[NutriOPS] retry do catálogo falhou:', e?.message ?? e);
     }
     setCatalogRetrying(false);
-  }, [session?.tenantId]);
+  }, [session?.tenantId, activeTenant?.id]);
 
   // ─── Operador (conta de loja) ────────────────────────────────────────────
   // O nome escolhido entra em session.user.name — é assim que os 14 pontos que
@@ -3165,10 +3170,27 @@ export function App() {
   // Auto-sync on login and when coming online
   useEffect(() => {
     if (!session) return;
+    // O admin GLOBAL tem tenantId null de propósito (não pertence a uma loja,
+    // alcança todas). Mandar esse null adiante quebrava o sync inteiro pra
+    // ele, em silêncio: sbHeaders (repository.js) faz `if (tenantId)` pra
+    // decidir se anexa o JWT — com null, a requisição saía com a CHAVE
+    // ANÔNIMA, o Postgres tentava executar is_member() na policy, anon não tem
+    // EXECUTE nessa função (docs/rls-policies.sql revoga de propósito) e
+    // devolvia 42501. As 22 tabelas falhavam a cada boot. Nada se perdia (as
+    // telas leem por loja, com tenantId real, e funcionam), mas o auto-sync
+    // era um no-op ruidoso — e o banner de "sem permissão" que a v1.9.176
+    // finalmente deixou aparecer estava certo: a credencial não chegava mesmo.
+    // A loja que o admin está OLHANDO é o alvo que faz sentido sincronizar.
+    // Achado em produção (20/08) a partir do próprio banner.
+    const tenantAlvo = session.tenantId ?? activeTenant?.id ?? null;
+    if (!tenantAlvo) {
+      console.info('[NutriOPS] auto-sync skip — sessão sem loja alvo');
+      return;
+    }
     // Auto-config também no boot: device com sessão antiga (anterior ao bundle
     // com env vars) liga o Supabase ao abrir, sem precisar re-logar. Roda ANTES
     // do check abaixo pra que o sync prossiga já na primeira carga.
-    maybeAutoConfigSupabase(session.tenantId, activeTenants);
+    maybeAutoConfigSupabase(tenantAlvo, activeTenants);
     if (!isSupabaseEnabled()) {
       console.info('[NutriOPS] auto-sync skip — Supabase desativado neste dispositivo');
       return;
@@ -3194,9 +3216,9 @@ export function App() {
           }
         }
       }
-      console.info(`[NutriOPS] auto-sync start (${trigger}) tenant=${session.tenantId}`);
+      console.info(`[NutriOPS] auto-sync start (${trigger}) tenant=${tenantAlvo}`);
       try {
-        const result = await syncAllModules(session.tenantId);
+        const result = await syncAllModules(tenantAlvo);
         console.info(`[NutriOPS] auto-sync done (${trigger}) — ${result.synced}/${result.total} módulos`);
         // O sync gravou catálogo/equipe direto no localStorage. Sem este bump a
         // tela segue mostrando o que leu no primeiro render (o bug dos 4).
@@ -3205,7 +3227,7 @@ export function App() {
         // das mãos leem a lista deles no mount e nunca mais. O bump acima só
         // alcança quem recebe `catalogVersion` por prop. Este evento alcança
         // qualquer tela aberta — elas se reinscrevem sozinhas (ver lista-local.js).
-        notificarSyncAplicado({ tenantId: session.tenantId, trigger });
+        notificarSyncAplicado({ tenantId: tenantAlvo, trigger });
 
         // ── Auto-cura do catálogo de equipamentos ───────────────────────────
         // O bump acima só resolve quando o sync FUNCIONOU. Quando ele falha,
@@ -3217,10 +3239,10 @@ export function App() {
         // parou de agrupar". Aqui a gente olha o que a tela REALMENTE vai
         // mostrar; se for o provisório, tenta de novo e, persistindo, avisa em
         // português em vez de deixar o aparelho mentindo em silêncio.
-        const tenantAtual = activeTenants.find((t) => t.id === session.tenantId);
-        const naTela = dedupeCatalog(readEquipmentCatalog(tenantAtual ?? { id: session.tenantId }));
+        const tenantAtual = activeTenants.find((t) => t.id === tenantAlvo);
+        const naTela = dedupeCatalog(readEquipmentCatalog(tenantAtual ?? { id: tenantAlvo }));
         if (naTela.length === 0 || isPlaceholderCatalog(naTela)) {
-          const eq = await syncEquipmentCatalog(session.tenantId);
+          const eq = await syncEquipmentCatalog(tenantAlvo);
           if (eq.ok && eq.count > 0) {
             setCatalogVersion((v) => v + 1);
             setCatalogStale(false);
@@ -3231,7 +3253,7 @@ export function App() {
             // Equipamentos já aberta durante o boot ficava presa nos 4
             // genéricos mesmo com a auto-cura tendo funcionado por baixo.
             // Achado da auditoria (18/08).
-            notificarSyncAplicado({ tenantId: session.tenantId, trigger: 'auto-cura-catalogo' });
+            notificarSyncAplicado({ tenantId: tenantAlvo, trigger: 'auto-cura-catalogo' });
           } else if (isPlaceholderCatalog(naTela)) {
             // Chegamos aqui de dois jeitos, e o alerta vale pros dois:
             //  · {ok:false} — rede/credencial caiu;
@@ -3302,7 +3324,11 @@ export function App() {
     const onlineHandler = () => doSync('online-event');
     window.addEventListener('online', onlineHandler);
     return () => window.removeEventListener('online', onlineHandler);
-  }, [session?.tenantId]);
+    // activeTenant?.id entra nas deps por causa do `tenantAlvo` acima: pro
+    // admin global (tenantId null) é ele que decide QUAL loja sincronizar,
+    // então trocar de loja no seletor precisa disparar o sync da loja nova.
+    // Pra quem tem tenantId próprio nada muda — o `??` nem chega no activeTenant.
+  }, [session?.tenantId, activeTenant?.id]);
   useEffect(() => {
     const handler = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setShowSearch(true); }

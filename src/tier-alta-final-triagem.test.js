@@ -432,10 +432,17 @@ describe('overview-v2.jsx — normalização por alias antes do turno: mecanismo
     const recordsCrus = [{ tenantId: 't1', equipmentInput: 'Freezer', createdAt: '2026-08-19T13:00:00' }]; // nome velho, mas dentro do turno
     const agora = new Date('2026-08-19T14:00:00');
 
-    // sem normalizar (o que aconteceria se computeTurnAlertsPure recebesse
-    // os records crus direto): "Freezer 01" fica pendente por engano
+    // ⚠️ ESTA ASSERÇÃO INVERTEU EM 21/08, e isso é a correção, não uma
+    // regressão. Antes, computeTurnAlertsPure casava por nome EXATO, então
+    // record cru com o nome antigo virava "pendente por engano" — e esta
+    // linha travava esse defeito pra justificar a normalização que a
+    // overview-v2 faz antes de chamar. Só que a overview-v2 era a ÚNICA que
+    // normalizava: pages.jsx (badge do menu e tela de Alertas) passava os
+    // records CRUS, e ali o alerta falso acontecia de verdade.
+    // Agora a própria função resolve por apelido (recordBelongsTo), então o
+    // caminho cru também acerta e a gambiarra virou redundância inofensiva.
     const semNormalizar = computeTurnAlertsPure(turns, recordsCrus, catalog, 't1', false, agora);
-    expect(semNormalizar.some((a) => a.level === 'warn' && a.equipment === 'Freezer 01')).toBe(true);
+    expect(semNormalizar.some((a) => a.level === 'warn' && a.equipment === 'Freezer 01')).toBe(false);
 
     // normalizado (o que ColaboradorDashboard faz agora): resolve pro label
     // canônico antes — "Freezer 01" sai da lista de pendentes

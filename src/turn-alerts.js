@@ -12,7 +12,7 @@
 // usuário já dispensou hoje — exatamente como era antes.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { dedupeCatalog } from './limits';
+import { dedupeCatalog, recordBelongsTo } from './limits';
 
 // Map { alertId: 'dow mon dd yyyy' }. Um alerta fica dispensado só HOJE — no
 // dia seguinte, se ainda estiver pendente, reaparece. Poda entradas antigas.
@@ -55,7 +55,12 @@ export function computeTurnAlertsPure(turns, records, equipCatalog, tenantId, em
     for (const eq of catalog) {
       const hasRecord = records.some((r) => {
         if (r.tenantId !== tenantId) return false;
-        if ((r.equipment || r.equipmentInput) !== eq.label) return false;
+        // recordBelongsTo, não comparação de nome: um equipamento renomeado
+        // guarda o nome ANTIGO nas leituras já feitas (ver limits.js). Com
+        // casamento exato, renomear gerava alerta de "sem registro" pra um
+        // equipamento que tinha sido medido — o inverso do bug do card, e no
+        // lugar mais barulhento possível. 7º ponto do mesmo defeito (21/08).
+        if (!recordBelongsTo(catalog, r, eq)) return false;
         const rd = new Date(r.createdAt); if (rd.toDateString() !== todayStr) return false;
         const rMin = rd.getHours() * 60 + rd.getMinutes();
         return rMin >= startMin && rMin <= endMin;

@@ -156,3 +156,39 @@ describe('as telas casam por apelido — não sobrou casamento exato', () => {
     expect(reports).toContain('}, [tenantRecords, drillEq, catalog]);');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7º ponto do mesmo defeito, achado depois (21/08): os ALERTAS de turno.
+// Aqui o sinal era invertido — em vez de esconder leitura que existe, ele
+// INVENTAVA pendência pra equipamento que foi medido. E no lugar mais
+// barulhento: o badge do menu e a tela de Alertas.
+//
+// A overview-v2 já contornava normalizando os records antes de chamar; o
+// pages.jsx (badge + tela) passava os records CRUS. Agora a função resolve
+// sozinha e os dois caminhos acertam.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('alertas de turno — renomear não pode inventar pendência', () => {
+  const catalog = [{ label: 'Freezer 01', aliases: ['Freezer'], location: 'Cozinha' }];
+  const turns   = [{ id: 'tarde', name: 'Tarde', start: '12:00', end: '17:59' }];
+  const agora   = new Date('2026-08-19T14:00:00');
+
+  it('leitura com o nome ANTIGO conta como feita, mesmo sem normalizar antes', async () => {
+    const { computeTurnAlertsPure } = await import('./turn-alerts');
+    const crus = [{ tenantId: 't1', equipmentInput: 'Freezer', createdAt: '2026-08-19T13:00:00' }];
+    expect(computeTurnAlertsPure(turns, crus, catalog, 't1', false, agora)).toEqual([]);
+  });
+
+  it('sem leitura nenhuma o alerta continua nascendo — o fix não cega o alarme', async () => {
+    const { computeTurnAlertsPure } = await import('./turn-alerts');
+    const alertas = computeTurnAlertsPure(turns, [], catalog, 't1', false, agora);
+    expect(alertas).toHaveLength(1);
+    expect(alertas[0].equipment).toBe('Freezer 01');
+    expect(alertas[0].level).toBe('warn');
+  });
+
+  it('leitura de OUTRO equipamento não silencia o alerta', async () => {
+    const { computeTurnAlertsPure } = await import('./turn-alerts');
+    const outro = [{ tenantId: 't1', equipmentInput: 'Geladeira', createdAt: '2026-08-19T13:00:00' }];
+    expect(computeTurnAlertsPure(turns, outro, catalog, 't1', false, agora)).toHaveLength(1);
+  });
+});

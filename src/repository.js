@@ -311,30 +311,14 @@ export function mergeByKey(arr, key) {
 
 // ─── Push local data to Supabase ───────────────────────────────────────────
 
-export async function pushModule({ table, localKey, toRow }) {
-  if (!isSupabaseEnabled() || !navigator.onLine) {
-    console.debug(`[repo] pushModule(${table}) skip — offline_or_disabled`);
-    return { ok: false };
-  }
-  const records = ls(localKey, []);
-  if (!records.length) {
-    console.debug(`[repo] pushModule(${table}) skip — nada local`);
-    return { ok: true, pushed: 0 };
-  }
-  console.debug(`[repo] pushModule(${table}) start — ${records.length} registros locais`);
-  let pushed = 0, failed = 0;
-  for (const record of records) {
-    try {
-      await sbFetch(table, { method: 'POST', body: toRow(record), prefer: 'resolution=merge-duplicates,return=minimal' });
-      pushed++;
-    } catch (e) {
-      failed++;
-      if (failed === 1) console.warn(`[repo] pushModule(${table}) primeiro erro:`, e.message);
-    }
-  }
-  console.debug(`[repo] pushModule(${table}) done — ${pushed} ok, ${failed} falharam`);
-  return { ok: true, pushed, failed };
-}
+// (pushModule removido em 21/08: chamava `sbFetch(table, {...})` SEM tenantId,
+// então saía com a CHAVE ANÔNIMA e o RLS recusava TODO registro com 42501 —
+// nunca poderia funcionar com RLS ligado. Estava exportado e sem nenhum
+// chamador desde sempre; quem fosse usar herdava o bug pronto. Mesmo
+// tratamento que pushTenantDirect (tenant-sync.js) recebeu pelo mesmo motivo.
+// Quem precisar de push em lote: `migrateAllToSupabase` faz isso passando o
+// tenant certo em cada chamada.)
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TEMPERATURE RECORDS (existing, keep backward compatible)
@@ -670,9 +654,24 @@ export const supabaseRepository = {
       const res = await fetch(`${base}/temperature_records?limit=1`, {
         headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       });
-      if (res.ok)                                    return { ok: true };
-      if (res.status === 404)                        return { ok: false, reason: 'table_missing' };
-      if (res.status === 401 || res.status === 403)  return { ok: false, reason: 'auth_error' };
+      if (res.ok)             return { ok: true };
+      if (res.status === 404) return { ok: false, reason: 'table_missing' };
+      if (res.status === 401 || res.status === 403) {
+        // LÊ O CORPO ANTES DE CULPAR A CHAVE (21/08). Este teste vai de
+        // propósito com a anon key — ele checa se a URL/chave são válidas,
+        // e roda antes de existir sessão. Só que com RLS ligado a policy
+        // chama `is_member()`, revogada de anon, e o Postgres devolve 401
+        // com 42501 no CORPO. Classificando só pelo status, uma chave
+        // PERFEITA virava "✕ Chave inválida. Verifique o Anon Key." —
+        // exatamente o conselho errado que atrasou o diagnóstico de 16/08.
+        //
+        // E 42501 na verdade PROVA que a conexão está boa: pra o Postgres
+        // chegar a avaliar permissão, ele já aceitou a chave e achou a
+        // tabela. Chave inválida morre antes, com outra mensagem.
+        const corpo = await res.text().catch(() => '');
+        if (corpo.includes('row-level security') || corpo.includes('42501')) return { ok: true, viaRls: true };
+        return { ok: false, reason: 'auth_error' };
+      }
       return { ok: false, reason: `http_${res.status}` };
     } catch { return { ok: false, reason: 'network_error' }; }
   },

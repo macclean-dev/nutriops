@@ -15,6 +15,8 @@ import { ordenarPorSetor, agruparPorSetor } from './setores';
 import { detectTrend } from './trend';
 import { readTurns } from './turns';
 import { computeTurnAlertsPure } from './turn-alerts';
+import { equipamentosForaDaRotina, agruparForaPorSetor, descreverAtraso, limiteForaDaRotina } from './fora-da-rotina';
+import { readCompanyProfile } from './settings';
 import { EquipmentDetailModal, EquipmentChart, toneColor, toneBg } from './equipment-detail';
 import { getTemperatureRepository } from './repository';
 import { readOperator } from './operator';
@@ -707,10 +709,83 @@ export function buildEquipmentHistory(equipmentCatalog, tenantRecords) {
   return map;
 }
 
+// ─── Equipamentos fora da rotina ───────────────────────────────────────────
+// Pedido do dono (21/08) depois do caso da CASA DOCE: 12 equipamentos parados
+// havia 2-3 dias e nada no app avisava. O alerta de turno só olha HOJE, e está
+// desligado inteiro enquanto a loja está em implantação — ver fora-da-rotina.js.
+//
+// Só aparece quando há algo a mostrar: card que vive na tela dizendo "tudo
+// certo" vira moldura e para de ser lido.
+function ForaDaRotinaCard({ itens, limiteDias, onAbrir }) {
+  const [verTudo, setVerTudo] = useState(false);
+  const grupos = useMemo(() => agruparForaPorSetor(itens), [itens]);
+  if (!itens.length) return null;
+
+  // 3 setores é o que cabe sem empurrar os Equipamentos pra fora da dobra.
+  const visiveis = verTudo ? grupos : grupos.slice(0, 3);
+  const ocultos  = grupos.length - visiveis.length;
+  const nunca    = itens.filter((i) => i.nunca).length;
+
+  return (
+    <Section
+      title="Equipamentos fora da rotina"
+      subtitle={`${itens.length} sem leitura há ${limiteDias} dia${limiteDias === 1 ? '' : 's'} ou mais${nunca ? ` · ${nunca} nunca medido${nunca === 1 ? '' : 's'}` : ''} — planilha com buraco é o primeiro item que o fiscal folheia`}
+    >
+      <div className="dash-stagger" style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
+        {visiveis.map(({ setor, equipamentos }) => (
+          <div key={setor} style={{
+            flex:'1 1 260px', padding:'14px 18px', borderRadius:'var(--r-lg)',
+            background:'var(--amber-light)', border:'1px solid var(--amber-border)',
+            display:'flex', flexDirection:'column', gap:8,
+          }}>
+            <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', gap:8 }}>
+              <strong style={{ color:'var(--text)' }}>{setor}</strong>
+              <span style={{ fontSize:11, color:'var(--text-secondary)' }}>
+                {equipamentos.length} equipamento{equipamentos.length === 1 ? '' : 's'}
+              </span>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+              {equipamentos.map((eq) => (
+                <button key={eq.equipamento} onClick={() => onAbrir?.(eq)} style={{
+                  textAlign:'left', cursor:'pointer', fontFamily:'var(--font)',
+                  background:'transparent', border:'none', padding:0,
+                  display:'flex', alignItems:'baseline', justifyContent:'space-between', gap:10,
+                }}>
+                  <span style={{ fontSize:13, color:'var(--text)' }}>{eq.equipamento}</span>
+                  <span style={{
+                    fontSize:11, whiteSpace:'nowrap', fontWeight:600,
+                    color: eq.nunca ? 'var(--red)' : 'var(--text-secondary)',
+                  }}>{descreverAtraso(eq)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      {ocultos > 0 && (
+        <button className="ghost-action" style={{ alignSelf:'flex-start', fontSize:12 }}
+          onClick={() => setVerTudo(true)}>
+          Ver mais {ocultos} setor{ocultos === 1 ? '' : 'es'}
+        </button>
+      )}
+    </Section>
+  );
+}
+
 function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records, onLaunchKiosk, onNavigate, onRecordSaved }) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const todayMs = today.getTime();
   const [drillEq, setDrillEq] = useState(null);
+
+  // Equipamentos parados há dias (21/08). Limite por empresa, padrão 2 —
+  // ver fora-da-rotina.js pro porquê de isso não caber no alerta de turno.
+  const limiteRotina = limiteForaDaRotina(readCompanyProfile(activeTenant.id));
+  const foraDaRotina = useMemo(
+    () => equipamentosForaDaRotina({
+      catalog: equipmentCatalog, records, tenantId: activeTenant.id, limiteDias: limiteRotina,
+    }),
+    [equipmentCatalog, records, activeTenant.id, limiteRotina],
+  );
   const [quickRegEq, setQuickRegEq] = useState(null);
   // Filtro por setor da grade de equipamentos (pedido do cliente: com 44
   // equipamentos, olhar um setor por vez). Sai da `location` do catálogo.
@@ -808,6 +883,16 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
           value={lastRecord ? fmtRelative(lastRecord.createdAt) : '—'}
           sub={lastRecord ? `${lastRecord.user}` : 'sem registros'} />
       </div>
+
+      {/* Equipamentos fora da rotina — antes da Sentinela: ausência de registro
+          é problema mais imediato que tendência de desvio. */}
+      <ForaDaRotinaCard
+        itens={foraDaRotina}
+        limiteDias={limiteRotina}
+        onAbrir={(item) => {
+          const eq = (equipmentCatalog ?? []).find((e) => e.label === item.equipamento);
+          if (eq) setDrillEq(eq);
+        }} />
 
       {/* Sentinela de tendência */}
       {trendAlerts.length > 0 && (

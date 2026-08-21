@@ -692,6 +692,19 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
                 onChange={e=>setProfileField('dedetizacaoMeses', Number(e.target.value))} />
             </label>
           </div>
+          {/* "Equipamentos fora da rotina" (21/08) — o card da Visão geral que
+              mostra o que está parado há dias. Vive aqui e não no código porque
+              a régua muda por loja: quem mede tudo todo dia quer 1; quem tem
+              equipamento de uso semanal quer mais folga. Ver fora-da-rotina.js. */}
+          <div className="grid-2">
+            <label>Avisar equipamento sem leitura há (dias)
+              <input type="number" min="1" max="60" value={profile.foraDaRotinaDias ?? 2}
+                onChange={e=>setProfileField('foraDaRotinaDias', Number(e.target.value))} />
+            </label>
+          </div>
+          <p className="muted" style={{ fontSize:11 }}>
+            A Visão geral mostra um bloco "Equipamentos fora da rotina" com o que passou desse prazo, agrupado por setor — e some sozinho quando está tudo em dia. O padrão de 2 dias pega o setor esquecido sem alarmar por um fim de semana. Equipamento nunca medido aparece sempre.
+          </p>
           <p className="muted" style={{ fontSize:11 }}>
             A tela de Prontidão usa esse prazo pra avisar quando a dedetização está vencendo. O padrão de 6 meses é o contrato típico — ajuste conforme o contrato da loja e a exigência da vigilância local.
           </p>

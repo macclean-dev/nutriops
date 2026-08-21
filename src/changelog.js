@@ -21,6 +21,12 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.198', date: '2026-08-21', items: [
+    'Novo na Visão geral: o bloco "Equipamentos fora da rotina" mostra o que está há dias sem nenhuma leitura, agrupado por setor e com o pior caso primeiro. Equipamento que nunca foi medido aparece destacado.',
+    'Serve pra pegar o setor esquecido — aquele que ninguém percebeu que parou de ser medido. Os alertas que já existiam olham só o dia de hoje e dependem dos turnos cadastrados; este olha o histórico.',
+    'O prazo é seu: em Configurações → dados do estabelecimento, "Avisar equipamento sem leitura há (dias)". O padrão é 2 dias — pega o esquecimento sem alarmar por um fim de semana.',
+    'O bloco some sozinho quando está tudo em dia.',
+  ]},
   { version: '1.9.196', date: '2026-08-21', items: [
     'Corrigido: renomear um equipamento fazia todo o histórico dele sumir da tela. As leituras antigas ficam gravadas com o nome de antes (é evidência sanitária, não se reescreve), e o app não sabia mais ligar uma coisa na outra — o equipamento passava a mostrar "sem leitura" mesmo sendo medido todo dia.',
     'Era especialmente traiçoeiro porque o próprio app sugere renomear quando dois equipamentos têm nomes iguais ("use um nome que os diferencie"). Quem seguia o conselho zerava o histórico.',

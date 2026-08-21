@@ -14,16 +14,32 @@ export function heuristicLimits(label = '') {
   return { min: 0, max: 9 };
 }
 
+// Limite CADASTRADO de verdade, ou null. `Number.isFinite(Number(x))` sozinho
+// não serve: `Number(null)` e `Number('')` são 0 — os dois passam como se
+// fossem um limite válido de zero grau. Foi assim que um Freezer cadastrado
+// com mínimo 12 e máximo VAZIO virou a faixa "entre 12 e 0" (impossível de
+// satisfazer: nenhuma leitura consegue ser conforme) em vez de cair na
+// heurística de freezer. Achado em produção na Swiss, 20/08 — mesma família
+// de coerção do `null <= 3` que o painel admin tinha. Campo vazio significa
+// "não cadastrado", e não-cadastrado é exatamente o caso pra heurística.
+function limiteCadastrado(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 // Resolve faixa min/max dado um label e contexto opcional:
 //   - 2º arg = array (catálogo de equipamentos) → busca por label/alias
 //   - 2º arg = objeto único de equipamento → usa seu minTemp/maxTemp direto
 //   - 2º arg ausente → cai na heurística pelo nome
+// Faixa PELA METADE (só min ou só max) também cai na heurística: meia faixa
+// não julga leitura nenhuma com sentido, e o palpite pelo nome erra menos.
 export function resolveLimits(label = '', context = null) {
   // Caso 1: equipment object passado direto
   if (context && !Array.isArray(context) && typeof context === 'object') {
-    const mn = Number(context.minTemp);
-    const mx = Number(context.maxTemp);
-    if (Number.isFinite(mn) && Number.isFinite(mx)) return { min: mn, max: mx };
+    const mn = limiteCadastrado(context.minTemp);
+    const mx = limiteCadastrado(context.maxTemp);
+    if (mn !== null && mx !== null) return { min: mn, max: mx };
   }
   // Caso 2: catálogo (array) — busca por label exato ou alias
   if (Array.isArray(context) && context.length) {
@@ -34,8 +50,10 @@ export function resolveLimits(label = '', context = null) {
       const aliases = Array.isArray(eq.aliases) ? eq.aliases : [];
       return aliases.some(a => String(a).toLowerCase().trim() === norm);
     });
-    if (hit && Number.isFinite(Number(hit.minTemp)) && Number.isFinite(Number(hit.maxTemp))) {
-      return { min: Number(hit.minTemp), max: Number(hit.maxTemp) };
+    if (hit) {
+      const mn = limiteCadastrado(hit.minTemp);
+      const mx = limiteCadastrado(hit.maxTemp);
+      if (mn !== null && mx !== null) return { min: mn, max: mx };
     }
   }
   // Fallback: heurística pelo nome

@@ -90,3 +90,43 @@ Rolo confirmado 60×60mm, impressora Ethernet com driver padrão de Windows.
 Se travar no passo 3: plano B é imprimir sempre pelo computador da loja (já
 resolve o caso de uso original — produção corrida, mas com etiqueta rápida de
 tirar do PC) e reavaliar depois se vale investir num caminho pro tablet.
+
+---
+
+## Push não gera deploy na Vercel (site continua na versão antiga)
+
+Sintoma: `git push` vai sem erro, o commit aparece no GitHub, mas o site
+continua na versão anterior e o card "Production Deployment" da Vercel mostra
+um deploy de horas atrás. Nenhum build novo na aba Deployments.
+
+**Aconteceu em 20/08** — 3 commits (v1.9.188–190) ficaram parados. Causa: o
+app da Vercel no GitHub tinha acesso a **"Only select repositories"** e o
+`nutriops` não estava na lista (só o `vitrum`). Sem acesso, o GitHub não
+avisa a Vercel de push nenhum. Nada a ver com o código.
+
+**Como confirmar (30s):** Vercel → projeto → **Settings → Git**. Se aparecer
+`Error: Project Link not found` em vermelho, é isto.
+
+**Como corrigir:**
+
+1. `https://github.com/settings/installations` → **Vercel** → **Configure**
+   - Se `macclean-dev` for organização:
+     `https://github.com/organizations/macclean-dev/settings/installations`
+2. Em **Repository access**, manter **"Only select repositories"** (dar acesso
+   a todos não traz ganho e expõe repositório sem relação) e **acrescentar o
+   `nutriops`** à lista. ⚠️ Não remover o `vitrum` — outro projeto depende dele.
+3. **Save**. Voltar em Settings → Git: o erro vermelho some sozinho.
+
+**Detalhe que custa tempo se passar batido:** reconectar NÃO constrói os
+commits que passaram enquanto estava quebrado, e o botão **Redeploy**
+reconstrói o commit DAQUELE deploy (o antigo) — não o mais recente. Pra
+publicar o código atual, fazer um **push novo** (qualquer commit serve).
+
+**Se os botões Disconnect/Reconnect estiverem apagados** com a mensagem *"You
+need additional permissions to manage your project's connected git
+repository"*: a conta logada na Vercel não é dona do projeto. Trocar pela
+conta correta (o deploy em produção mostra quem o criou) — Settings → Members
+mostra o papel de cada uma.
+
+**Plano B, se precisar publicar sem consertar a integração:**
+`npx vercel --prod` na raiz do projeto publica o código local direto.

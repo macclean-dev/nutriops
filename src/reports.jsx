@@ -9,6 +9,26 @@ function formatDate(iso) {
   try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return iso; }
 }
 
+// Data + hora, pra medição de temperatura. Pedido da RT da CASA DOCE (21/08):
+// a coluna "Último registro" mostrava só o dia, então não dava pra conferir se
+// a leitura do turno da manhã tinha mesmo acontecido — e a resposta ("às
+// 08:12") é justamente o que ela precisa quando desconfia que faltou registro.
+// Só pra temperatura: as outras duas colunas de data do arquivo (último
+// preenchimento de planilha BPF, última capacitação) são eventos de dia, e
+// carimbar hora ali só ocuparia espaço sem dizer nada.
+//
+// `createdAt` (timestamptz), não `measuredAt`: a coluna measured_at é TEXT e
+// guarda só "HH:MM" digitado no aparelho (ver tempToRow, repository.js) —
+// não dá pra saber o dia a partir dela.
+function formatDateTime(iso) {
+  try {
+    return new Date(iso).toLocaleString('pt-BR', {
+      day: '2-digit', month: '2-digit', year: '2-digit',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch { return iso; }
+}
+
 function pct(n, total) { return total > 0 ? Math.round((n/total)*100) : 0; }
 
 // ─── Temperature Report ────────────────────────────────────────────────────
@@ -138,7 +158,7 @@ function TemperatureReport({ allTenants, records, periodDays, tenantFilter }) {
                     <strong style={{ fontFamily:'var(--mono)', color: s.compliance>=90?'var(--green)':s.compliance>=70?'var(--amber)':'var(--red)' }}>{s.compliance}%</strong>
                   </div>
                 </td>
-                <td style={{ fontSize:11, color:'var(--text-secondary)' }}>{s.last ? formatDate(s.last.createdAt) : '—'}</td>
+                <td style={{ fontSize:11, color:'var(--text-secondary)', whiteSpace:'nowrap' }}>{s.last ? formatDateTime(s.last.createdAt) : '—'}</td>
               </tr>
             ))}
           </tbody>

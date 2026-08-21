@@ -21,6 +21,10 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.195', date: '2026-08-21', items: [
+    'No relatório de temperatura, a coluna "Último registro" agora mostra o horário junto com a data. Antes só o dia — não dava pra conferir se a leitura de um turno específico tinha acontecido.',
+    'Lembrete: pra ver o horário de TODAS as leituras (e não só da última), a tela de Auditoria já lista uma por uma com data e hora, e dá pra filtrar por equipamento e período.',
+  ]},
   { version: '1.9.194', date: '2026-08-21', items: [
     'Sumiu o aviso vermelho de "sincronização falhando — sem permissão para esta loja". Era alarme falso: a verificação automática que o app faz ao abrir não estava usando o seu login, e o banco recusava por isso — não por falta de permissão sua. Seu acesso sempre esteve certo, e nenhum registro foi afetado.',
     'Se você chegou a ver esse aviso, ele some sozinho na primeira vez que abrir o app depois desta atualização.',

@@ -474,6 +474,29 @@ export function ClientModal({ client, onSave, onClose }) {
             Acesso ativo
           </label>
 
+          {/* Onde gerenciar ACESSO, na edição (21/08). O campo da RT e a criação
+              de conta só existem no cadastro NOVO — de propósito, porque
+              `criarContaDoCliente` só roda com `isNew`. Mas isso deixava um
+              beco sem saída: empresa já cadastrada e sem conta nenhuma (a
+              criação falhou, ou o cadastro é antigo do tempo do PIN) não tinha
+              caminho nem dica nesta tela. O dono caiu exatamente nisso.
+              Não duplicamos a funcionalidade aqui — gerenciar quem acessa é
+              trabalho de Equipe → Usuários, e lá funciona pros dois casos.
+              O que faltava era dizer isso. */}
+          {editing && (
+            <div style={{ padding:'10px 14px', background:'#eef4ff', border:'1px solid #c7d7f5', borderRadius:8 }}>
+              <div style={{ fontSize:11, fontWeight:700, letterSpacing:'.08em', textTransform:'uppercase', color:'#2b4a7a', marginBottom:6 }}>
+                Acesso do cliente
+              </div>
+              <p style={{ fontSize:12, color:'#3d5a85', margin:0, lineHeight:1.5 }}>
+                Contas de e-mail (dono, nutricionista RT, colaboradores) se gerenciam <strong>dentro da empresa</strong>:
+                use <strong>Entrar como</strong> e vá em <strong>Equipe → Usuários</strong>.
+                Lá tem <strong>"Convidar colaborador"</strong> pra quem não tem conta e
+                {' '}<strong>"Vincular conta existente"</strong> pra quem já usa o NutriOPS em outra unidade.
+              </p>
+            </div>
+          )}
+
           {/* PIN de configuração — só editing (no novo o PIN é gerado no Save) */}
           {editing && (
             <div style={{ padding:'10px 14px', background:'#f9fbfa', border:'1px solid #e1e5e8', borderRadius:8 }}>

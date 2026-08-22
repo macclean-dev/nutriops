@@ -27,6 +27,26 @@ describe('ClientModal renderiza', () => {
     expect(html).toContain('Salvar alterações');
   });
 
+  it('EDIÇÃO diz ONDE gerenciar acesso — esconder sem dizer virava beco sem saída', () => {
+    // Caso real (21/08): empresa cadastrada, criação de conta falhou, o dono
+    // abriu "Editar" procurando o campo da RT e não achou nada — nem o campo,
+    // nem o caminho. Não duplicamos a funcionalidade aqui (gerenciar acesso é
+    // trabalho de Equipe → Usuários); o que faltava era dizer isso.
+    const html = renderToStaticMarkup(
+      <ClientModal client={{ id:'x', name:'Loja X', email:'a@b.com', plan:'trial', segment:'padaria' }}
+        onSave={()=>{}} onClose={()=>{}} />
+    );
+    expect(html).toContain('Acesso do cliente');
+    expect(html).toContain('Equipe → Usuários');
+    expect(html).toContain('Vincular conta existente');
+    expect(html).toContain('Entrar como');
+  });
+
+  it('o cadastro NOVO não mostra esse aviso — lá o campo existe de verdade', () => {
+    const html = renderToStaticMarkup(<ClientModal client={null} onSave={()=>{}} onClose={()=>{}} />);
+    expect(html).not.toContain('Acesso do cliente');
+  });
+
   it('o campo da RT explica que conta existente é vinculada, não duplicada', () => {
     const html = renderToStaticMarkup(<ClientModal client={null} onSave={()=>{}} onClose={()=>{}} />);
     expect(html).toMatch(/vinculada, não duplicada/);

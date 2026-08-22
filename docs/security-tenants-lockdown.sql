@@ -7,7 +7,13 @@
 -- NUNCA o access_token). Depois liga-se RLS deny-all na tabela → a anon key
 -- não consegue mais `select *` e enumerar todos os tokens/hashes.
 --
--- IDEMPOTENTE: pode rodar de novo à vontade (drop if exists + create).
+-- ⛔ NÃO É MAIS IDEMPOTENTE — leia antes de rodar (21/08).
+-- A PARTE 1 criava `upsert_tenant` SEM o portão de admin e dava
+-- `grant execute ... to anon`. O portão foi aplicado à mão em produção
+-- (23/07) e nunca virou arquivo, então rodar isto de novo REABRIRIA a
+-- brecha de escrita não-autenticada — em silêncio. O bloco da
+-- `upsert_tenant` foi NEUTRALIZADO aqui; a versão com portão vive em
+-- ⭐ docs/upsert-tenant-gated.sql. O resto do arquivo segue seguro.
 --
 -- ORDEM DE EXECUÇÃO (importante — sem janela de quebra):
 --   1) Rode a PARTE 1 agora (cria as RPCs; não tranca nada; app segue igual).
@@ -125,53 +131,68 @@ $$;
 -- próprio usuário via updateUser, logo forjável (bastaria o devtools pra virar
 -- admin). Pré-requisito: o pushTenant precisa mandar o JWT do admin — feito em
 -- src/tenant-sync.js (v1.9.47).
-drop function if exists public.upsert_tenant(text, text, text, text, text, text, text, jsonb, jsonb, jsonb, text, text, text, timestamptz);
-create function public.upsert_tenant(
-  p_id text, p_access_token text, p_name text, p_segment text, p_plan text,
-  p_brand_color text, p_brand_soft text,
-  p_equipment_catalog jsonb, p_modules jsonb, p_stores jsonb,
-  p_setup_pin_hash text, p_admin_email text, p_admin_name text, p_trial_ends_at timestamptz
-)
-returns void
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  insert into public.tenants as t (
-    id, access_token, name, segment, plan, brand_color, brand_soft,
-    equipment_catalog, modules, stores, setup_pin_hash,
-    admin_email, admin_name, trial_ends_at, updated_at
-  ) values (
-    p_id, p_access_token, p_name, p_segment, p_plan, p_brand_color, p_brand_soft,
-    coalesce(p_equipment_catalog, '[]'::jsonb),
-    coalesce(p_modules, '[]'::jsonb),
-    coalesce(p_stores, '[]'::jsonb),
-    p_setup_pin_hash, p_admin_email, p_admin_name, p_trial_ends_at, now()
-  )
-  on conflict (id) do update set
-    access_token      = excluded.access_token,
-    name              = excluded.name,
-    segment           = excluded.segment,
-    plan              = excluded.plan,
-    brand_color       = excluded.brand_color,
-    brand_soft        = excluded.brand_soft,
-    equipment_catalog = excluded.equipment_catalog,
-    modules           = excluded.modules,
-    stores            = excluded.stores,
-    setup_pin_hash    = coalesce(excluded.setup_pin_hash, t.setup_pin_hash),
-    admin_email       = excluded.admin_email,
-    admin_name        = excluded.admin_name,
-    trial_ends_at     = excluded.trial_ends_at,
-    updated_at        = now();
-end;
-$$;
+-- ⛔ BLOCO NEUTRALIZADO EM 21/08 — a versão abaixo NÃO tem o portão de admin.
+-- Rodá-la sobrescreveria a função gated que está em produção desde 23/07 e
+-- devolveria a escrita de empresa pra qualquer um com a chave pública do
+-- bundle (criar/sobrescrever loja, girar access_token e setup_pin_hash).
+--
+-- ⭐ A versão correta, runnable e com teste de aceitação:
+--    docs/upsert-tenant-gated.sql
+--
+-- Fica comentada como HISTÓRICO — é ela que documenta o que a produção teve
+-- entre a Parte 1 (30/07) e o fechamento manual (23/07 do ano seguinte no
+-- calendário do projeto) — ver docs/HISTORICO.md.
+-- Não descomente.
+-- drop function if exists public.upsert_tenant(text, text, text, text, text, text, text, jsonb, jsonb, jsonb, text, text, text, timestamptz);
+-- create function public.upsert_tenant(
+--   p_id text, p_access_token text, p_name text, p_segment text, p_plan text,
+--   p_brand_color text, p_brand_soft text,
+--   p_equipment_catalog jsonb, p_modules jsonb, p_stores jsonb,
+--   p_setup_pin_hash text, p_admin_email text, p_admin_name text, p_trial_ends_at timestamptz
+-- )
+-- returns void
+-- language plpgsql
+-- security definer
+-- set search_path = ''
+-- as $$
+-- begin
+--   insert into public.tenants as t (
+--     id, access_token, name, segment, plan, brand_color, brand_soft,
+--     equipment_catalog, modules, stores, setup_pin_hash,
+--     admin_email, admin_name, trial_ends_at, updated_at
+--   ) values (
+--     p_id, p_access_token, p_name, p_segment, p_plan, p_brand_color, p_brand_soft,
+--     coalesce(p_equipment_catalog, '[]'::jsonb),
+--     coalesce(p_modules, '[]'::jsonb),
+--     coalesce(p_stores, '[]'::jsonb),
+--     p_setup_pin_hash, p_admin_email, p_admin_name, p_trial_ends_at, now()
+--   )
+--   on conflict (id) do update set
+--     access_token      = excluded.access_token,
+--     name              = excluded.name,
+--     segment           = excluded.segment,
+--     plan              = excluded.plan,
+--     brand_color       = excluded.brand_color,
+--     brand_soft        = excluded.brand_soft,
+--     equipment_catalog = excluded.equipment_catalog,
+--     modules           = excluded.modules,
+--     stores            = excluded.stores,
+--     setup_pin_hash    = coalesce(excluded.setup_pin_hash, t.setup_pin_hash),
+--     admin_email       = excluded.admin_email,
+--     admin_name        = excluded.admin_name,
+--     trial_ends_at     = excluded.trial_ends_at,
+--     updated_at        = now();
+-- end;
+-- $$;
 
 -- A anon (e usuários logados) só podem EXECUTAR as RPCs — nunca tocar a tabela.
 grant execute on function public.get_tenant_by_token(text)                       to anon, authenticated;
 grant execute on function public.mark_setup_consumed(text)                       to anon, authenticated;
 grant execute on function public.bump_setup_attempts(text, integer, integer)     to anon, authenticated;
-grant execute on function public.upsert_tenant(text, text, text, text, text, text, text, jsonb, jsonb, jsonb, text, text, text, timestamptz) to anon, authenticated;
+-- ⛔ REMOVIDO em 21/08: este grant devolvia a `upsert_tenant` pra anon.
+-- O grant correto (só `authenticated`, com revoke de anon antes) está em
+-- docs/upsert-tenant-gated.sql.
+-- grant execute on function public.upsert_tenant(text, text, text, text, text, text, text, jsonb, jsonb, jsonb, text, text, text, timestamptz) to anon, authenticated;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────

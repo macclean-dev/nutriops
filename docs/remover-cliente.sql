@@ -173,8 +173,11 @@ select p.proname as funcao,
 begin;
 
 -- Empresa descartável, id impossível de colidir com cliente.
-insert into public.tenants (id, name, segment, plan)
-values ('__teste_remocao__', 'TESTE de remoção', 'padaria', 'trial');
+-- `access_token` é NOT NULL + UNIQUE (ver schema em docs/HISTORICO.md) — o
+-- valor abaixo é lixo proposital: some no rollback e nunca serve pra abrir
+-- nada, mesmo que alguém interrompa o script no meio.
+insert into public.tenants (id, access_token, name, segment, plan)
+values ('__teste_remocao__', '__token_de_teste_descartavel__', 'TESTE de remoção', 'padaria', 'trial');
 
 -- Uma leitura de temperatura: é o que precisa fazer a remoção RECUSAR.
 insert into public.temperature_records

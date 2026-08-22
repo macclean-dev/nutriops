@@ -156,6 +156,12 @@ describe('o teste de aceitação não encosta em cliente real', () => {
     expect(sql).toContain("'__teste_remocao__'");
   });
 
+  it('o insert traz access_token — a coluna é NOT NULL', () => {
+    // Primeira versão omitia e o script morria no 23502 antes de testar nada.
+    expect(sql).toContain('insert into public.tenants (id, access_token, name, segment, plan)');
+    expect(sql).toContain("'__token_de_teste_descartavel__'");
+  });
+
   it('roda dentro de transação que termina em rollback', () => {
     const ini = sql.indexOf('begin;');
     const rollback = sql.indexOf('rollback;', ini);

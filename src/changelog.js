@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.205', date: '2026-08-21', items: [
+    'O painel Super Admin ganhou a ação "Remover" para empresas cadastradas — até agora um cliente entrava na lista e nunca mais saía, nem um cadastro de teste.',
+    'A remoção é recusada se a empresa tiver QUALQUER registro. Nesse caso a tela mostra quantos e de quais módulos, e orienta a suspender em vez de remover: registro sanitário é evidência de fiscalização e não se apaga.',
+    'O botão só aparece em empresa já suspensa, e cada remoção fica registrada no log de auditoria do painel.',
+  ]},
   { version: '1.9.201', date: '2026-08-21', items: [
     'Correção importante no cadastro de novo cliente: ele agora cria a conta de acesso (e-mail e senha) de verdade. Antes gerava só um PIN de configuração — modelo antigo — e a empresa cadastrada por ali ficava sem sincronizar com a nuvem, sem avisar ninguém.',
     'Ao criar o cliente, o sistema mostra o e-mail e a senha inicial uma única vez, pra você enviar por um canal separado. Se a pessoa já tiver conta no NutriOPS (dono de várias unidades, nutricionista que cobre mais de uma loja), ela é vinculada à empresa nova em vez de ganhar uma segunda conta.',

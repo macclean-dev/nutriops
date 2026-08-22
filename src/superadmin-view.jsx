@@ -28,6 +28,7 @@ const AUDIT_LABELS = {
   plan_change: 'Mudou plano', suspend: 'Suspendeu', activate: 'Ativou',
   impersonate_start: 'Logou como', impersonate_end: 'Saiu do tenant',
   access: 'Acessou Super Admin', create: 'Cadastrou empresa',
+  delete: 'REMOVEU empresa',
 };
 
 // Quantas entradas do audit log (readAudit, cap de 500 em superadmin.js) a
@@ -244,6 +245,79 @@ export function SuperAdminGate({ session, onExit, children }) {
   );
 }
 
+
+// Confirmação de remoção. Mostra a CONTAGEM antes de qualquer botão perigoso —
+// o admin decide olhando o número, não a memória. Três estados possíveis:
+//   · contando            → nenhum botão de apagar aparece
+//   · não deu pra contar   → RECUSA (null ≠ zero: "não sei" não pode virar
+//                            "está vazio, pode apagar")
+//   · contou               → libera só se o total for 0
+export function RemoverClienteModal({ estado, onConfirmar, onFechar }) {
+  const { tenant, contagem, carregando, erro, apagando } = estado;
+  const total = contagem?.total;
+  const naoDeuPraContar = !carregando && contagem === null;
+  const vazio = total === 0;
+  const porTabela = Object.entries(contagem?.porTabela ?? {});
+
+  return (
+    <div className="modal-backdrop" onClick={apagando ? undefined : onFechar}>
+      <div className="modal-card" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">Remover empresa</span>
+            <h2>{tenant.name}</h2>
+          </div>
+        </div>
+        <div className="capture-fields">
+          {carregando && <p className="muted" style={{ fontSize:13 }}>Consultando os registros desta empresa…</p>}
+
+          {naoDeuPraContar && (
+            <p role="alert" className="submission danger" style={{ fontSize:13 }}>
+              Não consegui consultar os registros desta empresa agora (sem internet, sessão expirada,
+              ou o SQL <strong>docs/remover-cliente.sql</strong> ainda não foi rodado no Supabase).
+              Sem essa resposta eu não removo nada — "não sei quantos" não é a mesma coisa que "está vazia".
+            </p>
+          )}
+
+          {!carregando && contagem !== null && !vazio && (
+            <>
+              <p role="alert" className="submission danger" style={{ fontSize:13 }}>
+                <strong>Esta empresa tem {total} registro{total === 1 ? '' : 's'} e não pode ser removida.</strong><br />
+                Registro sanitário é evidência de fiscalização (RDC 216) — não se apaga.
+                Use <strong>Suspender</strong>: o acesso é cortado e o histórico fica preservado.
+              </p>
+              <ul className="muted" style={{ fontSize:12, margin:'0 0 4px', paddingLeft:18 }}>
+                {porTabela.map(([tabela, n]) => <li key={tabela}>{tabela}: {n}</li>)}
+              </ul>
+            </>
+          )}
+
+          {!carregando && vazio && (
+            <p className="muted" style={{ fontSize:13 }}>
+              Nenhum registro encontrado — esta empresa nunca gerou evidência.
+              A remoção apaga o cadastro, o catálogo de equipamentos, a equipe, os modelos de planilha
+              e o vínculo das contas. <strong>Não tem volta.</strong>
+            </p>
+          )}
+
+          {erro && <p role="alert" className="submission danger" style={{ fontSize:13 }}>{erro}</p>}
+
+          <div className="actions-row">
+            <button className="secondary-action" onClick={onFechar} disabled={apagando}>
+              {vazio ? 'Cancelar' : 'Fechar'}
+            </button>
+            {vazio && (
+              <button className="primary-action attention" onClick={onConfirmar} disabled={apagando}>
+                {apagando ? 'Removendo…' : `Remover ${tenant.name}`}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExit }) {
   const [clients, setClients] = useState(() => readClients());
   const [audit, setAudit]     = useState(() => readAudit());
@@ -340,6 +414,45 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
 
   // Editar cliente (inclui "Gerar novo PIN") + ver o link — reusa os mesmos
   // modais do /admin. Pega o registro cru do client (com token/hash) pelo id.
+  // ─── Remover cliente (21/08) ───────────────────────────────────────────
+  // O painel nunca teve isso: cliente cadastrado ficava na lista pra sempre,
+  // inclusive teste e cadastro que deu errado. O dono precisou de SQL manual +
+  // console do navegador pra tirar dois.
+  //
+  // Fluxo de 2 etapas de propósito: abrir o modal CONSULTA quantos registros a
+  // empresa tem, e o admin decide olhando o número. Botão que apaga no
+  // primeiro clique não combina com dado de fiscalização.
+  //
+  // ⚠️ A trava de verdade está no SERVIDOR (docs/remover-cliente.sql): a RPC
+  // recusa se houver qualquer evidência. O que está aqui é conveniência —
+  // device com bundle antigo passaria por cima.
+  const [removeAlvo, setRemoveAlvo] = useState(null);   // { tenant, contagem, carregando, erro, apagando }
+  const abrirRemover = async (t) => {
+    setRemoveAlvo({ tenant: t, contagem: null, carregando: true, erro: '', apagando: false });
+    const { contarRegistrosTenant } = await import('./tenant-sync');
+    const c = await contarRegistrosTenant(t.id);
+    // null = "não deu pra saber" (rede, RPC ausente), diferente de zero. Não
+    // pode virar "0 registros, pode apagar" — seria a mentira mais cara aqui.
+    setRemoveAlvo(prev => prev && prev.tenant.id === t.id ? { ...prev, contagem: c, carregando: false } : prev);
+  };
+  const confirmarRemover = async () => {
+    const t = removeAlvo?.tenant; if (!t) return;
+    setRemoveAlvo(prev => ({ ...prev, apagando: true, erro: '' }));
+    try {
+      const { deleteTenantCloud } = await import('./tenant-sync');
+      await deleteTenantCloud(t.id);
+      // Só tira da lista local DEPOIS que a nuvem confirmou: se a ordem
+      // invertesse e a RPC recusasse, o cliente sumia da tela e voltava no
+      // próximo boot (mergeCloudTenants), parecendo bug do painel.
+      persistClients((clients ?? []).filter(c => c.id !== t.id));
+      logAction({ type: 'delete', tenantId: t.id, tenantName: t.name });
+      setMsg({ tone:'ok', text:`${t.name} foi removida.` });
+      setRemoveAlvo(null);
+    } catch (e) {
+      setRemoveAlvo(prev => ({ ...prev, apagando: false, erro: e.message }));
+    }
+  };
+
   const openEdit = (id) => { const c = (clients ?? []).find(x => x.id === id); if (c) setEditClient(c); };
   const openLink = (id) => { const c = (clients ?? []).find(x => x.id === id); if (c) setTokenModal(c); };
 
@@ -481,6 +594,15 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
                       {t.source==='client' && <button className="ghost-action" style={{ fontSize:11, padding:'4px 10px' }} onClick={() => openEdit(t.id)}>Editar</button>}
                       {t.source==='client' && <button className="ghost-action" style={{ fontSize:11, padding:'4px 10px' }} onClick={() => openLink(t.id)}>Link</button>}
                       <button className="ghost-action" style={{ fontSize:11, padding:'4px 10px' }} onClick={() => toggleActive(t)}>{t.active ? 'Suspender' : 'Reativar'}</button>
+                      {/* Só cliente (loja-seed vive no código, não dá pra
+                          remover) e só quando JÁ suspenso: obriga a passar por
+                          "Suspender" antes, que é reversível. Remover é o
+                          último passo, nunca o primeiro clique ao lado de
+                          "Entrar como". */}
+                      {t.source==='client' && !t.active && (
+                        <button className="ghost-action danger" style={{ fontSize:11, padding:'4px 10px' }}
+                          onClick={() => abrirRemover(t)}>Remover</button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -504,7 +626,7 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
             : audit.slice(0, auditVisible).map((a, i) => (
               <div key={a.at + i} className="equipment-maintenance-row">
                 <div>
-                  <strong style={{ color: a.type==='suspend'?'var(--red)':a.type==='plan_change'?'var(--primary)':'var(--text)' }}>
+                  <strong style={{ color: (a.type==='suspend'||a.type==='delete')?'var(--red)':a.type==='plan_change'?'var(--primary)':'var(--text)' }}>
                     {AUDIT_LABELS[a.type] ?? a.type}
                   </strong>
                   <span style={{ fontSize:12, color:'var(--text-secondary)' }}>
@@ -539,6 +661,7 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
           onClientUpdate={(updated) => { saveClient(updated); setTokenModal(updated); }}
         />
       )}
+      {removeAlvo && <RemoverClienteModal estado={removeAlvo} onConfirmar={confirmarRemover} onFechar={() => setRemoveAlvo(null)} />}
     </section>
   );
 }

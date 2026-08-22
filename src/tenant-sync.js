@@ -336,6 +336,55 @@ export async function linkExistingMember({ tenantId, email, role = 'Colaborador'
   return { userId: row.user_id, email: row.email, name: row.name, role: row.role, jaExistia: row.ja_existia === true };
 }
 
+// Conta os registros de EVIDÊNCIA de uma empresa (docs/remover-cliente.sql).
+// O botão "Remover" mostra isso antes de apagar, pra o admin ver o que está
+// prestes a perder — e pra explicar a recusa quando houver registro.
+export async function contarRegistrosTenant(tenantId) {
+  if (!isTenantSyncEnabled() || !tenantId) return null;
+  try {
+    const { getValidAccessToken } = await import('./auth');
+    const token = await getValidAccessToken();
+    if (!token) return null;
+    const res = await fetch(`${sbBase()}/rpc/contar_registros_tenant`, {
+      method: 'POST',
+      headers: { apikey: SB_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_tenant_id: tenantId }),
+    });
+    if (!res.ok) return null;   // null = "não deu pra saber", diferente de zero
+    return await res.json();
+  } catch { return null; }
+}
+
+// Remove a empresa da nuvem. A TRAVA de evidência vive no SERVIDOR (a RPC
+// recusa se houver qualquer registro) — a checagem do botão é conveniência,
+// não segurança: device com bundle antigo, ou chamada direta, passaria por
+// cima dela.
+//
+// Precisa ser RPC: `tenants` está com RLS deny-all desde o lockdown de 30/07.
+// E apagar só no localStorage seria inútil — `mergeCloudTenants` reacrescenta
+// no próximo boot o que existir na nuvem.
+//
+// PROPAGA o erro (não devolve vazio como as irmãs deste arquivo): a recusa
+// traz a contagem por tabela e é justamente o que o admin precisa ler.
+export async function deleteTenantCloud(tenantId) {
+  if (!isTenantSyncEnabled()) throw new Error('Supabase não configurado.');
+  if (!tenantId) throw new Error('Empresa não informada.');
+  const { getValidAccessToken } = await import('./auth');
+  const token = await getValidAccessToken();
+  if (!token) throw new Error('Sua sessão expirou. Entre de novo.');
+  const res = await fetch(`${sbBase()}/rpc/delete_tenant`, {
+    method: 'POST',
+    headers: { apikey: SB_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_tenant_id: tenantId }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    if (res.status === 404) throw new Error('Recurso indisponível neste banco — rode docs/remover-cliente.sql no Supabase.');
+    throw new Error(data?.message ?? data?.error ?? 'Não consegui remover a empresa.');
+  }
+  return data;
+}
+
 // Log de acessos (IP + horário + e-mail) — modelo e-mail só. p_tenant_id null
 // só funciona pro admin global (get_access_log barra o resto no servidor).
 // since/until (ISO ou Date) filtram NO SERVIDOR, antes do limit — a função já

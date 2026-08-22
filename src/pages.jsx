@@ -2838,6 +2838,51 @@ export function App() {
     return () => { cancelled = true; };
   }, [session?.tenantId, session?.memberTenants, activeTenants]);
 
+  // Vínculo NOVO aparece sem precisar deslogar (21/08).
+  //
+  // `fetchMemberTenants` só rodava no LOGIN, e o efeito acima só busca quando
+  // falta alguma empresa que JÁ está na sessão. Resultado: quem era vinculado
+  // a uma unidade nova enquanto estava logado não via nada — nem a empresa,
+  // nem um aviso — até sair e entrar de novo por acaso. Aconteceu no 1º uso
+  // real do fluxo multi-unidade: as 3 contas foram vinculadas com sucesso e a
+  // dona continuou vendo só a CASA DOCE.
+  //
+  // Uma RPC por boot, ao lado das 22 do syncAllModules — o custo é irrelevante
+  // perto de alguém achar que o vínculo não funcionou.
+  const membroJaRevalidado = useRef(false);
+  useEffect(() => {
+    if (!session?.accessToken) return;          // só sessão de nuvem tem vínculo
+    if (membroJaRevalidado.current) return;     // 1x por montagem, não por render
+    membroJaRevalidado.current = true;
+    let cancelado = false;
+    import('./tenant-sync').then((m) => m.fetchMemberTenants()).then((lista) => {
+      // null = "não deu pra saber" (rede, 5xx). NUNCA encolher o acesso por
+      // falha transitória — é a mesma distinção que o login faz desde 30/07.
+      if (cancelado || !Array.isArray(lista)) return;
+      const idsNovos = lista.map((t) => t.id).sort().join('|');
+      const idsAtuais = (session.memberTenants ?? []).map((t) => t.id).sort().join('|');
+      if (idsNovos === idsAtuais) return;
+      setActiveTenants((prev) => {
+        const ids = new Set(lista.map((t) => t.id));
+        return [
+          ...lista.map((c) => mergeMemberTenant(c, prev.find((p) => p.id === c.id))),
+          ...prev.filter((t) => !ids.has(t.id)),
+        ];
+      });
+      // Atualiza o vínculo na sessão, mas NÃO mexe em `tenantId`: trocar a
+      // empresa ativa debaixo de quem está no meio de um registro seria pior
+      // que o problema.
+      setSession((atual) => {
+        if (!atual) return atual;
+        const proxima = { ...atual, memberTenants: lista.map((t) => ({ id: t.id, name: t.name, role: t.memberRole })) };
+        save(SESSION_KEY, proxima);
+        return proxima;
+      });
+      console.info(`[NutriOPS] vínculo revalidado — ${lista.length} empresa(s)`);
+    }).catch(() => {});
+    return () => { cancelado = true; };
+  }, [session?.accessToken]);
+
   // Active store object
   const activeStore = useMemo(() => {
     if (!activeStoreId) return activeTenant.stores?.[0] ?? null;

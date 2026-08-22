@@ -21,6 +21,9 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.209', date: '2026-08-21', items: [
+    'Se você for vinculado a uma empresa nova enquanto está usando o app, ela aparece na próxima vez que abrir — antes só depois de sair e entrar de novo, sem nenhum aviso de que faltava fazer isso.',
+  ]},
   { version: '1.9.205', date: '2026-08-21', items: [
     'O painel Super Admin ganhou a ação "Remover" para empresas cadastradas — até agora um cliente entrava na lista e nunca mais saía, nem um cadastro de teste.',
     'A remoção é recusada se a empresa tiver QUALQUER registro. Nesse caso a tela mostra quantos e de quais módulos, e orienta a suspender em vez de remover: registro sanitário é evidência de fiscalização e não se apaga.',

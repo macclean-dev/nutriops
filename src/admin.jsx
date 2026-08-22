@@ -8,7 +8,7 @@ import { tenantsBase } from './tenants-public';
 import { resolveLimits as resolveLimitsCat, resolveTone as resolveToneCat } from './limits';
 import { hashPin, generateSetupPin, generateInitialPassword } from './crypto';
 import { pushTenant, isTenantSyncEnabled } from './tenant-sync';
-import { SEGMENTS, DEFAULT_EQUIPMENT, DEFAULT_MODULES, buildEquipmentCatalog, segmentLabel, segmentLocalityType } from './segments';
+import { SEGMENTS, DEFAULT_MODULES, segmentLabel, segmentLocalityType } from './segments';
 
 // Re-export storage helpers pra preservar a API que pages.jsx/trial.jsx
 // consumiam (com import from './admin'). Os imports leves agora podem ser
@@ -250,8 +250,22 @@ export function ClientModal({ client, onSave, onClose }) {
       plan,
       brandColor: client?.brandColor ?? '#00684a',
       brandSoft:  client?.brandSoft  ?? 'rgba(0,163,92,.10)',
-      equipmentCatalog: client?.equipmentCatalog
-        ?? buildEquipmentCatalog(DEFAULT_EQUIPMENT[segment] ?? DEFAULT_EQUIPMENT.outro),
+      // VAZIO, não catálogo genérico do segmento (21/08). Até aqui um cliente
+      // novo nascia com 4 equipamentos inventados ("Freezer", "Refrigerador",
+      // "Vitrine Refrigerada", "Cervejeiro") num setor fictício "Unidade
+      // principal", sem faixa de temperatura.
+      //
+      // O próprio código já tratava isso como problema: `isPlaceholderCatalog`
+      // (segments.js) existe pra DETECTAR esses genéricos, porque na CASA DOCE
+      // (07 e 10/08) um aparelho os exibiu como se fossem os equipamentos da
+      // loja — e dava pra registrar temperatura de equipamento inexistente.
+      // Detectávamos o sintoma sem cortar a origem.
+      //
+      // O card "Equipamentos fora da rotina" (v1.9.198) tornou o custo óbvio:
+      // loja recém-criada já abre com "4 nunca medidos", que é lacuna de
+      // evidência inventada pelo sistema. Catálogo é cadastro da loja real —
+      // começa vazio e a RT preenche.
+      equipmentCatalog: client?.equipmentCatalog ?? [],
       modules: client?.modules ?? DEFAULT_MODULES,
       stores: client?.stores ?? [{
         id: `${id}-main`,

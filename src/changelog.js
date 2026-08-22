@@ -21,6 +21,10 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.211', date: '2026-08-21', items: [
+    'Empresa nova não vem mais com equipamentos de exemplo. Antes nascia com 4 inventados ("Freezer", "Refrigerador", "Vitrine Refrigerada", "Cervejeiro") num setor genérico — que apareciam como "nunca medidos" e criavam uma lacuna de registro que não existia. Agora o catálogo começa vazio e a RT cadastra os equipamentos reais.',
+    'O modo implantação (fase de treino, com os alertas de pendência suspensos) ganhou saída: no painel administrativo há agora "Ativar operação", que exige digitar o nome da empresa para confirmar. Sem isso, uma loja podia ficar meses em treino sem que ninguém percebesse que os alertas estavam desligados.',
+  ]},
   { version: '1.9.209', date: '2026-08-21', items: [
     'Se você for vinculado a uma empresa nova enquanto está usando o app, ela aparece na próxima vez que abrir — antes só depois de sair e entrar de novo, sem nenhum aviso de que faltava fazer isso.',
     'E quem responde por mais de uma unidade agora tem o seletor de empresa no menu lateral, com troca imediata. Antes o seletor não aparecia para quem entrou por vínculo, e a única forma de alcançar a outra unidade era por um filtro escondido dentro de Alertas ou Relatórios.',

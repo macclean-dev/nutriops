@@ -28,7 +28,7 @@ const AUDIT_LABELS = {
   plan_change: 'Mudou plano', suspend: 'Suspendeu', activate: 'Ativou',
   impersonate_start: 'Logou como', impersonate_end: 'Saiu do tenant',
   access: 'Acessou Super Admin', create: 'Cadastrou empresa',
-  delete: 'REMOVEU empresa',
+  delete: 'REMOVEU empresa', golive: 'Ativou operação',
 };
 
 // Quantas entradas do audit log (readAudit, cap de 500 em superadmin.js) a
@@ -246,6 +246,59 @@ export function SuperAdminGate({ session, onExit, children }) {
 }
 
 
+// Ativar operação — pede o NOME DA EMPRESA digitado antes de liberar.
+//
+// Não é cerimônia: a ativação muda a régua de uma loja inteira (alertas de
+// pendência passam a valer, registros deixam de ser treino) e o painel lista
+// várias empresas em linhas quase idênticas. Digitar o nome obriga a LER qual
+// está sendo ativada — é a diferença entre confirmar e reconhecer.
+//
+// Comparação sem caixa e sem espaço de sobra: o objetivo é provar atenção, não
+// testar digitação.
+export function AtivarOperacaoModal({ estado, onConfirmar, onFechar }) {
+  const { tenant, erro, salvando } = estado;
+  const [texto, setTexto] = useState('');
+  const norm = (v) => String(v ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const confere = norm(texto) === norm(tenant.name) && norm(texto) !== '';
+
+  return (
+    <div className="modal-backdrop" onClick={salvando ? undefined : onFechar}>
+      <div className="modal-card" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">Sair da implantação</span>
+            <h2>Ativar operação</h2>
+          </div>
+        </div>
+        <div className="capture-fields">
+          <p className="muted" style={{ fontSize:13, lineHeight:1.5 }}>
+            <strong>{tenant.name}</strong> está em fase de treino: os alertas de pendência ficam
+            suspensos e os registros são marcados como treino. Ativando, ela passa a ser cobrada
+            como operação de verdade — equipamento sem leitura no turno vira alerta.
+          </p>
+          <p className="muted" style={{ fontSize:12, lineHeight:1.5, margin:0 }}>
+            Ative quando a equipe já estiver registrando na rotina. Ativar cedo demais enche a
+            tela de pendência e ensina a ignorar o alerta; tarde demais deixa a loja sem cobrança
+            nenhuma — foi o que aconteceu com uma loja que ficou 40 dias em implantação sem ninguém
+            notar.
+          </p>
+          <label>Digite <strong>{tenant.name}</strong> para confirmar
+            <input value={texto} onChange={(e) => setTexto(e.target.value)}
+              placeholder={tenant.name} autoFocus disabled={salvando} />
+          </label>
+          {erro && <p role="alert" className="submission danger" style={{ fontSize:13 }}>{erro}</p>}
+          <div className="actions-row">
+            <button className="secondary-action" onClick={onFechar} disabled={salvando}>Cancelar</button>
+            <button className="primary-action attention" onClick={onConfirmar} disabled={!confere || salvando}>
+              {salvando ? 'Ativando…' : 'Ativar operação'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Confirmação de remoção. Mostra a CONTAGEM antes de qualquer botão perigoso —
 // o admin decide olhando o número, não a memória. Três estados possíveis:
 //   · contando            → nenhum botão de apagar aparece
@@ -426,6 +479,32 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
   // ⚠️ A trava de verdade está no SERVIDOR (docs/remover-cliente.sql): a RPC
   // recusa se houver qualquer evidência. O que está aqui é conveniência —
   // device com bundle antigo passaria por cima.
+  // ─── Ativar operação (sair da implantação) ─────────────────────────────
+  // Toda empresa nasce em implantação, com os alertas de pendência suspensos
+  // pra não afogar a equipe durante o treino. Só que a SAÍDA não existia: era
+  // um UPDATE comentado num .sql, e a CASA DOCE ficou assim de 12/07 a 21/08 —
+  // quase mês e meio com os alertas desligados sem ninguém perceber. Foi um
+  // dos motivos de 12 equipamentos parados não gerarem aviso nenhum.
+  //
+  // Modo de treino sem botão de sair vira modo permanente.
+  const [goLiveAlvo, setGoLiveAlvo] = useState(null); // { tenant, erro, salvando }
+  const confirmarGoLive = async () => {
+    const t = goLiveAlvo?.tenant; if (!t) return;
+    setGoLiveAlvo(prev => ({ ...prev, salvando: true, erro: '' }));
+    try {
+      const { setTenantImplantacao } = await import('./tenant-sync');
+      await setTenantImplantacao(t.id, false);
+      // Espelha local só DEPOIS da nuvem confirmar — invertido, a tela diria
+      // "ativada" numa empresa que o servidor recusou.
+      persistClients((clients ?? []).map(c => c.id === t.id ? { ...c, implantacao: false, goLiveAt: new Date().toISOString() } : c));
+      logAction({ type: 'golive', tenantId: t.id, tenantName: t.name });
+      setMsg({ tone:'ok', text:`${t.name} entrou em operação — os alertas de pendência passam a valer.` });
+      setGoLiveAlvo(null);
+    } catch (e) {
+      setGoLiveAlvo(prev => ({ ...prev, salvando: false, erro: e.message }));
+    }
+  };
+
   const [removeAlvo, setRemoveAlvo] = useState(null);   // { tenant, contagem, carregando, erro, apagando }
   const abrirRemover = async (t) => {
     setRemoveAlvo({ tenant: t, contagem: null, carregando: true, erro: '', apagando: false });
@@ -599,6 +678,12 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
                           "Suspender" antes, que é reversível. Remover é o
                           último passo, nunca o primeiro clique ao lado de
                           "Entrar como". */}
+                      {/* Em implantação → oferece ativar. Só cliente: loja-seed
+                          não tem linha em `tenants` pra atualizar. */}
+                      {t.source==='client' && t.implantacao === true && (
+                        <button className="ghost-action" style={{ fontSize:11, padding:'4px 10px', color:'var(--primary)', fontWeight:700 }}
+                          onClick={() => setGoLiveAlvo({ tenant: t, erro:'', salvando:false })}>Ativar operação</button>
+                      )}
                       {t.source==='client' && !t.active && (
                         <button className="ghost-action danger" style={{ fontSize:11, padding:'4px 10px' }}
                           onClick={() => abrirRemover(t)}>Remover</button>
@@ -661,6 +746,7 @@ export function SuperAdminView({ session, seedTenants = [], onImpersonate, onExi
           onClientUpdate={(updated) => { saveClient(updated); setTokenModal(updated); }}
         />
       )}
+      {goLiveAlvo && <AtivarOperacaoModal estado={goLiveAlvo} onConfirmar={confirmarGoLive} onFechar={() => setGoLiveAlvo(null)} />}
       {removeAlvo && <RemoverClienteModal estado={removeAlvo} onConfirmar={confirmarRemover} onFechar={() => setRemoveAlvo(null)} />}
     </section>
   );

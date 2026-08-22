@@ -389,6 +389,36 @@ export async function deleteTenantCloud(tenantId) {
   return data;
 }
 
+// Liga/desliga o modo implantação (docs/ativar-operacao.sql). Sair da
+// implantação é o "go-live": a partir dele os alertas de pendência voltam a
+// contar e os registros deixam de ser marcados como treino.
+//
+// Até 21/08 isso só existia como UPDATE comentado num .sql — e a CASA DOCE
+// ficou em implantação de 12/07 a 21/08 sem ninguém perceber, com os alertas
+// de turno desligados esse tempo todo. Modo de treino sem botão de sair vira
+// modo permanente.
+//
+// PROPAGA o erro: a recusa do servidor (não é admin, id não existe) é o que o
+// admin precisa ler.
+export async function setTenantImplantacao(tenantId, emImplantacao) {
+  if (!isTenantSyncEnabled()) throw new Error('Supabase não configurado.');
+  if (!tenantId) throw new Error('Empresa não informada.');
+  const { getValidAccessToken } = await import('./auth');
+  const token = await getValidAccessToken();
+  if (!token) throw new Error('Sua sessão expirou. Entre de novo.');
+  const res = await fetch(`${sbBase()}/rpc/set_tenant_implantacao`, {
+    method: 'POST',
+    headers: { apikey: SB_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_tenant_id: tenantId, p_implantacao: emImplantacao }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    if (res.status === 404) throw new Error('Recurso indisponível neste banco — rode docs/ativar-operacao.sql no Supabase.');
+    throw new Error(data?.message ?? data?.error ?? 'Não consegui mudar o modo da empresa.');
+  }
+  return data;
+}
+
 // Log de acessos (IP + horário + e-mail) — modelo e-mail só. p_tenant_id null
 // só funciona pro admin global (get_access_log barra o resto no servidor).
 // since/until (ISO ou Date) filtram NO SERVIDOR, antes do limit — a função já

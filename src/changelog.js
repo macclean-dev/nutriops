@@ -22,7 +22,6 @@ export function compareVersions(a, b) {
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
   { version: '1.9.211', date: '2026-08-21', items: [
-    'Empresa nova não vem mais com equipamentos de exemplo. Antes nascia com 4 inventados ("Freezer", "Refrigerador", "Vitrine Refrigerada", "Cervejeiro") num setor genérico — que apareciam como "nunca medidos" e criavam uma lacuna de registro que não existia. Agora o catálogo começa vazio e a RT cadastra os equipamentos reais.',
     'O modo implantação (fase de treino, com os alertas de pendência suspensos) ganhou saída: no painel administrativo há agora "Ativar operação", que exige digitar o nome da empresa para confirmar. Sem isso, uma loja podia ficar meses em treino sem que ninguém percebesse que os alertas estavam desligados.',
   ]},
   { version: '1.9.209', date: '2026-08-21', items: [

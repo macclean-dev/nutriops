@@ -157,6 +157,95 @@ select p.proname as funcao,
  order by p.proname;
 -- Esperado: 2 linhas, security_definer = true, anon_pode = false, logado_pode = true.
 
--- Teste seguro (a CASA DOCE tem centenas de registros — TEM que recusar):
--- select public.delete_tenant('bf245c3b-2f9');
--- Esperado: erro "tem N registro(s) e NÃO pode ser removida".
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- TESTE DE ACEITAÇÃO — em empresa DESCARTÁVEL, criada e desfeita aqui dentro.
+--
+-- NÃO aponte este teste pra um cliente real, nem pra "ver se recusa". A trava
+-- é justamente pra o dia em que alguém errar o id; não vale exercitá-la com o
+-- dado de produção do lado. (Pedido do dono, 21/08 — e ele está certo.)
+--
+-- O bloco inteiro roda dentro de uma transação que termina em ROLLBACK: a
+-- empresa de teste nunca chega a existir de verdade, e nada é apagado.
+-- Rode TUDO de uma vez (não selecione trecho) — o rollback está no fim.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+begin;
+
+-- Empresa descartável, id impossível de colidir com cliente.
+insert into public.tenants (id, name, segment, plan)
+values ('__teste_remocao__', 'TESTE de remoção', 'padaria', 'trial');
+
+-- Uma leitura de temperatura: é o que precisa fazer a remoção RECUSAR.
+insert into public.temperature_records
+  (id, tenant_id, tenant_name, equipment_input, equipment_key, measured_at,
+   value, min_value, max_value, user_name, user_role, created_at)
+values (gen_random_uuid(), '__teste_remocao__', 'TESTE de remoção', 'Freezer',
+        'Freezer', '08:00', -18, -22, -18, 'teste', 'Colaborador', now());
+
+do $$
+declare v_erro text; v_res jsonb;
+begin
+  -- Vira "admin da plataforma" só dentro desta transação.
+  perform set_config('request.jwt.claims',
+    json_build_object('app_metadata', json_build_object('role','admin'))::text, true);
+
+  -- ── CHECK 1: COM registro, tem que recusar ────────────────────────────
+  -- O bloco begin/exception cria uma subtransação: a exceção esperada não
+  -- derruba o resto do teste.
+  begin
+    perform public.delete_tenant('__teste_remocao__');
+    raise warning 'CHECK 1: ✕ FALHOU — apagou uma empresa COM registro!';
+  exception when others then
+    v_erro := sqlerrm;
+    if v_erro like '%não pode ser removida%' then
+      raise warning 'CHECK 1: ✓ recusou como devia — %', v_erro;
+    else
+      raise warning 'CHECK 1: ✕ recusou pelo motivo ERRADO — %', v_erro;
+    end if;
+  end;
+
+  -- ── CHECK 2: SEM registro, tem que apagar ─────────────────────────────
+  delete from public.temperature_records where tenant_id = '__teste_remocao__';
+  begin
+    v_res := public.delete_tenant('__teste_remocao__');
+    raise warning 'CHECK 2: ✓ removeu a empresa vazia — %', v_res::text;
+  exception when others then
+    raise warning 'CHECK 2: ✕ FALHOU — não removeu empresa vazia: %', sqlerrm;
+  end;
+
+  -- ── CHECK 3: id que não existe tem que dar erro claro ─────────────────
+  begin
+    perform public.delete_tenant('__nao_existe__');
+    raise warning 'CHECK 3: ✕ FALHOU — aceitou id inexistente';
+  exception when others then
+    if sqlerrm like '%Não existe empresa%' then
+      raise warning 'CHECK 3: ✓ id inexistente recusado';
+    else
+      raise warning 'CHECK 3: ✕ erro inesperado — %', sqlerrm;
+    end if;
+  end;
+
+  -- ── CHECK 4: sem ser admin da plataforma, tem que barrar ──────────────
+  perform set_config('request.jwt.claims', json_build_object()::text, true);
+  begin
+    perform public.delete_tenant('__teste_remocao__');
+    raise warning 'CHECK 4: ✕ FALHOU — deixou não-admin remover!';
+  exception when others then
+    if sqlerrm like '%administrador da plataforma%' then
+      raise warning 'CHECK 4: ✓ barrou quem não é admin da plataforma';
+    else
+      raise warning 'CHECK 4: ✕ barrou pelo motivo errado — %', sqlerrm;
+    end if;
+  end;
+end $$;
+
+-- Desfaz TUDO: a empresa de teste e a leitura nunca existiram.
+rollback;
+
+-- Confirmação de que não sobrou nada (roda depois do rollback):
+select count(*) as sobrou_teste from public.tenants where id = '__teste_remocao__';
+-- Esperado: 0
+
+-- ⚠️ Os 4 CHECKs saem como WARNING. No Supabase SQL Editor eles aparecem no
+-- painel de mensagens/logs abaixo do resultado. Os quatro precisam mostrar ✓.

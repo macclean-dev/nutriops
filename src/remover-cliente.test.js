@@ -135,3 +135,46 @@ describe('o botão e o modal', () => {
     expect(view).toContain("(a.type==='suspend'||a.type==='delete')?'var(--red)'");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// O teste de aceitação do SQL (21/08). A primeira versão sugeria apontar a
+// remoção pra CASA DOCE "pra ver se recusa" — o dono barrou, e com razão: a
+// trava existe justamente pro dia em que alguém errar o id, e não vale
+// exercitá-la com o dado de produção do lado. Nem com rollback.
+//
+// O teste agora cria uma empresa DESCARTÁVEL dentro de uma transação que
+// termina em rollback, e nunca nomeia cliente nenhum.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('o teste de aceitação não encosta em cliente real', () => {
+  it('nenhum id de cliente aparece no arquivo', () => {
+    // bf245c3b-2f9 é a CASA DOCE. Nem em comentário.
+    expect(sql).not.toContain('bf245c3b-2f9');
+    expect(sql).not.toMatch(/CASA DOCE/i);
+  });
+
+  it('usa empresa descartável, com id impossível de colidir', () => {
+    expect(sql).toContain("'__teste_remocao__'");
+  });
+
+  it('roda dentro de transação que termina em rollback', () => {
+    const ini = sql.indexOf('begin;');
+    const rollback = sql.indexOf('rollback;', ini);
+    expect(ini).toBeGreaterThan(-1);
+    expect(rollback).toBeGreaterThan(ini);
+    // e não pode ter commit no meio, que tornaria o teste permanente
+    expect(sql.slice(ini, rollback)).not.toContain('commit;');
+  });
+
+  it('cobre os 4 caminhos que importam', () => {
+    // com registro recusa · sem registro apaga · id inexistente · não-admin
+    for (const c of ['CHECK 1', 'CHECK 2', 'CHECK 3', 'CHECK 4']) expect(sql).toContain(c);
+    expect(sql).toMatch(/apagou uma empresa COM registro/);
+    expect(sql).toMatch(/deixou não-admin remover/);
+  });
+
+  it('a exceção esperada não derruba o resto do teste', () => {
+    // begin/exception dentro do DO cria subtransação — sem isso o primeiro
+    // CHECK abortaria a transação e os outros três nem rodariam.
+    expect(sql).toContain('exception when others then');
+  });
+});

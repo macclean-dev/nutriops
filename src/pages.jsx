@@ -3015,9 +3015,22 @@ export function App() {
   // tem os clientes da nuvem (CASA DOCE) — o switcher do avatar/drawer ficava
   // sem a loja e o <select> exibia "Swiss" por fallback (mesma classe do bug
   // corrigido na v1.9.72 em visibleTenants/refreshRecords).
+  // Empresas que o seletor do menu lateral oferece.
+  //
+  // Era `seesAllTenants ? activeTenants : []` — VAZIO pra membro (21/08). Com
+  // isso, quem tem vínculo com mais de uma unidade não tinha seletor nenhum na
+  // Visão geral: o dono da CASA DOCE foi vinculado à unidade nova, o vínculo
+  // funcionou, e ele entrou e continuou vendo só uma empresa, concluindo que
+  // não tinha dado certo. A única forma de alcançar a outra era o <select>
+  // escondido dentro de Alertas/NC/Relatórios.
+  //
+  // `visibleTenants` já é a resposta certa pros dois casos: admin global →
+  // todas; membro → as do próprio vínculo. E `handleTenantChange` já aceita
+  // qualquer id que esteja nela desde a correção de 18/08 — era só a lista da
+  // UI que ficou pra trás.
   const switchableTenants = useMemo(
-    () => (seesAllTenants ? activeTenants : []),
-    [seesAllTenants, activeTenants]
+    () => (seesAllTenants ? activeTenants : visibleTenants),
+    [seesAllTenants, activeTenants, visibleTenants]
   );
   const [switchTarget, setSwitchTarget] = useState(null);
 
@@ -3026,9 +3039,16 @@ export function App() {
     // RT/Admin já têm acesso agregado autorizado → troca instantânea (sem atrito).
     // Supervisora (sem multiTenant) → relogin com PIN da empresa-alvo.
     if (seesAllTenants) { handleTenantChange(id); return; }
+    // VÍNCULO também é acesso autorizado (21/08). Quem está em `memberTenants`
+    // foi deliberadamente vinculado àquela empresa por um administrador, e o
+    // RLS libera as duas com o MESMO JWT — pedir PIN aqui é atrito de um
+    // modelo que foi aposentado na v1.9.99, e pior: a pessoa não TEM PIN, então
+    // o seletor viraria um beco. Sem isso, arrumar a lista acima só trocaria
+    // "não vejo a empresa" por "clico e não consigo entrar".
+    if (session?.memberTenants?.some((m) => m.id === id)) { handleTenantChange(id); return; }
     const t = activeTenants.find(x => x.id === id);
     if (t) setSwitchTarget(t);
-  }, [activeTenantId, seesAllTenants, handleTenantChange, activeTenants]);
+  }, [activeTenantId, seesAllTenants, handleTenantChange, activeTenants, session?.memberTenants]);
 
   const handleSwitchSuccess = useCallback((newSession) => {
     setSwitchTarget(null);

@@ -23,6 +23,7 @@ export function compareVersions(a, b) {
 export const CHANGELOG = [
   { version: '1.9.209', date: '2026-08-21', items: [
     'Se você for vinculado a uma empresa nova enquanto está usando o app, ela aparece na próxima vez que abrir — antes só depois de sair e entrar de novo, sem nenhum aviso de que faltava fazer isso.',
+    'E quem responde por mais de uma unidade agora tem o seletor de empresa no menu lateral, com troca imediata. Antes o seletor não aparecia para quem entrou por vínculo, e a única forma de alcançar a outra unidade era por um filtro escondido dentro de Alertas ou Relatórios.',
   ]},
   { version: '1.9.205', date: '2026-08-21', items: [
     'O painel Super Admin ganhou a ação "Remover" para empresas cadastradas — até agora um cliente entrava na lista e nunca mais saía, nem um cadastro de teste.',

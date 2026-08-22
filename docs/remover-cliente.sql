@@ -206,10 +206,15 @@ begin
     passo := 'CHECK 1 — remover empresa COM registro';
     resultado := 'X FALHOU: apagou uma empresa que tinha registro!';
   exception when others then
+    -- SQLSTATE, não texto. A 1ª versão comparava com
+    -- `like '%não pode ser removida%'` e a mensagem diz "NÃO" em MAIÚSCULA —
+    -- LIKE diferencia caixa no Postgres, então a recusa CERTA era reportada
+    -- como "motivo errado". O código de erro não depende de redação.
     v_err := sqlerrm;
     passo := 'CHECK 1 — remover empresa COM registro';
-    resultado := case when v_err like '%não pode ser removida%'
-                      then 'OK recusou como devia' else 'X motivo errado: ' || v_err end;
+    resultado := case when sqlstate = 'P0001' and v_err ilike '%não pode ser removida%'
+                      then 'OK recusou como devia'
+                      else 'X motivo errado (' || sqlstate || '): ' || v_err end;
   end;
   return next;
 
@@ -232,8 +237,9 @@ begin
     resultado := 'X FALHOU: aceitou id que nao existe';
   exception when others then
     passo := 'CHECK 3 — id inexistente';
-    resultado := case when sqlerrm like '%Não existe empresa%'
-                      then 'OK recusou' else 'X erro inesperado: ' || sqlerrm end;
+    resultado := case when sqlstate = 'P0002' and sqlerrm ilike '%não existe empresa%'
+                      then 'OK recusou'
+                      else 'X erro inesperado (' || sqlstate || '): ' || sqlerrm end;
   end;
   return next;
 
@@ -245,8 +251,9 @@ begin
     resultado := 'X FALHOU: deixou passar!';
   exception when others then
     passo := 'CHECK 4 — quem nao e admin da plataforma';
-    resultado := case when sqlerrm like '%administrador da plataforma%'
-                      then 'OK barrou' else 'X barrou pelo motivo errado: ' || sqlerrm end;
+    resultado := case when sqlstate = '42501' and sqlerrm ilike '%administrador da plataforma%'
+                      then 'OK barrou'
+                      else 'X barrou pelo motivo errado (' || sqlstate || '): ' || sqlerrm end;
   end;
   return next;
 

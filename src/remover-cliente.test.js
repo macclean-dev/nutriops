@@ -198,4 +198,27 @@ describe('o teste de aceitação não encosta em cliente real', () => {
     // begin/exception cria subtransação — sem isso o CHECK 1 abortaria tudo.
     expect(sql).toContain('exception when others then');
   });
+
+  it('compara SQLSTATE, não redação da mensagem', () => {
+    // A 1ª rodada reportou "X motivo errado" numa recusa CORRETA: o
+    // comparador era `like '%não pode ser removida%'` e a mensagem diz "NÃO"
+    // em MAIÚSCULA — LIKE diferencia caixa no Postgres. O teste acusou a
+    // função de errar quando quem errou foi ele.
+    expect(sql).toContain("sqlstate = 'P0001'");   // recusa por evidência
+    expect(sql).toContain("sqlstate = 'P0002'");   // empresa não existe
+    expect(sql).toContain("sqlstate = '42501'");   // não é admin da plataforma
+  });
+
+  it('o texto que ainda é comparado usa ILIKE, não LIKE', () => {
+    // Confirmação secundária do SQLSTATE. Se voltar a ser case-sensitive, o
+    // mesmo falso negativo volta.
+    const ini = sql.indexOf('create or replace function public.__teste_remocao()');
+    const corpo = sql.slice(ini);
+    expect(corpo).not.toMatch(/sqlerrm like |v_err like /);
+    expect([...corpo.matchAll(/ilike '%/g)].length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('quando falha, mostra o SQLSTATE recebido — pra diagnosticar de primeira', () => {
+    expect(sql).toContain("'X motivo errado (' || sqlstate || '): '");
+  });
 });

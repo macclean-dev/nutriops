@@ -159,96 +159,113 @@ select p.proname as funcao,
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- TESTE DE ACEITAÇÃO — em empresa DESCARTÁVEL, criada e desfeita aqui dentro.
+-- TESTE DE ACEITAÇÃO — em empresa DESCARTÁVEL, criada e limpa pela função.
 --
 -- NÃO aponte este teste pra um cliente real, nem pra "ver se recusa". A trava
--- é justamente pra o dia em que alguém errar o id; não vale exercitá-la com o
+-- é justamente pro dia em que alguém errar o id; não vale exercitá-la com o
 -- dado de produção do lado. (Pedido do dono, 21/08 — e ele está certo.)
 --
--- O bloco inteiro roda dentro de uma transação que termina em ROLLBACK: a
--- empresa de teste nunca chega a existir de verdade, e nada é apagado.
--- Rode TUDO de uma vez (não selecione trecho) — o rollback está no fim.
+-- DEVOLVE TABELA, não `raise warning`: a 1ª versão usava warning e o editor
+-- do Supabase mostra só o resultado do ÚLTIMO comando — os 4 CHECKs ficavam
+-- invisíveis e o teste não provava nada. Verificação que não dá pra ler não é
+-- verificação.
+--
+-- A função limpa a empresa de teste no começo E no fim, então rodar de novo é
+-- seguro mesmo se algo tiver falhado no meio antes.
+--
+-- COMO RODAR: cole tudo e Run. A última tabela mostra os 4 CHECKs.
 -- ═══════════════════════════════════════════════════════════════════════════
 
-begin;
-
--- Empresa descartável, id impossível de colidir com cliente.
--- `access_token` é NOT NULL + UNIQUE (ver schema em docs/HISTORICO.md) — o
--- valor abaixo é lixo proposital: some no rollback e nunca serve pra abrir
--- nada, mesmo que alguém interrompa o script no meio.
-insert into public.tenants (id, access_token, name, segment, plan)
-values ('__teste_remocao__', '__token_de_teste_descartavel__', 'TESTE de remoção', 'padaria', 'trial');
-
--- Uma leitura de temperatura: é o que precisa fazer a remoção RECUSAR.
-insert into public.temperature_records
-  (id, tenant_id, tenant_name, equipment_input, equipment_key, measured_at,
-   value, min_value, max_value, user_name, user_role, created_at)
-values (gen_random_uuid(), '__teste_remocao__', 'TESTE de remoção', 'Freezer',
-        'Freezer', '08:00', -18, -22, -18, 'teste', 'Colaborador', now());
-
-do $$
-declare v_erro text; v_res jsonb;
+create or replace function public.__teste_remocao()
+returns table (passo text, resultado text)
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_id  text := '__teste_remocao__';
+  v_err text;
 begin
-  -- Vira "admin da plataforma" só dentro desta transação.
+  -- Limpeza defensiva: se uma rodada anterior morreu no meio, varre antes.
+  delete from public.temperature_records where tenant_id = v_id;
+  delete from public.tenants             where id        = v_id;
+
+  insert into public.tenants (id, access_token, name, segment, plan)
+  values (v_id, '__token_de_teste_descartavel__', 'TESTE de remoção', 'padaria', 'trial');
+
+  insert into public.temperature_records
+    (id, tenant_id, tenant_name, equipment_input, equipment_key, measured_at,
+     value, min_value, max_value, user_name, user_role, created_at)
+  values (gen_random_uuid(), v_id, 'TESTE de remoção', 'Freezer', 'Freezer',
+          '08:00', -18, -22, -18, 'teste', 'Colaborador', now());
+
+  -- Vira "admin da plataforma" só dentro desta chamada.
   perform set_config('request.jwt.claims',
     json_build_object('app_metadata', json_build_object('role','admin'))::text, true);
 
-  -- ── CHECK 1: COM registro, tem que recusar ────────────────────────────
-  -- O bloco begin/exception cria uma subtransação: a exceção esperada não
-  -- derruba o resto do teste.
+  -- ── CHECK 1: COM registro, tem que RECUSAR ─────────────────────────────
   begin
-    perform public.delete_tenant('__teste_remocao__');
-    raise warning 'CHECK 1: ✕ FALHOU — apagou uma empresa COM registro!';
+    perform public.delete_tenant(v_id);
+    passo := 'CHECK 1 — remover empresa COM registro';
+    resultado := 'X FALHOU: apagou uma empresa que tinha registro!';
   exception when others then
-    v_erro := sqlerrm;
-    if v_erro like '%não pode ser removida%' then
-      raise warning 'CHECK 1: ✓ recusou como devia — %', v_erro;
-    else
-      raise warning 'CHECK 1: ✕ recusou pelo motivo ERRADO — %', v_erro;
-    end if;
+    v_err := sqlerrm;
+    passo := 'CHECK 1 — remover empresa COM registro';
+    resultado := case when v_err like '%não pode ser removida%'
+                      then 'OK recusou como devia' else 'X motivo errado: ' || v_err end;
   end;
+  return next;
 
-  -- ── CHECK 2: SEM registro, tem que apagar ─────────────────────────────
-  delete from public.temperature_records where tenant_id = '__teste_remocao__';
+  -- ── CHECK 2: SEM registro, tem que APAGAR ──────────────────────────────
+  delete from public.temperature_records where tenant_id = v_id;
   begin
-    v_res := public.delete_tenant('__teste_remocao__');
-    raise warning 'CHECK 2: ✓ removeu a empresa vazia — %', v_res::text;
+    perform public.delete_tenant(v_id);
+    passo := 'CHECK 2 — remover empresa VAZIA';
+    resultado := 'OK removeu';
   exception when others then
-    raise warning 'CHECK 2: ✕ FALHOU — não removeu empresa vazia: %', sqlerrm;
+    passo := 'CHECK 2 — remover empresa VAZIA';
+    resultado := 'X FALHOU: nao removeu empresa vazia: ' || sqlerrm;
   end;
+  return next;
 
-  -- ── CHECK 3: id que não existe tem que dar erro claro ─────────────────
+  -- ── CHECK 3: id inexistente tem que dar erro claro ─────────────────────
   begin
     perform public.delete_tenant('__nao_existe__');
-    raise warning 'CHECK 3: ✕ FALHOU — aceitou id inexistente';
+    passo := 'CHECK 3 — id inexistente';
+    resultado := 'X FALHOU: aceitou id que nao existe';
   exception when others then
-    if sqlerrm like '%Não existe empresa%' then
-      raise warning 'CHECK 3: ✓ id inexistente recusado';
-    else
-      raise warning 'CHECK 3: ✕ erro inesperado — %', sqlerrm;
-    end if;
+    passo := 'CHECK 3 — id inexistente';
+    resultado := case when sqlerrm like '%Não existe empresa%'
+                      then 'OK recusou' else 'X erro inesperado: ' || sqlerrm end;
   end;
+  return next;
 
-  -- ── CHECK 4: sem ser admin da plataforma, tem que barrar ──────────────
+  -- ── CHECK 4: sem ser admin da plataforma, tem que BARRAR ───────────────
   perform set_config('request.jwt.claims', json_build_object()::text, true);
   begin
-    perform public.delete_tenant('__teste_remocao__');
-    raise warning 'CHECK 4: ✕ FALHOU — deixou não-admin remover!';
+    perform public.delete_tenant('__qualquer__');
+    passo := 'CHECK 4 — quem nao e admin da plataforma';
+    resultado := 'X FALHOU: deixou passar!';
   exception when others then
-    if sqlerrm like '%administrador da plataforma%' then
-      raise warning 'CHECK 4: ✓ barrou quem não é admin da plataforma';
-    else
-      raise warning 'CHECK 4: ✕ barrou pelo motivo errado — %', sqlerrm;
-    end if;
+    passo := 'CHECK 4 — quem nao e admin da plataforma';
+    resultado := case when sqlerrm like '%administrador da plataforma%'
+                      then 'OK barrou' else 'X barrou pelo motivo errado: ' || sqlerrm end;
   end;
-end $$;
+  return next;
 
--- Desfaz TUDO: a empresa de teste e a leitura nunca existiram.
-rollback;
+  -- ── CHECK 5: não sobrou lixo ───────────────────────────────────────────
+  passo := 'CHECK 5 — limpeza';
+  resultado := case when exists (select 1 from public.tenants where id = v_id)
+                    then 'X sobrou a empresa de teste' else 'OK nada sobrou' end;
+  return next;
 
--- Confirmação de que não sobrou nada (roda depois do rollback):
-select count(*) as sobrou_teste from public.tenants where id = '__teste_remocao__';
--- Esperado: 0
+  -- Varredura final, caso o CHECK 2 tenha falhado e a empresa ainda exista.
+  delete from public.temperature_records where tenant_id = v_id;
+  delete from public.tenants             where id        = v_id;
+end;
+$$;
 
--- ⚠️ Os 4 CHECKs saem como WARNING. No Supabase SQL Editor eles aparecem no
--- painel de mensagens/logs abaixo do resultado. Os quatro precisam mostrar ✓.
+select * from public.__teste_remocao();
+
+-- A função de teste não fica no banco.
+drop function if exists public.__teste_remocao();
+
+-- ESPERADO: 5 linhas, todas começando com "OK".
+-- Qualquer "X" é falha real — me mande a linha inteira antes de usar o botão.

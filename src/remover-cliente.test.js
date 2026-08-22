@@ -153,7 +153,7 @@ describe('o teste de aceitação não encosta em cliente real', () => {
   });
 
   it('usa empresa descartável, com id impossível de colidir', () => {
-    expect(sql).toContain("'__teste_remocao__'");
+    expect(sql).toContain("v_id  text := '__teste_remocao__';");
   });
 
   it('o insert traz access_token — a coluna é NOT NULL', () => {
@@ -162,25 +162,40 @@ describe('o teste de aceitação não encosta em cliente real', () => {
     expect(sql).toContain("'__token_de_teste_descartavel__'");
   });
 
-  it('roda dentro de transação que termina em rollback', () => {
-    const ini = sql.indexOf('begin;');
-    const rollback = sql.indexOf('rollback;', ini);
-    expect(ini).toBeGreaterThan(-1);
-    expect(rollback).toBeGreaterThan(ini);
-    // e não pode ter commit no meio, que tornaria o teste permanente
-    expect(sql.slice(ini, rollback)).not.toContain('commit;');
+  it('DEVOLVE TABELA — warning não era legível no editor do Supabase', () => {
+    // A 1ª versão usava `raise warning` e o editor mostra só o resultado do
+    // ÚLTIMO comando: os 4 CHECKs ficavam invisíveis e o teste não provava
+    // nada. Verificação que não dá pra ler não é verificação.
+    expect(sql).toContain('returns table (passo text, resultado text)');
+    expect(sql).toContain('select * from public.__teste_remocao();');
+    // Só em linha EXECUTÁVEL — o comentário acima cita `raise warning` de
+    // propósito, pra explicar por que saiu.
+    const executaveis = sql.split('\n').filter((l) => !l.trimStart().startsWith('--'));
+    expect(executaveis.join('\n')).not.toContain('raise warning');
   });
 
-  it('cobre os 4 caminhos que importam', () => {
-    // com registro recusa · sem registro apaga · id inexistente · não-admin
-    for (const c of ['CHECK 1', 'CHECK 2', 'CHECK 3', 'CHECK 4']) expect(sql).toContain(c);
-    expect(sql).toMatch(/apagou uma empresa COM registro/);
-    expect(sql).toMatch(/deixou não-admin remover/);
+  it('limpa a empresa de teste no começo E no fim', () => {
+    // Sem a limpeza inicial, uma rodada que morreu no meio deixaria lixo que
+    // faria a próxima falhar no primary key.
+    const ini = sql.indexOf('create or replace function public.__teste_remocao()');
+    const corpo = sql.slice(ini);
+    const limpezas = [...corpo.matchAll(/delete from public\.tenants\s+where id\s+= v_id;/g)];
+    expect(limpezas.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('a função de teste não fica no banco', () => {
+    expect(sql).toContain('drop function if exists public.__teste_remocao();');
+  });
+
+  it('cobre os 5 caminhos que importam', () => {
+    // com registro recusa · vazia apaga · id inexistente · não-admin · limpeza
+    for (const c of ['CHECK 1', 'CHECK 2', 'CHECK 3', 'CHECK 4', 'CHECK 5']) expect(sql).toContain(c);
+    expect(sql).toMatch(/apagou uma empresa que tinha registro/);
+    expect(sql).toMatch(/deixou passar/);
   });
 
   it('a exceção esperada não derruba o resto do teste', () => {
-    // begin/exception dentro do DO cria subtransação — sem isso o primeiro
-    // CHECK abortaria a transação e os outros três nem rodariam.
+    // begin/exception cria subtransação — sem isso o CHECK 1 abortaria tudo.
     expect(sql).toContain('exception when others then');
   });
 });

@@ -2789,12 +2789,20 @@ export function App() {
     if (session?.tenantId) {
       return {
         id: session.tenantId,
-        name: session.user?.location || 'Sua empresa',
+        // `_impersonatedName` PRIMEIRO (21/08). A empresa impersonada não está
+        // em `activeTenants` — ela vive em `nutriops.admin.clients`, que é a
+        // lista do Super Admin, outro armazenamento —, então sempre cai neste
+        // stub. E `user.location` na impersonação é literalmente
+        // "Impersonação (Super Admin)": o admin via esse texto como NOME DA
+        // EMPRESA em toda tela, inclusive no seletor de "Vincular conta
+        // existente", e ficava sem saber se estava na empresa certa. O id
+        // sempre esteve correto — era só o rótulo mentindo.
+        name: session._impersonatedName || session.user?.location || 'Sua empresa',
         segment: '', equipmentCatalog: [], stores: [],
       };
     }
     return activeTenants[0];
-  }, [activeTenantId, session?.tenantId, session?.user?.location, activeTenants]);
+  }, [activeTenantId, session?.tenantId, session?._impersonatedName, session?.user?.location, activeTenants]);
 
   // Fase 3 — hidrata a empresa do membro no BOOT. A sessão (com tenantId da loja)
   // persiste no localStorage, mas activeTenants é reconstruído das lojas-seed a

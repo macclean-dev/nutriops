@@ -97,7 +97,27 @@ describe('os dois vetos que evitam estrago silencioso', () => {
   it('vincular de novo atualiza o papel em vez de estourar', () => {
     expect(sql).toContain('on conflict (user_id, tenant_id) do update set role = excluded.role;');
     // e a UI precisa saber diferenciar "novo vínculo" de "já estava lá"
-    expect(sql).toContain('(v_existente is not null)');
+    expect(sql).toContain("'ja_existia', (v_existente is not null)");
+  });
+
+  it('RETURNS JSONB — parâmetro de saída colidia com nome de coluna', () => {
+    // Quebrou em produção (21/08): `returns table (user_id uuid, ...)` faz
+    // esses nomes virarem VARIÁVEIS no plpgsql, e o `on conflict (user_id,
+    // tenant_id)` vira ambíguo — "column reference user_id is ambiguous".
+    // jsonb não tem parâmetro de saída, então a colisão não pode voltar.
+    expect(sql).toContain('returns jsonb');
+    expect(sql).toContain('return jsonb_build_object(');
+    // Só em linha EXECUTÁVEL: o comentário logo acima da função cita o
+    // `returns table (user_id ...)` de propósito, pra explicar por que saiu.
+    const executaveis = sql.split('\n').filter((l) => !l.trimStart().startsWith('--'));
+    expect(executaveis.join('\n')).not.toMatch(/returns table \(user_id/);
+  });
+
+  it('tem DROP antes — Postgres não troca tipo de retorno com create or replace', () => {
+    const posDrop = sql.indexOf('drop function if exists public.link_existing_member(text, text, text);');
+    const posCreate = sql.indexOf('create or replace function public.link_existing_member(');
+    expect(posDrop).toBeGreaterThan(-1);
+    expect(posCreate).toBeGreaterThan(posDrop);
   });
 });
 
@@ -121,11 +141,11 @@ describe('linkExistingMember (tenant-sync.js) — propaga o erro em vez de engol
     expect(sync).toContain('rode docs/vincular-conta-existente.sql no Supabase');
   });
 
-  it('resposta vazia não passa por sucesso', () => {
-    // `returns table` vem como array; um [] (nenhuma linha) significaria que a
-    // função não confirmou nada — dizer "vinculado!" ali seria mentira.
+  it('resposta sem user_id não passa por sucesso', () => {
+    // Checa o CAMPO, não só a existência do objeto: a RPC quebrada devolvia
+    // resposta que não era vínculo nenhum, e um `if (!row)` deixaria passar.
     expect(sync).toContain('const row = Array.isArray(data) ? data[0] : data;');
-    expect(sync).toContain('if (!row) throw new Error(');
+    expect(sync).toContain('if (!row?.user_id) throw new Error(');
   });
 });
 

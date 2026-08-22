@@ -21,12 +21,26 @@
 -- selecionar nenhum trecho). É idempotente — pode rodar de novo.
 -- ═══════════════════════════════════════════════════════════════════════════
 
+-- ⚠️ RETURNS JSONB, não `returns table` (corrigido 21/08 em produção).
+-- A 1ª versão declarava `returns table (user_id uuid, email text, name text,
+-- role text, ja_existia boolean)`. Dentro do plpgsql esses nomes viram
+-- VARIÁVEIS, e o `on conflict (user_id, tenant_id)` mais abaixo passou a ser
+-- ambíguo: o Postgres não sabe se `user_id` é a coluna ou a variável, e
+-- estoura com `column reference "user_id" is ambiguous` — matando a criação
+-- de conta do cliente novo. jsonb não tem parâmetro de saída, então a
+-- colisão não pode voltar. É também o formato das RPCs mais novas
+-- (delete_tenant, contar_registros_tenant).
+--
+-- Precisa do DROP: o Postgres não deixa `create or replace` mudar o tipo de
+-- retorno de uma função que já existe.
+drop function if exists public.link_existing_member(text, text, text);
+
 create or replace function public.link_existing_member(
   p_tenant_id text,
   p_email     text,
   p_role      text default 'Colaborador'
 )
-returns table (user_id uuid, email text, name text, role text, ja_existia boolean)
+returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
   v_user      auth.users%rowtype;
@@ -98,12 +112,13 @@ begin
   values (v_user.id, p_tenant_id, p_role)
   on conflict (user_id, tenant_id) do update set role = excluded.role;
 
-  return query
-    select v_user.id,
-           v_user.email::text,
-           coalesce(v_user.raw_user_meta_data ->> 'name', v_user.email)::text,
-           p_role,
-           (v_existente is not null);
+  return jsonb_build_object(
+    'user_id',    v_user.id,
+    'email',      v_user.email::text,
+    'name',       coalesce(v_user.raw_user_meta_data ->> 'name', v_user.email)::text,
+    'role',       p_role,
+    'ja_existia', (v_existente is not null)
+  );
 end;
 $$;
 

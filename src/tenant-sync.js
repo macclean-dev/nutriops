@@ -330,9 +330,13 @@ export async function linkExistingMember({ tenantId, email, role = 'Colaborador'
     if (res.status === 404) throw new Error('Recurso indisponível neste banco — rode docs/vincular-conta-existente.sql no Supabase.');
     throw new Error(data?.message ?? data?.error ?? 'Não consegui vincular a conta.');
   }
-  // A RPC devolve `returns table`, ou seja, um array de uma linha.
+  // A RPC devolve JSONB (objeto). Era `returns table` (array de 1 linha) até
+  // 21/08, quando os parâmetros de saída colidiram com os nomes de coluna no
+  // `on conflict (user_id, ...)` e a função quebrou em produção com
+  // "column reference user_id is ambiguous". O `Array.isArray` fica como
+  // tolerância pra device que ainda não recarregou o bundle novo.
   const row = Array.isArray(data) ? data[0] : data;
-  if (!row) throw new Error('O servidor não confirmou o vínculo. Confira a lista de membros antes de tentar de novo.');
+  if (!row?.user_id) throw new Error('O servidor não confirmou o vínculo. Confira a lista de membros antes de tentar de novo.');
   return { userId: row.user_id, email: row.email, name: row.name, role: row.role, jaExistia: row.ja_existia === true };
 }
 

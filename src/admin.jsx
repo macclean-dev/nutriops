@@ -367,7 +367,12 @@ export function ClientModal({ client, onSave, onClose }) {
         const falhas = (conta.contas ?? []).filter(c => !c.ok).map(c => `${c.rotulo}: ${c.erro}`).join(' · ');
         setPushError(`O cliente foi criado, mas não consegui criar a(s) conta(s) de e-mail (${falhas}). `
           + `Ele vai entrar pelo PIN abaixo, que é o modo antigo e NÃO sincroniza com a nuvem. `
-          + `Abra "Editar" e salve de novo pra tentar criar a conta, ou crie por Equipe → Usuários dentro da empresa.`);
+          // NÃO manda "salve de novo pelo Editar": a criação de conta só roda
+          // pra cliente NOVO (`if (isNew && ...)`), então editar não tenta de
+          // novo. Conselho que não funciona é pior que nenhum — foi o que a
+          // mensagem dizia até 21/08.
+          + `Entre na empresa e use Equipe → Usuários: "Convidar colaborador" pra quem não tem conta, `
+          + `ou "Vincular conta existente" pra quem já usa o NutriOPS.`);
       }
       // Não fecha o modal — admin precisa copiar o PIN antes
       setBusy(false);

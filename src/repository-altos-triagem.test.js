@@ -30,7 +30,20 @@ const online = () => {
 };
 const offline = () => { vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false); };
 
-beforeEach(() => { localStorage.clear(); clearOfflineQueue(); clearSupabaseAuthError(); });
+// repository.js pega o JWT por `await import('./auth')`. Sem este mock não
+// existe token no teste e TODA chamada sai como anon — o que, desde 23/08,
+// classifica como kind 'anon' e não 'rls'. Os testes abaixo são sobre RLS
+// (credencial boa, policy recusando), então precisam do token.
+vi.mock('./auth', () => ({ getValidAccessToken: async () => 'jwt-de-teste' }));
+
+beforeEach(() => {
+  localStorage.clear(); clearOfflineQueue(); clearSupabaseAuthError();
+  // Sessão real (23/08): a classificação passou a distinguir 'anon' (saiu sem
+  // credencial) de 'rls' (credencial boa, policy recusando). Sem sessão aqui,
+  // toda chamada seria 'anon' e os testes de RLS não exercitariam RLS.
+  localStorage.setItem('nutriops.session', JSON.stringify(
+    { tenantId: 'casadoce', accessToken: 'jwt-de-teste', user: { id: 'uid-de-teste' } }));
+});
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -272,12 +285,17 @@ describe('achado 4/6 — sucesso em OUTRA tabela não apaga mais o 401 de RLS de
     online();
     vi.stubGlobal('fetch', vi.fn((url) => (
       String(url).includes('temperature_records')
-        ? nega(401, { message: 'Invalid API key' })   // sem sinal de RLS → kind 'anon'
+        ? nega(401, { message: 'Invalid API key' })   // sem sinal de RLS
         : okJson(null)
     )));
 
     await supabaseRepository.list({ tenantId: 'casadoce', days: 90 });
-    expect(getSupabaseAuthError()?.kind).toBe('anon');
+    // 'session' e não 'anon': a chamada FOI com JWT (o mock de ./auth entrega
+    // token), e desde 23/08 'anon' significa especificamente "saiu sem
+    // credencial". O que este teste protege vale pros dois — são kinds da
+    // CREDENCIAL inteira, não de uma tabela, então sucesso em qualquer tabela
+    // prova a cura.
+    expect(getSupabaseAuthError()?.kind).toBe('session');
 
     await pushEquipAsset('casadoce', { id: 'eq1', name: 'F1' });   // tabela diferente, mas credencial é a mesma
     expect(getSupabaseAuthError()).toBeNull();   // isto CONTINUA limpando — comportamento correto pra esse kind

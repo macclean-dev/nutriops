@@ -2150,6 +2150,11 @@ function SupabaseAuthErrorBanner({ session, setActiveView }) {
   // perfeitamente boa, que foi o que aconteceu na CASA DOCE em 15/08.
   const sessaoExpirando = err.kind === 'session';
   const semPermissao   = err.kind === 'rls';
+  // 'anon' = a requisição saiu SEM credencial. Até 23/08 caía no balde do
+  // 'rls' e a tela dizia "falta o vínculo do seu acesso" — culpando o vínculo,
+  // que estava perfeito, em todos os incidentes de 21/08. A causa e o conserto
+  // são outros, então o texto tem que ser outro. Ver sbFetch (repository.js).
+  const semCredencial  = err.kind === 'anon';
   if (sessaoExpirando && (err.falhas ?? 1) < 3) return null;
   // Os outros pedem 2 seguidas. Uma falha isolada — rede oscilando no tablet,
   // token trocando de mãos — pintava a tela inteira de vermelho na hora, e
@@ -2169,6 +2174,8 @@ function SupabaseAuthErrorBanner({ session, setActiveView }) {
         <strong style={{ color:'var(--red)', fontSize:13 }}>
           {sessaoExpirando
             ? `⚠ Sincronização falhando — sua sessão não está sendo renovada (HTTP ${err.status})`
+            : semCredencial
+              ? `⚠ Sincronização falhando — a requisição saiu sem o seu login (${err.table ?? 'banco'})`
             : semPermissao
               ? `⚠ Sincronização falhando — sem permissão para esta loja (${err.table ?? 'banco'})`
               : `⚠ Sincronização falhando — o servidor recusou o acesso (HTTP ${err.status})`}
@@ -2176,6 +2183,11 @@ function SupabaseAuthErrorBanner({ session, setActiveView }) {
         <span style={{ color:'var(--text-secondary)', fontSize:12 }}>
           {sessaoExpirando
             ? `Saia e entre de novo pra renovar o acesso. Nenhum registro se perde — tudo que não subiu fica na fila. Última falha em ${new Date(err.at).toLocaleString('pt-BR')}.`
+            : semCredencial
+              // NÃO é falta de vínculo — foi a chamada que saiu sem o token.
+              // Dizer "falta vínculo" aqui manda o suporte conferir permissão
+              // (que está certa) em vez do caminho que perdeu a credencial.
+              ? `Seu acesso está correto — a falha é interna: essa chamada saiu sem o seu login. Sair e entrar de novo costuma resolver. Nenhum registro se perde — tudo que não subiu fica na fila. Última falha em ${new Date(err.at).toLocaleString('pt-BR')}.`
             : semPermissao
               // Não é a chave. Mandar trocar a chave aqui é o conselho errado —
               // foi o que atrasou o diagnóstico em 16/08.
@@ -2186,7 +2198,7 @@ function SupabaseAuthErrorBanner({ session, setActiveView }) {
         </span>
       </div>
       <div style={{ display:'flex', gap:6 }}>
-        {canFix && !sessaoExpirando && !semPermissao && (
+        {canFix && !sessaoExpirando && !semPermissao && !semCredencial && (
           <button onClick={() => setActiveView('settings')}
             style={{ padding:'6px 14px', borderRadius:'var(--r)', border:'1px solid var(--red-border)', background:'var(--red)', color:'white', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'var(--font)' }}>
             Reconectar
@@ -2859,6 +2871,13 @@ export function App() {
       // null = "não deu pra saber" (rede, 5xx). NUNCA encolher o acesso por
       // falha transitória — é a mesma distinção que o login faz desde 30/07.
       if (cancelado || !Array.isArray(lista)) return;
+      // E NUNCA aplicar lista VAZIA (23/08). Mesmo com o contrato de
+      // fetchMemberTenants corrigido, uma revalidação de boot não é o lugar de
+      // tirar acesso de ninguém: se o vínculo foi mesmo removido, o RLS barra
+      // no servidor e o próximo LOGIN reflete. Aplicar [] aqui apagava as
+      // empresas da sessão e derrubava a 2ª unidade da tela — foi o que
+      // aconteceu com a CASA DOCE/Fabrizzio.
+      if (lista.length === 0) return;
       const idsNovos = lista.map((t) => t.id).sort().join('|');
       const idsAtuais = (session.memberTenants ?? []).map((t) => t.id).sort().join('|');
       if (idsNovos === idsAtuais) return;

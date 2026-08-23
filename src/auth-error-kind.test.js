@@ -33,6 +33,11 @@ beforeEach(() => {
   localStorage.clear(); clearOfflineQueue(); clearSupabaseAuthError();
   saveSupabaseConfig({ url: 'https://x.test', anonKey: 'anon123', enabled: true });
   vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+  // Sessão real (23/08): a classificação passou a distinguir 'anon' (saiu sem
+  // credencial) de 'rls' (credencial boa, policy recusando). Sem sessão aqui,
+  // toda chamada seria 'anon' e os testes de RLS não exercitariam RLS.
+  localStorage.setItem('nutriops.session', JSON.stringify(
+    { tenantId: 'casadoce', accessToken: 'jwt-de-teste', user: { id: 'uid-de-teste' } }));
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 

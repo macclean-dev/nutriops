@@ -163,7 +163,19 @@ async function sbFetch(table, params = {}, tenantId = null) {
     // mensagem errada que custou a investigação de 16/08.
     if (res.status === 401 || res.status === 403) {
       const ehRls = errBody.includes('row-level security') || errBody.includes('42501');
-      markSupabaseAuthError(res.status, table, ehRls ? 'rls' : comJwt ? 'session' : 'anon');
+      // 42501 SEM JWT não é "falta vínculo" — é requisição que saiu sem
+      // credencial (23/08). A classificação antiga mandava os dois casos pro
+      // kind 'rls', e o banner dizia "o que falta é o vínculo do seu acesso
+      // com esta loja" nos DOIS. Isso escondeu a causa em todos os incidentes
+      // de 21/08 (healthcheck, sync do admin, cadastro de cliente): a
+      // requisição ia como anon, o Postgres recusava em `is_member()`, e a
+      // tela culpava o vínculo — que estava perfeito.
+      //
+      // Com JWT, 42501 é RLS de verdade e o vínculo é mesmo o problema.
+      // Sem JWT, o problema é a credencial não ter sido anexada, e o conserto
+      // é outro (sair e entrar, ou um tenantId que não chegou na chamada).
+      const kind = !comJwt ? 'anon' : ehRls ? 'rls' : 'session';
+      markSupabaseAuthError(res.status, table, kind);
     }
     throw new Error(`SB ${method} ${table}: ${res.status}${errBody ? ' — ' + errBody.slice(0, 200) : ''}`);
   }

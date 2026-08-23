@@ -77,3 +77,57 @@ describe('o resultado chega às duas listas que importam', () => {
     expect(fonte).toContain('const ids = new Set(session.memberTenants.map((m) => m.id));');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REGRESSÃO CAUSADA POR ESTE PRÓPRIO EFEITO (23/08).
+//
+// A dona da CASA DOCE entrou e a 2ª unidade (Fabrizzio) tinha sumido da tela,
+// junto com banners de "sem permissão" em equip_assets e validity_rules.
+//
+// `fetchMemberTenants` devolvia `[]` em DOIS casos diferentes: "o servidor
+// respondeu que você não tem vínculo" e "ainda não tenho token pra perguntar".
+// O contrato documentado da função é justamente o oposto — `[] = confirmado,
+// sem vínculo · null = não deu pra saber` —, e os dois early-returns o
+// violavam.
+//
+// Ficou inofensivo enquanto só o LOGIN chamava (lá o [] barra a entrada, que é
+// o lado seguro). Virou dano quando esta revalidação passou a APLICAR o
+// resultado: bastava o token não estar pronto no primeiro instante do boot pra
+// ela apagar as empresas da sessão.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('a revalidação não pode APAGAR o vínculo', () => {
+  const sync = readFileSync(`${process.cwd()}/src/tenant-sync.js`, 'utf8');
+
+  it('lista VAZIA é ignorada — tirar acesso não é trabalho de revalidação', () => {
+    // Se o vínculo foi mesmo removido, o RLS barra no servidor e o próximo
+    // login reflete. Aplicar [] aqui derruba a 2ª unidade da tela por um
+    // soluço de rede.
+    expect(efeito).toContain('if (lista.length === 0) return;');
+  });
+
+  it('a guarda de vazio vem DEPOIS da de não-array, e ANTES de aplicar', () => {
+    const posArray = efeito.indexOf('!Array.isArray(lista)');
+    const posVazio = efeito.indexOf('lista.length === 0');
+    const posAplica = efeito.indexOf('setActiveTenants((prev)');
+    expect(posArray).toBeLessThan(posVazio);
+    expect(posVazio).toBeLessThan(posAplica);
+  });
+
+  it('fetchMemberTenants devolve NULL quando não deu pra perguntar', () => {
+    // "Supabase desligado" e "token ainda não pronto" não são resposta do
+    // servidor — são ausência de resposta.
+    const ini = sync.indexOf('export async function fetchMemberTenants() {');
+    const corpo = sync.slice(ini, sync.indexOf('\n}', sync.indexOf('return Array.isArray(rows)', ini)));
+    expect(corpo).toContain('if (!isTenantSyncEnabled()) return null;');
+    expect(corpo).toContain('if (!token) return null;');
+    expect(corpo).not.toContain('if (!token) return [];');
+  });
+
+  it('[] continua significando "confirmado: sem vínculo" — o login depende disso', () => {
+    // login.jsx barra a entrada com [] e mostra "sua conta ainda não está
+    // vinculada". Se [] virasse null ali, a mensagem seria a de rede.
+    const login = readFileSync(`${process.cwd()}/src/login.jsx`, 'utf8');
+    expect(login).toContain('if (memberTenants.length === 0) {');
+    expect(login).toContain('if (memberTenants === null) {');
+  });
+});

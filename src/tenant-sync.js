@@ -255,11 +255,21 @@ export async function fetchAllTenantsFromCloud() {
 // dados reais de outro cliente via device-token. Falha agora é null → o
 // caller barra o login em vez de seguir sem vínculo.
 export async function fetchMemberTenants() {
-  if (!isTenantSyncEnabled()) return [];
+  // ⚠️ NULL, não [] (23/08). O contrato desta função é "[] = confirmado, sem
+  // vínculo · null = não deu pra saber" — e estes dois early-returns violavam
+  // ele: "Supabase desligado" e "token ainda não pronto" NÃO são resposta do
+  // servidor, são ausência de resposta.
+  //
+  // Ficou inofensivo enquanto só o LOGIN chamava (lá o [] barra a entrada, que
+  // é o lado seguro). Virou dano quando a revalidação de boot (v1.9.209) passou
+  // a APLICAR o resultado: bastava o token não estar pronto no primeiro
+  // instante pra ela apagar a lista de empresas da sessão — e a 2ª unidade
+  // sumia da tela, com as chamadas dela saindo sem credencial em seguida.
+  if (!isTenantSyncEnabled()) return null;
   try {
     const { getValidAccessToken } = await import('./auth');
     const token = await getValidAccessToken();
-    if (!token) return [];
+    if (!token) return null;
     const res = await fetch(`${sbBase()}/rpc/get_member_tenants`, {
       method: 'POST',
       headers: { apikey: SB_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },

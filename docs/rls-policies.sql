@@ -170,12 +170,22 @@ create policy form_photos_tenant_delete on storage.objects for delete
 
 
 -- ── PARTE 4 — Conferência ───────────────────────────────────────────────────
--- Esperado: 20 linhas, TODAS com os_4_caminhos = 'ok'.
--- Qualquer 'FALTA ALGO' → a tabela ficou pra trás, me avise.
+-- Esperado: 20 linhas, TODAS com os_3_caminhos = 'ok', e a sonda SÓ na
+-- temperature_records. Qualquer 'FALTA ALGO' → a tabela ficou pra trás.
+--
+-- Eram "4 caminhos" até 21/08, quando o '__healthcheck__' saiu das outras 19
+-- tabelas (a sonda do boot só escreve em temperature_records) e virou escopado
+-- ao uid de quem sonda. O rótulo antigo passou a mentir — a query nunca
+-- checou o healthcheck, só is_member e is_admin_plataforma.
 
 select tablename,
        case when qual like '%is_member%' and qual like '%is_admin_plataforma%'
-            then 'ok' else 'FALTA ALGO' end as os_4_caminhos
+            then 'ok' else 'FALTA ALGO' end as os_3_caminhos,
+       case when tablename = 'temperature_records'
+            then case when qual like '%__healthcheck__%' and qual like '%auth.uid()%'
+                      then 'sonda escopada ok' else 'FALTA A SONDA' end
+            when qual like '%__healthcheck__%' then 'SOBROU healthcheck aqui'
+            else '—' end as sonda_do_boot
   from pg_policies
  where schemaname = 'public' and policyname = 'tenant_isolation'
  order by tablename;

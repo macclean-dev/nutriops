@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './pages';
+import { AppErrorBoundary } from './error-boundary';
 // Admin é lazy — só baixa quando o usuário acessa /admin
 const AdminPanel = lazy(() => import('./admin').then(m => ({ default: m.AdminPanel })));
 const AdminLogin = lazy(() => import('./admin').then(m => ({ default: m.AdminLogin })));
@@ -230,5 +231,5 @@ function Root() {
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode><Root /></React.StrictMode>
+  <React.StrictMode><AppErrorBoundary><Root /></AppErrorBoundary></React.StrictMode>
 );

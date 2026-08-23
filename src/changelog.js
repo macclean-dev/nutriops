@@ -21,6 +21,9 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.221', date: '2026-08-23', items: [
+    'Corrigido: sair (logoff) podia deixar a tela em branco, sem nenhuma mensagem, quando o app tinha acabado de ganhar uma atualização e a aba estava aberta desde antes dela. Agora, se isso acontecer, o app se recupera sozinho — a pessoa só vê "Atualizando o app…" por um instante em vez de uma tela morta.',
+  ]},
   { version: '1.9.220', date: '2026-08-23', items: [
     'Corrigido: ao editar um cliente já cadastrado, o campo Segmento sempre mostrava "Padaria" na tela, não importa o segmento real da loja — e escolher outro na hora parecia "não pegar". O nome salvo ("Confeitaria") e o valor que a tela compara ("confeitaria") tinham formatos diferentes, então nunca combinavam.',
   ]},

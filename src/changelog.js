@@ -21,6 +21,10 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.216', date: '2026-08-23', items: [
+    'O "Mapa de calor semanal" agora aparece também para o administrador da loja, na Visão geral. Antes só existia no painel da nutricionista RT — o dono não tinha como ver a cobertura de registro por equipamento e por dia.',
+    'Cada quadradinho é um dia: verde dentro da faixa, âmbar desvio leve, vermelho fora da faixa, cinza sem leitura. Clicar num dia com leitura abre o histórico completo daquele equipamento.',
+  ]},
   { version: '1.9.211', date: '2026-08-21', items: [
     'O modo implantação (fase de treino, com os alertas de pendência suspensos) ganhou saída: no painel administrativo há agora "Ativar operação", que exige digitar o nome da empresa para confirmar. Sem isso, uma loja podia ficar meses em treino sem que ninguém percebesse que os alertas estavam desligados.',
   ]},

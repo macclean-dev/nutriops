@@ -422,7 +422,7 @@ function QuickRegisterModal({ equipment, activeTenant, session, onClose, onSaved
 
 // ─── Weekly heatmap (linha = equipamento, coluna = dia) ─────────────────
 
-function WeeklyHeatmap({ tenants, records, onCellClick }) {
+export function WeeklyHeatmap({ tenants, records, onCellClick }) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
 
   const days = useMemo(() => {
@@ -798,6 +798,14 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
     records.filter(r => r.tenantId === activeTenant.id),
   [records, activeTenant.id]);
 
+  // Janela do mapa de calor. Recalcula quando `tenantRecords` muda — o corte
+  // por Date.now() dentro do memo ficaria congelado no primeiro render, e o
+  // mapa mostraria a semana de quando a aba foi aberta.
+  const ultimos7Dias = useMemo(() => {
+    const corte = Date.now() - 7 * 86400000;
+    return tenantRecords.filter((r) => new Date(r.createdAt).getTime() >= corte);
+  }, [tenantRecords]);
+
   const todayRecords = useMemo(() =>
     tenantRecords.filter(r => new Date(r.createdAt).getTime() >= todayMs),
   [tenantRecords, todayMs]);
@@ -947,6 +955,23 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
             </div>
           ))}
         </div>
+      </Section>
+
+      {/* Mapa de calor — antes só existia no painel da Nutricionista RT, e o
+          dono da loja (papel Administrador) nunca via. Pior: nem o admin da
+          plataforma via, porque a impersonação também entra como
+          Administrador — quem sustenta o produto não conseguia enxergar a tela
+          que o cliente descreve no suporte.
+          Aqui é escopado à empresa ATIVA (o painel da RT itera as unidades
+          dela); o clique reusa o drill-down de equipamento que esta tela já
+          tem. Pedido do dono, 23/08. */}
+      <Section
+        title="Mapa de calor semanal"
+        subtitle="Cor mostra o pior status do dia em cada equipamento. Clique numa célula com leitura pra abrir o detalhe.">
+        <WeeklyHeatmap
+          tenants={[activeTenant]}
+          records={ultimos7Dias}
+          onCellClick={(_tenant, equipment, cell) => { if (cell.count > 0) setDrillEq(equipment); }} />
       </Section>
 
       {/* Timeline */}

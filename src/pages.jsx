@@ -2738,6 +2738,36 @@ export function App() {
     handleLogout();
   }, [session, handleLogout]);
 
+  // Guarda de CREDENCIAL (23/08) — a sessão do app e a credencial do Supabase
+  // vivem em chaves SEPARADAS (`nutriops.session` e `nutriops.auth.session`), e
+  // podem divergir: um refresh que falhou, um signOut pela metade, ou o
+  // SetupPinScreen sobrescrevendo a sessão do app sem tocar na credencial.
+  //
+  // Quando divergem, o app fica meio-deslogado e não sabe: a tela mostra o
+  // nome da pessoa, o menu, os dados do cache — e TODA chamada sai anônima. O
+  // RLS recusa tudo, e o sintoma aparece como falha de permissão em tabela
+  // aleatória, que é o lugar errado pra procurar.
+  //
+  // Aconteceu com a dona da CASA DOCE (23/08): `nutriops.session` presente,
+  // `nutriops.auth.session` inexistente. Ela viu banners em maint_logs e
+  // validity_rules, a 2ª unidade sumida e cobertura 0% — três sintomas, uma
+  // causa, nenhum deles apontando pra ela.
+  //
+  // Fail closed: sem credencial não há sessão. Deslogar é honesto e o
+  // re-login reconstrói tudo (credencial + vínculo). PIN e impersonação não
+  // têm accessToken na sessão, então não passam por aqui.
+  useEffect(() => {
+    if (!session?.accessToken) return;
+    let cancelado = false;
+    import('./auth').then((m) => {
+      if (cancelado) return;
+      if (m.readAuthSession()?.accessToken) return;   // credencial no lugar
+      console.warn('[NutriOPS] sessão sem credencial do Supabase — deslogando pra reconstruir');
+      handleLogout();
+    }).catch(() => {});
+    return () => { cancelado = true; };
+  }, [session?.accessToken, handleLogout]);
+
   // Show onboarding wizard for genuinely new users (no session, no onboarding data, not on demo)
   // Show onboarding only when accessed via token (new client link)
   // or when explicitly requested via ?onboarding=1

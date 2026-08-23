@@ -192,7 +192,6 @@ export function ClientModal({ client, onSave, onClose }) {
   // cliente novo. Opcional de propósito: nem toda loja contrata a RT junto com
   // a abertura, e travar o cadastro por isso seria pior.
   const [rtEmail, setRtEmail] = useState('');
-  const [regenerate, setRegenerate]     = useState(false);
   const [busy, setBusy]                 = useState(false);
   const [pushError, setPushError]       = useState('');
   // Salvar sem PIN novo e sem falha de push fechava na hora — pixel a pixel
@@ -225,9 +224,23 @@ export function ClientModal({ client, onSave, onClose }) {
     setPushError('');
 
     const isNew         = !editing;
-    const needsNewPin   = isNew || regenerate;
+    // Só cliente NOVO gera setup PIN, e ele só chega a aparecer no plano B
+    // (criação de conta falhou — ver o ramo `setupPinPlain` no fim do save).
+    //
+    // O botão "Gerar novo PIN de configuração" saiu do modo edição em 23/08.
+    // Ele contradizia a caixa logo acima ("contas se gerenciam em Equipe →
+    // Usuários") e era a única forma de REVELAR um PIN em texto claro pra um
+    // cliente que já entra por e-mail. Quem recebesse esse PIN entraria pelo
+    // SetupPinScreen, que cria sessão LOCAL sem accessToken — e a partir daí
+    // `sbHeaders` manda a chave anônima, o RLS recusa com 42501 e a loja
+    // registra evidência que nunca sai do aparelho. É o mesmo bug que a
+    // v1.9.201 apagou do cadastro; o modo edição tinha ficado com o gatilho.
+    //
+    // Os hashes já carimbados em clientes existentes ficam onde estão: sem o
+    // texto claro (descartado quando a conta é criada com sucesso) a tela de
+    // setup é impassável, então são inertes.
+    const needsNewPin   = isNew;
 
-    // Gera setup PIN só pra clientes novos ou quando admin pediu regeneração.
     // Hash com PBKDF2 (~100ms) — admin não precisa esperar muito.
     let setupPinPlain   = null;
     let setupPinHash    = client?.setupPinHash ?? null;
@@ -286,9 +299,13 @@ export function ClientModal({ client, onSave, onClose }) {
       const result = await pushTenant(tenantPayload);
       if (!result.ok) {
         pushFailed = true;
+        // O conselho tem que existir de verdade: o botão "Editar (regerar
+        // PIN)" saiu em 23/08. Salvar de novo pelo Editar REFAZ o push (ele
+        // roda em toda gravação, não só em cliente novo) — mas NÃO refaz a
+        // criação de conta, que é `if (isNew)`. Por isso o segundo passo.
         setPushError(result.reason === 'no-session'
-          ? 'Sua sessão de administrador expirou. O cliente foi salvo só neste dispositivo e NÃO subiu pro servidor — entre de novo e use "Editar (regerar PIN)" pra concluir o cadastro.'
-          : `Cliente não subiu pro servidor (${result.reason}). Ficou salvo só neste dispositivo — use "Editar (regerar PIN)" pra tentar de novo.`);
+          ? 'Sua sessão de administrador expirou. O cliente foi salvo só neste dispositivo e NÃO subiu pro servidor. Entre de novo, abra "Editar" e salve — isso reenvia. Depois crie as contas em Equipe → Usuários.'
+          : `Cliente não subiu pro servidor (${result.reason}). Ficou salvo só neste dispositivo — abra "Editar" e salve pra tentar de novo. Depois crie as contas em Equipe → Usuários.`);
         // Continua salvando local — admin pode regenerar depois.
       }
     }
@@ -363,13 +380,11 @@ export function ClientModal({ client, onSave, onClose }) {
       // abriria o ?token= e receberia "not-found". Mantém o modal aberto com o
       // erro à vista pro admin corrigir a sessão e regerar o PIN.
       setBusy(false);
-      setRegenerate(false);
     } else if (conta?.ok) {
       // Conta criada/vinculada: o cliente entra por e-mail e senha, e o PIN
       // vira irrelevante. Mostra as credenciais uma vez só.
       setBusy(false);
       setNovaConta(conta);
-      setRegenerate(false);
     } else if (setupPinPlain) {
       // A conta NÃO pôde ser criada (Edge Function fora do ar, e-mail
       // recusado, sessão de admin expirada). O cliente já existe local e na
@@ -391,7 +406,6 @@ export function ClientModal({ client, onSave, onClose }) {
       // Não fecha o modal — admin precisa copiar o PIN antes
       setBusy(false);
       setGeneratedPin(setupPinPlain);
-      setRegenerate(false);
     } else {
       // Ver comentário do savedFlash acima: fecha com atraso, não na hora,
       // pra deixar visível que Salvar != Cancelar.
@@ -508,31 +522,6 @@ export function ClientModal({ client, onSave, onClose }) {
                 Lá tem <strong>"Convidar colaborador"</strong> pra quem não tem conta e
                 {' '}<strong>"Vincular conta existente"</strong> pra quem já usa o NutriOPS em outra unidade.
               </p>
-            </div>
-          )}
-
-          {/* PIN de configuração — só editing (no novo o PIN é gerado no Save) */}
-          {editing && (
-            <div style={{ padding:'10px 14px', background:'#f9fbfa', border:'1px solid #e1e5e8', borderRadius:8 }}>
-              <div style={{ fontSize:11, fontWeight:700, letterSpacing:'.08em', textTransform:'uppercase', color:'#5c6c7a', marginBottom:6 }}>
-                PIN de configuração
-              </div>
-              {client?.setupPinHash ? (
-                <p style={{ fontSize:12, color:'#5c6c7a', margin:'0 0 8px', lineHeight:1.5 }}>
-                  {client?.setupPinGeneratedAt
-                    ? <>Último gerado em <strong>{fmtDT(client.setupPinGeneratedAt)}</strong>. </>
-                    : null}
-                  Regenere se o cliente esqueceu o PIN ou se quiser invalidar o anterior.
-                </p>
-              ) : (
-                <p style={{ fontSize:12, color:'#5c6c7a', margin:'0 0 8px', lineHeight:1.5 }}>
-                  Cliente ainda não tem PIN de configuração. Gere um agora pra ele conseguir entrar.
-                </p>
-              )}
-              <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, fontWeight:600, color:'#00684a' }}>
-                <input type="checkbox" checked={regenerate} onChange={e=>setRegenerate(e.target.checked)} style={{ accentColor:'#00684a' }} />
-                Gerar novo PIN de configuração ao salvar
-              </label>
             </div>
           )}
 

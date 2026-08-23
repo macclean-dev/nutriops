@@ -8,7 +8,7 @@ import { tenantsBase } from './tenants-public';
 import { resolveLimits as resolveLimitsCat, resolveTone as resolveToneCat } from './limits';
 import { hashPin, generateSetupPin, generateInitialPassword } from './crypto';
 import { pushTenant, isTenantSyncEnabled } from './tenant-sync';
-import { SEGMENTS, DEFAULT_MODULES, segmentLabel, segmentLocalityType } from './segments';
+import { SEGMENTS, DEFAULT_MODULES, segmentLabel, segmentLocalityType, segmentIdFromLabel } from './segments';
 
 // Re-export storage helpers pra preservar a API que pages.jsx/trial.jsx
 // consumiam (com import from './admin'). Os imports leves agora podem ser
@@ -168,7 +168,11 @@ export function ClientModal({ client, onSave, onClose }) {
   const [email, setEmail]         = useState(client?.email ?? '');
   const [phone, setPhone]         = useState(client?.phone ?? '');
   const [plan, setPlan]           = useState(client?.plan ?? 'trial');
-  const [segment, setSegment]     = useState(client?.segment ?? 'padaria');
+  // `client.segment` é um LABEL ("Confeitaria"); o <select> abaixo trabalha
+  // com ids ('confeitaria'). Sem a conversão, editar QUALQUER cliente
+  // existente comparava label com id, nunca batia, e o navegador mostrava a
+  // 1ª opção da lista ("Padaria") — sempre, não importa o segmento real.
+  const [segment, setSegment]     = useState(() => segmentIdFromLabel(client?.segment) ?? 'padaria');
   const [active, setActive]       = useState(client?.active ?? true);
   const [cnpj, setCnpj]           = useState(client?.cnpj ?? '');
   const [contact, setContact]     = useState(client?.contact ?? '');
@@ -313,7 +317,13 @@ export function ClientModal({ client, onSave, onClose }) {
     onSave({
       id,
       name: name.trim(), email: email.trim(), phone: phone.trim(),
-      plan, segment, active, cnpj: cnpj.trim(), contact: contact.trim(),
+      // Label, não id — mesmo formato que `tenantPayload.segment` (linha
+      // acima) e que todo o resto da base já espera (App.jsx, pages.jsx,
+      // reports-views.jsx imprimem `tenant.segment` direto, sem conversão).
+      // Salvar o id cru aqui foi o que causava o descasamento: o registro
+      // LOCAL ficava com 'confeitaria' e o da NUVEM com "Confeitaria" — dois
+      // formatos pro mesmo campo.
+      plan, segment: segmentLabel(segment), active, cnpj: cnpj.trim(), contact: contact.trim(),
       notes: notes.trim(), billingDay: Number(billingDay),
       billingStatus, trialEndsAt,
       createdAt: client?.createdAt ?? new Date().toISOString(),
@@ -1185,7 +1195,7 @@ function TenantHealthCard({ tenant, metrics, client }) {
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8 }}>
         <div>
           <div style={{ fontSize:10, fontWeight:700, letterSpacing:'.12em', textTransform:'uppercase', color:'#5c6c7a' }}>
-            {tenant.segment || 'unidade'}
+            {segmentLabel(tenant.segment) || 'unidade'}
           </div>
           <h3 style={{ fontFamily:'Times-Roman, serif', fontSize:22, fontWeight:400, margin:'2px 0 0', color:'#001e2b', letterSpacing:'-.02em' }}>
             {tenant.name}
@@ -1666,7 +1676,7 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
                         {t.name}
                       </div>
                       <div style={{ fontSize:10, color:'#5c6c7a', letterSpacing:'.04em', textTransform:'uppercase' }}>
-                        {t.segment ?? 'unidade'}
+                        {segmentLabel(t.segment) ?? 'unidade'}
                       </div>
                     </div>
                   </div>

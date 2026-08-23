@@ -34,6 +34,31 @@ export function segmentLocalityType(id) {
   return SEGMENTS.find(s => s.id === id)?.localityType ?? 'Loja';
 }
 
+// O campo `tenant.segment` guarda o LABEL pronto pra exibir (contrato usado
+// em toda a base — App.jsx, pages.jsx, reports-views.jsx etc. imprimem
+// `tenant.segment` direto, sem passar por segmentLabel). O <select> do
+// ClientModal, porém, trabalha com IDs minúsculos ('confeitaria').
+//
+// Sem esta ponte, abrir "Editar" num cliente existente comparava o label
+// salvo ("Confeitaria") com os ids das opções — nunca batia — e o <select>
+// caía no valor padrão do navegador (a 1ª opção, "Padaria"), não importa o
+// segmento real. Escolher "Confeitaria" ali corrigia a tela, mas ao reabrir
+// o mesmo cliente o mesmo descasamento acontecia de novo: parecia que a
+// escolha "não pegava" (achado do dono, 23/08).
+//
+// `startsWith` cobre o seed antigo de `tenants-public.js`, que guarda forma
+// curta ("Produção") enquanto o label completo é "Produção de alimentos".
+export function segmentIdFromLabel(value) {
+  const alvo = String(value ?? '').trim().toLowerCase();
+  if (!alvo) return null;
+  const porId    = SEGMENTS.find(s => s.id === alvo);
+  if (porId) return porId.id;
+  const porLabel = SEGMENTS.find(s => s.label.toLowerCase() === alvo);
+  if (porLabel) return porLabel.id;
+  const porPrefixo = SEGMENTS.find(s => s.label.toLowerCase().startsWith(alvo));
+  return porPrefixo?.id ?? null;
+}
+
 // Converte uma lista de labels (ex: ['Freezer', 'Refrigerador']) no formato
 // equipmentCatalog que `pages.jsx` e `repository.js` esperam.
 export function buildEquipmentCatalog(labels) {

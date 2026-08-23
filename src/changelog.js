@@ -21,6 +21,9 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.220', date: '2026-08-23', items: [
+    'Corrigido: ao editar um cliente já cadastrado, o campo Segmento sempre mostrava "Padaria" na tela, não importa o segmento real da loja — e escolher outro na hora parecia "não pegar". O nome salvo ("Confeitaria") e o valor que a tela compara ("confeitaria") tinham formatos diferentes, então nunca combinavam.',
+  ]},
   { version: '1.9.218', date: '2026-08-23', items: [
     'Corrigido o problema mais sério do modo Quiosque: a tela dava a leitura por salva mesmo quando ela não tinha chegado no sistema. O card ficava verde, o contador subia e no fim aparecia "Todos os registros concluídos!" — enquanto a temperatura estava guardada só naquele celular. Quem mediu não tinha como desconfiar.',
     'Agora, quando uma leitura fica presa no aparelho, ela aparece em âmbar com "NÃO ENVIADO", e uma faixa no topo avisa quantas faltam enviar. O texto pede para manter o aparelho conectado e — importante — para NÃO repetir a medição em outro celular, porque ela não se perdeu.',

@@ -638,9 +638,13 @@ function ActivityTimeline({ records, limit = 12 }) {
 
 // ─── Section header ───────────────────────────────────────────────────────
 
-function Section({ title, subtitle, action, children }) {
+// `id` é opcional e serve de âncora pro Cmd+K: seção não é tela, então a
+// paleta navega pra Visão geral e rola até aqui (ver commands.js). Sem isso o
+// dono procurava "mapa de calor" e a busca não achava nada — o item existia,
+// mas escondido no meio da rolagem.
+function Section({ id, title, subtitle, action, children }) {
   return (
-    <section className="dash-in" style={{ display:'flex', flexDirection:'column', gap:14, marginTop:32, animationDelay:'.18s' }}>
+    <section id={id} className="dash-in" style={{ display:'flex', flexDirection:'column', gap:14, marginTop:32, animationDelay:'.18s' }}>
       <header style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', gap:12 }}>
         <div>
           <h2 style={{
@@ -728,6 +732,7 @@ function ForaDaRotinaCard({ itens, limiteDias, onAbrir }) {
 
   return (
     <Section
+      id="secao-fora-da-rotina"
       title="Equipamentos fora da rotina"
       subtitle={`${itens.length} sem leitura há ${limiteDias} dia${limiteDias === 1 ? '' : 's'} ou mais${nunca ? ` · ${nunca} nunca medido${nunca === 1 ? '' : 's'}` : ''} — planilha com buraco é o primeiro item que o fiscal folheia`}
     >
@@ -966,6 +971,7 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
           dela); o clique reusa o drill-down de equipamento que esta tela já
           tem. Pedido do dono, 23/08. */}
       <Section
+        id="secao-mapa-de-calor"
         title="Mapa de calor semanal"
         subtitle="Cor mostra o pior status do dia em cada equipamento. Clique numa célula com leitura pra abrir o detalhe.">
         <WeeklyHeatmap

@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getTemperatureRepository } from './repository';
+import { getTemperatureRepository, getOfflineQueue } from './repository';
 import { resolveLimits as resolveTemperatureLimits, resolveTone as resolveTemperatureTone, suspectMissingMinus } from './limits';
 import { readOperator } from './operator';
 import { OperatorPicker, readStaff } from './operator-picker';
 import { BrandLockup } from './brand';
 import { writeKioskConfig } from './kiosk-config';
 import { ordenarPorSetor, agruparPorSetor } from './setores';
+import { leiturasPendentes, equipamentoPendente, descreverPendencia } from './leituras-pendentes';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -116,17 +117,22 @@ export function firstPendingIndexIfUntouched(catalog, seeded, currentIdx) {
 
 // ─── Equipment card ────────────────────────────────────────────────────────
 
-function EquipmentCard({ item, saved, active, onClick }) {
-  const tone = saved ? 'ok' : active ? 'active' : 'idle';
-  const bg    = tone==='ok' ? '#dafbe1' : tone==='active' ? 'rgba(29,78,137,.10)' : 'white';
-  const border= tone==='ok' ? '#4ac26b' : tone==='active' ? 'rgba(29,78,137,.4)' : '#c1ccd6';
-  const color = tone==='ok' ? '#00a35c' : tone==='active' ? '#1d4e89' : '#001e2b';
+// `pendente` existe porque verde tem que significar "chegou na nuvem". Uma
+// leitura que ficou na fila deste aparelho é âmbar: foi medida, ainda não
+// contou. Sem essa distinção o card ficava verde e a leitura sumia (23/08).
+function EquipmentCard({ item, saved, pendente, active, onClick }) {
+  const tone = pendente ? 'wait' : saved ? 'ok' : active ? 'active' : 'idle';
+  const bg    = tone==='ok' ? '#dafbe1' : tone==='wait' ? '#fff4d6' : tone==='active' ? 'rgba(29,78,137,.10)' : 'white';
+  const border= tone==='ok' ? '#4ac26b' : tone==='wait' ? '#d9a441' : tone==='active' ? 'rgba(29,78,137,.4)' : '#c1ccd6';
+  const color = tone==='ok' ? '#00a35c' : tone==='wait' ? '#8a4e00' : tone==='active' ? '#1d4e89' : '#001e2b';
 
   return (
     <button onClick={onClick} style={{ padding:'14px 16px', borderRadius:14, border:`2px solid ${border}`, background:bg, cursor:'pointer', textAlign:'left', transition:'all .15s', fontFamily:'inherit', position:'relative' }}>
       <div style={{ fontSize:15, fontWeight:700, color }}>{item.label}</div>
       <div style={{ fontSize:11, color:'#5c6c7a', marginTop:2 }}>{item.location || 'Sem localização'}</div>
-      {saved && <span style={{ position:'absolute', top:8, right:10, fontSize:12, fontWeight:800, color:'#00a35c' }}>✓✓</span>}
+      {pendente
+        ? <span style={{ position:'absolute', top:8, right:10, fontSize:10, fontWeight:800, color:'#8a4e00' }}>NÃO ENVIADO</span>
+        : saved && <span style={{ position:'absolute', top:8, right:10, fontSize:12, fontWeight:800, color:'#00a35c' }}>✓✓</span>}
     </button>
   );
 }
@@ -136,7 +142,7 @@ function EquipmentCard({ item, saved, active, onClick }) {
 // Antes travava a tela por 2,5s sem jeito de pular — numa rodada de 44
 // equipamentos (CASA DOCE) isso soma quase 2 minutos parado só nesta tela.
 // Agora um toque dispensa na hora, e o automático também encurtou.
-function SuccessOverlay({ temperature, equipment, tone, onDismiss }) {
+function SuccessOverlay({ temperature, equipment, tone, pendente, onDismiss }) {
   useEffect(() => {
     const t = setTimeout(onDismiss, 1100);
     return () => clearTimeout(t);
@@ -151,7 +157,12 @@ function SuccessOverlay({ temperature, equipment, tone, onDismiss }) {
       <div style={{ fontSize:80, color:'white' }}>{icon}</div>
       <div style={{ fontSize:32, fontWeight:800, color:'white' }}>{temperature}°C</div>
       <div style={{ fontSize:18, color:'rgba(255,255,255,.9)' }}>{equipment} — {label}</div>
-      <div style={{ fontSize:14, color:'rgba(255,255,255,.7)', marginTop:8 }}>Registro salvo · toque para continuar</div>
+      {/* "Registro salvo" só quando chegou na nuvem. Se ficou na fila, a tela
+          diz isso — é a única chance de alguém manter o aparelho conectado
+          antes que a leitura fique 36h presa no celular de quem mediu. */}
+      <div style={{ fontSize:14, color:'rgba(255,255,255,.7)', marginTop:8 }}>
+        {pendente ? 'Salvo neste aparelho — ainda falta enviar' : 'Registro salvo'} · toque para continuar
+      </div>
     </div>
   );
 }
@@ -175,6 +186,10 @@ export function KioskApp({ config, onExit }) {
   // na horizontal ficava cortada — a pessoa não via o que o app pedia.
   const [avisoBloqueio, setAvisoBloqueio] = useState(null);
   const [savedValues, setSavedValues] = useState({});
+  // Leituras presas na fila DESTE aparelho. Relidas junto com a semente (2 em
+  // 2 min e ao voltar o foco), então quando a fila esvazia sozinha o âmbar sai
+  // sem precisar recarregar.
+  const [pendentes, setPendentes] = useState(() => leiturasPendentes(getOfflineQueue(), config.tenantId));
   const [saving, setSaving]       = useState(false);
   const [successData, setSuccessData] = useState(null);
   const [exitAttempts, setExitAttempts] = useState(0);
@@ -225,6 +240,10 @@ export function KioskApp({ config, onExit }) {
     document.addEventListener('visibilitychange', aoVoltar);
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', aoVoltar); };
   }, []);
+
+  useEffect(() => {
+    setPendentes(leiturasPendentes(getOfflineQueue(), config.tenantId));
+  }, [config.tenantId, semente]);
 
   useEffect(() => {
     let vivo = true;
@@ -300,18 +319,33 @@ export function KioskApp({ config, onExit }) {
         value: Number(value), note: currentTone === 'danger' ? note.trim() : '',
         min: limits.min, max: limits.max,
       };
-      await repository.create(payload);
+      // `create()` nunca lança: POST recusado (offline, sessão sem credencial,
+      // RLS) volta como `{ _pending: true }`, um objeto normal. Ignorar isso era
+      // o bug que engolia leitura — verde na tela, dado preso na fila deste
+      // aparelho (relato da gelateria, 17/08 e 22/08).
+      const salvo = await repository.create(payload);
+      const ficouPendente = Boolean(salvo?._pending);
       setSavedValues(prev => ({ ...prev, [active.label]: value }));
+      if (ficouPendente) setPendentes(leiturasPendentes(getOfflineQueue(), config.tenantId));
       // O avanço pro próximo pendente acontece junto do dismiss do overlay
       // (automático ou por toque) — um só relógio, não dois desencontrados.
       const next = catalog.findIndex((eq, i) => i > activeIdx && !savedValues[eq.label]);
-      setSuccessData({ temperature: value, equipment: active.label, tone: currentTone, next: next === -1 ? null : next });
+      setSuccessData({ temperature: value, equipment: active.label, tone: currentTone, pendente: ficouPendente, next: next === -1 ? null : next });
       setValue(''); setNote(''); setInsistiuPositivo(false);
     } finally { setSaving(false); }
   }, [value, note, insistiuPositivo, active, saving, config, limits, repository, catalog, activeIdx, savedValues, autorAtual]);
 
-  const allSaved = catalog.every(eq => savedValues[eq.label]);
-  const savedCount = Object.keys(savedValues).length;
+  // Três consertos numa linha só (23/08):
+  //  1. `[].every()` é `true` — com o catálogo vazio (aparelho que ainda não
+  //     baixou os equipamentos) a tela anunciava "Todos os 0 equipamentos foram
+  //     registrados com sucesso". Era o "cliquei no setor e apareceu todos os
+  //     registros concluídos" do relato.
+  //  2. `savedValues[label]` por verdade descartava 0 °C — leitura legítima de
+  //     câmara — e o card voltava a pedir a medição já feita.
+  //  3. Nada pendente pode contar como concluído.
+  const tudoRegistrado = catalog.length > 0 && catalog.every(eq => savedValues[eq.label] !== undefined);
+  const allSaved = tudoRegistrado && pendentes.total === 0;
+  const savedCount = catalog.filter(eq => savedValues[eq.label] !== undefined).length;
 
   const handleExit = () => {
     if (exitAttempts < 2) { setExitAttempts(e => e + 1); return; }
@@ -360,6 +394,20 @@ export function KioskApp({ config, onExit }) {
         </div>
       </div>
 
+      {/* Faixa de pendência. Fica no topo, fora do ramo `allSaved`, porque o
+          caso perigoso é justamente o de tudo medido e nada enviado. */}
+      {pendentes.total > 0 && (
+        <div style={{ background:'#fff4d6', borderBottom:'2px solid #d9a441', padding:'11px 20px', display:'flex', alignItems:'center', gap:12 }}>
+          <span style={{ fontSize:18, color:'#8a4e00' }}>⚠</span>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:'#8a4e00' }}>{descreverPendencia(pendentes)}</div>
+            <div style={{ fontSize:11.5, color:'#6b4a10', marginTop:2 }}>
+              Mantenha este aparelho com internet e o app aberto até o aviso sumir. Não repita a medição em outro celular — ela não se perdeu.
+            </div>
+          </div>
+        </div>
+      )}
+
       {allSaved ? (
         /* All done screen */
         <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'calc(100vh - 57px)', gap:16, padding:24 }}>
@@ -372,6 +420,18 @@ export function KioskApp({ config, onExit }) {
           </button>
         </div>
       ) : (
+        catalog.length === 0 ? (
+        /* Antes esta situação caía no ramo de cima e virava "Todos os 0
+           equipamentos foram registrados com sucesso" — parabéns por nada. */
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'calc(100vh - 57px)', gap:12, padding:24, textAlign:'center' }}>
+          <div style={{ fontSize:52, color:'#8a4e00' }}>⚠</div>
+          <h2 style={{ fontSize:22, fontWeight:800, color:'#001e2b' }}>Nenhum equipamento neste aparelho</h2>
+          <p style={{ color:'#5c6c7a', fontSize:14, maxWidth:420 }}>
+            A lista de equipamentos ainda não chegou aqui. Confira a internet e saia e entre no modo quiosque de novo.
+            Se continuar vazia, avise o responsável — <strong>não registre nada por enquanto</strong>, a leitura não teria onde entrar.
+          </p>
+        </div>
+        ) : (
         <div style={{ display:'grid', gridTemplateColumns:'1fr 340px', gap:0, minHeight:'calc(100vh - 57px)' }}>
           {/* Left: Equipment list */}
           <div style={{ padding:20, borderRight:'1px solid #e2e8f0', overflowY:'auto' }}>
@@ -379,7 +439,7 @@ export function KioskApp({ config, onExit }) {
               Equipamentos — {config.tenantName}
             </div>
             {grupos.map(({ setor, itens }) => {
-              const feitos = itens.filter(({ item }) => savedValues[item.label]).length;
+              const feitos = itens.filter(({ item }) => savedValues[item.label] !== undefined).length;
               return (
                 <div key={setor} style={{ marginBottom:18 }}>
                   {/* Cabeçalho de setor só quando há mais de um — com um setor
@@ -394,7 +454,7 @@ export function KioskApp({ config, onExit }) {
                   )}
                   <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px,1fr))', gap:10 }}>
                     {itens.map(({ item, i }) => (
-                      <EquipmentCard key={item.label} item={item} saved={Boolean(savedValues[item.label])} active={i===activeIdx} onClick={() => { setActiveIdx(i); setValue(''); setNote(''); setInsistiuPositivo(false); }} />
+                      <EquipmentCard key={item.label} item={item} saved={savedValues[item.label] !== undefined} pendente={equipamentoPendente(pendentes, item.label)} active={i===activeIdx} onClick={() => { setActiveIdx(i); setValue(''); setNote(''); setInsistiuPositivo(false); }} />
                     ))}
                   </div>
                 </div>
@@ -464,6 +524,7 @@ export function KioskApp({ config, onExit }) {
             {saving && <div style={{ textAlign:'center', marginTop:12, fontSize:13, color:'#5c6c7a' }}>Salvando…</div>}
           </div>
         </div>
+      )
       )}
     </div>
   );

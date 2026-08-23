@@ -21,6 +21,13 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.218', date: '2026-08-23', items: [
+    'Corrigido o problema mais sério do modo Quiosque: a tela dava a leitura por salva mesmo quando ela não tinha chegado no sistema. O card ficava verde, o contador subia e no fim aparecia "Todos os registros concluídos!" — enquanto a temperatura estava guardada só naquele celular. Quem mediu não tinha como desconfiar.',
+    'Agora, quando uma leitura fica presa no aparelho, ela aparece em âmbar com "NÃO ENVIADO", e uma faixa no topo avisa quantas faltam enviar. O texto pede para manter o aparelho conectado e — importante — para NÃO repetir a medição em outro celular, porque ela não se perdeu.',
+    'A tela também não anuncia mais "todos os registros concluídos" quando o aparelho está sem a lista de equipamentos. Nesse caso ela avisa o que houve e orienta a não registrar nada até a lista chegar.',
+    'Uma leitura de 0 °C passou a contar como registrada. Antes o sistema tratava zero como "não medido" e pedia a leitura de novo.',
+    'O Cmd+K (busca rápida) agora encontra "Mapa de calor semanal" e "Equipamentos fora da rotina". Eles são seções da Visão geral, não telas — e por isso a busca não achava.',
+  ]},
   { version: '1.9.216', date: '2026-08-23', items: [
     'O "Mapa de calor semanal" agora aparece também para o administrador da loja, na Visão geral. Antes só existia no painel da nutricionista RT — o dono não tinha como ver a cobertura de registro por equipamento e por dia.',
     'Cada quadradinho é um dia: verde dentro da faixa, âmbar desvio leve, vermelho fora da faixa, cinza sem leitura. Clicar num dia com leitura abre o histórico completo daquele equipamento.',

@@ -73,6 +73,45 @@ export function buildCommands(ctx, callbacks) {
     });
   }
 
+  // ─── Seções dentro da Visão geral ─────────────────────────────────────────
+  // Nem tudo que a pessoa procura é uma TELA. O "Mapa de calor semanal" saiu na
+  // v1.9.216 e o dono não achou: Cmd+K só indexava views, e o mapa é uma seção
+  // no meio da rolagem da Visão geral. Estes itens navegam pra tela certa e
+  // rolam até a âncora (`id` no <Section>, overview-v2.jsx).
+  const secoes = [
+    { view: 'overview', anchor: 'secao-mapa-de-calor',
+      label: 'Ver Mapa de calor semanal',
+      hint: 'Visão geral', keywords: 'mapa calor heatmap semana cobertura equipamento dia' },
+    { view: 'overview', anchor: 'secao-fora-da-rotina',
+      label: 'Ver Equipamentos fora da rotina',
+      hint: 'Visão geral', keywords: 'fora rotina sem leitura parado esquecido buraco' },
+  ];
+
+  for (const sec of secoes) {
+    if (!can(sec.view)) continue;
+    cmds.push({
+      id: `secao:${sec.anchor}`,
+      label: sec.label,
+      hint: sec.hint,
+      keywords: sec.keywords,
+      group: 'navigation',
+      run: () => {
+        callbacks.onNavigate?.(sec.view);
+        callbacks.onClose?.();
+        // A seção só existe depois que a Visão geral montou (é lazy). Duas
+        // tentativas cobrem o carregamento sem prender ninguém esperando.
+        const rolar = () => {
+          const el = typeof document !== 'undefined' && document.getElementById(sec.anchor);
+          if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return true; }
+          return false;
+        };
+        if (typeof setTimeout === 'function') {
+          setTimeout(() => { if (!rolar()) setTimeout(rolar, 600); }, 120);
+        }
+      },
+    });
+  }
+
   // ─── Ações ────────────────────────────────────────────────────────────────
   if (callbacks.onLaunchKiosk) {
     cmds.push({

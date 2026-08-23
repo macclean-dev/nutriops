@@ -248,16 +248,31 @@ describe('migrateAllToSupabase — só empurra as lojas recebidas (isolamento)',
 // Fonte de verdade: docs/rls-policies.sql.
 // ─────────────────────────────────────────────────────────────────────────────
 describe('SUPABASE_SQL — não pode rebaixar as policies do banco', () => {
-  it('toda policy tenant_isolation tem os 4 caminhos de acesso', () => {
+  it('toda policy tenant_isolation tem os 3 caminhos de acesso', () => {
+    // Eram 4 até 21/08. O caminho '__healthcheck__' saiu daqui e passou a
+    // valer SÓ na temperature_records, escopado (teste abaixo): a sonda do
+    // boot só escreve nessa tabela, e nas outras 19 o caminho era escrita de
+    // linha arbitrária liberada pra qualquer conta autenticada, sem uso nenhum.
     const criacoes = SUPABASE_SQL.split('create policy tenant_isolation').slice(1);
     expect(criacoes.length).toBeGreaterThanOrEqual(8);   // as tabelas do núcleo
     for (const bloco of criacoes) {
       const corpo = bloco.split(';')[0];
       expect(corpo).toContain('app_metadata');            // 1. conta presa à loja
-      expect(corpo).toContain('__healthcheck__');         // 2. testWrite do boot
-      expect(corpo).toContain('is_member');               // 3. login por vínculo ⚠️
-      expect(corpo).toContain('is_admin_plataforma');     // 4. admin da plataforma
+      expect(corpo).toContain('is_member');               // 2. login por vínculo ⚠️
+      expect(corpo).toContain('is_admin_plataforma');     // 3. admin da plataforma
     }
+  });
+
+  it('a sonda do boot só alcança temperature_records, e só a linha DELA', () => {
+    // `user_name = auth.uid()::text` é o dono da linha. Sem isso, o DELETE por
+    // tenant_id apagava a sonda de todo mundo — num boot concorrente, falso
+    // negativo no healthcheck de outra loja.
+    const criacoes = SUPABASE_SQL.split('create policy tenant_isolation').slice(1);
+    const comHealthcheck = criacoes.filter((b) => b.split(';')[0].includes('__healthcheck__'));
+    expect(comHealthcheck).toHaveLength(1);
+    expect(comHealthcheck[0]).toContain("on temperature_records for all");
+    expect(comHealthcheck[0].split(';')[0])
+      .toContain("(tenant_id = '__healthcheck__' and user_name = auth.uid()::text)");
   });
 
   it('define as funções de apoio antes de usá-las (base nova não quebra)', () => {

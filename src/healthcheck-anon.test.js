@@ -49,8 +49,10 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
+// `user.id` é obrigatório desde 21/08: a sonda carimba o uid na linha pra a
+// policy saber de quem ela é (e o DELETE não apagar a sonda dos outros).
 const comSessao = (tenantId = 'casadoce') => localStorage.setItem('nutriops.session',
-  JSON.stringify({ tenantId, accessToken: 'jwt-de-teste' }));
+  JSON.stringify({ tenantId, accessToken: 'jwt-de-teste', user: { id: 'uid-de-teste' } }));
 
 describe('por que anon NUNCA passa — o mecanismo, travado nos dois arquivos', () => {
   it('a policy chama is_member(), e is_member é revogada de anon', () => {

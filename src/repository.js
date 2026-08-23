@@ -704,6 +704,20 @@ export const supabaseRepository = {
     const hcHeaders = { ...(await sbHeaders(tenantId)) };
     const hcComJwt = hcHeaders._comJwt === true;
     delete hcHeaders._comJwt;
+    // CARIMBA QUEM SONDOU (21/08). A policy libera `tenant_id =
+    // '__healthcheck__'` — sem mais nada, QUALQUER conta autenticada podia
+    // escrever linhas arbitrárias ali e, pior, o DELETE por
+    // `tenant_id=eq.__healthcheck__` apagava a sonda de TODO MUNDO. Num boot
+    // concorrente isso derruba o healthcheck de outra loja e produz falso
+    // negativo — ruído de disponibilidade que ninguém saberia de onde veio.
+    //
+    // Com o uid em `user_name`, a policy exige que a linha seja SUA e o DELETE
+    // só alcança as suas. Achado da revisão adversarial de 21/08.
+    const meuUid = (() => {
+      try { return JSON.parse(localStorage.getItem('nutriops.session') ?? 'null')?.user?.id ?? null; }
+      catch { return null; }
+    })();
+    if (!meuUid) return { ok: false, reason: 'sem_sessao' };
     // Sem JWT não há healthcheck possível: como toda tabela de tenant tem a
     // policy com is_member(), anon leva 42501 SEMPRE — o resultado não
     // distingue "banco com problema" de "eu não me autentiquei". Sondar assim
@@ -723,7 +737,7 @@ export const supabaseRepository = {
           equipment_key: 'healthcheck',
           measured_at: new Date().toISOString(),
           value: 0, min_value: 0, max_value: 0,
-          user_name: 'system', user_role: 'healthcheck',
+          user_name: meuUid, user_role: 'healthcheck',
           control_mode: 'healthcheck',
           created_at: new Date().toISOString(),
         }),
@@ -744,9 +758,12 @@ export const supabaseRepository = {
         if (insertRes.status === 404) return { ok: false, reason: 'table_missing', body };
         return { ok: false, reason: `http_${insertRes.status}`, status: insertRes.status, body };
       }
-      // DELETE por tenant_id — limpa o registro fake E qualquer stray de
-      // healthchecks anteriores cujo DELETE falhou (ex.: rede caiu no meio).
-      await fetch(`${sbBase()}/temperature_records?tenant_id=eq.__healthcheck__`, {
+      // DELETE das MINHAS sondas — limpa o registro fake E qualquer stray de
+      // healthchecks anteriores meus cujo DELETE falhou (rede caiu no meio).
+      // O filtro por user_name é o que impede apagar a sonda alheia; a policy
+      // barra de qualquer jeito, mas mandar o filtro certo evita um DELETE que
+      // sai e não apaga nada.
+      await fetch(`${sbBase()}/temperature_records?tenant_id=eq.__healthcheck__&user_name=eq.${encodeURIComponent(meuUid)}`, {
         method: 'DELETE', headers: hcHeaders,
       });
       // Escrita OK → limpa flag de auth error se existia (key foi corrigida).
@@ -2320,50 +2337,55 @@ $$;
 revoke execute on function public.is_admin_plataforma() from anon, public;
 grant  execute on function public.is_admin_plataforma() to authenticated;
 
+-- temperature_records: os 4 caminhos + a SONDA DO BOOT, escopada ao uid.
+-- O caminho '__healthcheck__' vale SÓ aqui (é a única tabela que a sonda
+-- escreve) e SÓ pra linha da própria pessoa. Era incondicional em todas as 20
+-- até 21/08: qualquer conta autenticada escrevia linha arbitrária, e o DELETE
+-- por tenant_id apagava a sonda de todo mundo.
 drop policy if exists tenant_isolation on temperature_records;
 create policy tenant_isolation on temperature_records for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma() or (tenant_id = '__healthcheck__' and user_name = auth.uid()::text))
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma() or (tenant_id = '__healthcheck__' and user_name = auth.uid()::text));
 
 drop policy if exists tenant_isolation on form_records;
 create policy tenant_isolation on form_records for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma())
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma());
 
 drop policy if exists tenant_isolation on form_templates;
 create policy tenant_isolation on form_templates for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma())
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma());
 
 drop policy if exists tenant_isolation on equipment_catalog;
 create policy tenant_isolation on equipment_catalog for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma())
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma());
 
 drop policy if exists tenant_isolation on tenant_staff;
 create policy tenant_isolation on tenant_staff for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma())
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma());
 
 drop policy if exists tenant_isolation on receiving_records;
 create policy tenant_isolation on receiving_records for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma())
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma());
 
 drop policy if exists tenant_isolation on products;
 create policy tenant_isolation on products for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma())
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma());
 
 drop policy if exists tenant_isolation on stock_logs;
 create policy tenant_isolation on stock_logs for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma())
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma());
 
 drop policy if exists tenant_isolation on special_controls;
 create policy tenant_isolation on special_controls for all
-  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma())
-  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or tenant_id = '__healthcheck__' or public.is_member(tenant_id) or public.is_admin_plataforma());
+  using      (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma())
+  with check (tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id') or public.is_member(tenant_id) or public.is_admin_plataforma());
 
 -- 9. LIGAR o RLS — só DEPOIS das policies acima existirem.
 -- Rollback de emergência (1 comando por tabela): alter table X disable row level security;

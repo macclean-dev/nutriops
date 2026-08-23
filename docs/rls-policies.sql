@@ -64,17 +64,27 @@ grant  execute on function public.is_admin_plataforma() to authenticated;
 -- NOVA: acrescente o nome aqui e rode este arquivo de novo — é tudo que
 -- precisa ser feito.
 
+-- ⚠️ O caminho `__healthcheck__` saiu daqui em 21/08 e passou a valer SÓ na
+-- `temperature_records` (bloco logo abaixo), escopado ao uid de quem sonda.
+--
+-- POR QUÊ: a sonda do boot (`testWrite`, repository.js) só escreve em
+-- temperature_records — nas outras 19 o caminho nunca teve uso, e abria
+-- escrita de linha ARBITRÁRIA pra qualquer conta autenticada, inclusive sem
+-- vínculo com loja nenhuma. Não vazava dado (as telas filtram por tenant_id
+-- real), mas era superfície de poluição de graça em 19 tabelas de evidência.
+-- Achado da revisão adversarial de 21/08.
 do $$
 declare
   t text;
   regra text := '(tenant_id = (auth.jwt() -> ''app_metadata'' ->> ''tenant_id'')'
-             || ' or tenant_id = ''__healthcheck__'''
              || ' or public.is_member(tenant_id)'
              || ' or public.is_admin_plataforma())';
 begin
   foreach t in array array[
     -- núcleo operacional
-    'temperature_records', 'form_records', 'form_templates', 'equipment_catalog',
+    -- 'temperature_records' saiu da lista: tem bloco próprio abaixo, com o
+    -- caminho da sonda escopado ao uid.
+    'form_records', 'form_templates', 'equipment_catalog',
     'receiving_records', 'products', 'special_controls', 'tenant_staff',
     'stock_logs',                      -- morta no código (v1.9.129), viva no banco
     -- validades e não-conformidades
@@ -93,6 +103,42 @@ begin
     execute format('alter table public.%I enable row level security', t);
   end loop;
 end $$;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- temperature_records: os 4 caminhos + a SONDA DO BOOT, escopada.
+--
+-- A sonda (`testWrite`, repository.js) grava uma linha com
+-- tenant_id='__healthcheck__' pra provar que a escrita nesta tabela funciona —
+-- ela existe porque em 30/05 a form_records sincronizava e a
+-- temperature_records não, em silêncio.
+--
+-- `user_name = auth.uid()::text` é o que mudou em 21/08. Antes o caminho era
+-- incondicional, e aí:
+--   · qualquer conta autenticada (mesmo SEM vínculo) escrevia linha arbitrária;
+--   · o DELETE por tenant_id apagava a sonda de TODO MUNDO — num boot
+--     concorrente, derrubava o healthcheck de outra loja e gerava falso
+--     negativo que ninguém saberia de onde veio.
+-- Agora a linha de sonda tem dono: você só escreve e apaga a sua.
+drop policy if exists tenant_isolation on public.temperature_records;
+create policy tenant_isolation on public.temperature_records for all
+  using (
+    tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id')
+    or public.is_member(tenant_id)
+    or public.is_admin_plataforma()
+    or (tenant_id = '__healthcheck__' and user_name = auth.uid()::text)
+  )
+  with check (
+    tenant_id = (auth.jwt() -> 'app_metadata' ->> 'tenant_id')
+    or public.is_member(tenant_id)
+    or public.is_admin_plataforma()
+    or (tenant_id = '__healthcheck__' and user_name = auth.uid()::text)
+  );
+alter table public.temperature_records enable row level security;
+
+-- Varre sondas órfãs de antes deste SQL (user_name='system', sem dono).
+delete from public.temperature_records
+ where tenant_id = '__healthcheck__' and user_name = 'system';
 
 
 -- ── PARTE 3 — Storage das fotos de planilha ─────────────────────────────────

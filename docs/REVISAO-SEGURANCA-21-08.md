@@ -35,7 +35,7 @@ a promessa de idempotência saiu do cabeçalho. Travado em
 
 ---
 
-## 🟡 MÉDIA — `reset_password` permite takeover cross-tenant · **ABERTO**
+## 🟡 MÉDIA — `reset_password` permitia takeover cross-tenant · **CORRIGIDO (v1.9.214)**
 
 `supabase/functions/invite-collaborator/index.ts`
 
@@ -51,9 +51,10 @@ incluindo a unidade B onde ele nunca teve papel.
 
 Ficou mais relevante agora que o multi-unidade entrou em uso real (21/08).
 
-**Mitigação sugerida:** permitir reset só quando o alvo pertence
-**exclusivamente** à loja de quem chama; ou reservar reset de conta
-multi-empresa ao admin da plataforma.
+**Correção:** a Edge Function agora busca TODAS as empresas do alvo e recusa
+quando ele responde por mais de uma — nesse caso só o admin da plataforma
+reseta. A recusa explica o motivo, porque quem toma o 403 é o dono da loja
+tentando ajudar a própria RT.
 
 *Bom, para registro:* o admin da plataforma nunca é alvo elegível —
 `link_existing_member` veta vinculá-lo a loja, e `isGlobalAdmin` exige
@@ -61,7 +62,7 @@ membership vazio.
 
 ---
 
-## 🟡 MÉDIA — `__healthcheck__` é canal de escrita aberto · **ABERTO**
+## 🟡 MÉDIA — `__healthcheck__` era canal de escrita aberto · **CORRIGIDO (v1.9.214)**
 
 `docs/rls-policies.sql` (aplicado às 20 tabelas)
 
@@ -76,8 +77,11 @@ Não vaza dado real (as telas filtram por `tenant_id` de verdade), mas dá:
   `DELETE ?tenant_id=eq.__healthcheck__`, então qualquer autenticado apaga a
   linha de sonda de qualquer outro — falso negativo no boot de outra loja.
 
-**Mitigação sugerida:** restringir o caminho a linhas cujo `id` seja o esperado,
-ou mover a sonda pra tabela própria.
+**Correção:** o caminho saiu das outras 19 tabelas (a sonda só escreve em
+`temperature_records`) e, na que resta, exige `user_name = auth.uid()::text` —
+a linha de sonda passou a ter dono. O `testWrite` carimba o uid e o DELETE
+filtra por ele, então ninguém apaga a sonda alheia. Espelhado no `SUPABASE_SQL`
+que a tela de Configurações exibe, e travado em `src/revisao-seguranca-fixes.test.js`.
 
 ---
 

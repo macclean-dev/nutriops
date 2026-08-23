@@ -68,8 +68,10 @@ describe('classificação do 401 — permissão não é chave', () => {
 describe('testWrite — o healthcheck do boot classificava tudo como chave ruim', () => {
   // A sonda agora EXIGE a credencial da pessoa (ver comSessao). Sem isso ela
   // saía como anon e a classificação abaixo nunca era exercitada de verdade.
+  // `user.id` é obrigatório desde 21/08: a sonda carimba o uid na linha pra
+  // a policy saber de quem ela é (e o DELETE não apagar a dos outros).
   const comSessao = () => localStorage.setItem('nutriops.session',
-    JSON.stringify({ tenantId: 'casadoce', accessToken: 'jwt-de-teste' }));
+    JSON.stringify({ tenantId: 'casadoce', accessToken: 'jwt-de-teste', user: { id: 'uid-de-teste' } }));
 
   it('RLS no healthcheck vira "rls"', async () => {
     comSessao();

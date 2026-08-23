@@ -94,10 +94,35 @@ Deno.serve(async (req) => {
       // Confere que o ALVO pertence a esta loja — sem isso, um tenant_admin
       // poderia redefinir a senha de QUALQUER usuário da instância só
       // informando um userId arbitrário junto com a própria loja.
-      const { data: targetMembership } = await admin
-        .from('tenant_members').select('role')
-        .eq('user_id', userId).eq('tenant_id', tenantId).maybeSingle();
+      //
+      // Busca TODAS as empresas do alvo, não só esta: a contagem é o que fecha
+      // a brecha multi-unidade logo abaixo.
+      const { data: alvoVinculos } = await admin
+        .from('tenant_members').select('tenant_id, role').eq('user_id', userId);
+      const targetMembership = (alvoVinculos ?? []).find((m) => m.tenant_id === tenantId);
       if (!targetMembership) return json({ error: 'esse usuário não pertence a esta empresa' }, 404);
+
+      // ── TAKEOVER ENTRE UNIDADES (achado da revisão de 21/08) ──────────────
+      // A senha no Supabase Auth é GLOBAL à conta, não por empresa. Com
+      // multi-unidade, a dona e a RT são o MESMO auth.users vinculado a N
+      // empresas.
+      //
+      // Sem esta checagem: um tenant_admin da unidade A (ex.: gerente local)
+      // reseta a senha da dona — que também é membro de A — pra uma senha que
+      // ele escolhe. Ele entra como ela, e a sessão dela escopa pra TODAS as
+      // memberTenants. Ele alcança a unidade B, onde nunca teve papel algum.
+      // A→B, sem tocar em nada de B.
+      //
+      // Regra: dono de loja só reseta quem pertence EXCLUSIVAMENTE à loja
+      // dele. Conta que cobre mais de uma empresa é assunto do admin da
+      // plataforma — que é quem tem visão das duas pontas.
+      const empresasDoAlvo = (alvoVinculos ?? []).length;
+      if (empresasDoAlvo > 1 && !isGlobalAdmin) {
+        return json({
+          error: 'Essa pessoa também responde por outra empresa, e a senha é a mesma nas duas. '
+               + 'Redefinir daqui daria acesso às outras unidades dela. Peça ao administrador da plataforma.',
+        }, 403);
+      }
 
       const { error: pErr } = await admin.auth.admin.updateUserById(userId, { password });
       if (pErr) return json({ error: pErr.message || 'erro ao redefinir senha' }, 400);

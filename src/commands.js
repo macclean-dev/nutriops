@@ -4,6 +4,7 @@
 // Filtragem é feita por matchCommands(query, commands) também aqui.
 
 import { canAccess, getPermissions } from './permissions';
+import { TRAINING_PENDING_TAB_KEY } from './nav';
 
 const RECENT_KEY = 'nutriops.cmdk.recent';
 const RECENT_MAX = 6;
@@ -108,6 +109,28 @@ export function buildCommands(ctx, callbacks) {
         if (typeof setTimeout === 'function') {
           setTimeout(() => { if (!rolar()) setTimeout(rolar, 600); }, 120);
         }
+      },
+    });
+  }
+
+  // ─── Abas dentro de uma view (não seções da mesma página) ─────────────────
+  // Capacitação não é um hub — é UMA view com abas internas (sessions/status/
+  // aso/settings) que só existem depois que ela monta. Sem hub, o truque de
+  // scrollIntoView não serve (não é posição na página, é troca de estado
+  // React); em vez disso grava um pedido de uma vez só (nav.js,
+  // TRAINING_PENDING_TAB_KEY) que TrainingView lê no mount. Achado do dono,
+  // 24/08: buscar "aso" não achava nada.
+  if (can('training')) {
+    cmds.push({
+      id: 'aba:training-aso',
+      label: 'Ver Saúde (ASO) dos colaboradores',
+      hint: 'Capacitação',
+      keywords: 'aso saude exame atestado licenca maternidade afastado afastamento pcmso',
+      group: 'navigation',
+      run: () => {
+        try { localStorage.setItem(TRAINING_PENDING_TAB_KEY, 'aso'); } catch {}
+        callbacks.onNavigate?.('training');
+        callbacks.onClose?.();
       },
     });
   }

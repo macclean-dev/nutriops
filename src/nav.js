@@ -81,3 +81,20 @@ export function resolveHubTab(activeView, hubId, defaultSub, subIds, storage) {
   if (subIds.includes(activeView)) return activeView;
   return defaultSub;
 }
+
+// Capacitação (training.jsx) não é um hub de verdade — é UMA view com abas
+// internas (sessions/status/aso/settings) que não passam por resolveHubTab.
+// O Cmd+K precisa apontar direto pra aba "Saúde (ASO)" sem inventar um hub
+// inteiro só pra isso (achado do dono, 24/08 — buscar "aso" não achava nada).
+//
+// Sinal de UMA VEZ SÓ, lido e apagado no mesmo gesto: diferente do
+// `{hub}.lastTab` acima (memória permanente da última aba visitada), este
+// pedido não deve "grudar" — abrir Capacitação depois por qualquer outro
+// caminho volta pro default de sempre.
+export const TRAINING_PENDING_TAB_KEY = 'nutriops.training.pendingTab';
+
+export function consumeTrainingPendingTab(storage) {
+  const v = storage?.getItem?.(TRAINING_PENDING_TAB_KEY);
+  if (v) { try { storage.removeItem(TRAINING_PENDING_TAB_KEY); } catch {} }
+  return v ?? null;
+}

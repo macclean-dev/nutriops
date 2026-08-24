@@ -21,6 +21,9 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.223', date: '2026-08-24', items: [
+    'O Cmd+K (busca rápida) agora encontra "Saúde (ASO)" — buscar "aso", "saude", "exame" ou "licença maternidade" leva direto pra aba certa dentro de Capacitação, sem precisar navegar e depois clicar na aba.',
+  ]},
   { version: '1.9.222', date: '2026-08-24', items: [
     'Controle de saúde (ASO) ganhou situação por colaborador: Afastado(a) ou Licença maternidade, além de Ativa. Quem está de licença some da contagem de "Vencido" — antes uma colaboradora afastada podia pintar a Central de NC de vermelho por um exame que não faz sentido cobrar dela enquanto está fora.',
     'Não mexe no resultado do exame (Apto/Inapto) nem no cadastro em Equipe → Usuários — é uma situação própria da tela de ASO, e o histórico de exames continua editável normalmente mesmo com a pessoa afastada.',

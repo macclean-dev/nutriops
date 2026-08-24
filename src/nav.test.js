@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   CONTROLS_KEYS, REPORTS_KEYS, TEAM_KEYS,
   isItemActive, buildNavSections, resolveHubTab,
+  TRAINING_PENDING_TAB_KEY, consumeTrainingPendingTab,
 } from './nav';
 
 describe('isItemActive', () => {
@@ -127,5 +128,34 @@ describe('Hub key sets', () => {
   it('team tem 3 sub-views + o hub', () => {
     expect(TEAM_KEYS).toHaveLength(4);
     expect(TEAM_KEYS[0]).toBe('team');
+  });
+});
+
+describe('consumeTrainingPendingTab — sinal de uma vez só pro Cmd+K abrir direto na aba ASO', () => {
+  const fakeStorage = () => {
+    const m = new Map();
+    return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), removeItem: (k) => m.delete(k) };
+  };
+
+  it('sem nada gravado, devolve null', () => {
+    expect(consumeTrainingPendingTab(fakeStorage())).toBeNull();
+  });
+
+  it('devolve o valor gravado pela Cmd+K', () => {
+    const storage = fakeStorage();
+    storage.setItem(TRAINING_PENDING_TAB_KEY, 'aso');
+    expect(consumeTrainingPendingTab(storage)).toBe('aso');
+  });
+
+  it('apaga depois de ler — é UMA VEZ SÓ, não vira memória permanente', () => {
+    const storage = fakeStorage();
+    storage.setItem(TRAINING_PENDING_TAB_KEY, 'aso');
+    consumeTrainingPendingTab(storage);
+    expect(consumeTrainingPendingTab(storage)).toBeNull();
+  });
+
+  it('sem storage (SSR/teste sem localStorage), não quebra', () => {
+    expect(consumeTrainingPendingTab(null)).toBeNull();
+    expect(consumeTrainingPendingTab(undefined)).toBeNull();
   });
 });

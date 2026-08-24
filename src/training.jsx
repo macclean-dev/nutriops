@@ -8,6 +8,7 @@ import { pushTrainingSession, pushTrainingConfig, pushComplianceDoc, deleteCompl
 // controle de saúde no MESMO §4.6 — pra RT são as duas metades da mesma
 // pergunta ("este manipulador está apto?").
 import { DOC_TYPES, COMPLIANCE_DEFAULTS, ASO_STATUS_LABEL, LEAVE_TYPE_LABEL, teamAsoSummary, currentLeave, validadeEfetiva } from './compliance';
+import { consumeTrainingPendingTab } from './nav';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -711,7 +712,11 @@ export function TrainingView({ activeTenant, allTenants, onTenantChange, session
   const [config, setConfig]       = useState(() => readTrainConfig(activeTenant.id));
   const [view, setView]           = useState('list'); // list | new | detail
   const [detailSession, setDetailSession] = useState(null);
-  const [tab, setTab]             = useState('sessions'); // sessions | status | settings
+  // Cmd+K "Ir pra Saúde (ASO)" grava um pedido de uma vez só (nav.js) antes
+  // de navegar — sem isso, chegar em Capacitação sempre abria na aba
+  // Sessões, e quem buscasse "aso" não tinha como cair direto na aba certa.
+  const [tab, setTab]             = useState(() =>
+    consumeTrainingPendingTab(typeof localStorage !== 'undefined' ? localStorage : null) ?? 'sessions'); // sessions | status | aso | settings
 
   const allUsers = readUsers(activeTenant);
 

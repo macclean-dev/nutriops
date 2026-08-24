@@ -11,7 +11,7 @@
 // documento em ordem (a lição do `pct: null` em limits.js).
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const DOC_TYPES = { ASO: 'aso', MANUAL_BP: 'manual_bp' };
+export const DOC_TYPES = { ASO: 'aso', MANUAL_BP: 'manual_bp', LEAVE: 'leave_status' };
 
 export const COMPLIANCE_DEFAULTS = {
   // ⚠️ SUPOSIÇÃO (auditoria §4.3): a RDC 216 manda registrar o controle de
@@ -24,6 +24,18 @@ export const COMPLIANCE_DEFAULTS = {
 
 export const ASO_STATUS_LABEL = {
   ok: 'Em dia', warn: 'Vence em breve', expired: 'Vencido', never: 'Sem ASO',
+};
+
+// Afastamento não é resultado de exame — é a situação da pessoa (pedido do
+// dono, 23/08: colaboradora em licença aparecia com ASO "Vencido" na Central
+// de NC, um alarme falso pra quem nem está trabalhando). Fica como documento
+// próprio (`DOC_TYPES.LEAVE`), igual ao ASO, e não dentro do campo
+// `resultado` do exame — misturar as duas coisas quebraria a leitura de quem
+// vier consultar esse histórico depois (auditoria, fiscal): "licença
+// maternidade" não é um resultado de exame físico.
+export const LEAVE_TYPE_LABEL = {
+  afastado: 'Afastado(a)',
+  licenca_maternidade: 'Licença maternidade',
 };
 
 const diaZero = (ms) => new Date(new Date(ms).setHours(0, 0, 0, 0)).getTime();
@@ -67,6 +79,20 @@ export function employeeAsoStatus(employeeName, docs, meses = COMPLIANCE_DEFAULT
   return { status: 'ok', diasRestantes: dias, doc: atual };
 }
 
+// Afastamento é lido do mesmo `docs` que o ASO, com doc_type próprio — sem
+// unique constraint em compliance_docs (mesmo problema do `latestManualBp`
+// logo abaixo), então dois aparelhos offline podem gravar cada um sua linha;
+// pega a mais recente por updatedAt. Ausência de doc = pessoa não está
+// afastada — aqui, diferente do ASO, ausência É o estado normal.
+export function currentLeave(subject, docs) {
+  let latest = null;
+  for (const d of (docs ?? [])) {
+    if (d?.docType !== DOC_TYPES.LEAVE || d?.subject !== subject) continue;
+    if (!latest || new Date(d.updatedAt ?? 0) >= new Date(latest.updatedAt ?? 0)) latest = d;
+  }
+  return latest?.leaveType ? latest : null;
+}
+
 // Situação da equipe inteira, já contada — é o que a tela e o check A7 leem.
 // Colaborador "Inativo" fica de fora: mesma regra do A4 (a tela Equipe tem
 // três status e o app trata Ativo/Pendente como quem opera).
@@ -74,15 +100,21 @@ export function teamAsoSummary(staff, docs, meses, now = Date.now()) {
   const ativos = (staff ?? []).filter((u) => (u?.status ?? 'Ativo') !== 'Inativo');
   const situacoes = ativos.map((u) => ({
     name: u.name, role: u.role,
+    leaveType: currentLeave(u.name, docs)?.leaveType ?? null,
     ...employeeAsoStatus(u.name, docs, meses, now),
   }));
+  // `status` (ok/warn/expired/never) continua honesto pra quem editar o ASO
+  // dela — só as CONTAGENS do topo (o que pinta a Central de NC) ignoram
+  // quem está afastada, pra não soar alarme de gente que não está trabalhando.
+  const contáveis = situacoes.filter((s) => !s.leaveType);
   return {
     total: ativos.length,
     situacoes,
-    ok:      situacoes.filter((s) => s.status === 'ok').length,
-    warn:    situacoes.filter((s) => s.status === 'warn').length,
-    expired: situacoes.filter((s) => s.status === 'expired').length,
-    never:   situacoes.filter((s) => s.status === 'never').length,
+    ok:      contáveis.filter((s) => s.status === 'ok').length,
+    warn:    contáveis.filter((s) => s.status === 'warn').length,
+    expired: contáveis.filter((s) => s.status === 'expired').length,
+    never:   contáveis.filter((s) => s.status === 'never').length,
+    leave:   situacoes.filter((s) => s.leaveType).length,
   };
 }
 

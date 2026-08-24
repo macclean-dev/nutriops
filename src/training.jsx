@@ -3,11 +3,11 @@ import { employeeTrainingStatus } from './training-status';
 // Fatia 3 (15/08): sessões e config sobem pra nuvem — antes viviam só no
 // localStorage do device da RT, e um wipe apagava os comprovantes de
 // capacitação da rede inteira (auditoria RDC §3.5).
-import { pushTrainingSession, pushTrainingConfig, pushComplianceDoc, deleteComplianceDoc , lw as gravarLocal } from './repository';
+import { pushTrainingSession, pushTrainingConfig, pushComplianceDoc, deleteComplianceDoc, lw as gravarLocal } from './repository';
 // ASO mora aqui e não numa tela própria porque a RDC 216 trata capacitação e
 // controle de saúde no MESMO §4.6 — pra RT são as duas metades da mesma
 // pergunta ("este manipulador está apto?").
-import { DOC_TYPES, COMPLIANCE_DEFAULTS, ASO_STATUS_LABEL, teamAsoSummary, validadeEfetiva } from './compliance';
+import { DOC_TYPES, COMPLIANCE_DEFAULTS, ASO_STATUS_LABEL, LEAVE_TYPE_LABEL, teamAsoSummary, currentLeave, validadeEfetiva } from './compliance';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -541,6 +541,38 @@ function AsoPanel({ tenant, allUsers }) {
     }
   };
 
+  // Afastamento (23/08) — não é resultado de exame, é a situação da pessoa.
+  // Mesmo `docs`, doc_type próprio (DOC_TYPES.LEAVE). "Voltou ao trabalho" é
+  // modelado como AUSÊNCIA do doc (currentLeave trata leaveType null/ausente
+  // do mesmo jeito) — por isso aqui é sempre um delete-then-maybe-insert: sem
+  // isso, cada troca de status deixaria uma linha nova pra sempre na nuvem
+  // (compliance_docs não tem unique em tenant+subject+tipo).
+  const mudarAfastamento = async (nome, leaveType) => {
+    const anterior = docs.find((d) => d.docType === DOC_TYPES.LEAVE && d.subject === nome);
+    let proximos = anterior ? docs.filter((d) => d.id !== anterior.id) : docs;
+    if (leaveType) {
+      proximos = [{
+        id: uid(), docType: DOC_TYPES.LEAVE, subject: nome, leaveType,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      }, ...proximos];
+    }
+    // Local primeiro, sempre — mesmo padrão de `remover()` logo acima. A 1ª
+    // versão gatiava o `setDocs` atrás do `await deleteComplianceDoc`: se a
+    // nuvem recusasse por qualquer motivo real (não só offline), a função
+    // dava `return` ANTES de tocar o estado local, e a tela ficava presa
+    // mostrando a licença antiga pra sempre — mesmo a pessoa já tendo
+    // voltado ao trabalho. Pego no teste manual no navegador (24/08).
+    setDocs(proximos);
+    ts(complianceKey(tenant.id), proximos);
+    if (leaveType) pushComplianceDoc(tenant.id, proximos[0]);
+    if (anterior) {
+      const r = await deleteComplianceDoc(tenant.id, anterior.id);
+      if (!r.ok && r.reason !== 'offline_or_disabled') {
+        window.alert('A situação foi atualizada aqui, mas o registro anterior pode reaparecer na próxima sincronização — tente de novo com internet.');
+      }
+    }
+  };
+
   const tone = { ok:'ok', warn:'warn', expired:'danger', never:'neutral' };
 
   return (
@@ -550,7 +582,7 @@ function AsoPanel({ tenant, allUsers }) {
         <span className="badge neutral">Validade padrão: {COMPLIANCE_DEFAULTS.asoValidadeMeses} meses</span>
       </div>
       <div style={{ display:'flex', borderBottom:'1px solid var(--border-subtle)' }}>
-        {[['ok','Em dia',resumo.ok],['warn','Vence em breve',resumo.warn],['expired','Vencido',resumo.expired],['never','Sem ASO',resumo.never]].map(([key,label,count]) => (
+        {[['ok','Em dia',resumo.ok],['warn','Vence em breve',resumo.warn],['expired','Vencido',resumo.expired],['never','Sem ASO',resumo.never],['leave','Afastada(o)',resumo.leave]].map(([key,label,count]) => (
           <div key={key} style={{ flex:1, padding:'10px 16px', textAlign:'center', borderRight:'1px solid var(--border-subtle)' }}>
             <div style={{ fontSize:22, fontWeight:800, fontFamily:'var(--mono)', color: key==='ok'?'var(--green)':key==='warn'?'var(--amber)':key==='expired'?'var(--red)':'var(--text-secondary)' }}>{count}</div>
             <div style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em', color:'var(--text-secondary)', marginTop:2 }}>{label}</div>
@@ -573,13 +605,24 @@ function AsoPanel({ tenant, allUsers }) {
                 <strong>{s.name}</strong>
                 <span>{s.role}</span>
                 <span>
-                  {s.status === 'never' ? 'Nenhum ASO registrado'
+                  {/* Enquanto afastada, o texto principal é a licença — não o
+                      ASO, que pode até estar vencido sem que isso signifique
+                      nada (ela não está trabalhando). O status real do exame
+                      some da linha de cima, mas continua editável abaixo. */}
+                  {s.leaveType ? LEAVE_TYPE_LABEL[s.leaveType]
+                    : s.status === 'never' ? 'Nenhum ASO registrado'
                     : s.status === 'expired' ? `Venceu há ${Math.abs(s.diasRestantes)} dia(s)`
                     : `Vence em ${s.diasRestantes} dia(s) · ${new Date(`${s.doc._validade}T12:00`).toLocaleDateString('pt-BR')}`}
                 </span>
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
-                <span className={`badge ${tone[s.status]}`}>{ASO_STATUS_LABEL[s.status]}</span>
+                <select value={s.leaveType ?? ''} onChange={(e) => mudarAfastamento(s.name, e.target.value || null)}
+                  style={{ fontSize:11, padding:'4px 6px', borderRadius:6, border:'1px solid var(--border-subtle)', background:'var(--surface)', color:'var(--text)' }}
+                  aria-label={`Situação de ${s.name}`}>
+                  <option value="">Ativa</option>
+                  {Object.entries(LEAVE_TYPE_LABEL).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+                <span className={`badge ${s.leaveType ? 'neutral' : tone[s.status]}`}>{s.leaveType ? LEAVE_TYPE_LABEL[s.leaveType] : ASO_STATUS_LABEL[s.status]}</span>
                 <button className="ghost-action" style={{ fontSize:11 }} onClick={() => abrir(s.name)}>
                   {s.status === 'never' ? 'Registrar' : 'Atualizar'}
                 </button>

@@ -21,6 +21,10 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.222', date: '2026-08-24', items: [
+    'Controle de saúde (ASO) ganhou situação por colaborador: Afastado(a) ou Licença maternidade, além de Ativa. Quem está de licença some da contagem de "Vencido" — antes uma colaboradora afastada podia pintar a Central de NC de vermelho por um exame que não faz sentido cobrar dela enquanto está fora.',
+    'Não mexe no resultado do exame (Apto/Inapto) nem no cadastro em Equipe → Usuários — é uma situação própria da tela de ASO, e o histórico de exames continua editável normalmente mesmo com a pessoa afastada.',
+  ]},
   { version: '1.9.221', date: '2026-08-23', items: [
     'Corrigido: sair (logoff) podia deixar a tela em branco, sem nenhuma mensagem, quando o app tinha acabado de ganhar uma atualização e a aba estava aberta desde antes dela. Agora, se isso acontecer, o app se recupera sozinho — a pessoa só vê "Atualizando o app…" por um instante em vez de uma tela morta.',
   ]},

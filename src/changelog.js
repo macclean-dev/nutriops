@@ -21,6 +21,9 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.224', date: '2026-08-24', items: [
+    'O afastamento e a licença-maternidade agora guardam a data de início. Ela nasce preenchida com o dia de hoje e pode ser corrigida — a linha passa a mostrar "Licença maternidade desde 15/07/2026", por exemplo. Pedido da nutricionista RT.',
+  ]},
   { version: '1.9.223', date: '2026-08-24', items: [
     'O Cmd+K (busca rápida) agora encontra "Saúde (ASO)" — buscar "aso", "saude", "exame" ou "licença maternidade" leva direto pra aba certa dentro de Capacitação, sem precisar navegar e depois clicar na aba.',
   ]},

@@ -38,6 +38,29 @@ export const LEAVE_TYPE_LABEL = {
   licenca_maternidade: 'Licença maternidade',
 };
 
+// Data de hoje em ISO curto, no fuso de QUEM ESTÁ OLHANDO. `toISOString()`
+// devolve UTC: no Brasil (UTC-3) qualquer registro feito depois das 21h
+// nasceria com a data de amanhã. Vale pro default do campo de início do
+// afastamento (pedido da RT, 24/08) e pra qualquer outro campo de data que
+// venha depois.
+export function hojeISO(now = Date.now()) {
+  const d = new Date(now);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Texto da linha: "Licença maternidade desde 24/08/2026". Sem data (registro
+// gravado antes deste campo existir, v1.9.222) devolve só o rótulo — nunca
+// inventa uma data nem esconde o afastamento.
+export function descreverAfastamento(leaveType, startedAt) {
+  const rotulo = LEAVE_TYPE_LABEL[leaveType];
+  if (!rotulo) return null;
+  const iso = String(startedAt ?? '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return rotulo;
+  const d = new Date(`${iso}T12:00`);
+  if (Number.isNaN(d.getTime())) return rotulo;
+  return `${rotulo} desde ${d.toLocaleDateString('pt-BR')}`;
+}
+
 const diaZero = (ms) => new Date(new Date(ms).setHours(0, 0, 0, 0)).getTime();
 
 // Dias até a validade. Meia-noite contra meia-noite, mesma conta de
@@ -98,11 +121,15 @@ export function currentLeave(subject, docs) {
 // três status e o app trata Ativo/Pendente como quem opera).
 export function teamAsoSummary(staff, docs, meses, now = Date.now()) {
   const ativos = (staff ?? []).filter((u) => (u?.status ?? 'Ativo') !== 'Inativo');
-  const situacoes = ativos.map((u) => ({
-    name: u.name, role: u.role,
-    leaveType: currentLeave(u.name, docs)?.leaveType ?? null,
-    ...employeeAsoStatus(u.name, docs, meses, now),
-  }));
+  const situacoes = ativos.map((u) => {
+    const licenca = currentLeave(u.name, docs);
+    return {
+      name: u.name, role: u.role,
+      leaveType: licenca?.leaveType ?? null,
+      leaveStartedAt: licenca?.startedAt ?? null,
+      ...employeeAsoStatus(u.name, docs, meses, now),
+    };
+  });
   // `status` (ok/warn/expired/never) continua honesto pra quem editar o ASO
   // dela — só as CONTAGENS do topo (o que pinta a Central de NC) ignoram
   // quem está afastada, pra não soar alarme de gente que não está trabalhando.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DOC_TYPES, LEAVE_TYPE_LABEL, currentLeave, teamAsoSummary, employeeAsoStatus } from './compliance';
+import { DOC_TYPES, LEAVE_TYPE_LABEL, currentLeave, teamAsoSummary, employeeAsoStatus, hojeISO, descreverAfastamento } from './compliance';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "tem como adicionar 'afastado(a)' e licença 'maternidade'?" (dono, 23/08),
@@ -100,5 +100,68 @@ describe('LEAVE_TYPE_LABEL', () => {
   it('tem as duas opções pedidas, com o texto exato', () => {
     expect(LEAVE_TYPE_LABEL.afastado).toBe('Afastado(a)');
     expect(LEAVE_TYPE_LABEL.licenca_maternidade).toBe('Licença maternidade');
+  });
+});
+
+// ─── Data do afastamento (pedido da RT, 24/08) ───────────────────────────────
+
+describe('hojeISO — default do campo de início', () => {
+  it('usa o fuso de quem olha, não UTC', () => {
+    // 24/08/2026 23:30 em Brasília (UTC-3) = 25/08 02:30 UTC. toISOString()
+    // devolveria "2026-08-25" e o campo nasceria com a data de amanhã.
+    const local2330 = new Date(2026, 7, 24, 23, 30).getTime();
+    expect(hojeISO(local2330)).toBe('2026-08-24');
+  });
+
+  it('formata com zero à esquerda', () => {
+    expect(hojeISO(new Date(2026, 0, 5, 10, 0).getTime())).toBe('2026-01-05');
+  });
+});
+
+describe('descreverAfastamento — o texto que a RT lê na linha', () => {
+  it('junta rótulo e data em pt-BR', () => {
+    expect(descreverAfastamento('licenca_maternidade', '2026-08-24'))
+      .toBe('Licença maternidade desde 24/08/2026');
+  });
+
+  it('sem data (registro da v1.9.222, antes do campo existir) mostra só o rótulo — não inventa data nem esconde o afastamento', () => {
+    expect(descreverAfastamento('afastado', null)).toBe('Afastado(a)');
+    expect(descreverAfastamento('afastado', '')).toBe('Afastado(a)');
+  });
+
+  it('data torta cai pro rótulo em vez de imprimir "Invalid Date"', () => {
+    expect(descreverAfastamento('afastado', 'não é data')).toBe('Afastado(a)');
+  });
+
+  it('sem tipo, não há texto nenhum', () => {
+    expect(descreverAfastamento(null, '2026-08-24')).toBeNull();
+  });
+
+  it('a data não escorrega um dia por causa de fuso — meio-dia, não meia-noite', () => {
+    // `new Date('2026-08-24T00:00')` seria interpretado local, mas
+    // `new Date('2026-08-24')` é UTC e vira 23/08 no Brasil. O T12:00 protege.
+    expect(descreverAfastamento('afastado', '2026-08-24')).toContain('24/08/2026');
+    expect(descreverAfastamento('afastado', '2026-01-01')).toContain('01/01/2026');
+  });
+});
+
+describe('teamAsoSummary expõe a data pra tela', () => {
+  const staff = [{ name: 'Amanda', role: 'Colaborador' }];
+
+  it('devolve leaveStartedAt junto do leaveType', () => {
+    const docs = [{ id:'l1', docType: DOC_TYPES.LEAVE, subject:'Amanda',
+                    leaveType:'licenca_maternidade', startedAt:'2026-08-24',
+                    updatedAt:'2026-08-24T10:00:00.000Z' }];
+    const s = teamAsoSummary(staff, docs).situacoes[0];
+    expect(s.leaveType).toBe('licenca_maternidade');
+    expect(s.leaveStartedAt).toBe('2026-08-24');
+  });
+
+  it('doc antigo sem startedAt não quebra — vira null', () => {
+    const docs = [{ id:'l1', docType: DOC_TYPES.LEAVE, subject:'Amanda',
+                    leaveType:'afastado', updatedAt:'2026-08-20T10:00:00.000Z' }];
+    const s = teamAsoSummary(staff, docs).situacoes[0];
+    expect(s.leaveType).toBe('afastado');
+    expect(s.leaveStartedAt).toBeNull();
   });
 });

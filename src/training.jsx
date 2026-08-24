@@ -7,7 +7,7 @@ import { pushTrainingSession, pushTrainingConfig, pushComplianceDoc, deleteCompl
 // ASO mora aqui e não numa tela própria porque a RDC 216 trata capacitação e
 // controle de saúde no MESMO §4.6 — pra RT são as duas metades da mesma
 // pergunta ("este manipulador está apto?").
-import { DOC_TYPES, COMPLIANCE_DEFAULTS, ASO_STATUS_LABEL, LEAVE_TYPE_LABEL, teamAsoSummary, currentLeave, validadeEfetiva } from './compliance';
+import { DOC_TYPES, COMPLIANCE_DEFAULTS, ASO_STATUS_LABEL, LEAVE_TYPE_LABEL, teamAsoSummary, currentLeave, validadeEfetiva, hojeISO, descreverAfastamento } from './compliance';
 import { consumeTrainingPendingTab } from './nav';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
@@ -548,13 +548,21 @@ function AsoPanel({ tenant, allUsers }) {
   // do mesmo jeito) — por isso aqui é sempre um delete-then-maybe-insert: sem
   // isso, cada troca de status deixaria uma linha nova pra sempre na nuvem
   // (compliance_docs não tem unique em tenant+subject+tipo).
-  const mudarAfastamento = async (nome, leaveType) => {
+  // `startedAt` undefined = "não mexe na data" (usado quando só o TIPO muda);
+  // string = data explícita, vinda do campo. Tipo novo sem data nenhuma
+  // assume hoje — a RT quase sempre registra no dia, e um campo vazio ali
+  // viraria afastamento sem data, que é o que ela pediu pra resolver.
+  const mudarAfastamento = async (nome, leaveType, startedAt) => {
     const anterior = docs.find((d) => d.docType === DOC_TYPES.LEAVE && d.subject === nome);
     let proximos = anterior ? docs.filter((d) => d.id !== anterior.id) : docs;
     if (leaveType) {
+      const data = startedAt !== undefined ? startedAt
+        : (anterior?.startedAt ?? hojeISO());
       proximos = [{
         id: uid(), docType: DOC_TYPES.LEAVE, subject: nome, leaveType,
-        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+        startedAt: data || null,
+        createdAt: anterior?.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       }, ...proximos];
     }
     // Local primeiro, sempre — mesmo padrão de `remover()` logo acima. A 1ª
@@ -610,7 +618,7 @@ function AsoPanel({ tenant, allUsers }) {
                       ASO, que pode até estar vencido sem que isso signifique
                       nada (ela não está trabalhando). O status real do exame
                       some da linha de cima, mas continua editável abaixo. */}
-                  {s.leaveType ? LEAVE_TYPE_LABEL[s.leaveType]
+                  {s.leaveType ? descreverAfastamento(s.leaveType, s.leaveStartedAt)
                     : s.status === 'never' ? 'Nenhum ASO registrado'
                     : s.status === 'expired' ? `Venceu há ${Math.abs(s.diasRestantes)} dia(s)`
                     : `Vence em ${s.diasRestantes} dia(s) · ${new Date(`${s.doc._validade}T12:00`).toLocaleDateString('pt-BR')}`}
@@ -623,6 +631,15 @@ function AsoPanel({ tenant, allUsers }) {
                   <option value="">Ativa</option>
                   {Object.entries(LEAVE_TYPE_LABEL).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                 </select>
+                {/* Só aparece quando há afastamento — pedido da RT (24/08).
+                    Nasce com hoje (mudarAfastamento), e fica editável porque
+                    ela costuma registrar dias depois do início real. */}
+                {s.leaveType && (
+                  <input type="date" value={s.leaveStartedAt ?? ''}
+                    onChange={(e) => mudarAfastamento(s.name, s.leaveType, e.target.value)}
+                    aria-label={`Início do afastamento de ${s.name}`}
+                    style={{ fontSize:11, padding:'4px 6px', borderRadius:6, border:'1px solid var(--border-subtle)', background:'var(--surface)', color:'var(--text)' }} />
+                )}
                 <span className={`badge ${s.leaveType ? 'neutral' : tone[s.status]}`}>{s.leaveType ? LEAVE_TYPE_LABEL[s.leaveType] : ASO_STATUS_LABEL[s.status]}</span>
                 <button className="ghost-action" style={{ fontSize:11 }} onClick={() => abrir(s.name)}>
                   {s.status === 'never' ? 'Registrar' : 'Atualizar'}

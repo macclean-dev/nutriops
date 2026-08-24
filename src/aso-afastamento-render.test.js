@@ -51,6 +51,26 @@ describe('AsoPanel — afastamento não é resultado de exame', () => {
     expect(idxSetDocs).toBeLessThan(idxAwaitDelete);
   });
 
+  it('o campo de data do afastamento existe e só aparece quando há afastamento', () => {
+    expect(fonte).toContain('{s.leaveType && (');
+    expect(fonte).toContain('value={s.leaveStartedAt ?? \'\'}');
+    expect(fonte).toContain("mudarAfastamento(s.name, s.leaveType, e.target.value)");
+  });
+
+  it('trocar só o TIPO não apaga a data já registrada — o 3º argumento fica undefined de propósito', () => {
+    expect(fonte).toContain("mudarAfastamento(s.name, e.target.value || null)");
+    expect(fonte).toContain('const data = startedAt !== undefined ? startedAt');
+    expect(fonte).toContain('(anterior?.startedAt ?? hojeISO())');
+  });
+
+  it('a linha mostra a data junto do rótulo', () => {
+    expect(fonte).toContain('descreverAfastamento(s.leaveType, s.leaveStartedAt)');
+  });
+
+  it('createdAt do registro original é preservado ao editar a data — senão cada edição reescreveria a origem', () => {
+    expect(fonte).toContain('createdAt: anterior?.createdAt ?? new Date().toISOString()');
+  });
+
   it('a tira de resumo ganhou a 5ª coluna', () => {
     expect(fonte).toContain("['leave','Afastada(o)',resumo.leave]");
   });
@@ -58,7 +78,11 @@ describe('AsoPanel — afastamento não é resultado de exame', () => {
   it('o botão Atualizar/Registrar ASO continua disponível pra quem está afastada — não trava o cadastro do exame', () => {
     const bloco = fonte.slice(fonte.indexOf('resumo.situacoes.map'), fonte.indexOf('editando === s.name &&'));
     expect(bloco).toContain('onClick={() => abrir(s.name)}');
-    expect(bloco).not.toContain('leaveType &&'); // sem guarda escondendo o botão
+    // A guarda que importa é a do BOTÃO. Existe um `s.leaveType &&` legítimo
+    // no bloco (o campo de data, v1.9.224), então proibir a string inteira
+    // acusaria o conserto certo — a asserção olha o próprio botão.
+    expect(bloco).not.toMatch(/leaveType[^\n]*abrir\(s\.name\)/);
+    expect(bloco).not.toMatch(/abrir\(s\.name\)[^\n]*leaveType/);
   });
 });
 
@@ -70,7 +94,9 @@ describe('compliance.js já exporta o que a tela precisa', () => {
   });
 
   it('teamAsoSummary devolve leaveType por pessoa e contagem "leave" no total', () => {
-    expect(compliance).toContain('leaveType: currentLeave(u.name, docs)?.leaveType');
+    expect(compliance).toContain('const licenca = currentLeave(u.name, docs)');
+    expect(compliance).toContain('leaveType: licenca?.leaveType ?? null');
+    expect(compliance).toContain('leaveStartedAt: licenca?.startedAt ?? null');
     expect(compliance).toContain('leave:   situacoes.filter');
   });
 });

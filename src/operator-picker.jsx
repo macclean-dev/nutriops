@@ -9,6 +9,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { readOperator, writeOperator, storeLabel } from './operator';
+import { nomeParecido } from './nome-parecido';
 
 const usersKey = (id) => `nutriops.users.${id}`;
 
@@ -30,6 +31,11 @@ export function OperatorPicker({ tenant, onPick, onCancel, required = false }) {
   const staff = useMemo(() => readStaff(tenant), [tenant]);
   const [busca, setBusca] = useState('');
   const [manual, setManual] = useState('');   // saída quando a equipe não está cadastrada
+  // "Você quis dizer …?" — ver nome-parecido.js. A saída manual aceitava a
+  // grafia nova em silêncio, e a mesma pessoa virava 3 nomes diferentes nos
+  // registros (levantamento da CASA DOCE, 24/08: 31 de 35 nomes que mediram
+  // não batiam com a lista da loja). A RDC 216 exige saber quem aferiu.
+  const sugestao = useMemo(() => nomeParecido(staff, manual), [staff, manual]);
   const filtrados = busca.trim()
     ? staff.filter((u) => u.name.toLowerCase().includes(busca.trim().toLowerCase()))
     : staff;
@@ -76,12 +82,31 @@ export function OperatorPicker({ tenant, onPick, onCancel, required = false }) {
                   ? 'A equipe desta loja ainda não foi cadastrada. Digite seu nome pra continuar — o responsável cadastra a equipe depois em Equipe › Usuários.'
                   : 'Nenhum nome encontrado. Confira a busca ou digite seu nome completo.'}
               </p>
+              {/* Enter escolhe a SUGESTÃO quando existe uma: é o caminho certo
+                  em quase todo caso, e quem realmente não é aquela pessoa tem
+                  o botão secundário logo abaixo. */}
               <input value={manual} onChange={(e) => setManual(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && manual.trim()) escolher(manual.trim()); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && manual.trim()) escolher(sugestao ?? manual.trim()); }}
                 placeholder="Seu nome completo"
                 style={{ width:'100%', padding:'12px 14px', borderRadius:'var(--r)', border:'1px solid var(--border)', fontSize:15, fontFamily:'var(--font)', marginBottom:10 }} />
-              <button className="primary-action" disabled={!manual.trim()} style={{ width:'100%' }}
-                onClick={() => escolher(manual.trim())}>Continuar como {manual.trim() || '…'}</button>
+
+              {sugestao ? (
+                <>
+                  <div style={{ padding:'10px 12px', borderRadius:'var(--r)', background:'var(--amber-soft, rgba(227,170,20,.12))', border:'1px solid rgba(227,170,20,.45)', marginBottom:10 }}>
+                    <span style={{ fontSize:13, color:'var(--text)' }}>Você quis dizer <strong>{sugestao}</strong>?</span>
+                  </div>
+                  <button className="primary-action" style={{ width:'100%', marginBottom:8 }}
+                    onClick={() => escolher(sugestao)}>Sim, sou eu</button>
+                  {/* Continua sendo possível insistir no nome digitado — pode
+                      ser um homônimo de verdade. Só deixou de ser o caminho
+                      de menor resistência. */}
+                  <button className="ghost-action" style={{ width:'100%', fontSize:12 }}
+                    onClick={() => escolher(manual.trim())}>Não, meu nome é {manual.trim()}</button>
+                </>
+              ) : (
+                <button className="primary-action" disabled={!manual.trim()} style={{ width:'100%' }}
+                  onClick={() => escolher(manual.trim())}>Continuar como {manual.trim() || '…'}</button>
+              )}
             </div>
           ) : filtrados.map((u) => (
             <button key={u.name} onClick={() => escolher(u.name)}

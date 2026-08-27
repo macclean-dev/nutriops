@@ -11,8 +11,8 @@ HANDOFF.md
 # Local Claude Code config (não fazer parte do repo)
 .claude/
 
-# Vite cache
-node_modules/.vite/
+# Dependências (reproduzíveis via package-lock.json + npm ci)
+node_modules/
 
 # OS / editor
 *.swp

@@ -81,7 +81,20 @@ export const readFormTemplates = (tenant) => {
     // `custom` = a RT editou as tarefas. Não sobrescreve: o ajuste dela vale
     // mais que o meu seed, e sobrescrever apagaria equipamento que ela mesma
     // cadastrou na planilha.
-    if (atual.custom) continue;
+    if (atual.custom) {
+      // `custom` protege o CONTEÚDO que a RT editou (tarefas, opções da lista)
+      // — não o encanamento. `scopeBy` é ponteiro estrutural: acrescentá-lo não
+      // toca em nada que ela escreveu.
+      //
+      // Sem esta exceção o conserto do escopo por banheiro (v1.9.227) nunca
+      // chegaria na CASA DOCE, que é justamente quem editou as opções de "Qual
+      // banheiro" — a loja que relatou o problema seria a única a não recebê-lo.
+      if (s.scopeBy && !atual.scopeBy) {
+        porId.set(atual.id, { ...atual, scopeBy: s.scopeBy, updatedAt: new Date().toISOString() });
+        mudou = true;
+      }
+      continue;
+    }
     if ((s.v ?? 0) > (atual.v ?? 0)) {
       // Mantém o ID DE QUEM JÁ ESTAVA, não o do seed: quando o casamento veio
       // pelo título (seeds de id sorteado), gravar em `s.id` criaria uma
@@ -171,6 +184,23 @@ export function makePeriodKey(frequency, date, scopeValue) {
   const base = getPeriodKey(frequency, date);
   const v = String(scopeValue ?? '').trim();
   return v ? `${base}${SEP_ESCOPO}${v}` : base;
+}
+
+// Uma via por escopo, mesmas respostas (pedido da RT, 28/08: "quem limpa o
+// banheiro masculino dos clientes também limpa o feminino e o unissex, são um
+// do lado do outro"). Cada banheiro CONTINUA tendo registro próprio — é o que
+// a fiscalização espera — só o preenchimento é que deixa de ser repetido 3x.
+//
+// O campo de escopo é reescrito em cada via: sem isso a via do "Feminino"
+// guardaria `Qual banheiro: Masculino` no corpo enquanto a chave diz feminino,
+// e o PDF sairia mentindo.
+export function viasPorEscopo(template, escopos, responses, date) {
+  const unicos = [...new Set((escopos ?? []).map((e) => String(e ?? '').trim()).filter(Boolean))];
+  return unicos.map((escopo) => ({
+    escopo,
+    periodKey: makePeriodKey(template.frequency, date, escopo),
+    responses: template.scopeBy ? { ...responses, [template.scopeBy]: escopo } : responses,
+  }));
 }
 
 export function splitPeriodKey(key) {
@@ -984,8 +1014,12 @@ const TPL_MANUTENCAO_DBK = () => ({
 // CASA DOCE — planilha "FP.HIG.001". Ids FIXOS (não uid()) pra bater com a linha
 // da nuvem (form_templates) no merge por id — sem duplicar. Novos templates da
 // CASA DOCE (Fase B) entram aqui conforme a nutricionista confirma os detalhes.
+// `scopeBy` (v4, 28/08): sem ele TODOS os banheiros dividiam uma única chave
+// por dia — a RT marcava um, escolhia o próximo e ele já vinha preenchido,
+// porque era literalmente o mesmo registro. Pior que confuso: salvar o segundo
+// SOBRESCREVIA o primeiro, e o banheiro que já tinha sido limpo saía da folha.
 const TPL_CASADOCE_BANHEIROS = () => ({
-  id:'c61acf39-5ff8-404e-8fae-f9f68734f1b2', category:'faxina', frequency:'daily', v:3,
+  id:'c61acf39-5ff8-404e-8fae-f9f68734f1b2', category:'faxina', frequency:'daily', v:4, scopeBy:'cd-ban-local',
   title:'Controle de Higienização de Banheiros',
   description:'Registro diário. Marque a atividade realizada e o horário; quem preenche fica identificado (assinatura digital). Ref.: FP.HIG.001.',
   sections:[
@@ -1758,7 +1792,12 @@ function DateSigField({ value={}, onChange, currentName }) {
 
 // ─── Form Fill ─────────────────────────────────────────────────────────────
 
-function FormFill({ template, record, onSave, onBack, session, tenant, rotuloCategoria }) {
+function FormFill({ template, record, onSave, onBack, session, tenant, rotuloCategoria, campoEscopo = null, escopoAtual = '', escopoJaFeito = () => false }) {
+  // "Aplicar também a" — ver viasPorEscopo. Só existe em planilha com escopo.
+  const [escoposExtras, setEscoposExtras] = useState([]);
+  const outrasOpcoes = (campoEscopo?.options ?? []).filter((o) => o !== escopoAtual);
+  const alternarExtra = (o) => setEscoposExtras((prev) =>
+    prev.includes(o) ? prev.filter((x) => x !== o) : [...prev, o]);
   const respostasIniciais = useRef(record?.responses ?? {});
   const [responses, setResponses] = useState(() => respostasIniciais.current);
   const [saving, setSaving] = useState(false);
@@ -1798,7 +1837,7 @@ function FormFill({ template, record, onSave, onBack, session, tenant, rotuloCat
       if (!proceed) return;
     }
     setSaving(true);
-    await onSave({ responses, status });
+    await onSave({ responses, status, escoposExtras });
     setSaving(false);
   };
 
@@ -1877,6 +1916,36 @@ function FormFill({ template, record, onSave, onBack, session, tenant, rotuloCat
           </div>
         </div>
       ))}
+
+      {/* Uma pessoa limpa três banheiros lado a lado e preenchia três vezes.
+          Cada um continua com registro próprio — só o trabalho de digitar é
+          que deixa de ser repetido. Pedido da RT (28/08). */}
+      {campoEscopo && outrasOpcoes.length > 0 && (
+        <div style={{ marginTop:16, padding:'12px 14px', borderRadius:'var(--r)', background:'var(--surface-2, var(--surface))', border:'1px solid var(--border-subtle)' }}>
+          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:2 }}>
+            Aplicar também a
+          </div>
+          <p className="muted" style={{ fontSize:11.5, margin:'0 0 10px' }}>
+            As mesmas respostas e o mesmo responsável valem para os marcados. Cada um ganha sua própria via, como exige a fiscalização.
+          </p>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+            {outrasOpcoes.map((o) => {
+              const feito = escopoJaFeito(o);
+              const marcado = escoposExtras.includes(o);
+              return (
+                <label key={o} style={{ display:'flex', alignItems:'center', gap:6, fontSize:12, padding:'6px 10px', borderRadius:20, cursor:'pointer', border:`1px solid ${marcado ? 'var(--primary)' : 'var(--border)'}`, background: marcado ? 'var(--primary-soft, rgba(0,104,74,.10))' : 'transparent' }}>
+                  <input type="checkbox" checked={marcado} onChange={() => alternarExtra(o)} style={{ accentColor:'var(--primary)' }} />
+                  <span>{o}</span>
+                  {/* Marcar um que já foi preenchido hoje SOBRESCREVE a via
+                      dele — mesmo efeito de abrir e salvar por cima. Avisar é
+                      o mínimo; barrar seria pior (correção legítima existe). */}
+                  {feito && <span style={{ fontSize:10, color:'var(--amber)' }}>já preenchido hoje</span>}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div style={{ display:'flex', gap:8, paddingTop:16, borderTop:'1px solid var(--border-subtle)', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap' }}>
         <button className="secondary-action" onClick={handlePDF} style={{ fontSize:12 }}>↓ Exportar PDF</button>
@@ -2126,7 +2195,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   const today = new Date();
   const getRecord = (tpl, pk) => records.find((r) => r.formId===tpl.id && r.periodKey===pk) ?? null;
 
-  const handleSave = useCallback(({ responses, status }) => {
+  const handleSave = useCallback(({ responses, status, escoposExtras = [] }) => {
     if (!filling) return;
     const { template, periodKey } = filling;
     // O periodKey é capturado quando a planilha ABRE e nunca recalculado. Quem
@@ -2152,26 +2221,53 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
       );
       if (usarAgora) periodoFinal = pkAgora;
     }
-    setRecords((prev) => {
-      const ex = prev.find((r) => r.formId===template.id && r.periodKey===periodoFinal);
-    const up = {
+    // Uma via por escopo marcado. A principal entra pelo periodoFinal já
+    // calculado (que respeita a virada de data acima); as extras derivam do
+    // MESMO instante, senão duas vias da mesma limpeza cairiam em dias
+    // diferentes se o relógio virasse no meio do laço.
+    const agora = new Date();
+    const extras = escopo && escoposExtras.length
+      ? viasPorEscopo(template, escoposExtras, responses, agora)
+      : [];
+    const vias = [{ periodKey: periodoFinal, responses }, ...extras];
+
+    // Montado FORA do setRecords, de propósito. Antes o `uid()` e o
+    // `pushFormRecord` viviam dentro do atualizador — que o React pode chamar
+    // mais de uma vez pra mesma atualização. Com uma via só o estrago passava
+    // batido (a segunda chamada sobrescrevia a primeira); com três vias virou
+    // SEIS registros, cada um com id próprio, todos empurrados pra nuvem.
+    // Pego no teste manual no navegador (28/08).
+    //
+    // Aqui os ids são cunhados uma vez, o push acontece uma vez, e o
+    // atualizador vira uma fusão pura por id — chamar duas vezes dá o mesmo
+    // resultado.
+    const ups = vias.map((via) => {
+      const ex = records.find((r) => r.formId===template.id && r.periodKey===via.periodKey);
+      return {
         id: ex?.id ?? uid(),
         tenantId: activeTenant.id, formId: template.id, formTitle: template.title,
-        category: template.category, frequency: template.frequency, periodKey: periodoFinal,
-        responses, status,
+        category: template.category, frequency: template.frequency, periodKey: via.periodKey,
+        responses: via.responses, status,
         user: session?.user?.name ?? 'Usuário', role: session?.user?.role ?? '',
-        createdAt: ex?.createdAt ?? new Date().toISOString(), updatedAt: new Date().toISOString(),
+        createdAt: ex?.createdAt ?? agora.toISOString(), updatedAt: agora.toISOString(),
       };
-      // Push to Supabase
-      pushFormRecord(activeTenant.id, up);
-      return ex ? prev.map((r) => r.id===ex.id?up:r) : [...prev, up];
+    });
+    for (const up of ups) pushFormRecord(activeTenant.id, up);
+    setRecords((prev) => {
+      const porId = new Map(prev.map((r) => [r.id, r]));
+      for (const up of ups) porId.set(up.id, up);
+      return [...porId.values()];
     });
     setFilling(null);
     // "Salvar rascunho"/"Confirmar preenchimento" chegam na MESMA grade que
     // "← Voltar" descartando chegaria — sem isto, salvar e perder eram
     // visualmente idênticos. Ver saveFlashMessage.
     setFlash({ text: saveFlashMessage(template.title, status), at: Date.now() });
-  }, [filling, activeTenant.id, session]);
+    // `records` entrou nas deps porque o `ex` (registro existente daquela via)
+    // agora é procurado aqui fora, não dentro do atualizador: sem isso a busca
+    // leria uma lista velha e criaria registro novo por cima de um que já
+    // existe.
+  }, [filling, activeTenant.id, session, records]);
 
   const handleValidate = useCallback((recordId, validation) => {
     setRecords((prev) => prev.map((r) => r.id===recordId ? { ...r, validation, updatedAt:new Date().toISOString() } : r));
@@ -2270,7 +2366,13 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
       <div className="management-page">
         <FormFill template={filling.template} record={filling.record}
           onSave={handleSave} onBack={() => setFilling(null)} session={session} tenant={activeTenant}
-          rotuloCategoria={rotuloCat(filling.template.category)} />
+          rotuloCategoria={rotuloCat(filling.template.category)}
+          campoEscopo={scopeFieldOf(filling.template)}
+          escopoAtual={filling.escopo ?? ''}
+          escopoJaFeito={(o) => records.some((r) =>
+            r.formId === filling.template.id &&
+            r.periodKey === makePeriodKey(filling.template.frequency, today, o) &&
+            r.status === 'submitted')} />
       </div>
     );
   }

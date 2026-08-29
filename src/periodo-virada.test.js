@@ -51,8 +51,12 @@ describe('forms.jsx — o save reconfere o período', () => {
   });
 
   it('o registro grava o período DECIDIDO, não o de abertura', () => {
-    expect(fonte).toContain('periodKey: periodoFinal,');
-    expect(fonte).toContain("prev.find((r) => r.formId===template.id && r.periodKey===periodoFinal)");
+    // v1.9.227: o save passou a gravar N vias (uma por banheiro marcado em
+    // "Aplicar também a"). A via PRINCIPAL continua sendo o periodoFinal
+    // decidido aqui — é isso que este teste protege; as extras derivam dele.
+    expect(fonte).toContain('const vias = [{ periodKey: periodoFinal, responses }, ...extras]');
+    expect(fonte).toContain('periodKey: via.periodKey,');
+    expect(fonte).toContain('records.find((r) => r.formId===template.id && r.periodKey===via.periodKey)');
   });
 
   it('o escopo (setor) viaja junto — senão o recálculo acharia que sempre mudou', () => {

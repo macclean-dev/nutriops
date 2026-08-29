@@ -21,6 +21,11 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.227', date: '2026-08-28', items: [
+    'Corrigida a planilha de Higienização de Banheiros: dava para marcar só um banheiro por dia. Ao escolher o próximo, ele já aparecia preenchido — porque era literalmente o mesmo registro, e salvar o segundo apagava o primeiro. Agora cada banheiro tem a sua própria via no dia, como já acontecia com hortifrúti, higiene pessoal e vetores.',
+    'E quem limpa vários banheiros seguidos não precisa mais preencher um por um: no fim da planilha há "Aplicar também a", onde dá para marcar os outros banheiros. As mesmas respostas e o mesmo responsável valem para todos, e cada um continua com registro separado — como a fiscalização espera.',
+    'Se algum dos marcados já tiver sido preenchido hoje, a tela avisa antes, porque marcar ali substitui o que estava lá.',
+  ]},
   { version: '1.9.226', date: '2026-08-28', items: [
     'Para operações com mais de um CNPJ no mesmo endereço: o cadastro do colaborador ganhou a opção "Só opera aqui". Quem está marcado aparece normalmente na hora de registrar temperatura nesta loja, mas fica fora do controle de ASO dela — o exame de saúde continua sendo cobrado só na empresa que assina a carteira da pessoa.',
     'A capacitação continua sendo cobrada aqui de propósito: a RDC 216 exige treinar quem manipula alimento no estabelecimento, independente de qual empresa contrata. Só o exame de saúde acompanha o vínculo empregatício.',

@@ -56,7 +56,9 @@ describe('Família 1 — "Salvar rascunho"/"Confirmar preenchimento" avisam que 
   });
 
   it('o handleSave do preenchimento normal seta o flash antes de fechar a tela', () => {
-    const ini = fonte.indexOf('const handleSave = useCallback(({ responses, status }) => {');
+    // Âncora sem a lista completa de parâmetros: ela ganhou `escoposExtras`
+    // na v1.9.227 e voltaria a quebrar no próximo campo novo.
+    const ini = fonte.indexOf('const handleSave = useCallback(({ responses, status');
     const fim = fonte.indexOf('const handleValidate = useCallback');
     const corpo = fonte.slice(ini, fim);
     expect(corpo).toContain('setFilling(null);');

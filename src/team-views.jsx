@@ -87,6 +87,9 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
   const [roleInput, setRoleInput]         = useState('Colaborador');
   const [locationInput, setLocationInput] = useState('');
   const [statusInput, setStatusInput]     = useState('Ativo');
+  // "Só opera aqui" — a pessoa aparece no seletor de operador desta loja mas
+  // fica fora do controle de ASO dela. Ver teamAsoSummary (compliance.js).
+  const [asoExternoInput, setAsoExterno]  = useState(false);
   const [editingIndex, setEditingIndex]   = useState(null);
   const [search, setSearch]               = useState('');
   const [roleFilter, setRoleFilter]       = useState('Todos');
@@ -203,7 +206,7 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
   const [usersTenant, setUsersTenant] = useState(activeTenant.id);
   useEffect(() => {
     setUsers(readUsers(activeTenant)); setUsersTenant(activeTenant.id);
-    setEditingIndex(null); setNameInput(''); setRoleInput('Colaborador'); setLocationInput(''); setStatusInput('Ativo'); setPinInput('0000');
+    setEditingIndex(null); setNameInput(''); setRoleInput('Colaborador'); setLocationInput(''); setStatusInput('Ativo'); setAsoExterno(false); setPinInput('0000');
   }, [activeTenant.id]);
   useEffect(() => {
     if (usersTenant !== activeTenant.id) return; // troca de loja em andamento
@@ -212,8 +215,8 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
   // Na edição o campo PIN começa VAZIO = "manter o atual" — não prefill com o
   // pin de fábrica (que não é o PIN real de quem já resetou no 1º login) pra não
   // sobrescrever sem querer ao salvar outra coisa.
-  const startEdit = (i) => { const u = users[i]; setEditingIndex(i); setNameInput(u.name); setRoleInput(u.role); setLocationInput(u.location ?? ''); setStatusInput(u.status ?? 'Ativo'); setPinInput(''); };
-  const cancelEdit = () => { setEditingIndex(null); setNameInput(''); setRoleInput('Colaborador'); setLocationInput(''); setStatusInput('Ativo'); setPinInput('0000'); };
+  const startEdit = (i) => { const u = users[i]; setEditingIndex(i); setNameInput(u.name); setRoleInput(u.role); setLocationInput(u.location ?? ''); setStatusInput(u.status ?? 'Ativo'); setAsoExterno(u.asoExterno === true); setPinInput(''); };
+  const cancelEdit = () => { setEditingIndex(null); setNameInput(''); setRoleInput('Colaborador'); setLocationInput(''); setStatusInput('Ativo'); setAsoExterno(false); setPinInput('0000'); };
   const saveUser = () => {
     if (!nameInput.trim()) return;
     const isEditing = editingIndex !== null;
@@ -241,7 +244,7 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
       if (isWeakPin(pinInput)) { alert('PIN muito fácil (ex.: 0000, 1234). Escolha outra combinação.'); return; }
     }
     const factoryPin = isEditing ? (users[editingIndex].pin ?? '0000') : (pinInput || '0000');
-    const user = { name: trimmedName, role: roleInput, location: locationInput.trim(), status: statusInput, pin: factoryPin };
+    const user = { name: trimmedName, role: roleInput, location: locationInput.trim(), status: statusInput, asoExterno: asoExternoInput, pin: factoryPin };
     setUsers((prev) => isEditing ? prev.map((u, i) => i === editingIndex ? user : u) : [...prev, user]);
     if (isEditing && pinInput) writePinOverride(activeTenant.id, trimmedName, pinInput);
     import('./repository').then(async (m) => {
@@ -371,6 +374,20 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
             <label>Perfil<select value={roleInput} onChange={(e) => setRoleInput(e.target.value)}>{roles.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
             <label>Localização / unidade<input value={locationInput} onChange={(e) => setLocationInput(e.target.value)} placeholder="Ex.: Padaria, Confeitaria" /></label>
             <label>Status<select value={statusInput} onChange={(e) => setStatusInput(e.target.value)}><option value="Ativo">Ativo</option><option value="Inativo">Inativo</option><option value="Pendente">Pendente</option></select></label>
+            {/* Operação com mais de um CNPJ no mesmo endereço: a pessoa afere
+                aqui mas o exame de saúde é controlado por quem assina a
+                carteira dela. Pedido da RT da CASA DOCE (24/08). */}
+            <label style={{ display:'flex', alignItems:'flex-start', gap:8, cursor:'pointer' }}>
+              <input type="checkbox" checked={asoExternoInput} onChange={(e) => setAsoExterno(e.target.checked)}
+                style={{ marginTop:3, accentColor:'var(--primary)' }} />
+              <span>
+                <strong style={{ display:'block' }}>Só opera aqui</strong>
+                <span className="muted" style={{ fontSize:12 }}>
+                  Aparece no registro de temperatura desta loja, mas fica fora do controle de ASO dela —
+                  para quem é contratado por outra empresa do grupo. A capacitação continua sendo cobrada aqui.
+                </span>
+              </span>
+            </label>
             {!emailModel && (
               <label>{editingIndex === null ? 'PIN de acesso (4–6 dígitos)' : 'Novo PIN (deixe em branco para manter)'}
                 <input type="password" value={pinInput} onChange={(e) => setPinInput(e.target.value.replace(/\D/g,'').slice(0,6))} placeholder={editingIndex === null ? '0000' : '••••'} inputMode="numeric" style={{ letterSpacing:'0.2em', fontFamily:'var(--mono)' }} />
@@ -399,6 +416,7 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
                   <div>
                     <strong>{u.name}</strong>
                     <span>{u.role} · {u.location || 'Sem localização'}</span>
+                    {u.asoExterno && <span className="badge neutral" style={{ fontSize:10, marginTop:3, display:'inline-block' }}>Só opera aqui · ASO em outra empresa</span>}
                     {!emailModel && <span style={{ fontFamily:'var(--mono)', fontSize:11, color:'var(--text-secondary)', display:'block', marginTop:2 }}>{handle}</span>}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

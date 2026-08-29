@@ -1082,6 +1082,10 @@ function staffToRow(u, tenantId) {
     role: u.role ?? 'Colaborador',
     location: u.location ?? null,
     status: u.status ?? 'Ativo',
+    // "Só opera aqui" — ver teamAsoSummary (compliance.js). Precisa viajar
+    // pra nuvem, senão a marca vale só no aparelho onde foi feita e o ASO
+    // volta a misturar as duas empresas no device seguinte.
+    aso_externo: u.asoExterno === true,
     updated_at: new Date().toISOString(),
   };
 }
@@ -1091,6 +1095,10 @@ function staffFromRow(row) {
     role: row.role,
     location: row.location ?? '',
     status: row.status ?? 'Ativo',
+    // `?? false` e não `=== true`: linha gravada antes da coluna existir vem
+    // com null, e null tem que virar "controlo o ASO aqui" (o padrão de
+    // sempre) — nunca sumir do controle de saúde por omissão.
+    asoExterno: row.aso_externo ?? false,
   };
 }
 
@@ -2241,6 +2249,7 @@ create table if not exists tenant_staff (
   role text,
   location text,
   status text default 'Ativo',
+  aso_externo boolean not null default false,
   updated_at timestamptz default now(),
   primary key (tenant_id, name)
 );

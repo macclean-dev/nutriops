@@ -21,6 +21,10 @@ export function compareVersions(a, b) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.226', date: '2026-08-28', items: [
+    'Para operações com mais de um CNPJ no mesmo endereço: o cadastro do colaborador ganhou a opção "Só opera aqui". Quem está marcado aparece normalmente na hora de registrar temperatura nesta loja, mas fica fora do controle de ASO dela — o exame de saúde continua sendo cobrado só na empresa que assina a carteira da pessoa.',
+    'A capacitação continua sendo cobrada aqui de propósito: a RDC 216 exige treinar quem manipula alimento no estabelecimento, independente de qual empresa contrata. Só o exame de saúde acompanha o vínculo empregatício.',
+  ]},
   { version: '1.9.225', date: '2026-08-24', items: [
     'Quando alguém digita o nome à mão na tela "Quem está registrando?" e ele parece com um colaborador já cadastrado, o app agora pergunta: "Você quis dizer MARIA SANTA ARAÚJO TEIXEIRA?". Antes aceitava a grafia nova em silêncio, e a mesma pessoa acabava aparecendo com dois ou três nomes diferentes nos registros — o que enfraquece a rastreabilidade numa fiscalização.',
     'Continua sendo possível insistir no nome digitado (homônimo existe), só deixou de ser o caminho automático. E a sugestão só aparece quando há uma única pessoa possível: com duas parecidas, o app prefere não chutar.',

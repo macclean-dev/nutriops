@@ -119,8 +119,23 @@ export function currentLeave(subject, docs) {
 // Situação da equipe inteira, já contada — é o que a tela e o check A7 leem.
 // Colaborador "Inativo" fica de fora: mesma regra do A4 (a tela Equipe tem
 // três status e o app trata Ativo/Pendente como quem opera).
+// Quem tem `asoExterno` fica FORA do controle de saúde desta empresa —
+// continua no seletor de operador, continua podendo aferir e assinar leitura.
+//
+// Por que existe (pedido da RT da CASA DOCE, 24/08): a operação tem 2 CNPJs.
+// Os equipamentos estão todos na CASA DOCE, mas 15 pessoas que aferem lá são
+// contratadas pela Fabrizzio Matriz. Cadastrá-las na CASA DOCE fazia elas
+// aparecerem no ASO das DUAS empresas — e ela precisa do controle de saúde
+// separado por CNPJ, porque o ASO é do vínculo empregatício (PCMSO/NR-7),
+// não do endereço onde a pessoa opera.
+//
+// Capacitação NÃO é filtrada por isto de propósito: a RDC 216 exige treinar
+// quem manipula alimento NAQUELE estabelecimento, independente de quem
+// assina a carteira. Só o exame de saúde segue o empregador.
 export function teamAsoSummary(staff, docs, meses, now = Date.now()) {
-  const ativos = (staff ?? []).filter((u) => (u?.status ?? 'Ativo') !== 'Inativo');
+  const ativos = (staff ?? [])
+    .filter((u) => (u?.status ?? 'Ativo') !== 'Inativo')
+    .filter((u) => u?.asoExterno !== true);
   const situacoes = ativos.map((u) => {
     const licenca = currentLeave(u.name, docs);
     return {

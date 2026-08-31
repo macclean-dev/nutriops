@@ -18,6 +18,20 @@ export function compareVersions(a, b) {
   return 0;
 }
 
+// Um item pode ser texto puro (formato original, ~30 entradas antigas) ou
+// `{ text, path }`, onde `path` é o caminho até a novidade — "Capacitação →
+// Saúde (ASO)". Pedido do dono (28/08): saber o que mudou não adianta se a
+// pessoa não acha onde. Ler é grátis; procurar não.
+//
+// `path` é opcional de propósito: melhoria que não mora em lugar nenhum
+// (um aviso, uma correção de cálculo) não ganha caminho inventado.
+export function normalizeItem(item) {
+  if (typeof item === 'string') return { text: item, path: null };
+  const text = String(item?.text ?? '').trim();
+  const path = String(item?.path ?? '').trim();
+  return { text, path: path || null };
+}
+
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [

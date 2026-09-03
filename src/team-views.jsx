@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { loginHandle } from './user-match';
 import { writePinOverride, isWeakPin } from './pin';
 import { isSupabaseEnabled as supabaseEnabled, staffNameJaExiste } from './repository';
@@ -91,6 +91,11 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
   // fica fora do controle de ASO dela. Ver teamAsoSummary (compliance.js).
   const [asoExternoInput, setAsoExterno]  = useState(false);
   const [editingIndex, setEditingIndex]   = useState(null);
+  // O formulário fica ACIMA da lista. Numa equipe de 100 pessoas (CASA DOCE),
+  // clicar "Editar" na última linha preenchia um formulário fora da tela — pra
+  // quem estava lá embaixo, o botão simplesmente não fazia nada. Relato do
+  // dono, 28/08.
+  const formRef = useRef(null);
   const [search, setSearch]               = useState('');
   const [roleFilter, setRoleFilter]       = useState('Todos');
   const [pinInput, setPinInput] = useState('0000');
@@ -215,7 +220,31 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
   // Na edição o campo PIN começa VAZIO = "manter o atual" — não prefill com o
   // pin de fábrica (que não é o PIN real de quem já resetou no 1º login) pra não
   // sobrescrever sem querer ao salvar outra coisa.
-  const startEdit = (i) => { const u = users[i]; setEditingIndex(i); setNameInput(u.name); setRoleInput(u.role); setLocationInput(u.location ?? ''); setStatusInput(u.status ?? 'Ativo'); setAsoExterno(u.asoExterno === true); setPinInput(''); };
+  const startEdit = (i) => {
+    const u = users[i];
+    setEditingIndex(i); setNameInput(u.name); setRoleInput(u.role); setLocationInput(u.location ?? '');
+    setStatusInput(u.status ?? 'Ativo'); setAsoExterno(u.asoExterno === true); setPinInput('');
+    // O formulário já está montado (não depende deste estado), então dá pra
+    // rolar na hora — sem esperar render.
+    //
+    // NÃO usa scrollIntoView: `.super-main` tem `overflow-y:auto` sem altura
+    // fixa (styles.css), o que faz dele um contêiner de rolagem que nunca
+    // rola. O scrollIntoView tenta rolar esse ancestral, erra a conta, e o
+    // resultado medido foi ir pra (posição atual + posição do alvo) em vez do
+    // alvo: a partir de 5160 ele parava em 9200 pra um formulário que está em
+    // 4040. Do topo acertava, o que fazia o bug parecer intermitente.
+    //
+    // Calcular a posição e mandar a janela pra lá é determinístico. Salto
+    // instantâneo de propósito — `smooth` também foi medido e simplesmente
+    // não rolava aqui; a animação é enfeite que estava custando a função.
+    try {
+      const alvo = formRef.current;
+      if (alvo) {
+        const y = alvo.getBoundingClientRect().top + window.scrollY - 12;
+        window.scrollTo({ top: Math.max(0, y), behavior: 'auto' });
+      }
+    } catch { formRef.current?.scrollIntoView?.(); }
+  };
   const cancelEdit = () => { setEditingIndex(null); setNameInput(''); setRoleInput('Colaborador'); setLocationInput(''); setStatusInput('Ativo'); setAsoExterno(false); setPinInput('0000'); };
   const saveUser = () => {
     if (!nameInput.trim()) return;
@@ -355,7 +384,7 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
             NENHUM jeito de cadastrar a equipe e o seletor de operador abria
             vazio. O que é específico de PIN (campo do PIN, handle nome@id,
             botão de reset) segue oculto ali — só o cadastro de NOME é comum. */}
-        <article className="management-card">
+        <article className="management-card" ref={formRef}>
           <div className="card-head"><div><span className="eyebrow">{editingIndex === null ? 'Novo' : 'Editando'}</span><h2>{editingIndex === null ? 'Cadastrar pessoa da equipe' : users[editingIndex]?.name}</h2></div><span className="badge neutral">{users.length}</span></div>
           <div className="capture-fields">
             {emailModel && (

@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.229', date: '2026-08-28', items: [
+    'Em Equipe → Usuários, clicar em "Editar" numa pessoa lá do fim da lista parecia não fazer nada — o formulário fica no topo da página, fora da tela. Agora a página vai até ele automaticamente.',
+  ]},
   { version: '1.9.227', date: '2026-08-28', items: [
     'Corrigida a planilha de Higienização de Banheiros: dava para marcar só um banheiro por dia. Ao escolher o próximo, ele já aparecia preenchido — porque era literalmente o mesmo registro, e salvar o segundo apagava o primeiro. Agora cada banheiro tem a sua própria via no dia, como já acontecia com hortifrúti, higiene pessoal e vetores.',
     'E quem limpa vários banheiros seguidos não precisa mais preencher um por um: no fim da planilha há "Aplicar também a", onde dá para marcar os outros banheiros. As mesmas respostas e o mesmo responsável valem para todos, e cada um continua com registro separado — como a fiscalização espera.',

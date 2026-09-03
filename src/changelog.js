@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.231', date: '2026-08-28', items: [
+    'Trocar de empresa no seletor do topo enquanto você edita alguém sempre limpou o formulário — o que é proposital, porque salvar depois gravaria a pessoa na empresa errada. O que faltava era dizer isso: agora aparece um aviso com o nome de quem estava sendo editado, o motivo, e o caminho certo — o botão "Mover" na linha da pessoa.',
+  ]},
   { version: '1.9.230', date: '2026-08-28', items: [
     'Agora dá para mudar um colaborador de empresa: em Equipe → Usuários, o botão "Mover" na linha da pessoa. O seletor de empresa lá do topo nunca serviu pra isso — ele troca o que você está vendo, e por isso descartava a edição em andamento.',
     'O cadastro passa a valer na empresa de destino (é lá que a pessoa aparece pra registrar temperatura e no controle de ASO). As leituras e planilhas que ela já preencheu ficam onde foram registradas — registro sanitário fica onde aconteceu.',

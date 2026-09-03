@@ -100,6 +100,11 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
   // Mudar alguém de unidade. O seletor de empresa do topo não faz isso — ele
   // troca o que você está OLHANDO. Ver mover-colaborador.js.
   const [movendoIdx, setMovendoIdx] = useState(null);
+  // Quando a troca de empresa no seletor do topo descarta uma edição em
+  // andamento. O comportamento é proposital (ver `usersTenant` abaixo), mas
+  // era MUDO — e o instinto de quem quer mudar alguém de unidade é justamente
+  // trocar a empresa ali. O dono bateu nisso três vezes (28/08).
+  const [edicaoDescartada, setEdicaoDescartada] = useState(null);
   const [search, setSearch]               = useState('');
   const [roleFilter, setRoleFilter]       = useState('Todos');
   const [pinInput, setPinInput] = useState('0000');
@@ -214,6 +219,11 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
   // (com ref o efeito leria o valor já atualizado e a checagem passaria).
   const [usersTenant, setUsersTenant] = useState(activeTenant.id);
   useEffect(() => {
+    // `users` e `editingIndex` aqui ainda são os da empresa ANTERIOR (o efeito
+    // fecha sobre o render que o disparou), então dá pra dizer quem se perdeu.
+    const perdida = editingIndex !== null ? (users[editingIndex]?.name ?? null) : null;
+    setEdicaoDescartada(perdida);
+    if (perdida) irParaOFormulario();
     setUsers(readUsers(activeTenant)); setUsersTenant(activeTenant.id);
     setEditingIndex(null); setNameInput(''); setRoleInput('Colaborador'); setLocationInput(''); setStatusInput('Ativo'); setAsoExterno(false); setPinInput('0000');
   }, [activeTenant.id]);
@@ -224,23 +234,21 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
   // Na edição o campo PIN começa VAZIO = "manter o atual" — não prefill com o
   // pin de fábrica (que não é o PIN real de quem já resetou no 1º login) pra não
   // sobrescrever sem querer ao salvar outra coisa.
-  const startEdit = (i) => {
-    const u = users[i];
-    setEditingIndex(i); setNameInput(u.name); setRoleInput(u.role); setLocationInput(u.location ?? '');
-    setStatusInput(u.status ?? 'Ativo'); setAsoExterno(u.asoExterno === true); setPinInput('');
-    // O formulário já está montado (não depende deste estado), então dá pra
-    // rolar na hora — sem esperar render.
-    //
-    // NÃO usa scrollIntoView: `.super-main` tem `overflow-y:auto` sem altura
-    // fixa (styles.css), o que faz dele um contêiner de rolagem que nunca
-    // rola. O scrollIntoView tenta rolar esse ancestral, erra a conta, e o
-    // resultado medido foi ir pra (posição atual + posição do alvo) em vez do
-    // alvo: a partir de 5160 ele parava em 9200 pra um formulário que está em
-    // 4040. Do topo acertava, o que fazia o bug parecer intermitente.
-    //
-    // Calcular a posição e mandar a janela pra lá é determinístico. Salto
-    // instantâneo de propósito — `smooth` também foi medido e simplesmente
-    // não rolava aqui; a animação é enfeite que estava custando a função.
+  // Leva a tela até o formulário. Usado ao editar (ele fica ACIMA de uma lista
+  // de ~100 linhas) e ao avisar que a edição foi descartada — em ambos, o que
+  // a pessoa precisa ver nasce fora da tela.
+  //
+  // NÃO usa scrollIntoView: `.super-main` tem `overflow-y:auto` sem altura fixa
+  // (styles.css), o que faz dele um contêiner de rolagem que nunca rola. O
+  // scrollIntoView tenta rolar esse ancestral, erra a conta, e o resultado
+  // medido foi ir pra (posição atual + posição do alvo) em vez do alvo: de
+  // 5160 parava em 9200 pra um formulário que está em 4040. Do topo acertava,
+  // o que fazia o defeito parecer intermitente.
+  //
+  // Calcular a posição e mandar a janela pra lá é determinístico. Salto
+  // instantâneo de propósito — `smooth` também foi medido e simplesmente não
+  // rolava aqui; a animação é enfeite que estava custando a função.
+  const irParaOFormulario = () => {
     try {
       const alvo = formRef.current;
       if (alvo) {
@@ -248,6 +256,14 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
         window.scrollTo({ top: Math.max(0, y), behavior: 'auto' });
       }
     } catch { formRef.current?.scrollIntoView?.(); }
+  };
+
+  const startEdit = (i) => {
+    setEdicaoDescartada(null);
+    const u = users[i];
+    setEditingIndex(i); setNameInput(u.name); setRoleInput(u.role); setLocationInput(u.location ?? '');
+    setStatusInput(u.status ?? 'Ativo'); setAsoExterno(u.asoExterno === true); setPinInput('');
+    irParaOFormulario();
   };
   const cancelEdit = () => { setEditingIndex(null); setNameInput(''); setRoleInput('Colaborador'); setLocationInput(''); setStatusInput('Ativo'); setAsoExterno(false); setPinInput('0000'); };
   const saveUser = () => {
@@ -458,6 +474,26 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
       )}
         <article className="management-card" ref={formRef}>
           <div className="card-head"><div><span className="eyebrow">{editingIndex === null ? 'Novo' : 'Editando'}</span><h2>{editingIndex === null ? 'Cadastrar pessoa da equipe' : users[editingIndex]?.name}</h2></div><span className="badge neutral">{users.length}</span></div>
+          {/* Trocar de empresa no seletor do topo descarta a edição — e isso é
+              proposital (a lista em memória é de outra loja; continuar gravaria
+              a equipe de uma sob a chave da outra). O que faltava era DIZER
+              isso, e apontar a ferramenta certa: quem troca a empresa ali no
+              meio de uma edição quase sempre está tentando MOVER a pessoa. */}
+          {edicaoDescartada && (
+            <div className="editing-banner active" role="status">
+              <span className="eyebrow">Edição descartada</span>
+              <strong>Você estava editando {edicaoDescartada} e trocou de empresa.</strong>
+              <p>
+                O formulário foi limpo porque agora ele pertence a {activeTenant.name} —
+                salvar ali gravaria essa pessoa na empresa errada.
+                {outrasUnidades.length > 0
+                  ? ' Para mudar alguém de empresa, use o botão "Mover" na linha dela, sem trocar o seletor do topo.'
+                  : ''}
+              </p>
+              <button className="ghost-action" style={{ fontSize:11, marginTop:6 }}
+                onClick={() => setEdicaoDescartada(null)}>Entendi</button>
+            </div>
+          )}
           <div className="capture-fields">
             {emailModel && (
               <p className="muted" style={{ fontSize:12, margin:0 }}>

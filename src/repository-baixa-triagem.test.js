@@ -256,10 +256,16 @@ describe('achado 3/6 — renomear colaborador offline: já resolvido pela tier m
     expect(await deleteStaffMember('swiss', 'Ana')).toEqual({ ok: false, reason: 'offline_or_disabled' });
   });
 
-  it('fonte: team-views.jsx só alerta quando a falha do delete NÃO é offline_or_disabled — nos dois call sites (rename e remover)', () => {
+  it('fonte: TODO call site de deleteStaffMember em team-views.jsx guarda o offline', () => {
     const fonte = readFileSync(`${process.cwd()}/src/team-views.jsx`, 'utf8');
-    const ocorrencias = (fonte.match(/if \(!r\.ok && r\.reason !== 'offline_or_disabled'\) \{/g) ?? []).length;
-    expect(ocorrencias).toBe(2);   // saveUser (rename) + removeUser
+    const chamadas = (fonte.match(/deleteStaffMember\(/g) ?? []).length;
+    const guardas  = (fonte.match(/if \(!r\.ok && r\.reason !== 'offline_or_disabled'\) \{/g) ?? []).length;
+    // Número fixo aqui era 2 (rename + remover) e quebrou quando "Mover de
+    // unidade" virou o terceiro (v1.9.230) — sendo que o terceiro guarda
+    // certo. Amarrar guarda-a-chamada testa a REGRA e não precisa de manutenção
+    // a cada call site novo; um que esqueça a guarda continua sendo pego.
+    expect(chamadas).toBeGreaterThanOrEqual(2);
+    expect(guardas).toBe(chamadas);
   });
 
   it('fonte: o push do nome NOVO continua enfileirando mesmo offline — só o delete do nome antigo é online-only (por design, não bug)', () => {

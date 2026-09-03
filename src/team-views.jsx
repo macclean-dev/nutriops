@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { loginHandle } from './user-match';
 import { writePinOverride, isWeakPin } from './pin';
 import { isSupabaseEnabled as supabaseEnabled, staffNameJaExiste } from './repository';
+import { planejarMudancaDeUnidade, explicarRecusa, avisoDaMudanca } from './mover-colaborador';
 import { isGlobalAdmin } from './permissions';
 import { readTurns, writeTurns } from './turns';
 
@@ -96,6 +97,9 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
   // quem estava lá embaixo, o botão simplesmente não fazia nada. Relato do
   // dono, 28/08.
   const formRef = useRef(null);
+  // Mudar alguém de unidade. O seletor de empresa do topo não faz isso — ele
+  // troca o que você está OLHANDO. Ver mover-colaborador.js.
+  const [movendoIdx, setMovendoIdx] = useState(null);
   const [search, setSearch]               = useState('');
   const [roleFilter, setRoleFilter]       = useState('Todos');
   const [pinInput, setPinInput] = useState('0000');
@@ -295,6 +299,35 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
     }).catch(() => {});
     cancelEdit();
   };
+  // Mover de unidade. Grava no DESTINO antes de tirar da ORIGEM: se a nuvem
+  // recusar o destino, a pessoa continua cadastrada onde estava — perder dos
+  // dois lados seria o pior desfecho possível.
+  const moverParaUnidade = async (i, destinoId) => {
+    const alvo = users[i];
+    const destino = (allTenants ?? []).find((t) => t.id === destinoId);
+    if (!alvo || !destino) return;
+
+    const equipeDestino = readUsers(destino);
+    const plano = planejarMudancaDeUnidade(alvo, activeTenant, destino, equipeDestino);
+    if (!plano.ok) { alert(explicarRecusa(plano.motivo, destino.name)); return; }
+    if (!window.confirm(avisoDaMudanca(alvo.name, activeTenant.name, destino.name))) return;
+
+    // 1) destino primeiro — local e nuvem
+    writeUsers(destino.id, [...equipeDestino, plano.pessoa]);
+    const repo = await import('./repository');
+    repo.pushStaffMember(destino.id, plano.pessoa);
+
+    // 2) só então sai da origem
+    setUsers((prev) => prev.filter((_, idx) => idx !== i));
+    if (editingIndex === i) cancelEdit();
+    setMovendoIdx(null);
+
+    const r = await repo.deleteStaffMember(activeTenant.id, alvo.name);
+    if (!r.ok && r.reason !== 'offline_or_disabled') {
+      window.alert(`"${alvo.name}" foi cadastrada em ${destino.name}, mas não consegui remover o cadastro antigo em ${activeTenant.name} agora. Ela pode reaparecer nas duas listas na próxima sincronização — repita a remoção com internet.`);
+    }
+  };
+
   const removeUser = (i) => {
     const alvo = users[i];
     if (!window.confirm(`Remover "${alvo?.name}"?`)) return;
@@ -309,6 +342,8 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
       }).catch(() => {});
     }
   };
+  // Empresas pra onde dá pra mover: as que a sessão alcança, menos a atual.
+  const outrasUnidades = (allTenants ?? []).filter((t) => t.id !== activeTenant.id);
   const filtered = users.filter((u) => { const q = search.toLowerCase(); return (!q || u.name.toLowerCase().includes(q) || (u.location ?? '').toLowerCase().includes(q)) && (roleFilter === 'Todos' || u.role === roleFilter); }).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }));
   return (
     <section className="management-page">
@@ -384,6 +419,43 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
             NENHUM jeito de cadastrar a equipe e o seletor de operador abria
             vazio. O que é específico de PIN (campo do PIN, handle nome@id,
             botão de reset) segue oculto ali — só o cadastro de NOME é comum. */}
+      {/* Este card vem ANTES da lista de propósito. Ele estava no fim da
+          página, depois de ~100 linhas de equipe — pra chegar nas contas de
+          e-mail a RT rolava a tela inteira (relato do dono, 28/08). Os dois
+          cards de acesso por e-mail ("Convidar", "Vincular") ficam agora
+          juntos deste, que é onde essas contas se gerenciam. */}
+      {/* Colaboradores por e-mail — pra QUALQUER tenant (loja-seed inclusive,
+          desde a Fase 4: conta de loja + Fran/Ana Paula multi-loja). Sem este
+          card não existe UI pra ver/redefinir a senha dessas contas depois de
+          criadas — o convite acima só cria, não gerencia. */}
+      {canInvite && (
+        <article className="management-card" style={{ marginTop: 16 }}>
+          <div className="card-head"><div><span className="eyebrow">Acesso por e-mail</span><h2>Colaboradores por e-mail</h2></div><span className="badge neutral">{members.length}</span></div>
+          <div className="equipment-maintenance-list">
+            {loadingMembers ? <p className="muted" style={{ padding:'16px 20px' }}>Carregando…</p>
+              : members.length === 0 ? <p className="muted" style={{ padding:'16px 20px' }}>Nenhum colaborador convidado ainda. Use "Convidar colaborador" acima.</p>
+              : members.map((m) => (
+                <div key={m.userId} className="equipment-maintenance-row user-row">
+                  <div>
+                    <strong>{m.name}</strong>
+                    <span>{m.role} · {m.email}</span>
+                    <span style={{ fontSize:11, color:'var(--text-secondary)', display:'block', marginTop:2 }}>
+                      {m.lastSignInAt ? `Último acesso: ${new Date(m.lastSignInAt).toLocaleString('pt-BR')}` : 'convidado — ainda não entrou'}
+                    </span>
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <span className="badge ok">Ativo</span>
+                    <button className="ghost-action" style={{ fontSize:11 }} disabled={resettingId === m.userId}
+                      title="Define uma nova senha pra essa pessoa (esqueceu a atual, por exemplo)."
+                      onClick={() => resetPasswordFor(m)}>
+                      {resettingId === m.userId ? 'Redefinindo…' : 'Redefinir senha'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </article>
+      )}
         <article className="management-card" ref={formRef}>
           <div className="card-head"><div><span className="eyebrow">{editingIndex === null ? 'Novo' : 'Editando'}</span><h2>{editingIndex === null ? 'Cadastrar pessoa da equipe' : users[editingIndex]?.name}</h2></div><span className="badge neutral">{users.length}</span></div>
           <div className="capture-fields">
@@ -464,6 +536,21 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
                         alert(`PIN de ${u.name} redefinido. Já vale no próximo login.`);
                       }}>🔑 PIN</button>}
                       <button className="ghost-action" onClick={() => startEdit(ri)}>Editar</button>
+                      {/* Só faz sentido com mais de uma empresa alcançável. */}
+                      {outrasUnidades.length > 0 && (
+                        movendoIdx === ri ? (
+                          <select autoFocus defaultValue="" style={{ fontSize:11, padding:'2px 4px' }}
+                            aria-label={`Mover ${u.name} para outra empresa`}
+                            onChange={(e) => { if (e.target.value) moverParaUnidade(ri, e.target.value); }}
+                            onBlur={() => setMovendoIdx(null)}>
+                            <option value="">Mover para…</option>
+                            {outrasUnidades.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          </select>
+                        ) : (
+                          <button className="ghost-action" title="Muda o cadastro de empresa. O histórico dela fica onde foi registrado."
+                            onClick={() => setMovendoIdx(ri)}>Mover</button>
+                        )
+                      )}
                       <button className="ghost-action danger" onClick={() => removeUser(ri)}>Remover</button>
                     </div>
                   </div>
@@ -472,38 +559,6 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
           </div>
         </article>
       </div>
-      {/* Colaboradores por e-mail — pra QUALQUER tenant (loja-seed inclusive,
-          desde a Fase 4: conta de loja + Fran/Ana Paula multi-loja). Sem este
-          card não existe UI pra ver/redefinir a senha dessas contas depois de
-          criadas — o convite acima só cria, não gerencia. */}
-      {canInvite && (
-        <article className="management-card" style={{ marginTop: 16 }}>
-          <div className="card-head"><div><span className="eyebrow">Acesso por e-mail</span><h2>Colaboradores por e-mail</h2></div><span className="badge neutral">{members.length}</span></div>
-          <div className="equipment-maintenance-list">
-            {loadingMembers ? <p className="muted" style={{ padding:'16px 20px' }}>Carregando…</p>
-              : members.length === 0 ? <p className="muted" style={{ padding:'16px 20px' }}>Nenhum colaborador convidado ainda. Use "Convidar colaborador" acima.</p>
-              : members.map((m) => (
-                <div key={m.userId} className="equipment-maintenance-row user-row">
-                  <div>
-                    <strong>{m.name}</strong>
-                    <span>{m.role} · {m.email}</span>
-                    <span style={{ fontSize:11, color:'var(--text-secondary)', display:'block', marginTop:2 }}>
-                      {m.lastSignInAt ? `Último acesso: ${new Date(m.lastSignInAt).toLocaleString('pt-BR')}` : 'convidado — ainda não entrou'}
-                    </span>
-                  </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <span className="badge ok">Ativo</span>
-                    <button className="ghost-action" style={{ fontSize:11 }} disabled={resettingId === m.userId}
-                      title="Define uma nova senha pra essa pessoa (esqueceu a atual, por exemplo)."
-                      onClick={() => resetPasswordFor(m)}>
-                      {resettingId === m.userId ? 'Redefinindo…' : 'Redefinir senha'}
-                    </button>
-                  </div>
-                </div>
-              ))}
-          </div>
-        </article>
-      )}
     </section>
   );
 }

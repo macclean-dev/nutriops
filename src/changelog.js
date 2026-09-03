@@ -35,6 +35,12 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.230', date: '2026-08-28', items: [
+    'Agora dá para mudar um colaborador de empresa: em Equipe → Usuários, o botão "Mover" na linha da pessoa. O seletor de empresa lá do topo nunca serviu pra isso — ele troca o que você está vendo, e por isso descartava a edição em andamento.',
+    'O cadastro passa a valer na empresa de destino (é lá que a pessoa aparece pra registrar temperatura e no controle de ASO). As leituras e planilhas que ela já preencheu ficam onde foram registradas — registro sanitário fica onde aconteceu.',
+    'Se já existir alguém com o mesmo nome no destino, o app recusa e explica: nomes iguais colidem e um dos dois sumiria da lista sem aviso.',
+    'A lista "Colaboradores por e-mail" subiu para antes da lista de equipe. Com uma equipe de cem pessoas, chegar nas contas de e-mail exigia rolar a página inteira.',
+  ]},
   { version: '1.9.229', date: '2026-08-28', items: [
     'Em Equipe → Usuários, clicar em "Editar" numa pessoa lá do fim da lista parecia não fazer nada — o formulário fica no topo da página, fora da tela. Agora a página vai até ele automaticamente.',
   ]},

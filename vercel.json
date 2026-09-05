@@ -1,6 +1,9 @@
 {
+  "//": "A landing legada (landing-nutriops.html) foi apagada em 05/09. A landing de verdade vive noutro projeto, em www.uniwares.net/nutriops/landing — manter uma cópia aqui só criava divergência: a daqui ficou meses com preço antigo e ninguém percebeu. O redirect abaixo existe pra quem tiver o link antigo salvo não cair em 404, e pra o buscador transferir a relevância pra página certa.",
+  "redirects": [
+    { "source": "/landing-nutriops.html", "destination": "https://www.uniwares.net/nutriops/landing", "permanent": true }
+  ],
   "rewrites": [
-    { "source": "/landing-nutriops.html", "destination": "/landing-nutriops.html" },
     { "source": "/manual-nutriops.html",  "destination": "/manual-nutriops.html"  },
     { "source": "/(.*)",                  "destination": "/index.html"            }
   ],

@@ -35,6 +35,11 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.233', date: '2026-09-05', items: [
+    'Equipamento que só liga quando está em uso — como o ultracongelador da gelateria — agora pode ser marcado assim no cadastro. Ele para de ser cobrado por turno e some de "Equipamentos fora da rotina", mas continua no cadastro, nos relatórios, e aceita leitura normalmente quando estiver ligado.',
+    'Isso resolve um problema silencioso: sem essa opção, a saída era registrar 0 °C com o aparelho desligado — o que num ultracongelador vira um desvio gravíssimo falso no histórico — ou apagar o equipamento do cadastro, o que tiraria da evidência algo que existe e é usado.',
+    'De quebra: editar ou remover um equipamento agora atualiza a Visão geral na hora. Antes só aparecia depois de recarregar a página.',
+  ]},
   { version: '1.9.232', date: '2026-09-05', items: [
     'Planilhas de higienização do PKS (7 setores) e do Terraço (2 setores), transcritas dos PDFs da nutricionista tarefa a tarefa, com o período de cada uma — semanal, quinzenal ou mensal, como está no papel.',
     'Higienização de Hortifrutícolas agora vale para as três lojas. No PKS o setor é Produção quente e no Terraço é Área de produção; na CASA DOCE continua com os 12 setores de sempre.',

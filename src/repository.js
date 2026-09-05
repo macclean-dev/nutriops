@@ -963,6 +963,10 @@ function eqToRow(eq, tenantId) {
     location: eq.location ?? null,
     min_temp: eq.minTemp ?? null,
     max_temp: eq.maxTemp ?? null,
+    // "Só liga quando em uso" — ver turn-alerts.js / fora-da-rotina.js. Precisa
+    // viajar pra nuvem, senão a marca vale só no aparelho onde foi feita e o
+    // equipamento volta a cobrar leitura no device seguinte.
+    uso_intermitente: eq.usoIntermitente === true,
     updated_at: new Date().toISOString(),
   };
 }
@@ -973,6 +977,10 @@ function eqFromRow(row) {
     location: row.location,
     minTemp: row.min_temp,
     maxTemp: row.max_temp,
+    // `?? false` e não `=== true`: linha gravada antes da coluna existir vem
+    // com null, e null tem que virar "cobra leitura normalmente" — o padrão de
+    // sempre. Nenhum equipamento sai da cobrança por omissão.
+    usoIntermitente: row.uso_intermitente ?? false,
   };
 }
 
@@ -2235,6 +2243,7 @@ create table if not exists equipment_catalog (
   location text,
   min_temp numeric,
   max_temp numeric,
+  uso_intermitente boolean not null default false,
   updated_at timestamptz default now(),
   primary key (tenant_id, label)
 );

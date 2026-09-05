@@ -118,7 +118,9 @@ describe('renomear no app guarda o nome antigo como apelido', () => {
   it('saveItem monta os apelidos incluindo o label anterior', () => {
     expect(pages).toContain('const aliasesFinais = anterior?.label && norm(anterior.label) !== norm(label)');
     expect(pages).toContain('? [...aliases, anterior.label]');
-    expect(pages).toContain('const next = { label, aliases: aliasesFinais, location, minTemp: minN, maxTemp: maxN };');
+    // Âncora só na parte que este teste protege — os apelidos. A linha ganhou
+    // `usoIntermitente` na v1.9.233 e voltaria a quebrar a cada campo novo.
+    expect(pages).toContain('const next = { label, aliases: aliasesFinais,');
   });
 
   it('não duplica se a pessoa já tinha digitado o nome antigo à mão', () => {

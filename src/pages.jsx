@@ -1465,6 +1465,10 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
   const [locationInput, setLocationInput]   = useState('');
   const [minInput, setMinInput]             = useState('');
   const [maxInput, setMaxInput]             = useState('');
+  // "Só liga quando em uso" — ver turn-alerts.js. Equipamento assim deixa de
+  // ser COBRADO (turno e "fora da rotina"), mas continua no cadastro e aceita
+  // leitura normalmente quando está ligado.
+  const [intermitenteInput, setIntermitente] = useState(false);
   const [editingIndex, setEditingIndex]     = useState(null);
   const [search, setSearch]                 = useState('');
   const [locationFilter, setLocationFilter] = useState('');
@@ -1477,7 +1481,7 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
   // Guardar em state (não em ref) é essencial: o valor lido pelo efeito precisa
   // ser o do render, senão a checagem passa e o bug volta.
   const [catalogTenant, setCatalogTenant] = useState(activeTenant.id);
-  const resetForm = () => { setEditingIndex(null); setLabelInput(''); setAliasInput(''); setLocationInput(''); setMinInput(''); setMaxInput(''); };
+  const resetForm = () => { setEditingIndex(null); setLabelInput(''); setAliasInput(''); setLocationInput(''); setMinInput(''); setMaxInput(''); setIntermitente(false); };
   useEffect(() => {
     setCatalog(readEquipmentCatalog(activeTenant));
     setCatalogTenant(activeTenant.id);
@@ -1487,10 +1491,20 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
     setSearch('');
     resetForm();
   }, [activeTenant.id]);
+  const primeiraGravacao = useRef(true);
   useEffect(() => {
     // Troca de loja em andamento (catalog ainda é da loja anterior) → não grava.
     if (catalogTenant !== activeTenant.id) return;
     writeEquipmentCatalog(activeTenant.id, catalog);
+    // Avisa as outras telas DEPOIS de gravar — a Visão geral relê o catálogo do
+    // localStorage quando ouve isto. Emitir lá do `saveItem` não funcionava: o
+    // handler roda ANTES deste efeito, então quem ouvia lia o catálogo VELHO e
+    // nada mudava na tela. Achado testando o "só liga quando em uso" (05/09).
+    //
+    // O `primeiraGravacao` pula o disparo do mount: sem ele, abrir a tela de
+    // Equipamentos já emitia um evento que não corresponde a mudança nenhuma.
+    if (primeiraGravacao.current) { primeiraGravacao.current = false; return; }
+    notificarSyncAplicado({ tenantId: activeTenant.id, trigger: 'edicao-equipamento' });
   }, [activeTenant.id, catalogTenant, catalog]);
   // Relê quando o sync (automático ou o "Tentar de novo" do banner âmbar)
   // grava um catálogo novo no localStorage — mesma correção já aplicada aos
@@ -1526,6 +1540,7 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
     setLocationInput(item.location ?? '');
     setMinInput(item.minTemp != null ? String(item.minTemp) : '');
     setMaxInput(item.maxTemp != null ? String(item.maxTemp) : '');
+    setIntermitente(item.usoIntermitente === true);
   };
   const cancelEdit = () => resetForm();
 
@@ -1574,7 +1589,7 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
       && !aliases.some((a) => norm(a) === norm(anterior.label))
       ? [...aliases, anterior.label]
       : aliases;
-    const next = { label, aliases: aliasesFinais, location, minTemp: minN, maxTemp: maxN };
+    const next = { label, aliases: aliasesFinais, location, minTemp: minN, maxTemp: maxN, usoIntermitente: intermitenteInput };
     setCatalog((prev) => editingIndex === null
       ? [...prev, next]
       : prev.map((item, i) => i === editingIndex ? { ...item, ...next } : item));
@@ -1714,6 +1729,23 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
               Sugestão automática quando você sai do campo Nome. Pode sobrescrever.
               Sem faixa cadastrada, o app usa fallback heurístico (freezer = -25 a -18, resto = 0 a 9).
             </p>
+            {/* Ultracongelador que só liga quando tem produção, forno que roda
+                em dia de encomenda. Sem isto, a única saída de quem cansava da
+                pendência era registrar 0 °C com o aparelho desligado (desvio
+                gravíssimo falso) ou apagar o equipamento do cadastro. */}
+            <label style={{ display:'flex', alignItems:'flex-start', gap:8, cursor:'pointer' }}>
+              <input type="checkbox" checked={intermitenteInput}
+                onChange={(e) => setIntermitente(e.target.checked)}
+                style={{ marginTop:3, accentColor:'var(--primary)' }} />
+              <span>
+                <strong style={{ display:'block' }}>Só liga quando está em uso</strong>
+                <span className="muted" style={{ fontSize:12 }}>
+                  Para de cobrar leitura por turno e para de aparecer em "Equipamentos fora da rotina".
+                  Continua no cadastro, nos relatórios, e aceita leitura normalmente quando estiver ligado —
+                  não registre temperatura com ele desligado.
+                </span>
+              </span>
+            </label>
             <div className="actions-row">
               {editingIndex !== null && <button className="secondary-action" onClick={cancelEdit}>Cancelar</button>}
               <button className="primary-action" onClick={saveItem}>
@@ -1754,6 +1786,7 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
                         <strong>{item.label}</strong>
                         <span>{item.aliases?.length ? item.aliases.join(' · ') : 'Sem apelidos'}</span>
                         <span>{item.location ?? 'Sem localização'} · <strong style={{ color:'var(--green)' }}>{fmtRange(item)}</strong></span>
+                        {item.usoIntermitente && <span className="badge neutral" style={{ fontSize:10, marginTop:3, display:'inline-block' }}>Só liga quando em uso · não cobra leitura</span>}
                       </div>
                       <div className="equipment-row-actions">
                         <button className="ghost-action" onClick={() => startEdit(ri)}>Editar</button>
@@ -2952,6 +2985,20 @@ export function App() {
   // [activeTenant, activeStoreId], então a tela continuava nos 4 até um reload
   // manual. Quem já tinha o app aberto antes (o dono) via os 44 e não percebia.
   const [catalogVersion, setCatalogVersion] = useState(0);
+  // Até aqui `catalogVersion` só subia quando o SYNC aplicava. Editar
+  // equipamento na própria tela não avisava ninguém: a Visão geral seguia
+  // mostrando o catálogo lido no primeiro render até alguém recarregar.
+  //
+  // Passou a doer de verdade com "Só liga quando está em uso" (v1.9.233): a RT
+  // marca o ultracongelador justamente pra ele sair de "Equipamentos fora da
+  // rotina", volta pra Visão geral, e ele continua lá — a conclusão natural é
+  // que a função não funciona. O evento já existia e outras telas já o
+  // escutam; faltava o App.
+  useEffect(() => {
+    const reler = () => setCatalogVersion((v) => v + 1);
+    window.addEventListener(SYNC_EVENT, reler);
+    return () => window.removeEventListener(SYNC_EVENT, reler);
+  }, []);
   // Catálogo preso no provisório de fábrica + nuvem inacessível — ver a
   // auto-cura no doSync e o CatalogStaleBanner.
   const [catalogStale, setCatalogStale] = useState(false);

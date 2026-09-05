@@ -53,6 +53,16 @@ export function computeTurnAlertsPure(turns, records, equipCatalog, tenantId, em
     const isActive = nowMin >= startMin && nowMin <= endMin, isPast = nowMin > endMin;
     if (!isActive && !isPast) continue;
     for (const eq of catalog) {
+      // Equipamento de uso intermitente não é cobrado por turno. O
+      // ultracongelador U.3 da gelateria (CASA DOCE) só liga quando está em
+      // uso: cobrar leitura de turno dele fazia a equipe registrar 0 °C com o
+      // aparelho DESLIGADO — que no histórico vira desvio gravíssimo falso, e
+      // levou a RT a cogitar apagar o equipamento do cadastro, o que tiraria
+      // da evidência um equipamento que existe e é usado. Pedido dela, 05/09.
+      //
+      // Continua no catálogo, continua aceitando leitura quando ligado, e
+      // continua aparecendo nos relatórios. Só deixa de ser COBRADO.
+      if (eq?.usoIntermitente === true) continue;
       const hasRecord = records.some((r) => {
         if (r.tenantId !== tenantId) return false;
         // recordBelongsTo, não comparação de nome: um equipamento renomeado

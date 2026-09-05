@@ -66,6 +66,11 @@ export function equipamentosForaDaRotina({
 
   const fora = [];
   for (const eq of cat) {
+    // Mesma razão do turn-alerts.js: equipamento que só liga quando está em
+    // uso não tem "rotina" pra estar fora. Sem isto, o ultracongelador da
+    // gelateria apareceria como "sem leitura há N dias" pra sempre — e a
+    // resposta natural de quem olha é apagar o equipamento do cadastro.
+    if (eq?.usoIntermitente === true) continue;
     let ultima = null;
     for (const r of doTenant) {
       if (!recordBelongsTo(cat, r, eq)) continue;

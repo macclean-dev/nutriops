@@ -17,7 +17,7 @@ import { actionSourceKey, pendingTemperatureItems, pendingReceivingItems, pendin
 import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
-import { getUnseenEntries } from './changelog';
+import { getUnseenEntries, normalizeItem } from './changelog';
 import { resolveLimits as resolveLimitsFromCatalog, resolveTone, resolveRecordTone as resolveTemperatureTone, heuristicLimits, suggestLimits, dedupeCatalog, normalizeEquipmentName, getEquipmentEntry, suspectMissingMinus, parseTemperatura, daysUntil, contarValidadesEmAlerta } from './limits';
 import { receivingSuggestedResult } from './verdict';
 import { isPlaceholderCatalog } from './segments';
@@ -2651,8 +2651,32 @@ function ChangelogModal({ entries, onClose }) {
               <div style={{ fontSize:11, fontWeight:700, color:'var(--text-secondary)', marginBottom:6 }}>
                 v{e.version} · {new Date(`${e.date}T12:00`).toLocaleDateString('pt-BR')}
               </div>
-              <ul style={{ margin:0, paddingLeft:18, display:'flex', flexDirection:'column', gap:6 }}>
-                {e.items.map((item, i) => <li key={i} style={{ fontSize:13, lineHeight:1.5 }}>{item}</li>)}
+              <ul style={{ margin:0, paddingLeft:18, display:'flex', flexDirection:'column', gap:10 }}>
+                {/* O caminho até a novidade (pedido do dono, 28/08). Saber o
+                    que mudou não adianta se a pessoa não acha onde — foi o que
+                    aconteceu com o mapa de calor: publicado, anunciado, e ele
+                    passou dias sem achar. Item sem caminho (correção de
+                    cálculo, aviso) não ganha seta: caminho inventado é pior
+                    que caminho ausente.
+
+                    A cor é `--green-emphasis`, criada pra isto: nem
+                    `--primary` nem `--green` servem nos DOIS temas. Medido no
+                    navegador: primary dá 2,05 no escuro e green dá 3,27 no
+                    claro — os dois abaixo do mínimo 4,5 do WCAG AA pra texto
+                    pequeno. O token vira com o tema (6,44 / 7,05). */}
+                {e.items.map((item, i) => {
+                  const { text, path } = normalizeItem(item);
+                  return (
+                    <li key={i} style={{ fontSize:13, lineHeight:1.5 }}>
+                      {text}
+                      {path && (
+                        <span style={{ display:'block', marginTop:3, fontSize:11.5, fontWeight:600, color:'var(--green-emphasis)' }}>
+                          ➜ {path}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ))}

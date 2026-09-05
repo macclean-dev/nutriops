@@ -42,6 +42,11 @@
   --green:        #00a35c;
   --green-light:  rgba(0,163,92,.12);
   --green-border: rgba(0,163,92,.4);
+  /* Verde legível como TEXTO — mesmo papel do --blue-emphasis logo acima.
+     `--green` (#00a35c) sobre branco dá contraste 3,27, abaixo do mínimo 4,5
+     do WCAG AA pra texto pequeno; `--primary` (#00684a) dá 6,44. Medido no
+     navegador. Ver o par no bloco [data-theme="dark"]. */
+  --green-emphasis: #00684a;
 
   --amber:        #8a4e00;
   --amber-light:  rgba(138,78,0,.10);
@@ -1146,6 +1151,10 @@ label {
   --green:         #34d17f;
   --green-light:   rgba(52,209,127,.15);
   --green-border:  rgba(52,209,127,.4);
+  /* No escuro a relação inverte: #00684a sobre o fundo do card dá 2,05 e
+     #34d17f dá 7,05. Por isso a variável existe — o par claro/escuro não é o
+     mesmo tom. */
+  --green-emphasis: #34d17f;
 
   --amber:         #d4a04a;
   --amber-light:   rgba(212,160,74,.15);

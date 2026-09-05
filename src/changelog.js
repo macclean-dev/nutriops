@@ -35,67 +35,70 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.234', date: '2026-09-05', items: [
+    { text: 'A tela "O que mudou no NutriOPS" agora diz ONDE está cada novidade. Abaixo de cada item aparece o caminho — como o desta linha aqui. Saber que algo mudou não adianta se você não acha onde.', path: 'Aparece sozinha depois de cada atualização' },
+  ]},
   { version: '1.9.233', date: '2026-09-05', items: [
-    'Equipamento que só liga quando está em uso — como o ultracongelador da gelateria — agora pode ser marcado assim no cadastro. Ele para de ser cobrado por turno e some de "Equipamentos fora da rotina", mas continua no cadastro, nos relatórios, e aceita leitura normalmente quando estiver ligado.',
+    { text: 'Equipamento que só liga quando está em uso — como o ultracongelador da gelateria — agora pode ser marcado assim no cadastro. Ele para de ser cobrado por turno e some de "Equipamentos fora da rotina", mas continua no cadastro, nos relatórios, e aceita leitura normalmente quando estiver ligado.', path: 'Equipamentos → Editar' },
     'Isso resolve um problema silencioso: sem essa opção, a saída era registrar 0 °C com o aparelho desligado — o que num ultracongelador vira um desvio gravíssimo falso no histórico — ou apagar o equipamento do cadastro, o que tiraria da evidência algo que existe e é usado.',
-    'De quebra: editar ou remover um equipamento agora atualiza a Visão geral na hora. Antes só aparecia depois de recarregar a página.',
+    { text: 'De quebra: editar ou remover um equipamento agora atualiza a Visão geral na hora. Antes só aparecia depois de recarregar a página.', path: 'Visão geral' },
   ]},
   { version: '1.9.232', date: '2026-09-05', items: [
-    'Planilhas de higienização do PKS (7 setores) e do Terraço (2 setores), transcritas dos PDFs da nutricionista tarefa a tarefa, com o período de cada uma — semanal, quinzenal ou mensal, como está no papel.',
-    'Higienização de Hortifrutícolas agora vale para as três lojas. No PKS o setor é Produção quente e no Terraço é Área de produção; na CASA DOCE continua com os 12 setores de sempre.',
-    'Três planilhas novas para as três lojas: Recebimento de Novos Utensílios, Controle de Desperdícios (Alimentos) e Controle de Perdas (Utensílios). São preenchidas quando acontece — cada folha tem espaço para 6 ocorrências por setor, e uma ocorrência já conta como folha completa.',
-    'Essas três vêm como semestrais para não virarem cobrança de todo mês por algo que só se registra quando quebra ou estraga. Dá para mudar a frequência em Planilhas → Organizar.',
+    { text: 'Planilhas de higienização do PKS (7 setores) e do Terraço (2 setores), transcritas dos PDFs da nutricionista tarefa a tarefa, com o período de cada uma — semanal, quinzenal ou mensal, como está no papel.', path: 'Planilhas BPF' },
+    { text: 'Higienização de Hortifrutícolas agora vale para as três lojas. No PKS o setor é Produção quente e no Terraço é Área de produção; na CASA DOCE continua com os 12 setores de sempre.', path: 'Planilhas BPF → Faxina' },
+    { text: 'Três planilhas novas para as três lojas: Recebimento de Novos Utensílios, Controle de Desperdícios (Alimentos) e Controle de Perdas (Utensílios). São preenchidas quando acontece — cada folha tem espaço para 6 ocorrências por setor, e uma ocorrência já conta como folha completa.', path: 'Planilhas BPF → Faxina' },
+    { text: 'Essas três vêm como semestrais para não virarem cobrança de todo mês por algo que só se registra quando quebra ou estraga. Dá para mudar a frequência em Planilhas → Organizar.', path: 'Planilhas BPF → Organizar' },
   ]},
   { version: '1.9.231', date: '2026-08-28', items: [
-    'Trocar de empresa no seletor do topo enquanto você edita alguém sempre limpou o formulário — o que é proposital, porque salvar depois gravaria a pessoa na empresa errada. O que faltava era dizer isso: agora aparece um aviso com o nome de quem estava sendo editado, o motivo, e o caminho certo — o botão "Mover" na linha da pessoa.',
+    { text: 'Trocar de empresa no seletor do topo enquanto você edita alguém sempre limpou o formulário — o que é proposital, porque salvar depois gravaria a pessoa na empresa errada. O que faltava era dizer isso: agora aparece um aviso com o nome de quem estava sendo editado, o motivo, e o caminho certo — o botão "Mover" na linha da pessoa.', path: 'Equipe → Usuários' },
   ]},
   { version: '1.9.230', date: '2026-08-28', items: [
-    'Agora dá para mudar um colaborador de empresa: em Equipe → Usuários, o botão "Mover" na linha da pessoa. O seletor de empresa lá do topo nunca serviu pra isso — ele troca o que você está vendo, e por isso descartava a edição em andamento.',
-    'O cadastro passa a valer na empresa de destino (é lá que a pessoa aparece pra registrar temperatura e no controle de ASO). As leituras e planilhas que ela já preencheu ficam onde foram registradas — registro sanitário fica onde aconteceu.',
+    { text: 'Agora dá para mudar um colaborador de empresa: em Equipe → Usuários, o botão "Mover" na linha da pessoa. O seletor de empresa lá do topo nunca serviu pra isso — ele troca o que você está vendo, e por isso descartava a edição em andamento.', path: 'Equipe → Usuários' },
+    { text: 'O cadastro passa a valer na empresa de destino (é lá que a pessoa aparece pra registrar temperatura e no controle de ASO). As leituras e planilhas que ela já preencheu ficam onde foram registradas — registro sanitário fica onde aconteceu.', path: 'Equipe → Usuários' },
     'Se já existir alguém com o mesmo nome no destino, o app recusa e explica: nomes iguais colidem e um dos dois sumiria da lista sem aviso.',
-    'A lista "Colaboradores por e-mail" subiu para antes da lista de equipe. Com uma equipe de cem pessoas, chegar nas contas de e-mail exigia rolar a página inteira.',
+    { text: 'A lista "Colaboradores por e-mail" subiu para antes da lista de equipe. Com uma equipe de cem pessoas, chegar nas contas de e-mail exigia rolar a página inteira.', path: 'Equipe → Usuários' },
   ]},
   { version: '1.9.229', date: '2026-08-28', items: [
-    'Em Equipe → Usuários, clicar em "Editar" numa pessoa lá do fim da lista parecia não fazer nada — o formulário fica no topo da página, fora da tela. Agora a página vai até ele automaticamente.',
+    { text: 'Em Equipe → Usuários, clicar em "Editar" numa pessoa lá do fim da lista parecia não fazer nada — o formulário fica no topo da página, fora da tela. Agora a página vai até ele automaticamente.', path: 'Equipe → Usuários' },
   ]},
   { version: '1.9.227', date: '2026-08-28', items: [
-    'Corrigida a planilha de Higienização de Banheiros: dava para marcar só um banheiro por dia. Ao escolher o próximo, ele já aparecia preenchido — porque era literalmente o mesmo registro, e salvar o segundo apagava o primeiro. Agora cada banheiro tem a sua própria via no dia, como já acontecia com hortifrúti, higiene pessoal e vetores.',
-    'E quem limpa vários banheiros seguidos não precisa mais preencher um por um: no fim da planilha há "Aplicar também a", onde dá para marcar os outros banheiros. As mesmas respostas e o mesmo responsável valem para todos, e cada um continua com registro separado — como a fiscalização espera.',
+    { text: 'Corrigida a planilha de Higienização de Banheiros: dava para marcar só um banheiro por dia. Ao escolher o próximo, ele já aparecia preenchido — porque era literalmente o mesmo registro, e salvar o segundo apagava o primeiro. Agora cada banheiro tem a sua própria via no dia, como já acontecia com hortifrúti, higiene pessoal e vetores.', path: 'Planilhas BPF → Faxina' },
+    { text: 'E quem limpa vários banheiros seguidos não precisa mais preencher um por um: no fim da planilha há "Aplicar também a", onde dá para marcar os outros banheiros. As mesmas respostas e o mesmo responsável valem para todos, e cada um continua com registro separado — como a fiscalização espera.', path: 'Planilhas BPF → Faxina' },
     'Se algum dos marcados já tiver sido preenchido hoje, a tela avisa antes, porque marcar ali substitui o que estava lá.',
   ]},
   { version: '1.9.226', date: '2026-08-28', items: [
-    'Para operações com mais de um CNPJ no mesmo endereço: o cadastro do colaborador ganhou a opção "Só opera aqui". Quem está marcado aparece normalmente na hora de registrar temperatura nesta loja, mas fica fora do controle de ASO dela — o exame de saúde continua sendo cobrado só na empresa que assina a carteira da pessoa.',
+    { text: 'Para operações com mais de um CNPJ no mesmo endereço: o cadastro do colaborador ganhou a opção "Só opera aqui". Quem está marcado aparece normalmente na hora de registrar temperatura nesta loja, mas fica fora do controle de ASO dela — o exame de saúde continua sendo cobrado só na empresa que assina a carteira da pessoa.', path: 'Equipe → Usuários → Editar' },
     'A capacitação continua sendo cobrada aqui de propósito: a RDC 216 exige treinar quem manipula alimento no estabelecimento, independente de qual empresa contrata. Só o exame de saúde acompanha o vínculo empregatício.',
   ]},
   { version: '1.9.225', date: '2026-08-24', items: [
-    'Quando alguém digita o nome à mão na tela "Quem está registrando?" e ele parece com um colaborador já cadastrado, o app agora pergunta: "Você quis dizer MARIA SANTA ARAÚJO TEIXEIRA?". Antes aceitava a grafia nova em silêncio, e a mesma pessoa acabava aparecendo com dois ou três nomes diferentes nos registros — o que enfraquece a rastreabilidade numa fiscalização.',
+    { text: 'Quando alguém digita o nome à mão na tela "Quem está registrando?" e ele parece com um colaborador já cadastrado, o app agora pergunta: "Você quis dizer MARIA SANTA ARAÚJO TEIXEIRA?". Antes aceitava a grafia nova em silêncio, e a mesma pessoa acabava aparecendo com dois ou três nomes diferentes nos registros — o que enfraquece a rastreabilidade numa fiscalização.', path: 'Modo quiosque → Quem está registrando?' },
     'Continua sendo possível insistir no nome digitado (homônimo existe), só deixou de ser o caminho automático. E a sugestão só aparece quando há uma única pessoa possível: com duas parecidas, o app prefere não chutar.',
   ]},
   { version: '1.9.224', date: '2026-08-24', items: [
-    'O afastamento e a licença-maternidade agora guardam a data de início. Ela nasce preenchida com o dia de hoje e pode ser corrigida — a linha passa a mostrar "Licença maternidade desde 15/07/2026", por exemplo. Pedido da nutricionista RT.',
+    { text: 'O afastamento e a licença-maternidade agora guardam a data de início. Ela nasce preenchida com o dia de hoje e pode ser corrigida — a linha passa a mostrar "Licença maternidade desde 15/07/2026", por exemplo. Pedido da nutricionista RT.', path: 'Capacitação → Saúde (ASO)' },
   ]},
   { version: '1.9.223', date: '2026-08-24', items: [
-    'O Cmd+K (busca rápida) agora encontra "Saúde (ASO)" — buscar "aso", "saude", "exame" ou "licença maternidade" leva direto pra aba certa dentro de Capacitação, sem precisar navegar e depois clicar na aba.',
+    { text: 'O Cmd+K (busca rápida) agora encontra "Saúde (ASO)" — buscar "aso", "saude", "exame" ou "licença maternidade" leva direto pra aba certa dentro de Capacitação, sem precisar navegar e depois clicar na aba.', path: 'Cmd+K' },
   ]},
   { version: '1.9.222', date: '2026-08-24', items: [
-    'Controle de saúde (ASO) ganhou situação por colaborador: Afastado(a) ou Licença maternidade, além de Ativa. Quem está de licença some da contagem de "Vencido" — antes uma colaboradora afastada podia pintar a Central de NC de vermelho por um exame que não faz sentido cobrar dela enquanto está fora.',
+    { text: 'Controle de saúde (ASO) ganhou situação por colaborador: Afastado(a) ou Licença maternidade, além de Ativa. Quem está de licença some da contagem de "Vencido" — antes uma colaboradora afastada podia pintar a Central de NC de vermelho por um exame que não faz sentido cobrar dela enquanto está fora.', path: 'Capacitação → Saúde (ASO)' },
     'Não mexe no resultado do exame (Apto/Inapto) nem no cadastro em Equipe → Usuários — é uma situação própria da tela de ASO, e o histórico de exames continua editável normalmente mesmo com a pessoa afastada.',
   ]},
   { version: '1.9.221', date: '2026-08-23', items: [
     'Corrigido: sair (logoff) podia deixar a tela em branco, sem nenhuma mensagem, quando o app tinha acabado de ganhar uma atualização e a aba estava aberta desde antes dela. Agora, se isso acontecer, o app se recupera sozinho — a pessoa só vê "Atualizando o app…" por um instante em vez de uma tela morta.',
   ]},
   { version: '1.9.220', date: '2026-08-23', items: [
-    'Corrigido: ao editar um cliente já cadastrado, o campo Segmento sempre mostrava "Padaria" na tela, não importa o segmento real da loja — e escolher outro na hora parecia "não pegar". O nome salvo ("Confeitaria") e o valor que a tela compara ("confeitaria") tinham formatos diferentes, então nunca combinavam.',
+    { text: 'Corrigido: ao editar um cliente já cadastrado, o campo Segmento sempre mostrava "Padaria" na tela, não importa o segmento real da loja — e escolher outro na hora parecia "não pegar". O nome salvo ("Confeitaria") e o valor que a tela compara ("confeitaria") tinham formatos diferentes, então nunca combinavam.', path: 'Super Admin → Editar' },
   ]},
   { version: '1.9.218', date: '2026-08-23', items: [
-    'Corrigido o problema mais sério do modo Quiosque: a tela dava a leitura por salva mesmo quando ela não tinha chegado no sistema. O card ficava verde, o contador subia e no fim aparecia "Todos os registros concluídos!" — enquanto a temperatura estava guardada só naquele celular. Quem mediu não tinha como desconfiar.',
+    { text: 'Corrigido o problema mais sério do modo Quiosque: a tela dava a leitura por salva mesmo quando ela não tinha chegado no sistema. O card ficava verde, o contador subia e no fim aparecia "Todos os registros concluídos!" — enquanto a temperatura estava guardada só naquele celular. Quem mediu não tinha como desconfiar.', path: 'Modo quiosque' },
     'Agora, quando uma leitura fica presa no aparelho, ela aparece em âmbar com "NÃO ENVIADO", e uma faixa no topo avisa quantas faltam enviar. O texto pede para manter o aparelho conectado e — importante — para NÃO repetir a medição em outro celular, porque ela não se perdeu.',
     'A tela também não anuncia mais "todos os registros concluídos" quando o aparelho está sem a lista de equipamentos. Nesse caso ela avisa o que houve e orienta a não registrar nada até a lista chegar.',
     'Uma leitura de 0 °C passou a contar como registrada. Antes o sistema tratava zero como "não medido" e pedia a leitura de novo.',
-    'O Cmd+K (busca rápida) agora encontra "Mapa de calor semanal" e "Equipamentos fora da rotina". Eles são seções da Visão geral, não telas — e por isso a busca não achava.',
+    { text: 'O Cmd+K (busca rápida) agora encontra "Mapa de calor semanal" e "Equipamentos fora da rotina". Eles são seções da Visão geral, não telas — e por isso a busca não achava.', path: 'Cmd+K' },
   ]},
   { version: '1.9.216', date: '2026-08-23', items: [
-    'O "Mapa de calor semanal" agora aparece também para o administrador da loja, na Visão geral. Antes só existia no painel da nutricionista RT — o dono não tinha como ver a cobertura de registro por equipamento e por dia.',
+    { text: 'O "Mapa de calor semanal" agora aparece também para o administrador da loja, na Visão geral. Antes só existia no painel da nutricionista RT — o dono não tinha como ver a cobertura de registro por equipamento e por dia.', path: 'Visão geral' },
     'Cada quadradinho é um dia: verde dentro da faixa, âmbar desvio leve, vermelho fora da faixa, cinza sem leitura. Clicar num dia com leitura abre o histórico completo daquele equipamento.',
   ]},
   { version: '1.9.211', date: '2026-08-21', items: [

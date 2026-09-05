@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.235', date: '2026-09-05', items: [
+    { text: 'Corrigido o nome da planilha "Higiene Pessoal dos Colaboradors" — faltava o "e" em Colaboradores. O erro estava lá desde o começo e aparecia em todas as lojas. A planilha é a mesma: o histórico já preenchido continua nela, nada foi duplicado nem recomeçado.', path: 'Planilhas BPF → Higiene Pessoal' },
+  ]},
   { version: '1.9.234', date: '2026-09-05', items: [
     { text: 'A tela "O que mudou no NutriOPS" agora diz ONDE está cada novidade. Abaixo de cada item aparece o caminho — como o desta linha aqui. Saber que algo mudou não adianta se você não acha onde.', path: 'Aparece sozinha depois de cada atualização' },
   ]},

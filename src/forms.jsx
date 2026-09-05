@@ -4,6 +4,7 @@ import { pushFormRecord, lw as gravarLocal } from './repository';
 import { ImportTemplateModal } from './import-template-modal';
 import { isFieldDue, dueFields } from './field-frequency';
 import { gravarMesclando, SYNC_EVENT } from './lista-local';
+import { aplicarRenomeacoes } from './renomear-planilha';
 import { prefsFromProfile, profileWithPrefs, catLabelFor, podeMoverPara, podeEditarTitulo, applyCategoryPrefs, enxugarPrefs, CATEGORIA_COM_COMPORTAMENTO, FREQUENCIAS } from './form-prefs';
 import { readCompanyProfile, saveCompanyProfile } from './settings';
 
@@ -55,9 +56,16 @@ const fs = (k, v) => gravarLocal(k, v);
 const chaveTitulo = (t) => `${t?.category ?? ''}::${String(t?.title ?? '').trim().toLowerCase()}`;
 
 export const readFormTemplates = (tenant) => {
-  const cache = fl(tplKey(tenant.id), null);
+  const cacheBruto = fl(tplKey(tenant.id), null);
   const seed  = seedTemplates(tenant);
-  if (!Array.isArray(cache)) { fs(tplKey(tenant.id), seed); return seed; }
+  if (!Array.isArray(cacheBruto)) { fs(tplKey(tenant.id), seed); return seed; }
+
+  // Renomeações do seed (ver renomear-planilha.js) ANTES de qualquer
+  // comparação. O casamento abaixo é por `categoria::título` quando o id não
+  // bate — e o id NÃO bate nas planilhas que nascem com `uid()`. Sem esta
+  // linha, corrigir um título no seed faria a loja ganhar uma SEGUNDA cópia em
+  // vez de corrigir a que ela já tem.
+  const { lista: cache, mudou: renomeou } = aplicarRenomeacoes(cacheBruto);
 
   const porId = new Map(cache.map((t) => [t.id, t]));
   // 1ª ocorrência vence: é a cópia mais antiga, aquela pra onde os registros
@@ -65,7 +73,7 @@ export const readFormTemplates = (tenant) => {
   const porTitulo = new Map();
   for (const t of cache) if (!porTitulo.has(chaveTitulo(t))) porTitulo.set(chaveTitulo(t), t);
 
-  let mudou = false;
+  let mudou = renomeou;
   for (const s of seed) {
     const atual = porId.get(s.id) ?? porTitulo.get(chaveTitulo(s));
     if (!atual) { porId.set(s.id, s); porTitulo.set(chaveTitulo(s), s); mudou = true; continue; }
@@ -766,9 +774,19 @@ export function generateFormPDF(template, record, tenant, rotuloCategoria) {
 
 // ─── Pre-built templates ───────────────────────────────────────────────────
 
+// `id` FIXO e `v` (05/09): nasceu com `uid()`, id sorteado a cada chamada, e
+// sem versão. Isso deixava a planilha impossível de atualizar pelo caminho
+// normal — o casamento só funcionava por título — e num aparelho novo o seed
+// entrava com id sorteado enquanto o sync trazia a linha da nuvem com o id
+// verdadeiro, criando duplicata. Com id estável e `v`, ela passa a se comportar
+// como as outras 20.
+//
+// A troca do título ("Colaboradors" → "Colaboradores") só é segura por causa
+// de `aplicarRenomeacoes` em readFormTemplates: sem ela, o casamento por título
+// falharia e cada loja ganharia uma segunda cópia.
 const TPL_HIGIENE_PESSOAL = () => ({
-  id:uid(), category:'higiene_pessoal', frequency:'daily',
-  title:'Higiene Pessoal dos Colaboradors',
+  id:'a7ce5e0d-4b2e-4b16-9d51-2b3a6a0f9c74', category:'higiene_pessoal', frequency:'daily', v:2,
+  title:'Higiene Pessoal dos Colaboradores',
   description:'Verificação diária de higiene, uniforme, comportamento e EPI. C=conforme / NC=não conforme.',
   sections:[{ id:uid(), title:'Verificação',
     fields:[

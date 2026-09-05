@@ -23,14 +23,10 @@ describe('FABRIZZIO PKS', () => {
 
   it('mantém as 4 que ela marcou como já cadastradas', () => {
     const t = nomes(tpls());
-    // "Colaboradors" (sem o "e") é um erro de digitação ANTIGO do seed, que
-    // não dá pra corrigir de passagem: TPL_HIGIENE_PESSOAL usa `id: uid()`
-    // — id novo a cada chamada — então readFormTemplates só reencontra a
-    // planilha existente pelo TÍTULO. Mudar o título faria a Swiss, a
-    // Bäckerei e a DBK ganharem uma SEGUNDA cópia em vez de atualizar a
-    // delas, que é exatamente a duplicação que a ferramenta de deduplicação
-    // existe pra limpar. Fica registrado aqui até ser corrigido com migração.
-    expect(t).toContain('Higiene Pessoal dos Colaboradors');
+    // Era "Colaboradors", sem o "e". Corrigido na v1.9.235 com a migração de
+    // renomeação (renomear-planilha.js) — antes dela, mudar o título faria
+    // cada loja ganhar uma SEGUNDA cópia em vez de corrigir a que já tem.
+    expect(t).toContain('Higiene Pessoal dos Colaboradores');
     expect(t).toContain('Controle Integrado de Vetores e Pragas');
     expect(t).toContain('Controle de Dedetização');
     expect(t.some((x) => /reservatório/i.test(x))).toBe(true);

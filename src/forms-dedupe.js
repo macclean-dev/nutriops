@@ -1,3 +1,7 @@
+import { tituloAtual } from './renomear-planilha';
+
+const norm = (v) => String(v ?? '').trim().toLowerCase();
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Dedupe das planilhas BPF duplicadas (Swiss/Bäckerei/DBK).
 //
@@ -83,7 +87,11 @@ export function escolherRegistro(a, b) {
 // — é o que permite reconectar um órfão à planilha certa mesmo quando o
 // template original sumiu do aparelho.
 export function chaveGrupoDoRegistro(r) {
-  return `${r?.category ?? ''}::${String(r?.formTitle ?? '').trim().toLowerCase()}`;
+  // Passa pelo título ATUAL: o registro carrega o `formTitle` congelado no
+  // momento em que foi preenchido, então um preenchimento de antes da correção
+  // do "Colaboradors" (05/09) guarda o título errado. Sem esta tradução ele
+  // viraria "órfão sem destino" — a planilha existe, só mudou de nome.
+  return `${r?.category ?? ''}::${norm(tituloAtual(r?.category, r?.formTitle))}`;
 }
 
 export function planejarDedupe(templates = [], records = []) {

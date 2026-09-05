@@ -243,15 +243,18 @@ describe('readFormTemplates — seed de id sorteado não pode duplicar', () => {
   });
 });
 
-describe('seedTemplates CASA DOCE — 33 planilhas BPF (Fase A+B+C + 21 de higienização + reservatório)', () => {
+describe('seedTemplates CASA DOCE — 36 planilhas BPF (Fase A+B+C + 21 de higienização + reservatório + 3 de ocorrência)', () => {
   beforeEach(() => localStorage.clear());
   const CD = { id:'bf245c3b-2f9', name:'CASA DOCE' };
 
-  it('retorna 33 templates com ids uuid únicos', () => {
+  it('retorna 36 templates com ids uuid únicos', () => {
     const tpls = readFormTemplates(CD);
-    expect(tpls).toHaveLength(33);
+    // 33 → 36 em 28/08: entraram Recebimento de Novos Utensílios, Controle de
+    // Desperdícios (Alimentos) e Controle de Perdas (Utensílios), as três
+    // pedidas pela RT pras três lojas.
+    expect(tpls).toHaveLength(36);
     const ids = tpls.map(t => t.id);
-    expect(new Set(ids).size).toBe(33);                        // sem colisão de uuid
+    expect(new Set(ids).size).toBe(36);                        // sem colisão de uuid
     for (const id of ids) expect(id).toMatch(/^[0-9a-f-]{36}$/);
   });
 
@@ -311,7 +314,7 @@ describe('seedTemplates CASA DOCE — 33 planilhas BPF (Fase A+B+C + 21 de higie
   // estes, planilha nova NUNCA alcança loja que já rodava.
   it('CACHE VAZIO ([] é truthy!) não impede o seed', () => {
     localStorage.setItem('nutriops.forms.templates.bf245c3b-2f9', '[]');
-    expect(readFormTemplates(CD)).toHaveLength(33);
+    expect(readFormTemplates(CD)).toHaveLength(36);
   });
 
   // Sem isto, TODO ajuste pedido pela nutricionista (07/08) ficaria invisível
@@ -369,10 +372,10 @@ describe('seedTemplates CASA DOCE — 33 planilhas BPF (Fase A+B+C + 21 de higie
     localStorage.setItem('nutriops.forms.templates.bf245c3b-2f9', JSON.stringify(antigas));
 
     const depois = readFormTemplates(CD);
-    expect(depois).toHaveLength(33);                            // as 21 chegaram
+    expect(depois).toHaveLength(36);                            // as 21 chegaram
     // O que a loja editou não foi sobrescrito pelo seed.
     expect(depois.find(t => t.id === antigas[0].id).description).toBe('editado pela loja');
-    expect(new Set(depois.map(t => t.id)).size).toBe(33);       // sem duplicar
+    expect(new Set(depois.map(t => t.id)).size).toBe(36);       // sem duplicar
   });
 
   it('vetores customizado: sem Pombo, com Abelha', () => {

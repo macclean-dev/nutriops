@@ -452,7 +452,7 @@ function generateFiscalPDF({ tenant, periodLabel, tempStats, bpfStats, trainingS
   <h2>2. Planilhas de Controle BPF</h2>
   <table><thead><tr><th>Planilha</th><th>Frequência</th><th>Período atual</th><th>Validação RT</th></tr></thead>
   <tbody>${bpfRows||'<tr><td colspan="4">Sem planilhas cadastradas</td></tr>'}</tbody></table>
-  <h2>3. Capacitação de Colaboradors</h2>
+  <h2>3. Capacitação de Colaboradores</h2>
   <table><thead><tr><th>Colaborador</th><th>Perfil</th><th>Último treinamento</th><th>Situação</th></tr></thead>
   <tbody>${trainRows||'<tr><td colspan="4">Sem dados de capacitação</td></tr>'}</tbody></table>
   <div class="footer">

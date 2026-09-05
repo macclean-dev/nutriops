@@ -1051,7 +1051,12 @@ const TPL_CASADOCE_BANHEIROS = () => ({
 // nutricionista). Ids FIXOS pra bater com a nuvem no merge. Frequências marcadas
 // "a confirmar" nas descrições — trocar 1 valor + re-rodar o SQL se ela ajustar.
 
-const TPL_CD_HORTIFRUTI = () => ({
+// `setores` parametrizado (28/08): a MESMA planilha vale pras três lojas — a
+// RT foi explícita ("a de hortifruticolas vale para as 3") — mas o Terraço e o
+// PKS têm um setor só que higieniza hortifruti. Sem o parâmetro, a lista de 12
+// setores da CASA DOCE apareceria lá, e escolher o setor errado é justamente o
+// que faz o registro sumir da vista de quem procura.
+const TPL_CD_HORTIFRUTI = (setores = CD_SETORES_EQUIPE) => ({
   id:'f565a332-b2a1-401d-b1f4-5e70825aafec', category:'faxina', frequency:'daily', v:3, scopeBy:'cd-hf-setor',
   title:'Higienização de Hortifrutícolas',
   description:'Registro da higienização de hortifrutícolas (imersão em solução sanitizante). Frequência: diária (a confirmar com a RT).',
@@ -1060,7 +1065,7 @@ const TPL_CD_HORTIFRUTI = () => ({
       { id:'cd-hf-data', label:'Data', type:'date_sig' },
       // Setor de quem higienizou (pedido 07/08) — a mesma solução roda em mais
       // de uma área e a RT precisa saber de qual veio o registro.
-      { id:'cd-hf-setor', label:'Setor', type:'select', options: CD_SETORES_EQUIPE },
+      { id:'cd-hf-setor', label:'Setor', type:'select', options: setores },
       { id:'cd-hf-item', label:'Hortifrutícola', type:'text', hint:'Ex.: alface, morango' },
       { id:'cd-hf-sol',  label:'Solução utilizada', type:'text', hint:'Ex.: hipoclorito 200 ppm' },
       { id:'cd-hf-tempo',label:'Tempo de imersão (min)', type:'number' },
@@ -1682,6 +1687,159 @@ const TPL_CD_HIG = [
   ]),
 ];
 
+// ─── FABRIZZIO PKS e Terraço (28/08) ────────────────────────────────────────
+// Pedido da RT: "cadastra as planilhas de higienização do terraço e do PKS".
+// Transcritas dos PDFs que ela mandou, tarefa a tarefa e período a período —
+// inclusive a "Caixa de gordura" da Produção de Gelatos, que no papel vem com
+// o período EM BRANCO de propósito: a nota de rodapé manda cada
+// estabelecimento definir o próprio ciclo. Fica como 'X' (a definir), que é o
+// único valor honesto — inventar "semanal" ali criaria cobrança que a RT nunca
+// definiu.
+const PKS_SETORES = [
+  'Atendimento', 'Depósito de bebidas', 'Produção quente', 'Produção de gelatos',
+  'Higienização de utensílios', 'DML', 'Copa',
+];
+const TERRACO_SETORES = ['Apoio atendimento', 'Área de produção'];
+
+const TPL_PKS_HIG = [
+  higSetor('215b3ec1-7a07-425b-8b98-072a3cc043ec','pks-atendimento','Atendimento (PKS)',[
+    ['Piso','S'],['Paredes','M'],['Teto','M'],
+    ['Vitrine expositora sem refrigeração V.1','S'],['Vitrine expositora refrigerada V.2','S'],
+    ['Vitrine refrigerada V.3','S'],['Vitrine expositora congelada V.4','S'],
+    ['Vitrine expositora congelada V.5','S'],['Bancada refrigerada R.1','S'],
+    ['Refrigerador vertical R.2','S'],['Bancada refrigerada R.3','S'],
+    ['Forno para aquecer','S'],['Forno para assar','S'],['Máquina de gelo','S'],
+    ['Máquina de produzir casquinha','S'],['Máquina de cascata 01','S'],
+    ['Máquina de cascata 02','S'],['Armário aéreo de embalagens','S'],
+    ['Máquina de café','S'],['Máquina de expresso','S'],['Armário aéreo de cafés','S'],
+  ]),
+  higSetor('dd417b7f-9d54-4cc1-9b68-37110fa7c8b1','pks-deposito-bebidas','Depósito de Bebidas (PKS)',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Prateleiras','S'],
+  ]),
+  higSetor('967f8fa0-2b2b-44ec-b5c3-715b4e919b4e','pks-producao-quente','Produção Quente (PKS)',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Ralo','S'],
+    ['Bancada refrigerada R.4','S'],['Pista fria P.1','S'],['Forno','S'],
+    ['Fatiadora','S'],['Armário inox','S'],['Bancada de manipulação','S'],
+  ]),
+  higSetor('2f934bf9-2ce6-4289-91af-356c2814c5ff','pks-producao-gelatos','Produção de Gelatos (PKS)',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Ralo','S'],
+    ['Freezer inox vertical F.1','Q'],['Freezer branco vertical F.2','Q'],
+    ['Refrigerador vertical R.5','S'],['Ultracongelador','S'],
+    ['Máquina de produzir gelados','S'],['Máquina de produzir base','S'],
+    ['Prateleira estoque','S'],['Bancada refrigerada R.6','S'],
+    ['Caixa de gordura','X'],
+    ['Mixer industrial','S'],['Microondas','S'],['Batedeira','S'],
+    ['Liquidificador','S'],['Prateleiras','S'],
+  ]),
+  higSetor('bb408061-c58e-48fa-89bb-69c1ab4dda55','pks-hig-utensilios','Higienização de Utensílios (PKS)',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Máquina de lavar pratos','M'],
+    ['Caixa de gordura','S'],['Prateleira','S'],
+  ]),
+  higSetor('4b86b911-bba3-46e1-8932-06f97c882a11','pks-dml','DML (PKS)',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Prateleiras','S'],['Escada','S'],
+  ]),
+  higSetor('f0d6d0ae-85b3-4d80-94c2-e6f420fb7b79','pks-copa','Copa (PKS)',[
+    ['Piso','S'],['Parede','M'],['Teto','M'],['Armário dos colaboradores','S'],
+  ]),
+];
+
+const TPL_TERRACO_HIG = [
+  higSetor('931375d4-fb1a-49bd-8b43-79258f41eda5','ter-apoio-atendimento','Apoio Atendimento (Terraço)',[
+    ['Piso e escada','S'],['Paredes','S'],['Ralo','M'],['Forno pizza','S'],
+    ['Prateleiras','S'],['Moedor de café 1','S'],['Moedor de café 2','S'],
+    ['Bancada refrigerada R.1','S'],['Bancada refrigerada R.2','S'],['Lixeiras','S'],
+    ['Vitrine V.1','S'],['Vitrine V.2','S'],['Vitrine V.3','S'],['Vitrine V.4','S'],
+    ['Armários','S'],['Porta','S'],['Freezer vertical F.2','Q'],['Caixa de gordura','S'],
+  ]),
+  higSetor('e4e15574-d6de-476c-ac23-e425093bfd32','ter-area-producao','Área de Produção (Terraço)',[
+    ['Piso e escada','S'],['Paredes','S'],['Ralo','M'],['Porta','S'],['Teto','M'],
+    ['Microondas','S'],['Batedeira','S'],['Prateleiras','S'],['Lixeiras','Q'],
+    ['Caixa de gordura','S'],['Bancadas','S'],['Freezer F.1','Q'],
+    ['Refrigerador R.2','S'],['Refrigerador R.3','S'],['Refrigerador R.4','S'],
+    ['Depósito','S'],
+  ]),
+];
+
+// ─── Planilhas de OCORRÊNCIA (28/08) ────────────────────────────────────────
+// Utensílio novo que chegou, alimento que estragou, prato que quebrou. A RT:
+// "não precisa ter tempo... será cadastrado sempre que o setor receber algo
+// novo".
+//
+// O app só tem períodos FECHADOS (diária a semestral), e a frequência decide
+// de quanto em quanto tempo a folha cobra pendência. Semestral foi a escolha
+// dela e é a menos ruidosa — a CASA DOCE já opera com 95 alertas ativos, e
+// mais cobrança falsa faz a equipe parar de olhar pro sino. A RT pode mudar
+// sozinha em Planilhas → Organizar se algum setor precisar de mais espaço.
+//
+// Como cabe UM registro por folha e a folha é semestral, cada uma traz 6
+// blocos de ocorrência. Só o PRIMEIRO tem `date_sig` + `number`, que
+// completionPct conta; do 2º em diante tudo é `text`, que ele ignora de
+// propósito (linha 593). Sem isso a folha nasceria "17% preenchida" pra sempre
+// e nunca deixaria confirmar — e uma ocorrência só é preenchimento completo.
+const blocosOcorrencia = (slug, colunas, blocos = 6) => {
+  const secoes = [];
+  for (let i = 1; i <= blocos; i++) {
+    const primeiro = i === 1;
+    secoes.push({
+      id: `${slug}-oc${i}`,
+      title: primeiro ? 'Ocorrência 1' : `Ocorrência ${i} (se houver)`,
+      fields: [
+        primeiro
+          ? { id:`${slug}-oc${i}-data`, label:'Data', type:'date_sig' }
+          : { id:`${slug}-oc${i}-data`, label:'Data', type:'text', hint:'dd/mm' },
+        ...colunas.map(([campo, rotulo, dica]) => (
+          // `quantidade` do 1º bloco é `number` (entra no percentual junto da
+          // data); nos demais vira texto, senão cada bloco vazio derrubaria a
+          // folha inteira pra "incompleta".
+          campo === 'qtd' && primeiro
+            ? { id:`${slug}-oc${i}-qtd`, label:rotulo, type:'number', hint:dica ?? null }
+            : { id:`${slug}-oc${i}-${campo}`, label:rotulo, type:'text', hint:dica ?? null }
+        )),
+      ],
+    });
+  }
+  return secoes;
+};
+
+const folhaOcorrencia = (uuid, slug, titulo, descricao, colunas) => (setores) => ({
+  id:uuid, category:'faxina', frequency:'semiannual', v:1, scopeBy:`${slug}-setor`,
+  title:titulo,
+  description:descricao,
+  sections:[
+    { id:`${slug}-cab`, title:'Identificação', fields:[
+      { id:`${slug}-setor`, label:'Setor', type:'select', options:setores },
+    ]},
+    ...blocosOcorrencia(slug, colunas),
+  ],
+});
+
+const TPL_OC_UTENSILIOS_NOVOS = folhaOcorrencia(
+  '8a61fcbc-ec79-4033-9f4f-ac3c918aa7a4', 'oc-uten',
+  'Recebimento de Novos Utensílios',
+  'Registre sempre que o setor receber utensílio novo — pratos, vasilhas, talheres. Sem período fixo: preencha quando acontecer.',
+  [['prod','Produto','Ex.: pratos de sobremesa'], ['qtd','Quantidade'], ['resp','Recebido por']],
+);
+
+const TPL_OC_DESPERDICIOS = folhaOcorrencia(
+  '010fde15-7bb4-4efa-8bd0-ff59711f719c', 'oc-desp',
+  'Controle de Desperdícios (Alimentos)',
+  'Registre sempre que um alimento for descartado — estragou, caiu no chão, mofou. Sem período fixo: preencha quando acontecer.',
+  [['prod','Produto'], ['qtd','Quantidade'], ['motivo','Motivo','Ex.: caiu no chão, mofou'], ['resp','Responsável']],
+);
+
+const TPL_OC_PERDAS = folhaOcorrencia(
+  '61aa3bc2-15e6-43b9-b5e4-2adf71a38fe4', 'oc-perd',
+  'Controle de Perdas (Utensílios)',
+  'Registre sempre que um utensílio for perdido ou quebrado — pratos, copos, xícaras. Sem período fixo: preencha quando acontecer.',
+  [['prod','Produto'], ['qtd','Quantidade'], ['resp','Responsável']],
+);
+
+// As três valem pras três lojas (pedido explícito da RT), cada uma com a lista
+// de setores da sua loja.
+const TPL_OCORRENCIAS = (setores) => [
+  TPL_OC_UTENSILIOS_NOVOS(setores), TPL_OC_DESPERDICIOS(setores), TPL_OC_PERDAS(setores),
+];
+
 function seedTemplates(tenant) {
   const id = (tenant.id ?? '').toLowerCase();
   const name = (tenant.name ?? '').toLowerCase();
@@ -1691,11 +1849,28 @@ function seedTemplates(tenant) {
   if (id.includes('swiss'))                          return [TPL_HIGIENE_PESSOAL(), TPL_VETORES('C=Cozinha D=Distribuição S=Salão E=Externa'), TPL_DEDETIZACAO(), TPL_FAXINA_SWISS(), TPL_RESERVATORIO(tenant.id)];
   if (id.includes('backerei')||id.includes('bäck')) return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_FAXINA_BACKEREI(), TPL_POTABILIDADE(), TPL_RESERVATORIO(tenant.id)];
   if (id.includes('dbk'))                            return [TPL_FAXINA_DBK(), TPL_MANUTENCAO_DBK(), TPL_VETORES(), TPL_RESERVATORIO(tenant.id)];
+  // ⚠️ A ORDEM IMPORTA: PKS e Terraço vêm ANTES da CASA DOCE. Os dois se
+  // chamam "FABRIZZIO ..." hoje, mas se algum dia forem renomeados pra
+  // "CASA DOCE — ParkShopping" (era o nome planejado), o `name.includes('casa
+  // doce')` abaixo os capturaria e eles herdariam as 21 folhas da matriz.
+  if (name.includes('pks') || name.includes('parkshopping') || name.includes('park shopping')) return [
+    TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_RESERVATORIO(tenant.id),
+    TPL_CD_HORTIFRUTI(['Produção quente']),
+    ...TPL_PKS_HIG.map((mk) => mk()),
+    ...TPL_OCORRENCIAS(PKS_SETORES),
+  ];
+  if (name.includes('terraço') || name.includes('terraco')) return [
+    TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_RESERVATORIO(tenant.id),
+    TPL_CD_HORTIFRUTI(['Área de produção']),
+    ...TPL_TERRACO_HIG.map((mk) => mk()),
+    ...TPL_OCORRENCIAS(TERRACO_SETORES),
+  ];
   if (id.includes('bf245c3b') || name.includes('casa doce')) return [
     TPL_CASADOCE_BANHEIROS(), TPL_CD_HORTIFRUTI(), TPL_CD_FILTRO_CAFE(), TPL_CD_RESIDUOS(),
     TPL_CD_CARRINHOS(), TPL_CD_CLIMATIZACAO(), TPL_CD_MANUT_PROG(), TPL_CD_CALIBRACAO(),
     TPL_CD_HIGIENE(), TPL_CD_VETORES(), TPL_CD_DEDETIZACAO(), TPL_RESERVATORIO(tenant.id),
     ...TPL_CD_HIG.map((mk) => mk()),
+    ...TPL_OCORRENCIAS(CD_SETORES_EQUIPE),
   ];
   return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_RESERVATORIO(tenant.id)];
 }

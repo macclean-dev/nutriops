@@ -35,6 +35,12 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.232', date: '2026-09-05', items: [
+    'Planilhas de higienização do PKS (7 setores) e do Terraço (2 setores), transcritas dos PDFs da nutricionista tarefa a tarefa, com o período de cada uma — semanal, quinzenal ou mensal, como está no papel.',
+    'Higienização de Hortifrutícolas agora vale para as três lojas. No PKS o setor é Produção quente e no Terraço é Área de produção; na CASA DOCE continua com os 12 setores de sempre.',
+    'Três planilhas novas para as três lojas: Recebimento de Novos Utensílios, Controle de Desperdícios (Alimentos) e Controle de Perdas (Utensílios). São preenchidas quando acontece — cada folha tem espaço para 6 ocorrências por setor, e uma ocorrência já conta como folha completa.',
+    'Essas três vêm como semestrais para não virarem cobrança de todo mês por algo que só se registra quando quebra ou estraga. Dá para mudar a frequência em Planilhas → Organizar.',
+  ]},
   { version: '1.9.231', date: '2026-08-28', items: [
     'Trocar de empresa no seletor do topo enquanto você edita alguém sempre limpou o formulário — o que é proposital, porque salvar depois gravaria a pessoa na empresa errada. O que faltava era dizer isso: agora aparece um aviso com o nome de quem estava sendo editado, o motivo, e o caminho certo — o botão "Mover" na linha da pessoa.',
   ]},

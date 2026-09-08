@@ -6,6 +6,41 @@
 
 ---
 
+## `vercel.json` não aceita comentário (08/09/2026)
+
+A landing legada foi apagada na v1.9.236 e a URL antiga
+(`nutriops.uniwares.net/landing-nutriops.html`) passou a redirecionar com 308
+para `www.uniwares.net/nutriops/landing` — a landing de verdade, que vive noutro
+projeto. O redirect existe pra quem tem o link salvo não cair em 404 e pro
+buscador transferir a relevância em vez de perdê-la.
+
+**O que deu errado:** essa explicação foi escrita como uma chave `"//"` dentro do
+próprio `vercel.json`. A Vercel valida o arquivo contra um schema fechado e
+recusa o deploy inteiro:
+
+    The `vercel.json` schema validation failed with the following message:
+    should NOT have additional property `//`
+
+O deploy falha **antes de buildar** (0ms, sem log de build), então parece que
+"nada aconteceu": o push vai, o commit está lá, e a produção continua servindo a
+versão anterior em silêncio. Ficou assim de 05/09 a 08/09 — três dias e dois
+deploys perdidos, incluindo a correção do cadastro de equipamentos (v1.9.237),
+que ninguém recebeu.
+
+**Regra:** `vercel.json` é JSON estrito com schema fechado — nada de comentário,
+nada de chave "extra" pra documentar. Explicação vai pra cá. `src/vercel-config.test.js`
+trava isso.
+
+**Como conferir um deploy que não apareceu em produção:**
+
+    npx vercel ls nutriops                    # status de cada deploy
+    npx vercel inspect <url-do-deploy>        # id do deployment
+    # e o motivo do erro, que o `inspect` não mostra:
+    curl -s -H "Authorization: Bearer $TOKEN" \
+      https://api.vercel.com/v13/deployments/<dpl_id> | jq .errorMessage
+
+---
+
 ## Épico Auth + RLS (concluído 19/07/2026)
 
 **As 8 tabelas de dados estão com RLS LIGADO e auditadas em produção.**

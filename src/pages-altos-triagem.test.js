@@ -325,11 +325,24 @@ describe('achado 6/7 — tela de Equipamentos relê o catálogo quando o sync te
 
   it('EquipmentView escuta SYNC_EVENT e relê readEquipmentCatalog', () => {
     expect(corpoEquipmentView).toContain('window.addEventListener(SYNC_EVENT, reler);');
-    expect(corpoEquipmentView).toContain('const reler = () => setCatalog(readEquipmentCatalog(activeTenant));');
+    // Ancorado na INTENÇÃO (o listener relê o catálogo), não na forma: desde a
+    // v1.9.237 o `reler` recebe o evento pra poder ignorar o aviso que a
+    // própria tela emitiu — ver catalogo-sem-laco.test.js.
+    const reler = corpoEquipmentView.indexOf('const reler =');
+    expect(reler).toBeGreaterThan(-1);
+    expect(corpoEquipmentView.slice(reler)).toContain('setCatalog(readEquipmentCatalog(activeTenant))');
   });
 
   it('não relê com uma edição em andamento (editingIndex) — não troca a lista sob os pés de quem está editando', () => {
-    expect(corpoEquipmentView).toContain('if (editingIndex !== null) return;\n    const reler = () => setCatalog(readEquipmentCatalog(activeTenant));');
+    // A guarda tem que vir ANTES de registrar o listener: é assim que ela
+    // impede a releitura. Testar só a presença dela não provaria nada.
+    const guarda = corpoEquipmentView.indexOf('if (editingIndex !== null) return;');
+    const listener = corpoEquipmentView.indexOf('window.addEventListener(SYNC_EVENT, reler);');
+    expect(guarda).toBeGreaterThan(-1);
+    expect(listener).toBeGreaterThan(guarda);
+    // A guarda é um `return` do efeito — o listener só é registrado depois
+    // dela. (O `setCatalog` que aparece entre as duas é o CORPO do `reler`,
+    // que só roda se o listener chegar a ser registrado.)
   });
 
   it('retryCatalogSync (o botão "Tentar de novo" do banner) agora avisa outras telas, não só o catalogVersion do App', () => {

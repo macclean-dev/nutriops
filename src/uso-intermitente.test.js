@@ -166,7 +166,14 @@ describe('a Visão geral reflete a marca sem precisar recarregar', () => {
   });
 
   it('não emite no mount — abrir a tela não é mudança', () => {
+    // Desde a v1.9.237 o "é a primeira gravação?" vem da trava anti-laço
+    // (`ultimoGravado` ainda nulo) em vez de um ref próprio. O que importa é
+    // continuar SAINDO antes de avisar — ancorado nisso, não na forma.
     const ini = pages.indexOf('writeEquipmentCatalog(activeTenant.id, catalog);');
-    expect(pages.slice(ini, ini + 900)).toContain('if (primeiraGravacao.current)');
+    const corpo = pages.slice(ini, ini + 900);
+    const saida = corpo.search(/if \(primeiraGravacao\)\s*return;/);
+    const aviso = corpo.indexOf('notificarSyncAplicado(');
+    expect(saida, 'voltou a avisar no mount').toBeGreaterThan(-1);
+    expect(aviso).toBeGreaterThan(saida);
   });
 });

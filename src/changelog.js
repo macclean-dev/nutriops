@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.237', date: '2026-09-08', items: [
+    { text: 'Corrigido: cadastrar equipamento não salvava. Você preenchia nome, setor e faixa, clicava em Adicionar e o equipamento simplesmente não entrava na lista — sem nenhuma mensagem de erro. Era um defeito nosso, introduzido na versão anterior. Quem ficou no meio do cadastro pode continuar de onde parou: nada do que já tinha sido salvo se perdeu.', path: 'Equipamentos → Cadastrar equipamento' },
+  ]},
   { version: '1.9.235', date: '2026-09-05', items: [
     { text: 'Corrigido o nome da planilha "Higiene Pessoal dos Colaboradors" — faltava o "e" em Colaboradores. O erro estava lá desde o começo e aparecia em todas as lojas. A planilha é a mesma: o histórico já preenchido continua nela, nada foi duplicado nem recomeçado.', path: 'Planilhas BPF → Higiene Pessoal' },
   ]},

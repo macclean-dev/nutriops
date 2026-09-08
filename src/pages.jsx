@@ -1491,19 +1491,31 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
     setSearch('');
     resetForm();
   }, [activeTenant.id]);
-  const primeiraGravacao = useRef(true);
+  // O que já está gravado, em texto. Serve de trava: gravar/avisar só quando o
+  // catálogo REALMENTE mudou. Sem isso o aviso lá de baixo volta pra ESTA tela
+  // (o efeito seguinte ouve SYNC_EVENT), que relê o localStorage, monta um
+  // array NOVO, dispara este efeito de novo, avisa de novo — laço infinito. O
+  // React derruba com "Maximum update depth exceeded" e DESCARTA a gravação:
+  // o equipamento sumia sem nenhuma mensagem na tela. Foi o "coloco todas as
+  // informações e no momento de salvar não salva" do Terraço (08/09), causado
+  // pela v1.9.233 — antes dela esta tela não emitia nada.
+  const ultimoGravado = useRef(null);
   useEffect(() => {
     // Troca de loja em andamento (catalog ainda é da loja anterior) → não grava.
     if (catalogTenant !== activeTenant.id) return;
+    const agora = JSON.stringify(catalog);
+    if (ultimoGravado.current === agora) return;
+    const primeiraGravacao = ultimoGravado.current === null;
+    ultimoGravado.current = agora;
     writeEquipmentCatalog(activeTenant.id, catalog);
     // Avisa as outras telas DEPOIS de gravar — a Visão geral relê o catálogo do
     // localStorage quando ouve isto. Emitir lá do `saveItem` não funcionava: o
     // handler roda ANTES deste efeito, então quem ouvia lia o catálogo VELHO e
     // nada mudava na tela. Achado testando o "só liga quando em uso" (05/09).
     //
-    // O `primeiraGravacao` pula o disparo do mount: sem ele, abrir a tela de
+    // `primeiraGravacao` pula o disparo do mount: sem ele, abrir a tela de
     // Equipamentos já emitia um evento que não corresponde a mudança nenhuma.
-    if (primeiraGravacao.current) { primeiraGravacao.current = false; return; }
+    if (primeiraGravacao) return;
     notificarSyncAplicado({ tenantId: activeTenant.id, trigger: 'edicao-equipamento' });
   }, [activeTenant.id, catalogTenant, catalog]);
   // Relê quando o sync (automático ou o "Tentar de novo" do banner âmbar)
@@ -1518,7 +1530,13 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
   // equipamento. Achado da auditoria (18/08).
   useEffect(() => {
     if (editingIndex !== null) return;
-    const reler = () => setCatalog(readEquipmentCatalog(activeTenant));
+    const reler = (ev) => {
+      // Não reagir ao aviso que esta própria tela acabou de emitir: o catálogo
+      // que ele anuncia é exatamente o que já está aqui na mão. Ver o laço
+      // descrito no efeito de cima.
+      if (ev?.detail?.trigger === 'edicao-equipamento') return;
+      setCatalog(readEquipmentCatalog(activeTenant));
+    };
     window.addEventListener(SYNC_EVENT, reler);
     return () => window.removeEventListener(SYNC_EVENT, reler);
   }, [activeTenant, editingIndex]);

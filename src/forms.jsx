@@ -590,26 +590,43 @@ export function quickSign(currentName) {
   return { date: getPeriodKey('daily'), sig: (currentName ?? '').trim() };
 }
 
+// Um campo conta como preenchido? `checkbox` só marcado; objeto vale pela
+// assinatura (date/sig), pela leitura detectada ou pelo caminho da foto no
+// Storage ({ path, at } — ver PhotoField).
+function campoPreenchido(field, v) {
+  if (field.type==='checkbox') return v===true;
+  if (v===undefined || v===null || v==='') return false;
+  if (typeof v==='object') return Boolean(v.date || v.sig || v.detected!==undefined || v.path);
+  return true;
+}
+
 export function completionPct(template, record, now = new Date()) {
   if (!record) return 0;
-  let total=0, filled=0;
+  // Tarefa com frequência própria mais espaçada (item 13) — "Paredes
+  // (trimestral)" numa planilha semanal não conta contra o total nas semanas
+  // em que não é devida, senão a planilha nunca bateria 100%.
+  const devidos = [];
   for (const sec of template.sections) {
     for (const field of sec.fields) {
-      // text e photo não entram no percentual: observação e evidência são
-      // opcionais por natureza. Contar a foto deixaria a planilha eternamente
-      // "incompleta" nos dias em que não houve nada pra fotografar.
-      if (field.type==='text' || field.type==='photo') continue;
-      // Tarefa com frequência própria mais espaçada (item 13) — "Paredes
-      // (trimestral)" numa planilha semanal não conta contra o total nas
-      // semanas em que não é devida, senão a planilha nunca bateria 100%.
-      if (!isFieldDue(field, template.frequency, now)) continue;
-      total++;
-      const v = record.responses?.[field.id];
-      if (field.type==='checkbox') { if (v===true) filled++; continue; } // só marcado conta
-      if (v!==undefined && v!==null && v!=='') { if (typeof v==='object' ? (v.date||v.sig||v.detected!==undefined) : v!=='') filled++; }
+      if (isFieldDue(field, template.frequency, now)) devidos.push(field);
     }
   }
-  return total>0 ? Math.round((filled/total)*100) : 0;
+  // text e photo não entram no percentual: observação e evidência são
+  // opcionais por natureza. Contar a foto deixaria a planilha eternamente
+  // "incompleta" nos dias em que não houve nada pra fotografar.
+  const tarefas = devidos.filter((f) => f.type!=='text' && f.type!=='photo');
+  // ...MENOS quando não sobra nenhuma. "Controle de Dedetização" é assim:
+  // empresa, data, serviço, produto, certificado e o comprovante — tudo texto
+  // e foto. Sem tarefa nenhuma pra contar, o percentual travava em 0% por mais
+  // que a pessoa preenchesse, e o "Confirmar preenchimento" respondia "a
+  // planilha está 0% preenchida, confirmar mesmo assim?". Relato da RT nas 3
+  // lojas (09/09). Numa planilha dessas o texto e a foto SÃO a tarefa, não um
+  // complemento dela — então contam. `optional:true` tira do total o que é
+  // acessório de verdade (Observações), pra 100% continuar alcançável.
+  const contáveis = tarefas.length > 0 ? tarefas : devidos.filter((f) => f.optional !== true);
+  if (contáveis.length === 0) return 0;
+  const feitos = contáveis.filter((f) => campoPreenchido(f, record.responses?.[f.id])).length;
+  return Math.round((feitos / contáveis.length) * 100);
 }
 
 // Uma NC escrita numa planilha ficava só ali dentro — a Central de
@@ -830,7 +847,7 @@ const TPL_VETORES = (areas='D=Distribuição S=Salão E=Externa') => ({
 // campo novo alcançar quem já roda (readFormTemplates), preservando o id da
 // planilha existente e, com ele, todo o histórico já preenchido.
 const TPL_DEDETIZACAO = () => ({
-  id:uid(), category:'dedetizacao', frequency:'monthly', v:1,
+  id:uid(), category:'dedetizacao', frequency:'monthly', v:2,
   title:'Controle de Dedetização',
   description:'Registrar empresa, data, serviço e produto. Anexar comprovante.',
   sections:[{ id:uid(), title:'Registro do serviço',
@@ -841,7 +858,7 @@ const TPL_DEDETIZACAO = () => ({
       f('Produto utilizado','text'),
       f('Número do certificado','text'),
       f('Comprovante de dedetização (foto ou PDF)','photo'),
-      f('Observações','text'),
+      { ...f('Observações','text'), optional:true },
     ],
   }],
 });
@@ -1265,7 +1282,7 @@ const TPL_CD_VETORES = () => ({
 });
 
 const TPL_CD_DEDETIZACAO = () => ({
-  id:'17ce4089-0e51-48a7-991a-bdde090a33e9', category:'dedetizacao', frequency:'monthly', v:1,
+  id:'17ce4089-0e51-48a7-991a-bdde090a33e9', category:'dedetizacao', frequency:'monthly', v:2,
   title:'Controle de Dedetização',
   description:'Registrar empresa, data, serviço e produto. Anexar comprovante.',
   sections:[{ id:'cd-ded-reg', title:'Registro do serviço', fields:[
@@ -1275,7 +1292,7 @@ const TPL_CD_DEDETIZACAO = () => ({
     { id:'cd-ded-prod', label:'Produto utilizado', type:'text' },
     { id:'cd-ded-cert', label:'Número do certificado', type:'text' },
     { id:'cd-ded-foto', label:'Comprovante de dedetização (foto ou PDF)', type:'photo' },
-    { id:'cd-ded-obs',  label:'Observações', type:'text' },
+    { id:'cd-ded-obs',  label:'Observações', type:'text', optional:true },
   ]}],
 });
 

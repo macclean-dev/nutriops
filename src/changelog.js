@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.240', date: '2026-09-09', items: [
+    { text: 'Corrigido o percentual do "Controle de Dedetização". Por ser uma planilha feita só de campos escritos e do comprovante, ela ficava marcada em 0% mesmo depois de preenchida, e ao confirmar aparecia o aviso de planilha incompleta. Agora o percentual acompanha o preenchimento e a planilha fecha em 100% — o campo Observações é opcional e não segura o fechamento.', path: 'Planilhas BPF → Controle de Dedetização' },
+  ]},
   { version: '1.9.237', date: '2026-09-08', items: [
     { text: 'Corrigido o cadastro de equipamentos: ao preencher nome, setor e faixa e clicar em Adicionar, o equipamento não entrava na lista. Já está funcionando normalmente. Quem parou no meio do cadastro pode continuar de onde estava — nada do que já havia sido salvo se perdeu.', path: 'Equipamentos → Cadastrar equipamento' },
   ]},

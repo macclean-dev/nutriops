@@ -5,6 +5,7 @@ import { ImportTemplateModal } from './import-template-modal';
 import { isFieldDue, dueFields } from './field-frequency';
 import { gravarMesclando, SYNC_EVENT } from './lista-local';
 import { aplicarRenomeacoes } from './renomear-planilha';
+import { unidadePKS, unidadeTerraco } from './modulos-da-loja';
 import { prefsFromProfile, profileWithPrefs, catLabelFor, podeMoverPara, podeEditarTitulo, applyCategoryPrefs, enxugarPrefs, CATEGORIA_COM_COMPORTAMENTO, FREQUENCIAS } from './form-prefs';
 import { readCompanyProfile, saveCompanyProfile } from './settings';
 
@@ -1888,13 +1889,13 @@ function seedTemplates(tenant) {
   // chamam "FABRIZZIO ..." hoje, mas se algum dia forem renomeados pra
   // "CASA DOCE — ParkShopping" (era o nome planejado), o `name.includes('casa
   // doce')` abaixo os capturaria e eles herdariam as 21 folhas da matriz.
-  if (name.includes('pks') || name.includes('parkshopping') || name.includes('park shopping')) return [
+  if (unidadePKS(tenant)) return [
     TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_RESERVATORIO(tenant.id),
     TPL_CD_HORTIFRUTI(['Produção quente']),
     ...TPL_PKS_HIG.map((mk) => mk()),
     ...TPL_OCORRENCIAS(PKS_SETORES),
   ];
-  if (name.includes('terraço') || name.includes('terraco')) return [
+  if (unidadeTerraco(tenant)) return [
     TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_RESERVATORIO(tenant.id),
     TPL_CD_HORTIFRUTI(['Área de produção']),
     ...TPL_TERRACO_HIG.map((mk) => mk()),

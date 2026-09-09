@@ -15,6 +15,7 @@ import { notificarSyncAplicado, gravarMesclando, SYNC_EVENT } from './lista-loca
 // principal só por causa desta tela.
 import { actionSourceKey, pendingTemperatureItems, pendingReceivingItems, pendingControlItems, pendingFormItems, excludeWithAction, CONTROL_TYPES } from './nonconformities';
 import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
+import { viewVisivelNaLoja } from './modulos-da-loja';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
 import { getUnseenEntries, normalizeItem } from './changelog';
@@ -260,7 +261,7 @@ function MobileDrawer({ open, onClose, activeView, setActiveView, session, activ
         {/* Nav items */}
         <div style={{ flex:1, overflowY:'auto', padding:'8px' }}>
           {SECTIONS.map((section, sIdx) => {
-            const visibleItems = section.items.filter(([key]) => canAccess(session?.user?.role, key));
+            const visibleItems = section.items.filter(([key]) => canAccess(session?.user?.role, key) && viewVisivelNaLoja(key, activeTenant));
             if (visibleItems.length === 0) return null;
             return (
               <div key={section.label} style={{ marginTop: sIdx === 0 ? 0 : 10 }}>
@@ -519,7 +520,7 @@ function RailNav({ activeTenant, allTenants, activeView, setActiveView, onTenant
       <div className="rail-menu">
         <div className="rail-menu-list" style={{ padding:'8px 8px 4px' }}>
           {railSections.map((section, sIdx) => {
-            const visibleItems = section.items.filter(([key]) => canAccess(session?.user?.role, key));
+            const visibleItems = section.items.filter(([key]) => canAccess(session?.user?.role, key) && viewVisivelNaLoja(key, activeTenant));
             if (visibleItems.length === 0) return null;
             return (
               <div key={section.label} style={{ marginTop: sIdx === 0 ? 0 : 8 }}>
@@ -2884,7 +2885,7 @@ export function App() {
   // sem vínculo antes de qualquer dado carregar.
   const [activeTenantId, setActiveTenantId] = useState(() => session?.tenantId ?? activeTenants[0]?.id ?? null);
   const [activeStoreId, setActiveStoreId]   = useState(() => session?.storeId ?? null);
-  const [activeView, setActiveView]         = useState('overview');
+  const [activeViewBruta, setActiveView]    = useState('overview');
   const [records, setRecords]               = useState([]);
 
   // Always derive activeTenant from tenants list.
@@ -2920,6 +2921,12 @@ export function App() {
     }
     return activeTenants[0];
   }, [activeTenantId, session?.tenantId, session?._impersonatedName, session?.user?.location, activeTenants]);
+
+  // Loja que não usa um módulo não pode ficar presa na tela dele — quem estava
+  // em "Controles especiais" e troca pro PKS/Terraço cairia numa aba que não
+  // existe mais ali. Derivado no render de propósito (não num efeito): efeito
+  // roda DEPOIS da pintura e a tela errada pisca antes de sumir.
+  const activeView = viewVisivelNaLoja(activeViewBruta, activeTenant) ? activeViewBruta : 'overview';
 
   // Fase 3 — hidrata a empresa do membro no BOOT. A sessão (com tenantId da loja)
   // persiste no localStorage, mas activeTenants é reconstruído das lojas-seed a

@@ -4,6 +4,7 @@
 // Filtragem é feita por matchCommands(query, commands) também aqui.
 
 import { canAccess, getPermissions } from './permissions';
+import { viewVisivelNaLoja } from './modulos-da-loja';
 import { TRAINING_PENDING_TAB_KEY } from './nav';
 
 const RECENT_KEY = 'nutriops.cmdk.recent';
@@ -29,7 +30,10 @@ export function pushRecentCommandId(id) {
 // `ctx` = { session, allTenants, activeTenant }
 export function buildCommands(ctx, callbacks) {
   const role = ctx?.session?.user?.role;
-  const can = (view) => role ? canAccess(role, view) : true;
+  // Módulo que a loja não usa não pode aparecer no Cmd+K: o menu esconde a
+  // aba, mas a busca continuaria sendo uma porta dos fundos pra mesma tela.
+  const can = (view) => (role ? canAccess(role, view) : true)
+    && viewVisivelNaLoja(view, ctx?.activeTenant);
   const cmds = [];
 
   // ─── Navegação ────────────────────────────────────────────────────────────

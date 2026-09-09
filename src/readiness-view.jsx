@@ -16,6 +16,7 @@ import React, { useEffect, useState } from 'react';
 import { resolveRecordTone as resolveTemperatureTone } from './limits';
 import { readTurns } from './turns';
 import { canAccess } from './permissions';
+import { viewVisivelNaLoja } from './modulos-da-loja';
 import { computeTurnAlertsPure } from './turn-alerts';
 import { isSupabaseEnabled, getSyncStatus, getOfflineQueue, getTemperatureRepository } from './repository';
 import {
@@ -126,8 +127,12 @@ async function loadTenantReadiness({ tenant, records, now }) {
   });
 }
 
-function CheckRow({ check, role, onNavigate }) {
-  const podeIr = check.navTarget && canAccess(role, check.navTarget);
+function CheckRow({ check, role, onNavigate, tenantName }) {
+  // Não oferecer "ir para" uma tela que esta loja não tem — botão que leva a
+  // lugar nenhum é pior que botão nenhum. A regra casa pelo NOME da loja
+  // (modulos-da-loja.js), que é o que este card tem em mãos.
+  const podeIr = check.navTarget && canAccess(role, check.navTarget)
+    && viewVisivelNaLoja(check.navTarget, { name: tenantName });
   return (
     <div className="equipment-maintenance-row">
       <div>
@@ -184,7 +189,7 @@ function TenantCard({ result, role, onNavigate }) {
           </div>
           <div className="equipment-maintenance-list">
             {group.checks.map((check) => (
-              <CheckRow key={check.id} check={check} role={role} onNavigate={onNavigate} />
+              <CheckRow key={check.id} check={check} role={role} onNavigate={onNavigate} tenantName={result.tenantName} />
             ))}
           </div>
         </div>

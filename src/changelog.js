@@ -36,7 +36,7 @@ export function normalizeItem(item) {
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
   { version: '1.9.241', date: '2026-09-09', items: [
-    { text: 'A aba "Controles especiais" não aparece mais no PKS e no Terraço. As duas unidades não têm fritadeira e recebem da matriz quase tudo pronto, então não há saturação de óleo, descongelamento, resfriamento nem tratamento térmico para registrar ali. Nas demais lojas nada muda, e nenhum registro já feito foi apagado.', path: 'Controles especiais' },
+    { text: 'A aba "Controles especiais" não aparece mais no PKS e no Terraço. As duas unidades não têm fritadeira e recebem da matriz quase tudo pronto, então não há saturação de óleo, descongelamento, resfriamento nem tratamento térmico para registrar ali. Nas demais lojas nada muda, e nenhum registro já feito foi apagado.', path: 'Menu lateral → Operação' },
   ]},
   { version: '1.9.240', date: '2026-09-09', items: [
     { text: 'Corrigido o percentual do "Controle de Dedetização". Por ser uma planilha feita só de campos escritos e do comprovante, ela ficava marcada em 0% mesmo depois de preenchida, e ao confirmar aparecia o aviso de planilha incompleta. Agora o percentual acompanha o preenchimento e a planilha fecha em 100% — o campo Observações é opcional e não segura o fechamento.', path: 'Planilhas BPF → Controle de Dedetização' },

@@ -206,11 +206,11 @@ describe('achado 3/6 — "Todos" ordena antes de cortar o cache global (JÁ CORR
     expect(cache.filter((r) => r.id?.startsWith?.('casadoce-'))).toHaveLength(50);
   });
 
-  it('fonte: o ramo days<=0 ordena por createdAt e usa MAX_CACHE_RECORDS, não allRows.length', () => {
+  it('fonte: o ramo days<=0 ordena por createdAt e poda o cache global (podarCache), não por allRows.length', () => {
     const fonte = readFileSync(`${process.cwd()}/src/repository.js`, 'utf8');
     // o teto antigo e capenga (Math.max(1000, allRows.length)) não pode sobrar
     expect(fonte).not.toContain('Math.max(1000, allRows.length)');
-    const ocorrencias = (fonte.match(/const porData = merged\.sort\(\(a, b\) => new Date\(b\.createdAt \?\? 0\) - new Date\(a\.createdAt \?\? 0\)\);\n\s*lw\(RECORDS_KEY, porData\.slice\(0, MAX_CACHE_RECORDS\)\);/g) ?? []).length;
+    const ocorrencias = (fonte.match(/const porData = merged\.sort\(\(a, b\) => new Date\(b\.createdAt \?\? 0\) - new Date\(a\.createdAt \?\? 0\)\);\n\s*lw\(RECORDS_KEY, podarCache\(porData\)\);/g) ?? []).length;
     expect(ocorrencias).toBe(2);   // os dois ramos (days>0 e "Todos") usam o MESMO padrão
   });
 });

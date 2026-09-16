@@ -3,6 +3,7 @@
 // Cada módulo tem suas próprias funções de leitura/escrita.
 
 import { writeOpenRules, readRulesUpdatedAt } from './validity-rules';
+import { podarCacheTemperaturas, idsPendentes } from './cache-temperaturas';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -21,6 +22,13 @@ export const STORAGE_FULL_KEY = 'nutriops.storage.full';
 export const lw = (k, v) => {
   try {
     localStorage.setItem(k, JSON.stringify(v));
+    // A chave que tinha falhado voltou a gravar: sobrou espaço. Sem isto a
+    // faixa vermelha ficava pra sempre, mesmo depois de resolvido, e ensinava
+    // a pessoa a ignorar o único aviso que protege contra perda silenciosa.
+    if (k !== STORAGE_FULL_KEY) {
+      const bandeira = localStorage.getItem(STORAGE_FULL_KEY);
+      if (bandeira && JSON.parse(bandeira)?.chave === k) localStorage.removeItem(STORAGE_FULL_KEY);
+    }
     return true;
   } catch (e) {
     console.error(`[repo] FALHA ao gravar ${k} — armazenamento cheio?`, e?.name, e?.message);
@@ -337,12 +345,11 @@ export function mergeByKey(arr, key) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const RECORDS_KEY = 'nutriops.temperature.records';
-// Teto do cache local. É GLOBAL (todas as lojas dividem), então precisa caber
-// o dia inteiro das 4 somadas com folga: a CASA DOCE sozinha faz ~60/dia em 46
-// equipamentos. 1000 era apertado demais e cortava leitura do dia (ver o
-// comentário em supabaseRepository.list). localStorage aguenta ~5MB; um
-// registro de temperatura tem ~300 bytes, então 5000 fica em ~1,5MB.
-const MAX_CACHE_RECORDS = 5000;
+// Teto do cache local: por TAMANHO, não mais por quantidade. A conta antiga
+// ("~300 bytes, 5000 cabem em 1,5MB") estava errada e encheu o Safari em
+// 16/09. Detalhes e o orçamento em cache-temperaturas.js. Leitura ainda na
+// fila offline nunca é podada.
+const podarCache = (lista) => podarCacheTemperaturas(lista, { pendentes: idsPendentes(ls(OFFLINE_Q_KEY, [])) });
 
 // Filtra a lista já mesclada pelo escopo pedido. Existe pra separar duas coisas
 // que estavam grudadas: o TETO DO CACHE (quanto o aparelho guarda) e o QUE A
@@ -404,7 +411,7 @@ function correctionToRow(id, tenantId, patch) {
 // quando o POST ao remoto já passou, pra evitar duplicação na queue.
 function cacheTempLocal(record) {
   const current = ls(RECORDS_KEY, []);
-  lw(RECORDS_KEY, [record, ...current].slice(0, MAX_CACHE_RECORDS));
+  lw(RECORDS_KEY, podarCache([record, ...current]));
   return record;
 }
 
@@ -478,7 +485,7 @@ export const supabaseRepository = {
         // que sobrou no cache local. Sem isso, quem lê meses fora da janela de
         // 90 dias (MonthlyExportView, extras.jsx) não tinha como distinguir
         // "mês sem registro" de "a leitura falhou": o cache local não cobre
-        // mês antigo (é alimentado só pelos últimos MAX_CACHE_RECORDS), então a
+        // mês antigo (é alimentado só pelas leituras mais recentes, ver podarCache), então a
         // falha virava silenciosamente "0 registros" num PDF de fiscalização.
         // Mesmo idioma do `_pending` que create()/update() já usam pra marcar
         // gravação que não confirmou na nuvem. `.map()`/`.flat()` descartam
@@ -503,7 +510,7 @@ export const supabaseRepository = {
       // explica contagens diferentes por aparelho (uma pessoa via 3, outra 6):
       // cada cache sobreviveu a um corte diferente.
       const porData = merged.sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0));
-      lw(RECORDS_KEY, porData.slice(0, MAX_CACHE_RECORDS));   // cache: capado
+      lw(RECORDS_KEY, podarCache(porData));                   // cache: podado por tamanho
       return filtrarEscopo(porData, tenantId, days);          // tela: completo
       // ⚠️ Devolve o MERGE, não só `rows` (CASA DOCE, 17/08). Antes gravava uma
       // coisa e retornava outra: o registro que falhou no POST ficava salvo no
@@ -555,7 +562,7 @@ export const supabaseRepository = {
     //    inteiro em 1000 e decapitava Swiss, Bäckerei e DBK, que não têm nada a
     //    ver com o filtro que a pessoa escolheu.
     const porData = merged.sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0));
-    lw(RECORDS_KEY, porData.slice(0, MAX_CACHE_RECORDS));   // cache: capado
+    lw(RECORDS_KEY, podarCache(porData));                   // cache: podado por tamanho
     return filtrarEscopo(porData, tenantId, days);          // tela: completo
   },
   async create(input) {

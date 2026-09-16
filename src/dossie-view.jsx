@@ -8,6 +8,7 @@
 import React, { useState } from 'react';
 import { resolveRecordTone as resolveTemperatureTone } from './limits';
 import { computeTempStats, computeBpfStats, computeTrainingStats, renderTempRows, renderBpfRows, renderTrainRows } from './reports';
+import { useFiltroDeLoja } from './filtro-loja';
 
 const readActions = (id) => { try { const r = localStorage.getItem(`nutriops.corrective_actions.${id}`); return r ? JSON.parse(r) : []; } catch { return []; } };
 const readReceiving = (id) => { try { const r = localStorage.getItem(`nutriops.receiving.${id}`); return r ? JSON.parse(r) : []; } catch { return []; } };
@@ -94,8 +95,8 @@ export function summarizeDossieRun(requested, opened) {
   return { ok: false, message };
 }
 
-export function DossieView({ allTenants, records, session }) {
-  const [tenantFilter, setTenantFilter] = useState('all');
+export function DossieView({ allTenants, records, session, activeTenant }) {
+  const [tenantFilter, setTenantFilter] = useFiltroDeLoja(activeTenant, allTenants);
   const [periodDays, setPeriodDays] = useState(30);
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState(null);

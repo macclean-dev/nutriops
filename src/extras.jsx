@@ -13,6 +13,7 @@ import { gravarMesclando, SYNC_EVENT } from './lista-local';
 import { resolveRecordTone } from './limits';
 import { employeeTrainingStatus } from './training-status';
 import { computeWeeklySummary, summaryToText } from './weekly-summary';
+import { useFiltroDeLoja } from './filtro-loja';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -732,12 +733,12 @@ export function HandwashView({ activeTenant, allTenants, onTenantChange, session
 // 5. EXPORTAÇÃO MENSAL
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function MonthlyExportView({ allTenants, records, session }) {
+export function MonthlyExportView({ allTenants, records, session, activeTenant }) {
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   });
-  const [tenantFilter, setTenantFilter] = useState('all');
+  const [tenantFilter, setTenantFilter] = useFiltroDeLoja(activeTenant, allTenants);
   const [generating, setGenerating]     = useState(false);
 
   const months = useMemo(() => {

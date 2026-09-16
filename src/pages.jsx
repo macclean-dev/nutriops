@@ -2559,10 +2559,10 @@ function ReportsHub({ activeView, setActiveView, session, allTenants, records, .
       <HubTabs tabs={visibleTabs} current={current} onChange={handleChange} hubLabel="Relatórios" />
       {current === 'dashboard' && <DashboardView {...shared} />}
       {current === 'charts'    && <ChartsView    {...shared} />}
-      {current === 'reports'   && <ReportsView   allTenants={allTenants} records={records} />}
-      {current === 'monthly'   && <MonthlyExportView allTenants={allTenants} records={records} session={session} />}
-      {current === 'audit'     && <AuditView     allTenants={allTenants} records={records} session={session} onRecordSaved={rest.onRecordSaved} />}
-      {current === 'dossie'    && <DossieView    allTenants={allTenants} records={records} session={session} />}
+      {current === 'reports'   && <ReportsView   allTenants={allTenants} records={records} activeTenant={rest.activeTenant} />}
+      {current === 'monthly'   && <MonthlyExportView allTenants={allTenants} records={records} session={session} activeTenant={rest.activeTenant} />}
+      {current === 'audit'     && <AuditView     allTenants={allTenants} records={records} session={session} onRecordSaved={rest.onRecordSaved} activeTenant={rest.activeTenant} />}
+      {current === 'dossie'    && <DossieView    allTenants={allTenants} records={records} session={session} activeTenant={rest.activeTenant} />}
     </>
   );
 }
@@ -3783,7 +3783,7 @@ export function App() {
               allTenants={visibleTenants} records={records} session={session} onRecordSaved={handleRecordSaved} {...sharedProps} />
           )}
 
-          {activeView === 'readiness'  && <ReadinessView allTenants={visibleTenants} records={records} session={session} onNavigate={setActiveView} />}
+          {activeView === 'readiness'  && <ReadinessView allTenants={visibleTenants} records={records} session={session} onNavigate={setActiveView} activeTenant={activeTenant} />}
           {activeView === 'alerts'     && <AlertsView {...sharedProps} records={records} onAlertsChanged={() => setAlertsTick(t => t + 1)} />}
           {activeView === 'actions'    && <CorrectiveActionsView {...sharedProps} records={records} />}
           {activeView === 'rtpanel'    && <RTPanelView allTenants={visibleTenants} records={records} session={session} />}

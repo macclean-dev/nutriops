@@ -201,7 +201,7 @@ describe('extras.jsx — anyFromCache agrega o sinal de _fromCache de vários te
 });
 
 describe('extras.jsx — MonthlyExportView lê o sinal de _fromCache e avisa (fonte)', () => {
-  const ini = fonteExtras.indexOf('export function MonthlyExportView({ allTenants, records, session }) {');
+  const ini = fonteExtras.indexOf('export function MonthlyExportView({ allTenants, records, session');
   const fim = fonteExtras.indexOf('export function accessLogToCsv', ini);
   const corpo = fonteExtras.slice(ini, fim);
 

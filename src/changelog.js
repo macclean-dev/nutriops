@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.244', date: '2026-09-16', items: [
+    { text: 'Relatórios, Exportação mensal, Auditoria, Dossiê Fiscal e Prontidão agora abrem na loja escolhida no menu e acompanham a troca de loja. Antes começavam sempre em "Todas as empresas". Para ver todas juntas, basta escolher "Todas as empresas" no filtro do topo da tela.', path: 'Relatórios → filtro de empresa' },
+  ]},
   { version: '1.9.241', date: '2026-09-09', items: [
     { text: 'A aba "Controles especiais" não aparece mais no PKS e no Terraço. As duas unidades não têm fritadeira e recebem da matriz quase tudo pronto, então não há saturação de óleo, descongelamento, resfriamento nem tratamento térmico para registrar ali. Nas demais lojas nada muda, e nenhum registro já feito foi apagado.', path: 'Menu lateral → Operação' },
   ]},

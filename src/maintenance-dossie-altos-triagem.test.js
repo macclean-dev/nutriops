@@ -397,12 +397,13 @@ describe('dossie-view.jsx — Família B: dossiê avisa quando gerado neste apar
 
   it('fonte (dossie-view.jsx): session chega em generateTenantDossier, em DossieView, e é repassado no loop de geração', () => {
     expect(fonteDossieView).toContain('async function generateTenantDossier({ tenant, records, periodDays, periodLabel, session })');
-    expect(fonteDossieView).toContain('export function DossieView({ allTenants, records, session })');
+    // ancorado na intenção (session chega na tela), não na lista exata de props
+    expect(fonteDossieView).toMatch(/export function DossieView\(\{ allTenants, records, session[,}]/);
     expect(fonteDossieView).toContain('generateTenantDossier({ tenant, records, periodDays, periodLabel, session })');
   });
 
   it('fonte (pages.jsx): o hub de Relatórios passa session pro DossieView — sem isso session? sempre seria undefined e o aviso nunca apareceria', () => {
-    expect(fontePages).toContain('<DossieView    allTenants={allTenants} records={records} session={session} />');
+    expect(fontePages).toMatch(/<DossieView    allTenants=\{allTenants\} records=\{records\} session=\{session\}[ />]/);
   });
 
   it('mecanismo: mesma condição usada de fato no código, testada com os valores do caminho do achado', () => {

@@ -4,6 +4,7 @@ import { readFormRecords, readFormTemplates, catMeta, formatPeriodLabel, getPeri
 import { readSessions } from './training';
 import { resolveRecordTone as resolveTemperatureTone } from './limits';
 import { employeeTrainingStatus } from './training-status';
+import { useFiltroDeLoja } from './filtro-loja';
 
 function formatDate(iso) {
   try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return iso; }
@@ -465,9 +466,9 @@ function generateFiscalPDF({ tenant, periodLabel, tempStats, bpfStats, trainingS
 
 // ─── Main Reports View ─────────────────────────────────────────────────────
 
-export function ReportsView({ allTenants, records }) {
+export function ReportsView({ allTenants, records, activeTenant }) {
   const [tab,          setTab]          = useState('temperature');
-  const [tenantFilter, setTenantFilter] = useState('all');
+  const [tenantFilter, setTenantFilter] = useFiltroDeLoja(activeTenant, allTenants);
   const [periodDays,   setPeriodDays]   = useState(30);
 
   const periodLabel = { 7:'Últimos 7 dias', 30:'Últimos 30 dias', 90:'Últimos 90 dias' }[periodDays] ?? `${periodDays} dias`;

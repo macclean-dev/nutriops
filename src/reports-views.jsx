@@ -4,6 +4,7 @@ import { getTemperatureRepository, pushRtValidation, mergeByKey } from './reposi
 import { resolveLimits as resolveLimitsFromCatalog, resolveRecordTone as resolveTemperatureTone, conformityStats, byWorstConformity, parseTemperatura, recordBelongsTo } from './limits';
 import { employeeTrainingStatus } from './training-status';
 import CountUp from './count-up';
+import { useFiltroDeLoja } from './filtro-loja';
 
 const EquipmentDetailModal = lazy(() => import('./equipment-detail').then(m => ({ default: m.EquipmentDetailModal })));
 
@@ -578,9 +579,9 @@ export function visibleRtValidations(rtValidations, tenantFilter) {
   return [...porTenant.values()].sort((a, b) => new Date(b.at) - new Date(a.at));
 }
 
-export function AuditView({ allTenants, records, session, onRecordSaved }) {
+export function AuditView({ allTenants, records, session, onRecordSaved, activeTenant }) {
   const repository = useMemo(() => getTemperatureRepository(), []);
-  const [tenantFilter, setTenantFilter] = useState('all');
+  const [tenantFilter, setTenantFilter] = useFiltroDeLoja(activeTenant, allTenants);
   const [periodFilter, setPeriodFilter] = useState('30');
   const [statusFilter, setStatusFilter] = useState('all');
   const [equipFilter,  setEquipFilter]  = useState('');

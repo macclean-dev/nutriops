@@ -19,6 +19,7 @@ import { canAccess } from './permissions';
 import { viewVisivelNaLoja } from './modulos-da-loja';
 import { computeTurnAlertsPure } from './turn-alerts';
 import { isSupabaseEnabled, getSyncStatus, getOfflineQueue, getTemperatureRepository } from './repository';
+import { useFiltroDeLoja } from './filtro-loja';
 import {
   computeReadiness, byWorstStatus, READINESS_DEFAULTS,
   VERDICT_LABEL, VERDICT_TONE, STATUS_LABEL, STATUS_TONE,
@@ -209,8 +210,8 @@ function TenantCard({ result, role, onNavigate }) {
   );
 }
 
-export function ReadinessView({ allTenants = [], records = [], session, onNavigate }) {
-  const [tenantFilter, setTenantFilter] = useState('all');
+export function ReadinessView({ allTenants = [], records = [], session, onNavigate, activeTenant }) {
+  const [tenantFilter, setTenantFilter] = useFiltroDeLoja(activeTenant, allTenants);
   const [results, setResults] = useState(null);
   const [erro, setErro] = useState(null);
   const [tick, setTick] = useState(0);   // botão "Atualizar" força recálculo

@@ -1263,10 +1263,15 @@ export async function pushAllStaff(tenantId, staff) {
 // RECEIVING RECORDS
 // ═══════════════════════════════════════════════════════════════════════════
 
+// fornecedor/nf/quantidade/conservacao saíram do formulário (21/09), mas as
+// colunas continuam existindo e sendo lidas/gravadas aqui: registro ANTIGO
+// tem esses campos preenchidos, e apagar a coluna apagaria evidência de
+// recebimento já registrada. Registro novo simplesmente manda `undefined`
+// pra elas, e vira null na linha, sem quebrar nada. `hora` é o campo novo.
 function recvToRow(r) {
   return {
     id: r.id, tenant_id: r.tenantId, fornecedor: r.fornecedor, nf: r.nf, produto: r.produto,
-    quantidade: r.quantidade, validade: r.validade, temperatura: r.temperatura,
+    quantidade: r.quantidade, validade: r.validade, hora: r.hora ?? null, temperatura: r.temperatura,
     conservacao: r.conservacao ?? null,
     checks: r.checks, resultado: r.resultado, motivo_rejeicao: r.motivoRejeicao, obs: r.obs,
     user_name: r.user, role: r.role, created_at: r.createdAt,
@@ -1275,7 +1280,7 @@ function recvToRow(r) {
 function recvFromRow(row) {
   return {
     id: row.id, tenantId: row.tenant_id, fornecedor: row.fornecedor, nf: row.nf, produto: row.produto,
-    quantidade: row.quantidade, validade: row.validade, temperatura: row.temperatura,
+    quantidade: row.quantidade, validade: row.validade, hora: row.hora, temperatura: row.temperatura,
     conservacao: row.conservacao,
     checks: row.checks, resultado: row.resultado, motivoRejeicao: row.motivo_rejeicao, obs: row.obs,
     user: row.user_name, role: row.role, createdAt: row.created_at,
@@ -2275,7 +2280,7 @@ create index if not exists idx_staff_tenant on tenant_staff(tenant_id);
 create table if not exists receiving_records (
   id uuid primary key default gen_random_uuid(),
   tenant_id text not null, fornecedor text, nf text, produto text,
-  quantidade text, validade text, temperatura text, conservacao text,
+  quantidade text, validade text, hora text, temperatura text, conservacao text,
   checks jsonb, resultado text, motivo_rejeicao text, obs text,
   user_name text, role text, created_at timestamptz default now()
 );

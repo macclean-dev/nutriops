@@ -192,7 +192,9 @@ describe('achado 3/7 — "Criar ação corretiva" não faz mais nada em silênci
   });
 
   it('RecebimentoView (o padrão citado pelo achado) também amarra disabled às obrigatoriedades — confirma que é o mesmo idioma usado em duas telas agora', () => {
-    expect(fonte).toContain("disabled={!fornecedor.trim() || !produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim()) || saving}");
+    // Formulário simplificado (21/09) tirou Fornecedor da obrigatoriedade.
+    // Ancorado no que sobrou (produto/resultado/motivo), não na string exata.
+    expect(fonte).toContain("disabled={!produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim()) || saving}");
   });
 });
 

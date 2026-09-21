@@ -1827,24 +1827,30 @@ const recStorageKey = (id) => `nutriops.receiving.${id}`;
 const recLoad = (id) => { try { const r = localStorage.getItem(recStorageKey(id)); return r ? JSON.parse(r) : []; } catch { return []; } };
 const recSave = (id, v) => { try { localStorage.setItem(recStorageKey(id), JSON.stringify(v)); } catch {} };
 
+// Pedido da nutricionista da CASA DOCE (21/09): "deixar mais simples e
+// prática" - só 3 verificações, as que dá pra checar olhando a mercadoria na
+// hora do recebimento. As 3 que saíram (veículo, higiene do entregador,
+// "temperatura dentro do esperado") exigiam avaliar coisa que o formulário já
+// não tinha como confirmar (o veículo já foi embora) ou duplicavam o campo
+// Temperatura, que virou pergunta objetiva em vez de C/NC. Pedido global, vale
+// pras mesmas 4+ lojas que já usam esta tela (Swiss, Bäckerei, DBK e a
+// família CASA DOCE), não é personalização por loja.
 const RECEIVING_CHECKS = [
-  { id: 'embalagem',   label: 'Embalagem íntegra e limpa' },
-  { id: 'rotulagem',   label: 'Rotulagem e validade legíveis' },
-  { id: 'veiculo',     label: 'Veículo de transporte limpo e adequado' },
-  { id: 'entregador',  label: 'Higiene pessoal do entregador' },
-  { id: 'temperatura', label: 'Temperatura dentro do esperado' },
-  { id: 'aparencia',   label: 'Aparência e odor adequados' },
+  { id: 'embalagem',  label: 'Embalagem íntegra e limpa' },
+  { id: 'rotulagem',  label: 'Rotulagem e validade legíveis' },
+  { id: 'aparencia',  label: 'Aparência e odor adequados' },
 ];
 
 function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) {
   const [items, setItems]           = useState(() => recLoad(activeTenant.id));
-  const [fornecedor, setFornecedor] = useState('');
-  const [nf, setNf]                 = useState('');
   const [produto, setProduto]       = useState('');
-  const [quantidade, setQuantidade] = useState('');
   const [validade, setValidade]     = useState('');
+  // Sem valor padrão de propósito: é a pessoa quem anota a hora real da
+  // chegada, que pode ser diferente da hora em que preenche o registro (mesmo
+  // idioma do "Horário - 1ª leitura" em controls.jsx). Se a gente pré-
+  // preenchesse com "agora", um registro feito com atraso mentiria a hora.
+  const [hora, setHora]             = useState('');
   const [temperatura, setTemperatura] = useState('');
-  const [conservacao, setConservacao] = useState('');
   const [checks, setChecks]         = useState({});
   const [resultado, setResultado]   = useState('');
   const [resultadoTouched, setResultadoTouched] = useState(false);
@@ -1881,18 +1887,15 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
   };
 
   const handleSubmit = () => {
-    if (!fornecedor.trim() || !produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim())) return;
+    if (!produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim())) return;
     setSaving(true);
     const record = {
       id: crypto.randomUUID(),
       tenantId: activeTenant.id,
-      fornecedor: fornecedor.trim(),
-      nf: nf.trim(),
       produto: produto.trim(),
-      quantidade: quantidade.trim(),
       validade: validade.trim(),
+      hora: hora.trim(),
       temperatura: temperatura.trim(),
-      conservacao,
       checks,
       resultado,
       motivoRejeicao: motivoObrigatorio ? motivoRejeicao.trim() : '',
@@ -1904,8 +1907,8 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
     setItems((prev) => [record, ...prev].slice(0, 300));
     pushReceivingRecord(activeTenant.id, record);
     // Reset form
-    setFornecedor(''); setNf(''); setProduto(''); setQuantidade('');
-    setValidade(''); setTemperatura(''); setConservacao(''); setChecks({}); setResultado(''); setResultadoTouched(false);
+    setProduto(''); setValidade(''); setHora(''); setTemperatura('');
+    setChecks({}); setResultado(''); setResultadoTouched(false);
     setMotivoRejeicao(''); setObs('');
     setSaving(false); setSaved(true);
     setTimeout(() => setSaved(false), 3000);
@@ -1916,7 +1919,12 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
   const filtered = filter === 'all' ? items : items.filter((r) => r.resultado === filter);
 
   const exportCSV = () => {
-    const cols = ['createdAt','fornecedor','nf','produto','quantidade','validade','temperatura','conservacao','resultado','motivoRejeicao','obs','user'];
+    // Fornecedor/NF/Quantidade/Conservação saíram do formulário (21/09), mas
+    // continuam aqui: registro ANTIGO ainda tem esses campos preenchidos, e o
+    // CSV é extrato de evidência: tirar a coluna apagaria dado real de quem
+    // já registrou antes da mudança. Em registro novo essas células vêm
+    // vazias, o que é o esperado.
+    const cols = ['createdAt','hora','fornecedor','nf','produto','quantidade','validade','temperatura','conservacao','resultado','motivoRejeicao','obs','user'];
     const esc = (v) => `"${String(v??'').replaceAll('"','""')}"`;
     const csv = [cols.join(','), ...items.map((r) => cols.map((k) => esc(r[k])).join(','))].join('\n');
     const blob = new Blob(['\uFEFF'+csv], { type:'text/csv;charset=utf-8' });
@@ -1946,35 +1954,14 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
         <article className="management-card">
           <div className="card-head"><div><span className="eyebrow">Novo registro</span><h2>Registrar recebimento</h2></div></div>
           <div className="capture-fields">
+            <label>Produto<input value={produto} onChange={(e) => setProduto(e.target.value)} placeholder="Descreva o produto recebido" /></label>
             <div className="grid-2">
-              <label>Fornecedor<input value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} placeholder="Nome do fornecedor" /></label>
-              <label>NF / Pedido<input value={nf} onChange={(e) => setNf(e.target.value)} placeholder="Número da nota fiscal" /></label>
-            </div>
-            <label>Produto / Descrição<input value={produto} onChange={(e) => setProduto(e.target.value)} placeholder="Descreva o produto recebido" /></label>
-            <div className="grid-2">
-              <label>Quantidade<input value={quantidade} onChange={(e) => setQuantidade(e.target.value)} placeholder="Ex.: 10 kg, 5 cx" /></label>
               <label>Data de validade<input value={validade} onChange={(e) => setValidade(e.target.value)} placeholder="DD/MM/AAAA" /></label>
+              <label>Hora<input type="time" value={hora} onChange={(e) => setHora(e.target.value)} /></label>
             </div>
             <label>Temperatura na chegada (°C)
               <input value={temperatura} onChange={(e) => setTemperatura(e.target.value)} inputMode="decimal" placeholder="Se aplicável" />
             </label>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text-secondary)', marginBottom: 8 }}>
-                Forma de conservação <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(informativo — não precisa medir por item, cada categoria já vai pra câmara com a temperatura fixa dela)</span>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {['resfriado', 'congelado', 'ambiente'].map((opt) => {
-                  const labels = { resfriado: 'Resfriado', congelado: 'Congelado', ambiente: 'Ambiente' };
-                  const on = conservacao === opt;
-                  return (
-                    <button key={opt} onClick={() => setConservacao(on ? '' : opt)}
-                      style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${on ? 'var(--primary)' : '#d0d7de'}`, background: on ? 'rgba(0,104,74,.1)' : 'white', color: on ? 'var(--primary)' : '#656d76', fontWeight: on ? 700 : 500, fontSize: 12, cursor: 'pointer', textAlign: 'center' }}>
-                      {labels[opt]}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
 
             {/* Checks */}
             <div>
@@ -2029,7 +2016,7 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
 
             <div className="actions-row">
               <button className={`primary-action${resultado ? ' attention' : ''}`} onClick={handleSubmit}
-                disabled={!fornecedor.trim() || !produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim()) || saving}>
+                disabled={!produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim()) || saving}>
                 {saving ? 'Salvando…' : 'Registrar recebimento'}
               </button>
             </div>
@@ -2066,8 +2053,18 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
                         <strong>{r.produto}</strong>
                         <span className={`badge ${tone}`}>{label}</span>
                       </div>
-                      <span>{r.fornecedor}{r.nf ? ` · NF ${r.nf}` : ''}</span>
-                      <span>{r.quantidade}{r.validade ? ` · Val. ${r.validade}` : ''}{r.temperatura ? ` · ${r.temperatura}°C` : ''}{r.conservacao ? ` · ${{resfriado:'Resfriado',congelado:'Congelado',ambiente:'Ambiente'}[r.conservacao] ?? r.conservacao}` : ''}</span>
+                      {/* Registro NOVO (21/09) só tem hora/validade/temperatura;
+                          registro ANTIGO ainda carrega fornecedor/NF/quantidade/
+                          conservação, e nenhum dos dois formatos pode sumir da
+                          tela. Monta em partes e descarta o que está vazio, em
+                          vez de um template fixo com " · " sobrando quando um
+                          campo não existe. */}
+                      <span>{[
+                        r.hora, r.fornecedor, r.nf ? `NF ${r.nf}` : null, r.quantidade,
+                        r.validade ? `Val. ${r.validade}` : null,
+                        r.temperatura ? `${r.temperatura}°C` : null,
+                        r.conservacao ? ({ resfriado: 'Resfriado', congelado: 'Congelado', ambiente: 'Ambiente' }[r.conservacao] ?? r.conservacao) : null,
+                      ].filter(Boolean).join(' · ')}</span>
                       {r.motivoRejeicao && <span style={{ color: 'var(--red)', fontSize: 11 }}>{r.resultado === 'aceito_parcial' ? 'Ressalva' : 'Rejeição'}: {r.motivoRejeicao}</span>}
                       <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{formatCompactDateTime(r.createdAt)} · {r.user}</span>
                     </div>

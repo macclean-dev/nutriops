@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.245', date: '2026-09-21', items: [
+    { text: 'Recebimento de Mercadorias ficou mais simples: agora tem Produto, Data de validade, Hora, Temperatura e 3 verificações (embalagem, rotulagem, aparência). Fornecedor, NF, Quantidade e Forma de conservação saíram do formulário; quem já tinha registro com esses dados não perde nada, eles continuam no histórico e na exportação. Vale nas 4 lojas.', path: 'Recebimento' },
+  ]},
   { version: '1.9.244', date: '2026-09-16', items: [
     { text: 'Relatórios, Exportação mensal, Auditoria, Dossiê Fiscal e Prontidão agora abrem na loja escolhida no menu e acompanham a troca de loja. Antes começavam sempre em "Todas as empresas". Para ver todas juntas, basta escolher "Todas as empresas" no filtro do topo da tela.', path: 'Relatórios → filtro de empresa' },
   ]},

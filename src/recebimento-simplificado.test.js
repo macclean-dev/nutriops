@@ -51,11 +51,11 @@ describe('campos do formulário — o que sobrou e o que entrou', () => {
     expect(corpoRecebimento).toContain("const [hora, setHora]             = useState('');");
   });
 
-  it('produto, validade e temperatura continuam', () => {
-    // Produto virou textarea em 22/09 (ver recebimento-lista-itens.test.js) -
-    // aqui só confere que o campo em si não sumiu.
+  it('produto e temperatura continuam', () => {
+    // Produto virou textarea em 22/09 (ver recebimento-lista-itens.test.js).
+    // "Data de validade" SAIU do formulário em 22/09 (ver
+    // recebimento-recebido.test.js) - aqui só confere que o resto não sumiu.
     expect(corpoRecebimento).toContain('value={produto} onChange={(e) => setProduto(e.target.value)}');
-    expect(corpoRecebimento).toContain('Data de validade<input value={validade}');
     expect(corpoRecebimento).toContain('Temperatura na chegada');
   });
 

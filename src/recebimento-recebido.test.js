@@ -31,13 +31,20 @@ describe('quickSign/DateSigField saíram de forms.jsx sem quebrar quem já usava
   });
 });
 
-describe('"Recebido em" no formulário - campo novo, separado de Data de validade', () => {
+describe('"Recebido em" no formulário - campo novo, diferente de Data de validade', () => {
   it('usa DateSigField, não um input de texto', () => {
     expect(corpoRecebimento).toContain('<DateSigField value={recebido} onChange={setRecebido} currentName={session?.user?.name} />');
   });
 
-  it('"Data de validade" continua existindo do jeito que estava - não virou o carimbo', () => {
-    expect(corpoRecebimento).toContain('<label>Data de validade<input value={validade} onChange={(e) => setValidade(e.target.value)} placeholder="DD/MM/AAAA" /></label>');
+  // "Data de validade" saiu do FORMULÁRIO no mesmo dia (22/09, pedido
+  // separado): com Produtos virando lista de itens, uma validade só pra
+  // vários produtos com prazos diferentes não fazia sentido. Virou o check
+  // "etiquetagem" (cada produto confere com SUA PRÓPRIA data no rótulo) -
+  // ver recebimento-checks-recebimento.test.js. Continua existindo no
+  // dado/CSV/histórico pra registro antigo, só não tem mais input.
+  it('"Data de validade" não é mais um input do formulário - virou o check de etiquetagem', () => {
+    expect(corpoRecebimento).not.toContain('<label>Data de validade<input');
+    expect(corpoRecebimento).not.toContain('const [validade, setValidade]');
   });
 
   it('é opcional - não entra na obrigatoriedade do botão', () => {

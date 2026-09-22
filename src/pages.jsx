@@ -1843,6 +1843,13 @@ const RECEIVING_CHECKS = [
   { id: 'embalagem',  label: 'Embalagem íntegra e limpa' },
   { id: 'rotulagem',  label: 'Rotulagem e validade legíveis' },
   { id: 'aparencia',  label: 'Aparência e odor adequados' },
+  // Pedido 22/09, junto com a saída de "Data de validade" do formulário: em
+  // vez de UMA data pra vários produtos com prazos diferentes, confere se
+  // CADA produto chegou com sua própria data (de manipulação e validade) no
+  // rótulo. "Rotulagem e validade legíveis" checa se dá pra LER o rótulo;
+  // este é sobre o rótulo TER a informação; são coisas diferentes, os dois
+  // ficam.
+  { id: 'etiquetagem', label: 'Todos os produtos entregues devidamente etiquetados, com data de manipulação e validade' },
 ];
 
 function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) {
@@ -1856,7 +1863,6 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
   // carimbo automático do registro continua podendo.
   const [recebido, setRecebido]     = useState({});
   const [produto, setProduto]       = useState('');
-  const [validade, setValidade]     = useState('');
   // Sem valor padrão de propósito: é a pessoa quem anota a hora real da
   // chegada, que pode ser diferente da hora em que preenche o registro (mesmo
   // idioma do "Horário - 1ª leitura" em controls.jsx). Se a gente pré-
@@ -1905,7 +1911,6 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
       id: crypto.randomUUID(),
       tenantId: activeTenant.id,
       produto: produto.trim(),
-      validade: validade.trim(),
       hora: hora.trim(),
       // { date, sig } do DateSigField, ou {} se ela não usou o carimbo: vazio
       // não é erro, é "não anotado", igual a hora e temperatura opcionais.
@@ -1922,7 +1927,7 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
     setItems((prev) => [record, ...prev].slice(0, 300));
     pushReceivingRecord(activeTenant.id, record);
     // Reset form
-    setRecebido({}); setProduto(''); setValidade(''); setHora(''); setTemperatura('');
+    setRecebido({}); setProduto(''); setHora(''); setTemperatura('');
     setChecks({}); setResultado(''); setResultadoTouched(false);
     setMotivoRejeicao(''); setObs('');
     setSaving(false); setSaved(true);
@@ -1987,13 +1992,30 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
             </div>
             <label>Produtos<textarea value={produto} onChange={(e) => setProduto(e.target.value)}
               placeholder="Liste os itens recebidos, um por linha…" style={{ minHeight: 110 }} /></label>
+            {/* "Data de validade" saiu (22/09): com Produtos virando lista,
+                uma validade só pra vários itens com prazos diferentes não
+                fazia sentido - é exatamente o que o novo check de etiquetagem
+                cobre (cada produto chega com SUA PRÓPRIA data no rótulo, ela
+                confere item a item em vez de digitar uma data pro registro
+                inteiro). Continua existindo no dado/CSV/histórico pra
+                registro antigo (mesmo tratamento de fornecedor/nf/quantidade
+                em 21/09) - só saiu do formulário de captura. */}
             <div className="grid-2">
-              <label>Data de validade<input value={validade} onChange={(e) => setValidade(e.target.value)} placeholder="DD/MM/AAAA" /></label>
               <label>Hora<input type="time" value={hora} onChange={(e) => setHora(e.target.value)} /></label>
+              <label>Temperatura na chegada
+                {/* Teclado numérico do celular (inputMode="decimal") não tem
+                    tecla de grau nem de "C" - pedido pra "aparecer o símbolo"
+                    não é sobre a tecla (essa não dá pra criar), é sobre a
+                    pessoa perder de vista a unidade quando o teclado cobre a
+                    tela e o rótulo do campo some. "°C" fixo dentro do input,
+                    visível mesmo com o teclado aberto. */}
+                <div style={{ position: 'relative' }}>
+                  <input value={temperatura} onChange={(e) => setTemperatura(e.target.value)} inputMode="decimal" placeholder="Se aplicável"
+                    style={{ paddingRight: 34, width: '100%' }} />
+                  <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', fontSize: 13, pointerEvents: 'none' }}>°C</span>
+                </div>
+              </label>
             </div>
-            <label>Temperatura na chegada (°C)
-              <input value={temperatura} onChange={(e) => setTemperatura(e.target.value)} inputMode="decimal" placeholder="Se aplicável" />
-            </label>
 
             {/* Checks */}
             <div>
@@ -2002,9 +2024,14 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
                 {RECEIVING_CHECKS.map((c) => {
                   const val = checks[c.id] ?? '';
                   return (
-                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                    // flex-start, não center: o check de etiquetagem (22/09) é
+                    // bem mais longo que os outros 3 e quebra linha em tela
+                    // estreita - center empurraria os botões C/NC pro meio do
+                    // texto conforme ele cresce (mesmo ajuste já feito no
+                    // histórico de Produtos, por este exato motivo).
+                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                       <span style={{ fontSize: 13, fontWeight: 500 }}>{c.label}</span>
-                      <div style={{ display: 'flex', gap: 6 }}>
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                         {['C', 'NC'].map((opt) => {
                           const on = val === opt;
                           const [bg, color, border] = opt === 'C' ? ['#dafbe1','#1a7f37','#4ac26b'] : ['#ffebe9','#cf222e','#ff8182'];

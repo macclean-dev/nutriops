@@ -35,6 +35,10 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.248', date: '2026-09-22', items: [
+    { text: 'Corrigido: validar uma planilha na Validação RT não chegava nos outros aparelhos da loja, então continuava aparecendo como pendente em todo mundo. Agora a validação sincroniza igual o resto do app. Também tem um botão "Validar todas", pra assinar de uma vez as planilhas que você já revisou.', path: 'Planilhas BPF → Validação RT' },
+    { text: 'Recebimento de Mercadorias ganhou "Recebido em": um toque grava a data de hoje e abre um campo pro nome de quem recebeu, igual o "Feito agora" das planilhas de higienização.', path: 'Recebimento' },
+  ]},
   { version: '1.9.247', date: '2026-09-22', items: [
     { text: 'Recebimento de Mercadorias: o campo Produto agora é uma lista com espaço pra vários itens, um por linha, em vez de uma linha só. Uma entrega com vários produtos vira um único registro. Data de validade, Hora, Temperatura, as verificações e o Resultado continuam valendo pra entrega inteira.', path: 'Recebimento' },
   ]},

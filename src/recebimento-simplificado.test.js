@@ -78,7 +78,12 @@ describe('campos do formulário — o que sobrou e o que entrou', () => {
 
 describe('CSV e histórico não perdem dado antigo', () => {
   it('CSV mantém as colunas antigas (evidência de registro já feito) e ganha "hora"', () => {
-    expect(corpoRecebimento).toContain("const cols = ['createdAt','hora','fornecedor','nf','produto','quantidade','validade','temperatura','conservacao','resultado','motivoRejeicao','obs','user'];");
+    // "recebido" (22/09) virou dataRecebimento/responsavelRecebimento no CSV
+    // - ver recebimento-recebido.test.js. Aqui confere só que hora sobreviveu
+    // e nenhuma das colunas antigas (evidência de registro já feito) sumiu.
+    const cols = corpoRecebimento.match(/const cols = \[([^\]]+)\];/)?.[1] ?? '';
+    for (const c of ['createdAt', 'hora', 'fornecedor', 'nf', 'produto', 'quantidade', 'validade', 'temperatura', 'conservacao', 'resultado', 'motivoRejeicao', 'obs', 'user'])
+      expect(cols, c).toContain(`'${c}'`);
   });
 
   it('a linha do histórico mostra registro NOVO (só hora/validade/temperatura) sem pontuação sobrando', () => {
@@ -128,8 +133,13 @@ describe('repository — hora chega na nuvem e volta', () => {
 
 describe('dossiê fiscal não fica com coluna eternamente vazia', () => {
   it('ganha a coluna Hora ao lado de Fornecedor', () => {
+    // "Recebido por" (22/09) entrou entre as duas - ver
+    // recebimento-recebido.test.js. Aqui confere só que Hora e Fornecedor
+    // continuam presentes, sem fixar a lista inteira de colunas.
     const s = sectionReceiving([{ hora: '08:40', fornecedor: 'Distribuidora ABC', produto: 'Queijo', resultado: 'aceito', createdAt: '2026-09-21T10:00:00Z' }]);
-    expect(s.headers).toEqual(['Hora', 'Fornecedor', 'Produto', 'Data', 'Resultado', 'Motivo / ressalva']);
+    expect(s.headers).toContain('Hora');
+    expect(s.headers).toContain('Fornecedor');
+    expect(s.headers.indexOf('Hora')).toBeLessThan(s.headers.indexOf('Fornecedor'));
     expect(s.rowsHtml).toContain('08:40');
     expect(s.rowsHtml).toContain('Distribuidora ABC');
   });

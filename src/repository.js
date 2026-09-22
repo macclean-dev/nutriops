@@ -1273,6 +1273,11 @@ function recvToRow(r) {
     id: r.id, tenant_id: r.tenantId, fornecedor: r.fornecedor, nf: r.nf, produto: r.produto,
     quantidade: r.quantidade, validade: r.validade, hora: r.hora ?? null, temperatura: r.temperatura,
     conservacao: r.conservacao ?? null,
+    // recebido (22/09): carimbo "Feito agora" ({date,sig}) de QUANDO a
+    // entrega chegou e QUEM recebeu, mesmo idioma do date_sig das
+    // planilhas de higienização. jsonb porque o valor já nasce um objeto
+    // pequeno (igual `checks`, que já era jsonb nesta mesma tabela).
+    recebido: r.recebido && (r.recebido.date || r.recebido.sig) ? r.recebido : null,
     checks: r.checks, resultado: r.resultado, motivo_rejeicao: r.motivoRejeicao, obs: r.obs,
     user_name: r.user, role: r.role, created_at: r.createdAt,
   };
@@ -1281,7 +1286,7 @@ function recvFromRow(row) {
   return {
     id: row.id, tenantId: row.tenant_id, fornecedor: row.fornecedor, nf: row.nf, produto: row.produto,
     quantidade: row.quantidade, validade: row.validade, hora: row.hora, temperatura: row.temperatura,
-    conservacao: row.conservacao,
+    conservacao: row.conservacao, recebido: row.recebido ?? {},
     checks: row.checks, resultado: row.resultado, motivoRejeicao: row.motivo_rejeicao, obs: row.obs,
     user: row.user_name, role: row.role, createdAt: row.created_at,
   };
@@ -2280,7 +2285,7 @@ create index if not exists idx_staff_tenant on tenant_staff(tenant_id);
 create table if not exists receiving_records (
   id uuid primary key default gen_random_uuid(),
   tenant_id text not null, fornecedor text, nf text, produto text,
-  quantidade text, validade text, hora text, temperatura text, conservacao text,
+  quantidade text, validade text, hora text, recebido jsonb, temperatura text, conservacao text,
   checks jsonb, resultado text, motivo_rejeicao text, obs text,
   user_name text, role text, created_at timestamptz default now()
 );

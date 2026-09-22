@@ -77,11 +77,13 @@ export function sectionSpecialControls(recordsByType, controlTypes) {
 const RECEIVING_RESULT_LABEL = { aceito: 'Aceito', rejeitado: 'Rejeitado', aceito_parcial: 'Aceito parcial' };
 
 export function sectionReceiving(receivingRecords) {
-  // "Hora" é o campo novo do formulário simplificado (21/09); "Fornecedor"
-  // fica só pro registro ANTIGO, que ainda tem esse dado; em registro novo a
-  // célula vem vazia (esc(undefined) → ''), o que é esperado, não um erro.
+  // "Hora" é o campo novo do formulário simplificado (21/09); "Recebido por"
+  // vem do carimbo "Feito agora" (22/09, recebido.sig) - "Fornecedor" fica só
+  // pro registro ANTIGO, que ainda tem esse dado; em registro novo a célula
+  // vem vazia (esc(undefined) → ''), o que é esperado, não um erro.
   const rows = (receivingRecords ?? []).map((r) => `<tr>
     <td>${esc(r.hora)}</td>
+    <td>${esc(r.recebido?.sig)}</td>
     <td>${esc(r.fornecedor)}</td>
     <td style="white-space:pre-line">${esc(r.produto)}</td>
     <td>${fmtDateTime(r.createdAt)}</td>
@@ -91,7 +93,7 @@ export function sectionReceiving(receivingRecords) {
 
   return {
     title: 'Recebimento de Mercadorias',
-    headers: ['Hora', 'Fornecedor', 'Produto', 'Data', 'Resultado', 'Motivo / ressalva'],
+    headers: ['Hora', 'Recebido por', 'Fornecedor', 'Produto', 'Data', 'Resultado', 'Motivo / ressalva'],
     rowsHtml: rows,
     emptyMessage: 'Sem recebimentos registrados no período.',
   };

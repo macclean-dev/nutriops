@@ -4,6 +4,13 @@ import { pushFormRecord, lw as gravarLocal } from './repository';
 import { ImportTemplateModal } from './import-template-modal';
 import { isFieldDue, dueFields } from './field-frequency';
 import { gravarMesclando, SYNC_EVENT } from './lista-local';
+// quickSign/DateSigField viviam aqui; extraídos (22/09) pra date-sig-field.jsx
+// pra pages.jsx poder usar o mesmo carimbo "✓ Feito agora" sem puxar este
+// arquivo inteiro. Re-exporta quickSign: era API pública daqui (forms.test.js
+// e qualquer consumidor futuro continuam importando de './forms' sem saber
+// que a definição mudou de endereço).
+import { quickSign, DateSigField } from './date-sig-field';
+export { quickSign };
 import { aplicarRenomeacoes } from './renomear-planilha';
 import { unidadePKS, unidadeTerraco } from './modulos-da-loja';
 import { prefsFromProfile, profileWithPrefs, catLabelFor, podeMoverPara, podeEditarTitulo, applyCategoryPrefs, enxugarPrefs, CATEGORIA_COM_COMPORTAMENTO, FREQUENCIAS } from './form-prefs';
@@ -582,14 +589,6 @@ const CAT = {
 export function catMeta(cat) { return CAT[cat] ?? CAT.custom; }
 
 // ─── Completion helpers ────────────────────────────────────────────────────
-
-// Carimbo de 1 toque do date_sig — hoje + quem está registrando. O sistema já
-// sabe as duas coisas (é o mesmo texto que `record.user`/`createdAt` já
-// carimbam sozinhos); antes disso o colaborador digitava as duas de novo, à
-// mão, uma vez por tarefa — 14 a 30 vezes numa planilha de higienização.
-export function quickSign(currentName) {
-  return { date: getPeriodKey('daily'), sig: (currentName ?? '').trim() };
-}
 
 // Um campo conta como preenchido? `checkbox` só marcado; objeto vale pela
 // assinatura (date/sig), pela leitura detectada ou pelo caminho da foto no
@@ -1961,46 +1960,6 @@ function PresenceField({ value, onChange }) {
   );
 }
 
-// 1 toque carimba hoje + quem está registrando (quickSign) — o caso comum.
-// "Editar" abre os campos crus pra exceção real: tarefa feita por outra
-// pessoa, ou em outro dia (preenchimento retroativo).
-function DateSigField({ value={}, onChange, currentName }) {
-  const [editing, setEditing] = useState(false);
-  const done = Boolean(value?.date || value?.sig);
-
-  if (done && !editing) {
-    return (
-      <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-        <span style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'4px 10px', borderRadius:20, background:'#dafbe1', border:'1px solid #4ac26b', color:'#00a35c', fontSize:12, fontWeight:700 }}>
-          ✓ {value.date ? value.date.split('-').reverse().join('/') : '—'} · {value.sig || '—'}
-        </span>
-        <button type="button" onClick={() => setEditing(true)} className="ghost-action" style={{ fontSize:11, padding:'2px 8px' }}>Editar</button>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-      <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-        <button type="button" onClick={() => { onChange(quickSign(currentName)); setEditing(false); }}
-          style={{ padding:'6px 14px', borderRadius:8, border:'1.5px solid #4ac26b', background:'#dafbe1', color:'#00a35c', fontWeight:700, fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>
-          ✓ Feito agora{currentName ? ` — ${currentName}` : ''}
-        </button>
-        {!editing && <button type="button" onClick={() => setEditing(true)} className="ghost-action" style={{ fontSize:11 }}>Outra pessoa / outro dia</button>}
-        {editing && <button type="button" onClick={() => setEditing(false)} className="ghost-action" style={{ fontSize:11 }}>Fechar</button>}
-      </div>
-      {editing && (
-        <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-          <input type="date" value={value?.date??''} onChange={(e) => onChange({ ...value, date:e.target.value })}
-            style={{ padding:'5px 8px', borderRadius:6, border:'1px solid #c1ccd6', fontSize:12, fontFamily:'inherit' }} />
-          <input value={value?.sig??''} onChange={(e) => onChange({ ...value, sig:e.target.value })}
-            placeholder="Responsável" style={{ flex:1, minWidth:120, padding:'5px 8px', borderRadius:6, border:'1px solid #c1ccd6', fontSize:12, fontFamily:'inherit' }} />
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Form Fill ─────────────────────────────────────────────────────────────
 
 function FormFill({ template, record, onSave, onBack, session, tenant, rotuloCategoria, campoEscopo = null, escopoAtual = '', escopoJaFeito = () => false }) {
@@ -2189,9 +2148,13 @@ export function recentlyValidated(records, limit = 10) {
     .slice(0, limit);
 }
 
-function RTValidationPanel({ records, templates, onValidate, session }) {
+function RTValidationPanel({ records, templates, onValidate, onValidateAll, session }) {
   const [validatingId, setValidatingId] = useState(null);
   const [note, setNote] = useState('');
+  // null = parado; { done, total } enquanto "Validar todas" está rodando:
+  // 275 pushes sequenciais e aguardados (ver handleValidateAll) levam
+  // dezenas de segundos; sem isto o botão parece travado.
+  const [validandoTodas, setValidandoTodas] = useState(null);
 
   const pending = records.filter((r) => r.status==='submitted' && !r.validation);
   const validated = recentlyValidated(records);
@@ -2206,12 +2169,39 @@ function RTValidationPanel({ records, templates, onValidate, session }) {
     setValidatingId(null); setNote('');
   };
 
+  // Pedido da nutricionista (22/09): "tem como eu validar todas as
+  // planilhas de uma vez?" - com 275 pendentes, uma por uma não é viável.
+  // O confirm existe porque validar é uma ASSINATURA (RDC 216): em lote, ela
+  // está atestando que já revisou cada uma antes de clicar, o que ela
+  // descreveu que já faz ("sempre faço a verificação antes"). Planilha que
+  // precisar de observação específica continua indo pelo fluxo individual
+  // (o botão "Validar" de cada linha), que não some.
+  const validarTodas = async () => {
+    if (pending.length === 0 || validandoTodas) return;
+    const ok = window.confirm(
+      `Validar as ${pending.length} planilhas pendentes agora?\n\n` +
+      `Isso assina, em seu nome, que cada uma foi revisada. Se alguma planilha ` +
+      `precisar de uma observação específica, valide ela separadamente em vez de incluir no lote.`
+    );
+    if (!ok) return;
+    setValidandoTodas({ done: 0, total: pending.length });
+    await onValidateAll((done, total) => setValidandoTodas({ done, total }));
+    setValidandoTodas(null);
+  };
+
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
       <article className="management-card">
         <div className="card-head">
           <div><span className="eyebrow">Aguardando RT</span><h2>Planilhas para validar</h2></div>
-          {pending.length>0 && <span className="badge warn">{pending.length}</span>}
+          <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+            {pending.length>0 && <span className="badge warn">{pending.length}</span>}
+            {pending.length>0 && (
+              <button className="secondary-action" style={{ fontSize:12 }} disabled={Boolean(validandoTodas)} onClick={validarTodas}>
+                {validandoTodas ? `Validando ${validandoTodas.done}/${validandoTodas.total}…` : `✓ Validar todas (${pending.length})`}
+              </button>
+            )}
+          </div>
         </div>
         <div className="equipment-maintenance-list">
           {pending.length===0
@@ -2480,9 +2470,52 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
     // existe.
   }, [filling, activeTenant.id, session, records]);
 
+  // Achado da nutricionista (22/09): "mesmo que eu valide no meu, nos outros
+  // equipamentos fica em aberto essas validações". Causa: esta função só
+  // mexia em `records` (React state → localStorage via o efeito de
+  // gravarMesclando logo acima). Nunca chamava pushFormRecord: a validação
+  // NUNCA chegava na nuvem, então nenhum outro aparelho a via, pra sempre.
+  // form_records/formToRow já tinham a coluna `validation` pronta; faltava
+  // só empurrar. Registro calculado FORA do updater, push ANTES do
+  // setRecords, mesma correção das "vias" de handleSave (28/08): o React
+  // pode chamar o updater mais de uma vez, e push lá dentro duplicava POST.
   const handleValidate = useCallback((recordId, validation) => {
-    setRecords((prev) => prev.map((r) => r.id===recordId ? { ...r, validation, updatedAt:new Date().toISOString() } : r));
-  }, []);
+    const atual = records.find((r) => r.id === recordId);
+    if (!atual) return;
+    const updated = { ...atual, validation, updatedAt: new Date().toISOString() };
+    pushFormRecord(activeTenant.id, updated);
+    setRecords((prev) => prev.map((r) => (r.id === recordId ? updated : r)));
+  }, [records, activeTenant.id]);
+
+  // "Validar todas" (pedido 22/09, 275 planilhas pendentes de uma vez só):
+  // sequencial e AGUARDADO por item, não um `for` disparando 275 POSTs em
+  // paralelo, mesmo padrão de migrateAllToSupabase (repository.js) pra lote
+  // grande. pushFormRecord nunca lança (enfileira sozinho se falhar), então
+  // não precisa de try/catch aqui. `onProgress` deixa a tela mostrar
+  // "Validando X/Y" em vez de parecer travada por dezenas de segundos.
+  // Um carimbo SÓ, tirado uma vez: é um lote assinado de uma vez, não 275
+  // revisões em instantes diferentes: fingir precisão de segundo por
+  // registro seria mentir sobre o que aconteceu.
+  const handleValidateAll = useCallback(async (onProgress) => {
+    const pendentes = records.filter((r) => r.status === 'submitted' && !r.validation);
+    if (pendentes.length === 0) return;
+    const carimbo = {
+      by: session?.user?.name ?? 'RT', role: session?.user?.role ?? 'Nutricionista RT',
+      at: new Date().toISOString(), note: '',
+    };
+    const ups = [];
+    for (const rec of pendentes) {
+      const up = { ...rec, validation: carimbo, updatedAt: new Date().toISOString() };
+      // eslint-disable-next-line no-await-in-loop
+      await pushFormRecord(activeTenant.id, up);
+      ups.push(up);
+      onProgress?.(ups.length, pendentes.length);
+    }
+    setRecords((prev) => {
+      const porId = new Map(ups.map((u) => [u.id, u]));
+      return prev.map((r) => porId.get(r.id) ?? r);
+    });
+  }, [records, session, activeTenant.id]);
 
   const pendingValidation = records.filter((r) => r.status==='submitted' && !r.validation).length;
   // As preferências entram AQUI, sobre a lista já lida do seed/cache — não
@@ -2647,7 +2680,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
       </div>
 
       {tab==='validation' && (
-        <RTValidationPanel records={records} templates={templates} onValidate={handleValidate} session={session} />
+        <RTValidationPanel records={records} templates={templates} onValidate={handleValidate} onValidateAll={handleValidateAll} session={session} />
       )}
 
       {tab==='forms' && (

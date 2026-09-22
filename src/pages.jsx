@@ -16,6 +16,7 @@ import { notificarSyncAplicado, gravarMesclando, SYNC_EVENT } from './lista-loca
 import { actionSourceKey, pendingTemperatureItems, pendingReceivingItems, pendingControlItems, pendingFormItems, excludeWithAction, CONTROL_TYPES } from './nonconformities';
 import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
 import { viewVisivelNaLoja } from './modulos-da-loja';
+import { DateSigField } from './date-sig-field';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
 import { getUnseenEntries, normalizeItem } from './changelog';
@@ -1846,6 +1847,14 @@ const RECEIVING_CHECKS = [
 
 function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) {
   const [items, setItems]           = useState(() => recLoad(activeTenant.id));
+  // Pedido da nutricionista (22/09), respondendo o Recebimento simplificado:
+  // "na data de validade pode adicionar data e horário de recebimento? Da
+  // mesma forma dos outros onde clicamos em 'Feito agora'…" - mesmo carimbo
+  // de 1 toque que as planilhas de higienização já usam (quickSign/
+  // DateSigField), aqui pra registrar QUANDO a entrega chegou e QUEM recebeu.
+  // Opcional (não trava o botão): quem preferir digitar Hora e confiar no
+  // carimbo automático do registro continua podendo.
+  const [recebido, setRecebido]     = useState({});
   const [produto, setProduto]       = useState('');
   const [validade, setValidade]     = useState('');
   // Sem valor padrão de propósito: é a pessoa quem anota a hora real da
@@ -1898,6 +1907,9 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
       produto: produto.trim(),
       validade: validade.trim(),
       hora: hora.trim(),
+      // { date, sig } do DateSigField, ou {} se ela não usou o carimbo: vazio
+      // não é erro, é "não anotado", igual a hora e temperatura opcionais.
+      recebido,
       temperatura: temperatura.trim(),
       checks,
       resultado,
@@ -1910,7 +1922,7 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
     setItems((prev) => [record, ...prev].slice(0, 300));
     pushReceivingRecord(activeTenant.id, record);
     // Reset form
-    setProduto(''); setValidade(''); setHora(''); setTemperatura('');
+    setRecebido({}); setProduto(''); setValidade(''); setHora(''); setTemperatura('');
     setChecks({}); setResultado(''); setResultadoTouched(false);
     setMotivoRejeicao(''); setObs('');
     setSaving(false); setSaved(true);
@@ -1927,9 +1939,12 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
     // CSV é extrato de evidência: tirar a coluna apagaria dado real de quem
     // já registrou antes da mudança. Em registro novo essas células vêm
     // vazias, o que é o esperado.
-    const cols = ['createdAt','hora','fornecedor','nf','produto','quantidade','validade','temperatura','conservacao','resultado','motivoRejeicao','obs','user'];
+    const cols = ['createdAt','dataRecebimento','responsavelRecebimento','hora','fornecedor','nf','produto','quantidade','validade','temperatura','conservacao','resultado','motivoRejeicao','obs','user'];
     const esc = (v) => `"${String(v??'').replaceAll('"','""')}"`;
-    const csv = [cols.join(','), ...items.map((r) => cols.map((k) => esc(r[k])).join(','))].join('\n');
+    // recebido é { date, sig } (carimbo "Feito agora"), não uma coluna direta
+    // do registro como o resto: resolve à parte pras duas colunas do CSV.
+    const valor = (r, k) => (k === 'dataRecebimento' ? r.recebido?.date ?? '' : k === 'responsavelRecebimento' ? r.recebido?.sig ?? '' : r[k]);
+    const csv = [cols.join(','), ...items.map((r) => cols.map((k) => esc(valor(r, k))).join(','))].join('\n');
     const blob = new Blob(['\uFEFF'+csv], { type:'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     Object.assign(document.createElement('a'), { href:url, download:`recebimento-${new Date().toISOString().slice(0,10)}.csv` }).click();
@@ -1966,6 +1981,10 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
                 de UM registro: o resultado/checks/temperatura continuam
                 valendo pra entrega inteira, e se um item específico tiver
                 problema ela descreve no Motivo (campo que já existe). */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text-secondary)', marginBottom: 6 }}>Recebido em</div>
+              <DateSigField value={recebido} onChange={setRecebido} currentName={session?.user?.name} />
+            </div>
             <label>Produtos<textarea value={produto} onChange={(e) => setProduto(e.target.value)}
               placeholder="Liste os itens recebidos, um por linha…" style={{ minHeight: 110 }} /></label>
             <div className="grid-2">
@@ -2074,8 +2093,11 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
                           conservação, e nenhum dos dois formatos pode sumir da
                           tela. Monta em partes e descarta o que está vazio, em
                           vez de um template fixo com " · " sobrando quando um
-                          campo não existe. */}
+                          campo não existe. recebido (22/09) é opcional, nem
+                          todo registro passa pelo carimbo "Feito agora". */}
                       <span>{[
+                        r.recebido?.date ? r.recebido.date.split('-').reverse().join('/') : null,
+                        r.recebido?.sig || null,
                         r.hora, r.fornecedor, r.nf ? `NF ${r.nf}` : null, r.quantidade,
                         r.validade ? `Val. ${r.validade}` : null,
                         r.temperatura ? `${r.temperatura}°C` : null,

@@ -39,12 +39,24 @@ export function pendingTemperatureItems(records, tenantId, resolveTone) {
     }));
 }
 
+// Produto virou lista (um item por linha, pedido da nutricionista 22/09,
+// em média 10 itens chegam juntos na mesma entrega). sourceLabel é TÍTULO
+// de card/modal (pages.jsx): não cabe um recebimento de 10 linhas ali. Mostra
+// só o 1º item + quantos ficaram de fora; a lista completa continua em
+// sourceDetail.
+function primeiroItem(produto) {
+  const linhas = String(produto ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
+  if (linhas.length === 0) return '';
+  if (linhas.length === 1) return linhas[0];
+  return `${linhas[0]} +${linhas.length - 1} ${linhas.length - 1 === 1 ? 'item' : 'itens'}`;
+}
+
 export function pendingReceivingItems(receiving) {
   return (receiving ?? [])
     .filter((r) => r.resultado === 'rejeitado')
     .map((r) => ({
       source: 'receiving', sourceId: r.id,
-      sourceLabel: `Recebimento — ${r.fornecedor || r.produto || 'Fornecedor'}`,
+      sourceLabel: `Recebimento - ${r.fornecedor || primeiroItem(r.produto) || 'Fornecedor'}`,
       sourceDetail: r.motivoRejeicao ? `Motivo: ${r.motivoRejeicao}` : (r.produto ?? ''),
       at: r.createdAt, raw: r,
     }));

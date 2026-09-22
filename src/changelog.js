@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.247', date: '2026-09-22', items: [
+    { text: 'Recebimento de Mercadorias: o campo Produto agora é uma lista com espaço pra vários itens, um por linha, em vez de uma linha só. Uma entrega com vários produtos vira um único registro. Data de validade, Hora, Temperatura, as verificações e o Resultado continuam valendo pra entrega inteira.', path: 'Recebimento' },
+  ]},
   { version: '1.9.245', date: '2026-09-21', items: [
     { text: 'Recebimento de Mercadorias ficou mais simples: agora tem Produto, Data de validade, Hora, Temperatura e 3 verificações (embalagem, rotulagem, aparência). Fornecedor, NF, Quantidade e Forma de conservação saíram do formulário; quem já tinha registro com esses dados não perde nada, eles continuam no histórico e na exportação. Vale nas 4 lojas.', path: 'Recebimento' },
   ]},

@@ -63,7 +63,7 @@ describe('pendingReceivingItems', () => {
     ];
     const out = pendingReceivingItems(recv);
     expect(out).toHaveLength(1);
-    expect(out[0]).toMatchObject({ source: 'receiving', sourceId: 'r1', sourceLabel: 'Recebimento — União', sourceDetail: 'Motivo: Embalagem violada' });
+    expect(out[0]).toMatchObject({ source: 'receiving', sourceId: 'r1', sourceLabel: 'Recebimento - União', sourceDetail: 'Motivo: Embalagem violada' });
   });
 
   it('lista vazia/undefined não quebra', () => {

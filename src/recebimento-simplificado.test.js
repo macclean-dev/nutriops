@@ -52,7 +52,9 @@ describe('campos do formulário — o que sobrou e o que entrou', () => {
   });
 
   it('produto, validade e temperatura continuam', () => {
-    expect(corpoRecebimento).toContain('<label>Produto<input value={produto}');
+    // Produto virou textarea em 22/09 (ver recebimento-lista-itens.test.js) -
+    // aqui só confere que o campo em si não sumiu.
+    expect(corpoRecebimento).toContain('value={produto} onChange={(e) => setProduto(e.target.value)}');
     expect(corpoRecebimento).toContain('Data de validade<input value={validade}');
     expect(corpoRecebimento).toContain('Temperatura na chegada');
   });

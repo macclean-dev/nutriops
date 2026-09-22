@@ -83,7 +83,7 @@ export function sectionReceiving(receivingRecords) {
   const rows = (receivingRecords ?? []).map((r) => `<tr>
     <td>${esc(r.hora)}</td>
     <td>${esc(r.fornecedor)}</td>
-    <td>${esc(r.produto)}</td>
+    <td style="white-space:pre-line">${esc(r.produto)}</td>
     <td>${fmtDateTime(r.createdAt)}</td>
     <td style="color:${r.resultado === 'aceito' ? '#00a35c' : r.resultado === 'rejeitado' ? '#c0392b' : '#8a4e00'};font-weight:700">${RECEIVING_RESULT_LABEL[r.resultado] ?? r.resultado ?? '—'}</td>
     <td>${esc(r.motivoRejeicao || '—')}</td>

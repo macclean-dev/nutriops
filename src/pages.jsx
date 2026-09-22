@@ -1300,7 +1300,10 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
                     <strong>{item.sourceLabel}</strong>
                   </div>
                   {item.at && <span>{formatCompactDateTime(item.at)}</span>}
-                  {item.sourceDetail && <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{item.sourceDetail}</span>}
+                  {/* pre-line: sourceDetail de um recebimento sem motivo cai
+                      pra lista de produtos (pendingReceivingItems), pode ter
+                      várias linhas desde que Produto virou textarea (22/09). */}
+                  {item.sourceDetail && <span style={{ fontSize: 13, color: 'var(--text-secondary)', whiteSpace: 'pre-line' }}>{item.sourceDetail}</span>}
                 </div>
                 <button className="primary-action" style={{ fontSize: 12, padding: '6px 12px' }} onClick={() => openCreate(item)}>Abrir ação</button>
               </div>
@@ -1954,7 +1957,17 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
         <article className="management-card">
           <div className="card-head"><div><span className="eyebrow">Novo registro</span><h2>Registrar recebimento</h2></div></div>
           <div className="capture-fields">
-            <label>Produto<input value={produto} onChange={(e) => setProduto(e.target.value)} placeholder="Descreva o produto recebido" /></label>
+            {/* Pedido da nutricionista (22/09): um recebimento chega com uma
+                média de 10 itens de uma vez, e preencher a planilha inteira
+                (validade, hora, temperatura, 3 checks, resultado) 10 vezes
+                pra uma ENTREGA SÓ é o oposto de "mais simples e prática" -
+                era o que a simplificação de 21/09 tinha acabado de resolver
+                pros outros campos. Vira lista de itens (um por linha) dentro
+                de UM registro: o resultado/checks/temperatura continuam
+                valendo pra entrega inteira, e se um item específico tiver
+                problema ela descreve no Motivo (campo que já existe). */}
+            <label>Produtos<textarea value={produto} onChange={(e) => setProduto(e.target.value)}
+              placeholder="Liste os itens recebidos, um por linha…" style={{ minHeight: 110 }} /></label>
             <div className="grid-2">
               <label>Data de validade<input value={validade} onChange={(e) => setValidade(e.target.value)} placeholder="DD/MM/AAAA" /></label>
               <label>Hora<input type="time" value={hora} onChange={(e) => setHora(e.target.value)} /></label>
@@ -2049,9 +2062,12 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
                 return (
                   <div key={r.id} className="equipment-maintenance-row" style={{ borderLeft: `3px solid ${tone === 'ok' ? 'var(--green-border)' : tone === 'danger' ? 'var(--red-border)' : 'var(--amber-border)'}` }}>
                     <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <strong>{r.produto}</strong>
-                        <span className={`badge ${tone}`}>{label}</span>
+                      {/* flex-start, não center: Produtos pode ter várias
+                          linhas agora (22/09): center empurraria o badge pro
+                          meio do bloco de texto conforme ele cresce. */}
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                        <strong style={{ whiteSpace: 'pre-line' }}>{r.produto}</strong>
+                        <span className={`badge ${tone}`} style={{ flexShrink: 0 }}>{label}</span>
                       </div>
                       {/* Registro NOVO (21/09) só tem hora/validade/temperatura;
                           registro ANTIGO ainda carrega fornecedor/NF/quantidade/

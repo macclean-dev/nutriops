@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
-import { readFormTemplates, scopeFieldOf, completionPct } from './forms';
+import { readFormTemplates, scopeFieldOf, completionPct, extractNonConformities } from './forms';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pedido da RT da CASA DOCE (28/08): planilhas de higienização do Terraço e do
@@ -196,5 +196,70 @@ describe('lojas antigas seguem intactas', () => {
   it('Swiss não ganhou planilha nova', () => {
     const t = nomes(readFormTemplates(loja('swiss','Swiss')));
     expect(t.some((x) => /PKS|Terraço|Desperdícios|Perdas/.test(x))).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Controle de Temperatura dos Alimentos em Exposição (22/09): planilha de
+// papel anexada por ela, pedido explícito de reprodução: Data (carimbo "Feito
+// agora"), 5 campos de temperatura, e o bloco de NC com Data própria (o papel
+// tem essa 4ª coluna, diferente de toda outra planilha deste app).
+// ─────────────────────────────────────────────────────────────────────────────
+describe('Controle de Temperatura dos Alimentos em Exposição', () => {
+  const titulo = 'Controle de Temperatura dos Alimentos em Exposição';
+  const acharTpl = (tenantLoja) => acha(readFormTemplates(tenantLoja), titulo);
+
+  it('vai pro PKS e pro Terraço, diária', () => {
+    for (const t of [acharTpl(loja('fab-pks','FABRIZZIO PKS')), acharTpl(loja('fab-ter','Fabrizzio Terraço'))]) {
+      expect(t, titulo).toBeTruthy();
+      expect(t.frequency).toBe('daily');
+    }
+  });
+
+  it('não vai pra CASA DOCE nem pra Swiss, é específico do PKS/Terraço', () => {
+    expect(acharTpl(loja('bf245c3b','CASA DOCE'))).toBeUndefined();
+    expect(acharTpl(loja('swiss','Swiss'))).toBeUndefined();
+  });
+
+  it('Data é o carimbo de 1 toque (date_sig), mesmo "Feito agora" de qualquer outra planilha', () => {
+    const t = acharTpl(loja('fab-pks','FABRIZZIO PKS'));
+    const data = t.sections[0].fields.find((f) => f.label === 'Data');
+    expect(data.type).toBe('date_sig');
+  });
+
+  it('5 campos de temperatura, todos number com unit °C (mostra o símbolo fixo no campo)', () => {
+    const t = acharTpl(loja('fab-pks','FABRIZZIO PKS'));
+    const temps = t.sections[0].fields.filter((f) => f.type === 'number');
+    expect(temps).toHaveLength(5);
+    expect(temps.every((f) => f.unit === '°C')).toBe(true);
+  });
+
+  it('bloco de NC tem Data + os 3 campos padrão - Data é text, não date (senão travaria 100% em todo dia sem NC)', () => {
+    const t = acharTpl(loja('fab-pks','FABRIZZIO PKS'));
+    const nc = t.sections.find((s) => s.id.endsWith('-nc'));
+    expect(nc.fields.map((f) => f.label)).toEqual(['Data', 'Não conformidade', 'Ação corretiva', 'Responsável']);
+    expect(nc.fields.find((f) => f.label === 'Data').type).toBe('text');
+  });
+
+  it('completionPct chega em 100% preenchendo só o Registro do dia - dia comum, sem NC, não fica preso', () => {
+    const t = acharTpl(loja('fab-pks','FABRIZZIO PKS'));
+    const responses = {
+      'pks-exp-data': { date: '2026-09-22', sig: 'Isabela Lorena' },
+      'pks-exp-t1': '62', 'pks-exp-t2': '8', 'pks-exp-t3': '61', 'pks-exp-t4': '9', 'pks-exp-t5': '60',
+    };
+    expect(completionPct(t, { responses })).toBe(100);
+  });
+
+  it('extractNonConformities ainda acha a NC - o 4º campo (Data) não atrapalha o extrator genérico', () => {
+    const t = acharTpl(loja('fab-pks','FABRIZZIO PKS'));
+    const out = extractNonConformities(t, { responses: {
+      'pks-exp-ncdata': '22/09/2026',
+      'pks-exp-ncdesc': 'Alimento 3 abaixo de 60°C',
+      'pks-exp-ncacao': 'Reaquecido e remedido',
+      'pks-exp-ncresp': 'Isabela Lorena',
+    } });
+    expect(out).toHaveLength(1);
+    expect(out[0].description).toBe('Alimento 3 abaixo de 60°C');
+    expect(out[0].action).toBe('Reaquecido e remedido');
   });
 });

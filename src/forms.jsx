@@ -584,6 +584,7 @@ const CAT = {
   manutencao:      { label:'Manutenção',       color:'#92400e', bg:'#fffbeb' },
   recebimento:     { label:'Recebimento',      color:'#374151', bg:'#f9fafb' },
   residuos:        { label:'Resíduos',          color:'#3f6212', bg:'#f7fee7' },
+  exposicao:       { label:'Temperatura em Exposição', color:'#9f1239', bg:'#fff1f2' },
   custom:          { label:'Personalizado',    color:'#374151', bg:'#f9fafb' },
 };
 export function catMeta(cat) { return CAT[cat] ?? CAT.custom; }
@@ -1795,6 +1796,53 @@ const TPL_TERRACO_HIG = [
   ]),
 ];
 
+// ─── PKS/Terraço · Controle de Temperatura dos Alimentos em Exposição (22/09) ──
+// Pedido do dono, planilha em papel anexada, reprodução "exatamente assim":
+// Data (carimbo "Feito agora", 1 toque - mesmo date_sig de qualquer outra
+// planilha), 5 campos de temperatura (o papel tem 5 linhas em branco por dia
+// na grade mensal, uma por alimento em exposição naquele dia) e o bloco de
+// não conformidade com Data própria (o papel tem essa 4ª coluna; a maioria
+// das folhas de NC deste app não tem, usa só o Data do topo - aqui o pedido
+// foi explícito por ela).
+//
+// Regra de temperatura (mín. 60°C quente / máx. 10°C frio, tempo máx.
+// 6h/4h) fica só DESCRITA - nenhum campo number deste app avalia faixa
+// automaticamente (isso é do mecanismo de EQUIPAMENTO, não de planilha).
+//
+// ⚠️ Este controle tem DUAS pernas hoje: esta planilha (visível em Planilhas
+// BPF) e os equipamentos "Balcão Quente - Exposição"/"Vitrine Fria -
+// Exposição" cadastrados em Equipamentos (21/09, docs/pks-terraco-
+// equipamentos-exposicao.sql), que JÁ avaliam conforme/desvio sozinhos. As
+// duas não se comunicam - registrar aqui não atualiza lá. Ver a mensagem que
+// acompanha este commit.
+const TPL_EXPOSICAO_ALIMENTOS = () => ({
+  id:'6d5293bb-6fc3-494d-890f-5aba855a436d', category:'exposicao', frequency:'daily',
+  title:'Controle de Temperatura dos Alimentos em Exposição',
+  description:'Aferir a temperatura em dois momentos: no início e ao término da distribuição. Alimentos quentes: mín. 60°C, tempo máx. de exposição 6h. Alimentos frios: máx. 10°C, tempo máx. de exposição 4h.',
+  sections:[
+    { id:'pks-exp-reg', title:'Registro do dia', fields:[
+      { id:'pks-exp-data', label:'Data', type:'date_sig' },
+      { id:'pks-exp-t1', label:'Alimento 1', type:'number', unit:'°C' },
+      { id:'pks-exp-t2', label:'Alimento 2', type:'number', unit:'°C' },
+      { id:'pks-exp-t3', label:'Alimento 3', type:'number', unit:'°C' },
+      { id:'pks-exp-t4', label:'Alimento 4', type:'number', unit:'°C' },
+      { id:'pks-exp-t5', label:'Alimento 5', type:'number', unit:'°C' },
+    ]},
+    { id:'pks-exp-nc', title:'Não conformidade (se houver)', fields:[
+      // type:'text', não 'date': completionPct só ignora text/photo do total.
+      // Um 'date' aqui contaria como tarefa obrigatória (esta planilha já tem
+      // campo number contável, então cai na regra normal, não na exceção da
+      // Dedetização) e travaria 100% em todo dia SEM não conformidade
+      // nenhuma, que é o dia comum. Mesmo motivo dos outros 3 campos deste
+      // bloco serem text.
+      { id:'pks-exp-ncdata', label:'Data', type:'text', hint:'DD/MM/AAAA' },
+      { id:'pks-exp-ncdesc', label:'Não conformidade', type:'text' },
+      { id:'pks-exp-ncacao', label:'Ação corretiva', type:'text' },
+      { id:'pks-exp-ncresp', label:'Responsável', type:'text' },
+    ]},
+  ],
+});
+
 // ─── Planilhas de OCORRÊNCIA (28/08) ────────────────────────────────────────
 // Utensílio novo que chegou, alimento que estragou, prato que quebrou. A RT:
 // "não precisa ter tempo... será cadastrado sempre que o setor receber algo
@@ -1890,13 +1938,13 @@ function seedTemplates(tenant) {
   // doce')` abaixo os capturaria e eles herdariam as 21 folhas da matriz.
   if (unidadePKS(tenant)) return [
     TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_RESERVATORIO(tenant.id),
-    TPL_CD_HORTIFRUTI(['Produção quente']),
+    TPL_CD_HORTIFRUTI(['Produção quente']), TPL_EXPOSICAO_ALIMENTOS(),
     ...TPL_PKS_HIG.map((mk) => mk()),
     ...TPL_OCORRENCIAS(PKS_SETORES),
   ];
   if (unidadeTerraco(tenant)) return [
     TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_RESERVATORIO(tenant.id),
-    TPL_CD_HORTIFRUTI(['Área de produção']),
+    TPL_CD_HORTIFRUTI(['Área de produção']), TPL_EXPOSICAO_ALIMENTOS(),
     ...TPL_TERRACO_HIG.map((mk) => mk()),
     ...TPL_OCORRENCIAS(TERRACO_SETORES),
   ];
@@ -2063,7 +2111,24 @@ function FormFill({ template, record, onSave, onBack, session, tenant, rotuloCat
                   {field.type==='presence' && <PresenceField value={responses[field.id]} onChange={(v) => setField(field.id,v)} />}
                   {field.type==='date_sig' && <DateSigField value={responses[field.id]} onChange={(v) => setField(field.id,v)} currentName={session?.user?.name} />}
                   {field.type==='date'     && <input type="date" value={responses[field.id]??''} onChange={(e) => setField(field.id,e.target.value)} style={{ padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', fontSize:13, fontFamily:'inherit' }} />}
-                  {field.type==='number'   && <input type="number" inputMode="decimal" value={responses[field.id]??''} onChange={(e) => setField(field.id,e.target.value)} placeholder="0" style={{ width:120, padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', fontSize:13, fontFamily:'inherit', fontVariantNumeric:'tabular-nums' }} />}
+                  {/* `field.unit` (ex.: '°C') é opcional - a maioria dos
+                      campos number (Kg, minutos...) já diz a unidade no
+                      LABEL, como sempre. Quando existe, mostra fixo dentro
+                      do campo (mesma correção do Recebimento, 22/09): num
+                      celular o teclado numérico cobre a tela e some com o
+                      label logo acima, então "10" sozinho perde o contexto
+                      de que é grau Celsius. */}
+                  {field.type==='number'   && (
+                    field.unit ? (
+                      <div style={{ position:'relative', width:120 }}>
+                        <input type="number" inputMode="decimal" value={responses[field.id]??''} onChange={(e) => setField(field.id,e.target.value)} placeholder="0"
+                          style={{ width:'100%', padding:'7px 34px 7px 10px', borderRadius:8, border:'1px solid var(--border)', fontSize:13, fontFamily:'inherit', fontVariantNumeric:'tabular-nums' }} />
+                        <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-secondary)', fontSize:12, pointerEvents:'none' }}>{field.unit}</span>
+                      </div>
+                    ) : (
+                      <input type="number" inputMode="decimal" value={responses[field.id]??''} onChange={(e) => setField(field.id,e.target.value)} placeholder="0" style={{ width:120, padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', fontSize:13, fontFamily:'inherit', fontVariantNumeric:'tabular-nums' }} />
+                    )
+                  )}
                   {field.type==='checkbox' && <label style={{ display:'inline-flex', alignItems:'center', gap:8, fontSize:13, cursor:'pointer' }}><input type="checkbox" checked={responses[field.id]===true} onChange={(e) => setField(field.id,e.target.checked)} style={{ width:18, height:18, accentColor:'var(--primary)' }} /> Marcar</label>}
                   {field.type==='text'     && <textarea value={responses[field.id]??''} onChange={(e) => setField(field.id,e.target.value)} placeholder="Observações…" style={{ width:'100%', padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', fontSize:13, fontFamily:'inherit', resize:'vertical', minHeight:54 }} />}
                   {/* Lista fechada (setor, qual banheiro…). Texto livre aqui

@@ -1816,17 +1816,26 @@ const TPL_TERRACO_HIG = [
 // duas não se comunicam - registrar aqui não atualiza lá. Ver a mensagem que
 // acompanha este commit.
 const TPL_EXPOSICAO_ALIMENTOS = () => ({
-  id:'6d5293bb-6fc3-494d-890f-5aba855a436d', category:'exposicao', frequency:'daily',
+  id:'6d5293bb-6fc3-494d-890f-5aba855a436d', category:'exposicao', frequency:'daily', v:2,
   title:'Controle de Temperatura dos Alimentos em Exposição',
   description:'Aferir a temperatura em dois momentos: no início e ao término da distribuição. Alimentos quentes: mín. 60°C, tempo máx. de exposição 6h. Alimentos frios: máx. 10°C, tempo máx. de exposição 4h.',
   sections:[
     { id:'pks-exp-reg', title:'Registro do dia', fields:[
       { id:'pks-exp-data', label:'Data', type:'date_sig' },
-      { id:'pks-exp-t1', label:'Alimento 1', type:'number', unit:'°C' },
-      { id:'pks-exp-t2', label:'Alimento 2', type:'number', unit:'°C' },
-      { id:'pks-exp-t3', label:'Alimento 3', type:'number', unit:'°C' },
-      { id:'pks-exp-t4', label:'Alimento 4', type:'number', unit:'°C' },
-      { id:'pks-exp-t5', label:'Alimento 5', type:'number', unit:'°C' },
+      // v2 (23/09): "Alimento N" era só o RÓTULO da temperatura, sem lugar
+      // pra escrever QUAL alimento é. Virou um campo de texto próprio (nome,
+      // digitável) na frente de cada temperatura, pedido dela olhando a
+      // tela ao vivo, junto com o print marcando onde faltava o campo.
+      { id:'pks-exp-n1', label:'Alimento 1', type:'text', hint:'Nome do alimento' },
+      { id:'pks-exp-t1', label:'Temperatura', type:'number', unit:'°C' },
+      { id:'pks-exp-n2', label:'Alimento 2', type:'text', hint:'Nome do alimento' },
+      { id:'pks-exp-t2', label:'Temperatura', type:'number', unit:'°C' },
+      { id:'pks-exp-n3', label:'Alimento 3', type:'text', hint:'Nome do alimento' },
+      { id:'pks-exp-t3', label:'Temperatura', type:'number', unit:'°C' },
+      { id:'pks-exp-n4', label:'Alimento 4', type:'text', hint:'Nome do alimento' },
+      { id:'pks-exp-t4', label:'Temperatura', type:'number', unit:'°C' },
+      { id:'pks-exp-n5', label:'Alimento 5', type:'text', hint:'Nome do alimento' },
+      { id:'pks-exp-t5', label:'Temperatura', type:'number', unit:'°C' },
     ]},
     { id:'pks-exp-nc', title:'Não conformidade (se houver)', fields:[
       // type:'text', não 'date': completionPct só ignora text/photo do total.

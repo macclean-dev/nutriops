@@ -234,6 +234,63 @@ describe('Controle de Temperatura dos Alimentos em Exposição', () => {
     expect(temps.every((f) => f.unit === '°C')).toBe(true);
   });
 
+  // v2 (23/09): "Alimento N" era só o rótulo da temperatura, sem onde
+  // escrever QUAL alimento é, pedido dela olhando a tela ao vivo, com print
+  // marcando o espaço em branco na frente de cada "Alimento N".
+  it('v2 - cada temperatura ganhou um campo de nome (texto) logo antes dela, "Alimento N"', () => {
+    const t = acharTpl(loja('fab-pks','FABRIZZIO PKS'));
+    expect(t.v).toBe(2);
+    const campos = t.sections[0].fields;
+    for (let i = 1; i <= 5; i++) {
+      const nome = campos.find((f) => f.id === `pks-exp-n${i}`);
+      const temp = campos.find((f) => f.id === `pks-exp-t${i}`);
+      expect(nome, `nome ${i}`).toMatchObject({ label: `Alimento ${i}`, type: 'text' });
+      expect(temp, `temp ${i}`).toMatchObject({ type: 'number', unit: '°C' });
+      // nome vem ANTES da temperatura dele, mesma ordem visual do pedido
+      expect(campos.indexOf(nome)).toBeLessThan(campos.indexOf(temp));
+    }
+  });
+
+  it('nome do alimento é opcional (text) - não trava 100% em dia com menos de 5 itens na exposição', () => {
+    const t = acharTpl(loja('fab-pks','FABRIZZIO PKS'));
+    const responses = {
+      'pks-exp-data': { date: '2026-09-23', sig: 'Isabela Lorena' },
+      'pks-exp-t1': '62', 'pks-exp-t2': '8', 'pks-exp-t3': '61', 'pks-exp-t4': '9', 'pks-exp-t5': '60',
+      // nenhum pks-exp-n1..n5 preenchido de propósito
+    };
+    expect(completionPct(t, { responses })).toBe(100);
+  });
+
+  // Mesmo padrão de "v-bump casado por título atualiza no lugar" (forms.test.js)
+  // quem já tinha a v1 (só as 5 temperaturas, sem nome) cacheada localmente
+  // precisa receber os campos de nome no próximo boot, com o id preservado.
+  it('quem já tinha a v1 cacheada (sem os campos de nome) recebe a v2 no próximo boot, sem trocar o id nem apagar registro', () => {
+    const PKS = { id:'fab-pks', name:'FABRIZZIO PKS' };
+    const atuais = readFormTemplates(PKS);
+    const exp = atuais.find((t) => t.title === titulo);
+    const v1 = {
+      ...exp, v: 1,
+      sections: [
+        { id:'pks-exp-reg', title:'Registro do dia', fields:[
+          { id:'pks-exp-data', label:'Data', type:'date_sig' },
+          { id:'pks-exp-t1', label:'Alimento 1', type:'number', unit:'°C' },
+          { id:'pks-exp-t2', label:'Alimento 2', type:'number', unit:'°C' },
+          { id:'pks-exp-t3', label:'Alimento 3', type:'number', unit:'°C' },
+          { id:'pks-exp-t4', label:'Alimento 4', type:'number', unit:'°C' },
+          { id:'pks-exp-t5', label:'Alimento 5', type:'number', unit:'°C' },
+        ]},
+        exp.sections[1],
+      ],
+    };
+    localStorage.setItem('nutriops.forms.templates.fab-pks',
+      JSON.stringify(atuais.map((t) => (t.id === exp.id ? v1 : t))));
+
+    const depois = acharTpl(PKS);
+    expect(depois.id).toBe(exp.id);   // id preservado, histórico não órfão
+    expect(depois.v).toBe(2);
+    expect(depois.sections[0].fields.some((f) => f.id === 'pks-exp-n1')).toBe(true);
+  });
+
   it('bloco de NC tem Data + os 3 campos padrão - Data é text, não date (senão travaria 100% em todo dia sem NC)', () => {
     const t = acharTpl(loja('fab-pks','FABRIZZIO PKS'));
     const nc = t.sections.find((s) => s.id.endsWith('-nc'));

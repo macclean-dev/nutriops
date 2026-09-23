@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.251', date: '2026-09-23', items: [
+    { text: 'Controle de Temperatura dos Alimentos em Exposição: cada uma das 5 temperaturas agora tem um campo pra escrever o nome do alimento correspondente, logo antes dela.', path: 'Planilhas BPF → Controle de Temperatura dos Alimentos em Exposição' },
+  ]},
   { version: '1.9.250', date: '2026-09-22', items: [
     { text: 'Nova planilha no PKS e no Terraço: "Controle de Temperatura dos Alimentos em Exposição", de preenchimento diário. Um toque em "Feito agora" grava a data e o responsável; 5 campos de temperatura já mostram "°C" fixo; e um bloco pra registrar não conformidade, ação corretiva, responsável e data, quando houver.', path: 'Planilhas BPF' },
   ]},

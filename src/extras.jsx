@@ -822,11 +822,33 @@ export function MonthlyExportView({ allTenants, records, session, activeTenant }
     </tr>`).join('');
 
     // BPF summary
+    // Relato da nutricionista da CASA DOCE (30/09): "as planilhas de controle
+    // BPF aparecem preenchimento 0, validados RT 0" no Relatório Mensal, com
+    // a Visão geral e a Validação RT mostrando dado normal ao mesmo tempo -
+    // ou seja, não é perda de registro, é a CONTAGEM deste PDF que vinha
+    // zerada sempre.
+    //
+    // CAUSA: `r.periodKey >= selectedMonth.replace('-','')` comparava STRING
+    // com hífen ("2026-09-15") contra string SEM hífen ("202609") - e em
+    // ordem lexicográfica o caractere '-' (código 45) vem ANTES de qualquer
+    // dígito (48-57). Toda periodKey (diária, semanal, quinzenal, mensal,
+    // semestral - todas têm hífen) perdia essa comparação, sempre, pra
+    // QUALQUER mês selecionado. `tplRecs` saía vazio 100% das vezes; nunca
+    // filtrou coisa nenhuma desde que este relatório existe.
+    //
+    // CONSERTO: mesmo critério que a seção de Temperatura já usa,
+    // algumas linhas acima (monthStart/monthEnd, timestamp numérico) - troca
+    // a comparação de string por periodKey por comparação de data por
+    // createdAt, igual ao resto deste mesmo relatório.
     const bpfRows = tenants.map(tenant => {
       const templates = readFormTemplates(tenant);
       const formRecs  = readFormRecords(tenant.id);
       return templates.map(tpl => {
-        const tplRecs = formRecs.filter(r => r.formId === tpl.id && r.periodKey >= selectedMonth.replace('-','') && r.status === 'submitted');
+        const tplRecs = formRecs.filter(r => {
+          if (r.formId !== tpl.id || r.status !== 'submitted') return false;
+          const at = new Date(r.createdAt).getTime();
+          return at >= monthStart && at <= monthEnd;
+        });
         const validated = tplRecs.filter(r => r.validation).length;
         return `<tr><td>${tenant.name}</td><td>${tpl.title}</td><td>${freqLabel(tpl.frequency)}</td><td>${tplRecs.length}</td><td>${validated}</td></tr>`;
       }).join('');

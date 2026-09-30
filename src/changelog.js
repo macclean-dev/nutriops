@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.252', date: '2026-09-30', items: [
+    { text: 'Corrigido: no Relatório Mensal de Conformidade Sanitária (PDF), a tabela de Planilhas de Controle BPF sempre mostrava "Preenchimento 0" e "Validados RT 0", mesmo com planilhas preenchidas e validadas. Era um erro de contagem no relatório, não perda de registro: nada precisa ser refeito.', path: 'Relatórios → Exportação mensal' },
+  ]},
   { version: '1.9.251', date: '2026-09-23', items: [
     { text: 'Controle de Temperatura dos Alimentos em Exposição: cada uma das 5 temperaturas agora tem um campo pra escrever o nome do alimento correspondente, logo antes dela.', path: 'Planilhas BPF → Controle de Temperatura dos Alimentos em Exposição' },
   ]},

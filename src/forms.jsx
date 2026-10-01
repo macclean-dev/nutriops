@@ -2866,11 +2866,19 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
                   <div style={{ height:4, background:'var(--border-subtle)', borderRadius:2, marginBottom:12, overflow:'hidden' }}>
                     <div style={{ height:'100%', width:`${cardPct}%`, background:cardIsValidated?'var(--green)':cardIsDone?meta.color:meta.color, borderRadius:2, transition:'width .3s', opacity:cardIsDone?1:0.6 }} />
                   </div>
-                  <div style={{ display:'flex', gap:8, justifyContent:'space-between', alignItems:'center' }}>
+                  {/* flexWrap nos dois níveis: numa planilha com setor
+                      (Hortifrutícolas, por ex.) esta fileira pode ter até 4
+                      botões - Histórico, Editar, 📱 Tablet, "Escolha o setor"
+                      (ou ↓ PDF quando já concluída). Sem quebra de linha eles
+                      não cabem num celular e ficam espremidos ou saem da
+                      tela - foi assim que o botão Editar da Higienização de
+                      Hortifrutícolas ficou inalcançável pra ela (relato
+                      01/10: "não consegui achar a opção"). */}
+                  <div style={{ display:'flex', gap:8, justifyContent:'space-between', alignItems:'center', flexWrap:'wrap' }}>
                     <button className="ghost-action" style={{ fontSize:11 }} onClick={() => setHistId(histId===tpl.id?null:tpl.id)}>
                       {histId===tpl.id?'Fechar':'Histórico'}
                     </button>
-                    <div style={{ display:'flex', gap:6 }}>
+                    <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
                       {/* Higienização: lista de equipamentos/áreas que muda
                           quando entra equipamento novo. Ou qualquer planilha
                           com campo de lista suspensa (ex.: "Qual banheiro",

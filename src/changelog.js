@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.253', date: '2026-10-01', items: [
+    { text: 'Corrigido: numa planilha com setor (como Higienização de Hortifrutícolas), a fileira de botões do card (Histórico, Editar, Tablet, Preencher) não cabia em telas estreitas e podia deixar algum botão - inclusive o Editar - de fora da tela. Agora os botões quebram para a linha de baixo quando não cabem.', path: 'Planilhas BPF → Planilhas' },
+  ]},
   { version: '1.9.252', date: '2026-09-30', items: [
     { text: 'Corrigido: no Relatório Mensal de Conformidade Sanitária (PDF), a tabela de Planilhas de Controle BPF sempre mostrava "Preenchimento 0" e "Validados RT 0", mesmo com planilhas preenchidas e validadas. Era um erro de contagem no relatório, não perda de registro: nada precisa ser refeito.', path: 'Relatórios → Exportação mensal' },
   ]},

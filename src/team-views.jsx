@@ -4,7 +4,7 @@ import { writePinOverride, isWeakPin } from './pin';
 import { isSupabaseEnabled as supabaseEnabled, staffNameJaExiste } from './repository';
 import { planejarMudancaDeUnidade, explicarRecusa, avisoDaMudanca } from './mover-colaborador';
 import { isGlobalAdmin } from './permissions';
-import { readTurns, writeTurns } from './turns';
+import { readTurns, writeTurns, publicarTurnos, turnosSoNesteAparelho } from './turns';
 
 const catalogKey = (id) => `nutriops.equipment.catalog.${id}`;
 const usersKey   = (id) => `nutriops.users.${id}`;
@@ -21,8 +21,13 @@ export function TurnsView({ activeTenant, allTenants, onTenantChange, records })
   const [nameInput, setNameInput]   = useState('');
   const [startInput, setStartInput] = useState('06:00');
   const [endInput, setEndInput]     = useState('12:00');
-  useEffect(() => { setTurns(readTurns(activeTenant)); setEditingId(null); }, [activeTenant.id]);
+  // `soAqui`: turnos personalizados que nunca subiram (ver turns.js).
+  const [soAqui, setSoAqui] = useState(() => turnosSoNesteAparelho(activeTenant.id));
+  useEffect(() => { setTurns(readTurns(activeTenant)); setEditingId(null); setSoAqui(turnosSoNesteAparelho(activeTenant.id)); }, [activeTenant.id]);
   useEffect(() => { writeTurns(activeTenant.id, turns); }, [activeTenant.id, turns]);
+  // Mudança feita AQUI vale pra loja toda: sobe no perfil da empresa. Só nas
+  // ações do usuário, nunca no efeito acima (que roda a cada montagem).
+  const aplicar = (next) => { setTurns(next); setSoAqui(false); publicarTurnos(activeTenant.id, next).catch(() => {}); };
 
   const now = new Date(), nowMin = now.getHours() * 60 + now.getMinutes(), catalog = readEquipmentCatalog(activeTenant);
   const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
@@ -36,13 +41,19 @@ export function TurnsView({ activeTenant, allTenants, onTenantChange, records })
   const saveTurn = () => {
     if (!nameInput.trim()) return;
     const entry = { name: nameInput.trim(), start: startInput, end: endInput };
-    setTurns((prev) => editingId ? prev.map((t) => t.id === editingId ? { ...t, ...entry } : t) : [...prev, { id: crypto.randomUUID(), ...entry }]);
+    aplicar(editingId ? turns.map((t) => t.id === editingId ? { ...t, ...entry } : t) : [...turns, { id: crypto.randomUUID(), ...entry }]);
     cancelEdit();
   };
-  const removeTurn = (id) => { if (!window.confirm('Remover este turno?')) return; setTurns((prev) => prev.filter((t) => t.id !== id)); };
+  const removeTurn = (id) => { if (!window.confirm('Remover este turno?')) return; aplicar(turns.filter((t) => t.id !== id)); };
   return (
     <section className="management-page">
-      <div className="page-header"><div><span className="eyebrow">Operação</span><h1>Turnos</h1><p className="muted">Configure as janelas de registro. Alertas são gerados com base nos turnos ativos.</p></div><div className="page-actions"><span className="badge subtle">{activeTenant.name}</span></div></div>
+      <div className="page-header"><div><span className="eyebrow">Operação</span><h1>Turnos</h1><p className="muted">Configure as janelas de registro. Alertas são gerados com base nos turnos ativos. Os turnos valem para todos os aparelhos da loja.</p></div><div className="page-actions"><span className="badge subtle">{activeTenant.name}</span></div></div>
+      {soAqui && (
+        <div role="alert" className="alert-banner" style={{ background: 'var(--amber-light)', borderColor: 'var(--amber-border)', marginBottom: 16 }}>
+          <span style={{ color: 'var(--amber)' }}>Estes turnos foram personalizados só neste aparelho. Os outros aparelhos da loja ainda usam os turnos padrão e cobram pendência em outros horários.</span>
+          <button className="secondary-action" style={{ fontSize: 12 }} onClick={() => aplicar(turns)}>Usar estes turnos em todos os aparelhos</button>
+        </div>
+      )}
       <div className="management-grid">
         <article className="management-card">
           <div className="card-head"><div><span className="eyebrow">{editingId ? 'Editando' : 'Novo turno'}</span><h2>{editingId ? turns.find((t) => t.id === editingId)?.name ?? '' : 'Cadastrar turno'}</h2></div></div>

@@ -35,6 +35,10 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.267', date: '2026-10-03', items: [
+    { text: 'Os turnos agora valem para todos os aparelhos da loja. Antes cada tablet e computador guardava os seus, e um aparelho novo voltava aos turnos padrão: dois aparelhos podiam cobrar pendência de temperatura em horários diferentes. Ao adicionar, editar ou remover um turno, a mudança chega aos outros aparelhos sozinha.', path: 'Equipe → Turnos' },
+    'Se este aparelho tinha turnos personalizados que nunca foram compartilhados, a tela de Turnos avisa e oferece "Usar estes turnos em todos os aparelhos". Nada muda sem alguém confirmar.',
+  ]},
   { version: '1.9.266', date: '2026-10-03', items: [
     { text: 'POPs agora têm aprovação: a nutricionista RT ou o administrador da loja abre o POP e toca em "Aprovar". Fica registrado quem aprovou, o perfil e a data, e isso sai impresso no PDF do POP e no Dossiê Fiscal. A RDC 216 pede POP "aprovado, datado e assinado".', path: 'Qualidade → POPs' },
     { text: 'E dá pra editar um POP. Cada edição vira uma versão nova (versão 2, 3...) que precisa ser aprovada de novo, e a versão anterior fica guardada com a aprovação que tinha.', path: 'Qualidade → POPs → Editar' },

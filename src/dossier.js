@@ -273,12 +273,13 @@ export function sectionDocuments({ companyProfile, complianceDocs, formTemplates
 //
 // Uma linha por colaborador ativo: é assim que o fiscal confere ASO. Quem
 // tem "Só opera aqui" fica fora (o ASO é do empregador, ver teamAsoSummary).
-// O resultado do exame sai em coluna própria, separado da validade: um ASO
-// "Inapto" dentro do prazo aparece como tal, em vez de sumir atrás de "Em dia".
+// O resultado do exame sai em coluna própria, separado da validade, e desde a
+// v1.9.259 um ASO "Inapto" também tem situação "Inapto" (employeeAsoStatus).
 
 const ASO_RESULTADO = { apto: 'Apto', apto_restricao: 'Apto com restrição', inapto: 'Inapto' };
 const ASO_SITUACAO = {
   ok: ['ok', 'Em dia'], warn: ['warn', null], expired: ['fail', 'Vencido'], never: ['fail', 'Sem exame registrado'],
+  inapto: ['fail', 'Inapto'],
 };
 
 export function sectionAso({ staff, complianceDocs, asoMeses = COMPLIANCE_DEFAULTS.asoValidadeMeses, now = Date.now() }) {

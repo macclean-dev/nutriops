@@ -155,9 +155,9 @@ describe('sectionAso: uma linha por colaborador', () => {
 
   it('afastada aparece com o afastamento e fica fora do total', () => {
     expect(linhaDe(sec.rowsHtml, 'Bia')).toContain('Licença maternidade desde 01/08/2026');
-    // Maria em dia; João tem validade ok (o resultado é outra coluna); Rita sem
-    // exame; Bia afastada sai da conta: 2 de 3, 1 afastado.
-    expect(sec.title).toBe('Controle de Saúde dos Manipuladores (ASO): 2 de 3 em dia, 1 afastado(s)');
+    // Maria em dia; João Inapto (desde a v1.9.259 não conta como em dia); Rita
+    // sem exame; Bia afastada sai da conta: 1 de 3, 1 afastado.
+    expect(sec.title).toBe('Controle de Saúde dos Manipuladores (ASO): 1 de 3 em dia, 1 afastado(s)');
   });
 
   it('loja sem equipe cai na mensagem de vazio', () => {

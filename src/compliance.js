@@ -23,7 +23,7 @@ export const COMPLIANCE_DEFAULTS = {
 };
 
 export const ASO_STATUS_LABEL = {
-  ok: 'Em dia', warn: 'Vence em breve', expired: 'Vencido', never: 'Sem ASO',
+  ok: 'Em dia', warn: 'Vence em breve', expired: 'Vencido', never: 'Sem ASO', inapto: 'Inapto',
 };
 
 // Afastamento não é resultado de exame — é a situação da pessoa (pedido do
@@ -97,6 +97,13 @@ export function employeeAsoStatus(employeeName, docs, meses = COMPLIANCE_DEFAULT
 
   const atual = meus[0];
   const dias = diasAteVencer(atual._validade, now);
+  // Exame "Inapto" não é exame em dia, por mais que esteja dentro da
+  // validade: a pessoa não pode manipular alimento (RDC 216 4.6.2). Até a
+  // v1.9.258 esta função olhava só a data, e um Inapto recente contava como
+  // "Em dia" na tela de ASO e na Prontidão (achado da pesquisa de 03/10).
+  // Vem antes da data de propósito: Inapto vencido continua sendo Inapto, que
+  // é a informação útil. "Apto com restrição" segue como apto.
+  if (atual.resultado === 'inapto') return { status: 'inapto', diasRestantes: dias, doc: atual };
   if (dias < 0) return { status: 'expired', diasRestantes: dias, doc: atual };
   if (dias <= COMPLIANCE_DEFAULTS.avisoDias) return { status: 'warn', diasRestantes: dias, doc: atual };
   return { status: 'ok', diasRestantes: dias, doc: atual };
@@ -156,6 +163,7 @@ export function teamAsoSummary(staff, docs, meses, now = Date.now()) {
     warn:    contáveis.filter((s) => s.status === 'warn').length,
     expired: contáveis.filter((s) => s.status === 'expired').length,
     never:   contáveis.filter((s) => s.status === 'never').length,
+    inapto:  contáveis.filter((s) => s.status === 'inapto').length,
     leave:   situacoes.filter((s) => s.leaveType).length,
   };
 }

@@ -376,8 +376,10 @@ export function computeReadiness(inputs = {}) {
       'critical', 'training'));
   } else {
     const aso = teamAsoSummary(ativos, complianceDocs, asoMeses, now);
-    const semOuVencido = aso.expired + aso.never;
-    const criticos = aso.situacoes.filter((s) => s.status === 'expired' || s.status === 'never');
+    // Inapto entra junto: exame que diz que a pessoa não pode manipular não
+    // é controle de saúde em ordem (compliance.js, employeeAsoStatus).
+    const semOuVencido = aso.expired + aso.never + aso.inapto;
+    const criticos = aso.situacoes.filter((s) => !s.leaveType && (s.status === 'expired' || s.status === 'never' || s.status === 'inapto'));
     a.push(chk('a7-aso', 'Controle de saúde dos manipuladores (ASO)',
       semOuVencido > 0 ? 'fail' : aso.warn > 0 ? 'warn' : 'ok',
       semOuVencido > 0

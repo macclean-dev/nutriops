@@ -582,7 +582,7 @@ function AsoPanel({ tenant, allUsers }) {
     }
   };
 
-  const tone = { ok:'ok', warn:'warn', expired:'danger', never:'neutral' };
+  const tone = { ok:'ok', warn:'warn', expired:'danger', never:'neutral', inapto:'danger' };
 
   return (
     <article className="management-card">
@@ -591,9 +591,9 @@ function AsoPanel({ tenant, allUsers }) {
         <span className="badge neutral">Validade padrão: {COMPLIANCE_DEFAULTS.asoValidadeMeses} meses</span>
       </div>
       <div style={{ display:'flex', borderBottom:'1px solid var(--border-subtle)' }}>
-        {[['ok','Em dia',resumo.ok],['warn','Vence em breve',resumo.warn],['expired','Vencido',resumo.expired],['never','Sem ASO',resumo.never],['leave','Afastada(o)',resumo.leave]].map(([key,label,count]) => (
+        {[['ok','Em dia',resumo.ok],['warn','Vence em breve',resumo.warn],['expired','Vencido',resumo.expired],['never','Sem ASO',resumo.never],['inapto','Inapto',resumo.inapto],['leave','Afastada(o)',resumo.leave]].map(([key,label,count]) => (
           <div key={key} style={{ flex:1, padding:'10px 16px', textAlign:'center', borderRight:'1px solid var(--border-subtle)' }}>
-            <div style={{ fontSize:22, fontWeight:800, fontFamily:'var(--mono)', color: key==='ok'?'var(--green)':key==='warn'?'var(--amber)':key==='expired'?'var(--red)':'var(--text-secondary)' }}>{count}</div>
+            <div style={{ fontSize:22, fontWeight:800, fontFamily:'var(--mono)', color: key==='ok'?'var(--green)':key==='warn'?'var(--amber)':(key==='expired'||key==='inapto')?'var(--red)':'var(--text-secondary)' }}>{count}</div>
             <div style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em', color:'var(--text-secondary)', marginTop:2 }}>{label}</div>
           </div>
         ))}
@@ -620,6 +620,7 @@ function AsoPanel({ tenant, allUsers }) {
                       some da linha de cima, mas continua editável abaixo. */}
                   {s.leaveType ? descreverAfastamento(s.leaveType, s.leaveStartedAt)
                     : s.status === 'never' ? 'Nenhum ASO registrado'
+                    : s.status === 'inapto' ? 'Último exame: Inapto. Não pode manipular alimentos até novo exame.'
                     : s.status === 'expired' ? `Venceu há ${Math.abs(s.diasRestantes)} dia(s)`
                     : `Vence em ${s.diasRestantes} dia(s) · ${new Date(`${s.doc._validade}T12:00`).toLocaleDateString('pt-BR')}`}
                 </span>

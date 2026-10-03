@@ -35,6 +35,10 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.259', date: '2026-10-03', items: [
+    { text: 'Corrigido: um ASO com resultado "Inapto" contava como "Em dia" enquanto estivesse dentro da validade. Agora ele aparece como "Inapto", em vermelho, com contador próprio na tela de ASO, e deixa a Prontidão com pendência até um novo exame ser registrado. "Apto com restrição" continua contando como em dia.', path: 'Capacitação → Saúde (ASO)' },
+    'Se algum colaborador da sua loja tem ASO Inapto registrado, a contagem de "Em dia" vai cair a partir desta versão. Não é registro novo: é a tela passando a ler o resultado que já estava lá.',
+  ]},
   { version: '1.9.258', date: '2026-10-03', items: [
     { text: 'Corrigido: no Painel da RT, quem responde por mais de uma unidade via as unidades que não estavam selecionadas sem desvios e sem conformidade, como se não tivessem nenhuma leitura. Era a tela que não buscava as temperaturas delas: os registros sempre estiveram lá. Agora cada unidade mostra os próprios números.', path: 'Gestão → Painel RT' },
   ]},

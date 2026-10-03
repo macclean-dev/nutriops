@@ -4,6 +4,7 @@ import { resolveRecordTone, normalizeEquipmentName } from './limits';
 import { autoVerdict, verdictConflicts, thawCompliant, oilResultForAcidLevel, suggestionConflicts } from './verdict';
 import { readCatalog } from './maintenance';
 import { gravarMesclando, SYNC_EVENT } from './lista-local';
+import { podeAprovarPop, popAprovado, aprovarPop, editarPop, descreverAprovacao, versaoDoPop } from './pop-aprovacao';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -63,22 +64,56 @@ export function POPsView({ activeTenant, allTenants, onTenantChange, session }) 
   const [materials, setMaterials] = useState('');
   const [frequency, setFrequency] = useState('Diário');
   const [responsible, setResponsible] = useState('');
+  // POP em edição (null = criando um novo). Editar gera a versão seguinte e
+  // derruba a aprovação (pop-aprovacao.js, RDC 216 4.11.2).
+  const [editando, setEditando] = useState(null);
 
-  useEffect(() => { setPOPs(readPOPs(activeTenant.id)); setView('list'); setSelected(null); }, [activeTenant.id]);
+  useEffect(() => { setPOPs(readPOPs(activeTenant.id)); setView('list'); setSelected(null); setEditando(null); }, [activeTenant.id]);
   useEffect(() => { writePOPs(activeTenant.id, pops); }, [activeTenant.id, pops]);
 
   const isRT = ['Nutricionista RT','Administrador','Super-admin'].includes(session?.user?.role);
+  const podeAprovar = podeAprovarPop(session);
 
-  const resetForm = () => { setTitle(''); setCategory('higiene'); setObjective(''); setSteps(['']); setMaterials(''); setFrequency('Diário'); setResponsible(''); };
+  const resetForm = () => { setTitle(''); setCategory('higiene'); setObjective(''); setSteps(['']); setMaterials(''); setFrequency('Diário'); setResponsible(''); setEditando(null); };
+
+  const startEdit = (pop) => {
+    setEditando(pop);
+    setTitle(pop.title ?? ''); setCategory(pop.category ?? 'higiene'); setObjective(pop.objective ?? '');
+    setSteps(pop.steps?.length ? [...pop.steps] : ['']); setMaterials(pop.materials ?? '');
+    setFrequency(pop.frequency ?? ''); setResponsible(pop.responsible ?? '');
+    setView('new');
+  };
+
+  const trocarPop = (atualizado) => {
+    setPOPs(prev => prev.map(p => (p.id === atualizado.id ? atualizado : p)));
+    pushPOP(activeTenant.id, atualizado);
+    setSelected(atualizado);
+  };
+
+  const aprovar = (pop) => {
+    if (!podeAprovar) return;   // a assinatura não depende só do botão sumir
+    if (!window.confirm(`Aprovar "${pop.title}" (versão ${versaoDoPop(pop)}) em seu nome?\n\nA aprovação fica registrada com seu nome, perfil e a data de hoje, e sai impressa no POP e no Dossiê.`)) return;
+    trocarPop(aprovarPop(pop, session));
+  };
 
   const savePOP = () => {
     if (!title.trim()) return;
+    if (editando) {
+      const atualizado = editarPop(editando, {
+        title: title.trim(), category, objective: objective.trim(),
+        steps: steps.filter(s => s.trim()), materials: materials.trim(),
+        frequency, responsible: responsible.trim(),
+      }, session);
+      if (atualizado !== editando) trocarPop(atualizado);
+      resetForm(); setView('detail');
+      return;
+    }
     const pop = {
       id: uid(), title: title.trim(), category, objective: objective.trim(),
       steps: steps.filter(s => s.trim()), materials: materials.trim(),
       frequency, responsible: responsible.trim(),
       createdBy: session?.user?.name, createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(), version: 1, approval: null,
     };
     setPOPs(prev => [pop, ...prev]);
     pushPOP(activeTenant.id, pop); // Fatia 3: sobe pra nuvem (ou enfileira offline)
@@ -119,9 +154,10 @@ export function POPsView({ activeTenant, allTenants, onTenantChange, session }) 
     ${pop.objective ? `<h2>Objetivo</h2><p>${pop.objective}</p>` : ''}
     ${pop.materials ? `<h2>Materiais necessários</h2><p>${pop.materials}</p>` : ''}
     ${pop.steps.length ? `<h2>Procedimento</h2><ol>${pop.steps.map(s => `<li>${s}</li>`).join('')}</ol>` : ''}
-    <div style="margin-top:40px;display:flex;gap:40px">
+    <div style="margin-top:24px;padding:8px 10px;border:1px solid ${popAprovado(pop) ? '#00a35c' : '#b26b00'};border-radius:4px;font-size:10px;font-weight:700;color:${popAprovado(pop) ? '#00684a' : '#7a4a00'}">${descreverAprovacao(pop)}</div>
+    <div style="margin-top:32px;display:flex;gap:40px">
       <div class="sig">Responsável pela execução: ${pop.responsible || '_______________'}</div>
-      <div class="sig">Nutricionista RT / Data: _______________</div>
+      <div class="sig">Assinatura do responsável pela aprovação</div>
     </div>
     <div class="footer"><span>NutriOPS · RDC 216/2004</span><span>Gerado em ${new Date().toLocaleString('pt-BR')}</span></div>
     </body></html>`);
@@ -138,10 +174,15 @@ export function POPsView({ activeTenant, allTenants, onTenantChange, session }) 
     <section className="management-page">
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20 }}>
         <button className="ghost-action" onClick={() => { setView('list'); resetForm(); }} style={{ padding:'6px 10px' }}>← Voltar</button>
-        <div><span className="eyebrow">Boas Práticas</span><h1 style={{ fontSize:20, fontWeight:800, letterSpacing:'-.04em', marginTop:2 }}>Novo POP</h1></div>
+        <div><span className="eyebrow">Boas Práticas</span><h1 style={{ fontSize:20, fontWeight:800, letterSpacing:'-.04em', marginTop:2 }}>{editando ? `Editar POP (vai virar a versão ${versaoDoPop(editando) + 1})` : 'Novo POP'}</h1></div>
       </div>
       <article className="management-card">
         <div className="capture-fields">
+          {editando && popAprovado(editando) && (
+            <p style={{ fontSize:12, color:'var(--amber)', fontWeight:600 }}>
+              Este POP está aprovado. Salvar uma mudança cria a versão {versaoDoPop(editando) + 1} e ela precisa ser aprovada de novo. A versão atual fica guardada no histórico com a aprovação dela.
+            </p>
+          )}
           <div className="grid-2">
             <label>Título do procedimento<input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Ex.: Higienização das mãos" /></label>
             <label>Categoria
@@ -170,7 +211,7 @@ export function POPsView({ activeTenant, allTenants, onTenantChange, session }) 
           </div>
           <div className="actions-row" style={{ justifyContent:'flex-end' }}>
             <button className="secondary-action" onClick={() => { setView('list'); resetForm(); }}>Cancelar</button>
-            <button className="primary-action attention" onClick={savePOP} disabled={!title.trim() || steps.filter(s=>s.trim()).length === 0}>Salvar POP</button>
+            <button className="primary-action attention" onClick={savePOP} disabled={!title.trim() || steps.filter(s=>s.trim()).length === 0}>{editando ? 'Salvar nova versão' : 'Salvar POP'}</button>
           </div>
         </div>
       </article>
@@ -186,6 +227,8 @@ export function POPsView({ activeTenant, allTenants, onTenantChange, session }) 
           <h1 style={{ fontSize:20, fontWeight:800, letterSpacing:'-.04em', marginTop:2 }}>{selected.title}</h1>
         </div>
         <div style={{ display:'flex', gap:8 }}>
+          {podeAprovar && !popAprovado(selected) && <button className="primary-action" style={{ fontSize:12 }} onClick={() => aprovar(selected)}>Aprovar</button>}
+          {isRT && <button className="secondary-action" style={{ fontSize:12 }} onClick={() => startEdit(selected)}>Editar</button>}
           <button className="secondary-action" style={{ fontSize:12 }} onClick={() => printPOP(selected)}>↓ Imprimir PDF</button>
           {isRT && <button className="ghost-action danger" style={{ fontSize:12 }} onClick={() => deletePOP(selected.id)}>Remover</button>}
         </div>
@@ -197,7 +240,13 @@ export function POPsView({ activeTenant, allTenants, onTenantChange, session }) 
             <div className="info-box"><span>Responsável</span><strong>{selected.responsible || '—'}</strong></div>
             <div className="info-box"><span>Elaborado por</span><strong>{selected.createdBy || '—'}</strong></div>
             <div className="info-box"><span>Data</span><strong>{fmtDate(selected.createdAt)}</strong></div>
+            <div className="info-box"><span>Aprovação</span><strong style={{ color: popAprovado(selected) ? 'var(--green)' : 'var(--amber)' }}>{descreverAprovacao(selected)}</strong></div>
           </div>
+          {(selected.history?.length ?? 0) > 0 && (
+            <p style={{ fontSize:12, color:'var(--text-secondary)' }}>
+              Versões anteriores guardadas: {selected.history.map((h) => `v${h.version}${h.approval?.by ? ` (aprovada por ${h.approval.by})` : ''}`).join(', ')}.
+            </p>
+          )}
           {selected.objective && <div><p style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--text-secondary)', marginBottom:6 }}>Objetivo</p><p style={{ fontSize:13, lineHeight:1.6 }}>{selected.objective}</p></div>}
           {selected.materials && <div><p style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--text-secondary)', marginBottom:6 }}>Materiais necessários</p><p style={{ fontSize:13, lineHeight:1.6 }}>{selected.materials}</p></div>}
           {selected.steps.length > 0 && (
@@ -256,7 +305,10 @@ export function POPsView({ activeTenant, allTenants, onTenantChange, session }) 
                     <span className="eyebrow" style={{ color: cat?.color }}>{cat?.label}</span>
                     <h3 style={{ fontSize:14, fontWeight:700, marginTop:3 }}>{pop.title}</h3>
                   </div>
-                  <span className="badge subtle" style={{ fontSize:10 }}>{pop.frequency}</span>
+                  <div style={{ display:'flex', flexDirection:'column', gap:4, alignItems:'flex-end' }}>
+                    <span className="badge subtle" style={{ fontSize:10 }}>{pop.frequency}</span>
+                    <span className={`badge ${popAprovado(pop) ? 'ok' : 'warn'}`} style={{ fontSize:10 }}>{popAprovado(pop) ? 'Aprovado' : 'Aguardando aprovação'}</span>
+                  </div>
                 </div>
                 {pop.objective && <p style={{ fontSize:12, color:'var(--text-secondary)', marginBottom:8, lineHeight:1.5 }}>{pop.objective.slice(0,80)}{pop.objective.length>80?'…':''}</p>}
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:11, color:'var(--text-secondary)' }}>

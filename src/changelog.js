@@ -35,6 +35,11 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.266', date: '2026-10-03', items: [
+    { text: 'POPs agora têm aprovação: a nutricionista RT ou o administrador da loja abre o POP e toca em "Aprovar". Fica registrado quem aprovou, o perfil e a data, e isso sai impresso no PDF do POP e no Dossiê Fiscal. A RDC 216 pede POP "aprovado, datado e assinado".', path: 'Qualidade → POPs' },
+    { text: 'E dá pra editar um POP. Cada edição vira uma versão nova (versão 2, 3...) que precisa ser aprovada de novo, e a versão anterior fica guardada com a aprovação que tinha.', path: 'Qualidade → POPs → Editar' },
+    'Importante: os POPs que já existiam aparecem como "Aguardando aprovação", e a Prontidão passa a mostrar ressalva até eles serem aprovados. Não é registro perdido: falta só a aprovação, que antes o app não tinha como guardar.',
+  ]},
   { version: '1.9.265', date: '2026-10-03', items: [
     { text: 'A Prontidão ganhou o item "Calibração e manutenção programada". A RDC 216 exige calibrar os instrumentos de medição, como os termômetros, com registro. O app olha os planos de calibração cadastrados em Manutenção e a planilha "Calibração de Instrumentos de Medição": calibração vencida aparece como pendência, manutenção programada atrasada como aviso, e sem nenhum registro de calibração o item diz "sem dado".', path: 'Gestão → Prontidão' },
     'A "Data da próxima calibração" que já era preenchida na planilha de calibração agora é lida e cobrada. Antes ela era guardada e nada olhava pra ela.',

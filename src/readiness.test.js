@@ -25,7 +25,9 @@ const lojaOk = (over = {}) => ({
   formTemplates: [{ id: 'ded', category: 'dedetizacao', title: 'Controle de Dedetização' }],
   formRecords: [{ id: 'r1', formId: 'ded', status: 'submitted', validation: { at: iso(10) }, updatedAt: iso(10), createdAt: iso(10) }],
   pendingForms: [],
-  pops: REQUIRED_POPS.map((r) => ({ title: r.label, category: r.categories[0] ?? 'outros' })),
+  // Aprovados desde a v1.9.266: o B3 só conta POP aprovado (RDC 216 4.11.2),
+  // e a "loja perfeita" tem que ter os 4 aprovados pra continuar perfeita.
+  pops: REQUIRED_POPS.map((r) => ({ title: r.label, category: r.categories[0] ?? 'outros', version: 1, approval: { by: 'Ana Paula', role: 'Nutricionista RT', at: iso(5), version: 1 } })),
   companyProfile: { rtNome: 'Ana Paula', rtCrn: 'CRN-1 12345', alvara: '123/2026' },
   // Fatia 2b: sem estes, A7 (ASO) e B4 (Manual) viram pendência e a "loja
   // hipoteticamente perfeita" deixaria de ser perfeita.

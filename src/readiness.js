@@ -27,6 +27,7 @@ import { employeeTrainingStatus } from './training-status';
 import { teamAsoSummary, manualBpStatus, alvaraStatus, latestManualBp, COMPLIANCE_DEFAULTS } from './compliance';
 import { acoesVencidas, diasDeAtraso } from './acoes-prazo';
 import { calibracoesPorPlanilha, daysUntil } from './maintenance-due';
+import { popAprovado } from './pop-aprovacao';
 
 // ─── Suposições e réguas ────────────────────────────────────────────────────
 // ⚠️ `dedetizacaoMeses` é SUPOSIÇÃO, não texto de norma (auditoria §4.1): a
@@ -420,12 +421,21 @@ export function computeReadiness(inputs = {}) {
             : `Alvará ${alv.numero} válido por mais ${alv.dias} dia(s).`,
     'high', 'settings'));
 
-  const popsFaltando = missingRequiredPOPs(pops);
+  // Desde a v1.9.266 só POP APROVADO conta (RDC 216 4.11.2: "aprovados,
+  // datados e assinados"). O POP cadastrado e não aprovado é dito à parte,
+  // pra a pessoa saber que falta só a aprovação, não o POP.
+  const popsFaltando = missingRequiredPOPs((pops ?? []).filter(popAprovado));
+  const soFaltaAprovar = popsFaltando.filter((req) => (pops ?? []).some((p) => popMatchesRequirement(p, req)));
+  const naoExistem = popsFaltando.filter((req) => !soFaltaAprovar.includes(req));
   b.push(chk('b3-pops', 'Os 4 POPs obrigatórios (§4.11)',
     popsFaltando.length > 0 ? 'warn' : 'ok',
     popsFaltando.length > 0
-      ? `Não encontrei POP para: ${popsFaltando.map((p) => p.label).join('; ')}. Só ressalva, não pendência: o POP pode existir impresso — mas aí ele não sai no dossiê, e some se este aparelho for trocado.`
-      : 'Os 4 POPs obrigatórios estão cadastrados.',
+      ? [
+          naoExistem.length > 0 ? `Não encontrei POP para: ${naoExistem.map((p) => p.label).join('; ')}.` : null,
+          soFaltaAprovar.length > 0 ? `Cadastrado, mas aguardando aprovação da RT ou do responsável: ${soFaltaAprovar.map((p) => p.label).join('; ')}. A RDC 216 (4.11.2) pede POP aprovado, datado e assinado.` : null,
+          naoExistem.length > 0 ? 'Só ressalva, não pendência: o POP pode existir impresso, mas aí ele não sai no dossiê.' : null,
+        ].filter(Boolean).join(' ')
+      : 'Os 4 POPs obrigatórios estão cadastrados e aprovados.',
     'high', 'pops'));
 
   // B4 · Manual de BP — a Fatia 2b passou a registrar o ATESTADO (versão,

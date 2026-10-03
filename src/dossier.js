@@ -14,6 +14,7 @@
 
 import { alvaraStatus, latestManualBp, manualBpStatus, teamAsoSummary, descreverAfastamento, COMPLIANCE_DEFAULTS } from './compliance';
 import { ultimoComprovante, EH_DEDETIZACAO, EH_RESERVATORIO, READINESS_DEFAULTS } from './readiness';
+import { popAprovado, descreverAprovacao } from './pop-aprovacao';
 
 function esc(v) { return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function fmtDate(iso) { try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return '—'; } }
@@ -166,11 +167,13 @@ export function sectionPOPs(pops) {
     <td>${esc(p.category || '—')}</td>
     <td>${esc(p.frequency || '—')}</td>
     <td>${esc(p.responsible || '—')}</td>
+    <td style="color:${popAprovado(p) ? '#00a35c' : '#b26b00'};font-weight:700">${esc(descreverAprovacao(p))}</td>
   </tr>`).join('');
 
+  const aprovados = (pops ?? []).filter(popAprovado).length;
   return {
-    title: `Procedimentos Operacionais Padrão (${(pops ?? []).length} documentados)`,
-    headers: ['POP', 'Categoria', 'Frequência', 'Responsável'],
+    title: `Procedimentos Operacionais Padrão (${(pops ?? []).length} documentados, ${aprovados} aprovados)`,
+    headers: ['POP', 'Categoria', 'Frequência', 'Responsável', 'Aprovação (RDC 216 4.11.2)'],
     rowsHtml: rows,
     emptyMessage: 'Nenhum POP cadastrado ainda.',
   };

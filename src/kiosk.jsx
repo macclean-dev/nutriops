@@ -761,7 +761,7 @@ function FormKioskField({ field, value, onChange, currentName }) {
     // virar o caminho principal da higiene pessoal.
     return (
       <div style={{ ...campoBase, background:'#f8fafc', color:'#5c6c7a', fontSize:14 }}>
-        {value?.path ? '📷 Foto já anexada neste registro.' : 'Foto se anexa pelo app (fora do modo tablet).'}
+        {value?.path ? (/\.pdf$/i.test(value.path) || value.tipo === 'pdf' ? 'PDF já anexado neste registro.' : '📷 Foto já anexada neste registro.') : 'Foto se anexa pelo app (fora do modo tablet).'}
       </div>
     );
   }

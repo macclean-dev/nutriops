@@ -341,9 +341,24 @@ export async function reduzirFoto(file, maxLado = 1280, qualidade = 0.72) {
   return blob;
 }
 
-// value = { path, at } — só o CAMINHO no Storage; o arquivo não entra no
-// registro (ver o comentário do bucket em repository.js).
-function PhotoField({ value, onChange, tenantId, formId, periodKey, fieldId }) {
+// O campo aceita PDF quando o PRÓPRIO rótulo promete PDF ("Comprovante de
+// dedetização (foto ou PDF)", "Comprovante / laudo (foto ou PDF)"). Até a
+// v1.9.259 o rótulo prometia e o campo só aceitava imagem (achado da
+// pesquisa de 03/10; a promessa é da v1.9.134). Ler do rótulo, e não de uma
+// flag nova no modelo, faz valer também pras planilhas já gravadas nas lojas
+// e pras cópias que a RT personalizou, sem migrar modelo nenhum.
+export function campoAceitaPdf(field) {
+  return /\bpdf\b/i.test(String(field?.label ?? ''));
+}
+
+export function anexoEhPdf(value) {
+  return value?.tipo === 'pdf' || /\.pdf$/i.test(String(value?.path ?? ''));
+}
+
+// value = { path, at, tipo? }: só o CAMINHO no Storage; o arquivo não entra
+// no registro (ver o comentário do bucket em repository.js). `tipo: 'pdf'`
+// quando o anexo é PDF; foto não grava `tipo` (registros antigos seguem iguais).
+function PhotoField({ value, onChange, tenantId, formId, periodKey, fieldId, aceitaPdf = false }) {
   const [erro, setErro]   = useState('');
   const [subindo, setSub] = useState(false);
   const [url, setUrl]     = useState(null);
@@ -373,34 +388,58 @@ function PhotoField({ value, onChange, tenantId, formId, periodKey, fieldId }) {
     setErro(''); setSub(true);
     try {
       const m = await import('./repository');
-      const blob = await reduzirFoto(file);
-      const path = await m.uploadFormPhoto(tenantId, blob, { formId, periodKey, fieldId });
-      onChange({ path, at: new Date().toISOString() });
+      if (file.type === m.PDF_MIME) {
+        // PDF vai como veio: não há o que "reduzir", e o laudo precisa ficar
+        // legível. O limite é o do bucket; avisar antes poupa o envio inútil.
+        if (file.size > m.LIMITE_ANEXO_BYTES) throw new Error('O PDF passa de 5 MB. Envie uma versão menor ou uma foto do comprovante.');
+        const path = await m.uploadFormPhoto(tenantId, file, { formId, periodKey, fieldId }, m.PDF_MIME);
+        onChange({ path, at: new Date().toISOString(), tipo: 'pdf' });
+      } else {
+        const blob = await reduzirFoto(file);
+        const path = await m.uploadFormPhoto(tenantId, blob, { formId, periodKey, fieldId });
+        onChange({ path, at: new Date().toISOString() });
+      }
     } catch (e) {
-      setErro(e.message ?? 'Não consegui anexar a foto.');
+      setErro(e.message ?? 'Não consegui anexar o arquivo.');
     }
     setSub(false);
   };
+  const ehPdf = anexoEhPdf(value);
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:8, alignItems:'flex-start' }}>
       {value?.path ? (
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           {url
-            ? <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="Evidência" style={{ width:88, height:88, objectFit:'cover', borderRadius:'var(--r)', border:'1px solid var(--border)' }} /></a>
+            ? (ehPdf
+              ? <a href={url} target="_blank" rel="noreferrer" style={{ width:88, height:88, borderRadius:'var(--r)', border:'1px solid var(--border)', display:'grid', placeItems:'center', fontSize:13, fontWeight:700, color:'var(--primary)', textDecoration:'none' }}>PDF<br /><span style={{ fontSize:10, fontWeight:600 }}>abrir</span></a>
+              : <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="Evidência" style={{ width:88, height:88, objectFit:'cover', borderRadius:'var(--r)', border:'1px solid var(--border)' }} /></a>)
             : carregandoUrl
               ? <div style={{ width:88, height:88, borderRadius:'var(--r)', border:'1px dashed var(--border)', display:'grid', placeItems:'center', fontSize:11, color:'var(--text-secondary)' }}>abrindo…</div>
               : <div title="Não consegui carregar a foto agora — pode ser falta de internet ou de permissão. Tente sair e voltar nesta planilha." style={{ width:88, height:88, borderRadius:'var(--r)', border:'1px dashed var(--red)', display:'grid', placeItems:'center', fontSize:11, color:'var(--red)', textAlign:'center', padding:4 }}>falha ao abrir</div>}
           <button className="ghost-action danger" style={{ fontSize:11 }} onClick={() => onChange(null)}>Remover</button>
         </div>
       ) : (
-        // `capture` faz o celular abrir a câmera direto, sem passar pela galeria.
-        <label className="secondary-action" style={{ fontSize:12, padding:'7px 12px', cursor: subindo ? 'wait' : 'pointer' }}>
-          {subindo ? 'Enviando…' : '📷 Anexar foto'}
-          <input type="file" accept="image/*" capture="environment" disabled={subindo}
-            onChange={(e) => { escolher(e.target.files?.[0]); e.target.value = ''; }}
-            style={{ display:'none' }} />
-        </label>
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          {/* `capture` faz o celular abrir a câmera direto, sem passar pela galeria. */}
+          <label className="secondary-action" style={{ fontSize:12, padding:'7px 12px', cursor: subindo ? 'wait' : 'pointer' }}>
+            {subindo ? 'Enviando…' : '📷 Anexar foto'}
+            <input type="file" accept="image/*" capture="environment" disabled={subindo}
+              onChange={(e) => { escolher(e.target.files?.[0]); e.target.value = ''; }}
+              style={{ display:'none' }} />
+          </label>
+          {/* Botão separado de propósito: juntar PDF no mesmo input faria o
+              celular abrir um seletor de arquivo em vez da câmera direto, e
+              a foto é o caso comum. */}
+          {aceitaPdf && !subindo && (
+            <label className="secondary-action" style={{ fontSize:12, padding:'7px 12px', cursor:'pointer' }}>
+              Anexar PDF
+              <input type="file" accept="application/pdf"
+                onChange={(e) => { escolher(e.target.files?.[0]); e.target.value = ''; }}
+                style={{ display:'none' }} />
+            </label>
+          )}
+        </div>
       )}
       {erro && <span style={{ fontSize:11, color:'var(--red)', fontWeight:600 }}>{erro}</span>}
     </div>
@@ -705,7 +744,7 @@ export function generateFormPDF(template, record, tenant, rotuloCategoria) {
     if (field.type==='photo') {
       if (!val?.path) return '<span style="color:#9198a1">—</span>';
       const q = val.at ? new Date(val.at).toLocaleString('pt-BR') : '';
-      return `<span style="color:#00a35c;font-weight:700">📷 Foto anexada</span>${q ? ` <span style="color:#5c6c7a">(${q})</span>` : ''}`;
+      return `<span style="color:#00a35c;font-weight:700">${anexoEhPdf(val) ? 'PDF anexado' : '📷 Foto anexada'}</span>${q ? ` <span style="color:#5c6c7a">(${q})</span>` : ''}`;
     }
     return String(val);
   };
@@ -2153,7 +2192,8 @@ function FormFill({ template, record, onSave, onBack, session, tenant, rotuloCat
                   )}
                   {field.type==='photo'    && (
                     <PhotoField value={responses[field.id]} onChange={(v) => setField(field.id,v)}
-                      tenantId={tenant?.id} formId={template.id} periodKey={record?.periodKey ?? 'sem-periodo'} fieldId={field.id} />
+                      tenantId={tenant?.id} formId={template.id} periodKey={record?.periodKey ?? 'sem-periodo'} fieldId={field.id}
+                      aceitaPdf={campoAceitaPdf(field)} />
                   )}
                 </div>
               </div>

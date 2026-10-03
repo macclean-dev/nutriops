@@ -16,13 +16,19 @@
 -- vias das outras 8 tabelas (device-token OR __healthcheck__ OR is_member).
 -- ═══════════════════════════════════════════════════════════════════════════
 
+-- ⛔ (03/10) As POLICIES abaixo são a versão ANTIGA (sem o caminho do admin da
+-- plataforma). A fonte de verdade delas é docs/rls-policies.sql. Não rode este
+-- arquivo inteiro de novo: ele trocaria as regras atuais por estas. A lista de
+-- tipos do bucket abaixo já inclui PDF (v1.9.260, docs/form-photos-pdf.sql),
+-- pra quem consultar não desfazer a liberação por engano.
+
 -- ── PASSO 1 — Criar o bucket privado (idempotente) ──────────────────────────
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('form-photos', 'form-photos', false, 5242880, array['image/jpeg','image/png','image/webp'])
+values ('form-photos', 'form-photos', false, 5242880, array['image/jpeg','image/png','image/webp','application/pdf'])
 on conflict (id) do update
   set public = false,
       file_size_limit = 5242880,
-      allowed_mime_types = array['image/jpeg','image/png','image/webp'];
+      allowed_mime_types = array['image/jpeg','image/png','image/webp','application/pdf'];
 
 -- ── PASSO 2 — Policies em storage.objects, escopadas a este bucket ──────────
 -- storage.foldername(name) devolve as pastas do caminho; [1] é a primeira,

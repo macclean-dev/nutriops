@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.260', date: '2026-10-03', items: [
+    { text: 'O comprovante de dedetização e o laudo do reservatório agora aceitam PDF de verdade, como o campo sempre prometeu: ao lado de "Anexar foto" apareceu "Anexar PDF" (até 5 MB). Antes o campo só abria a câmera, e quem tinha o laudo em PDF precisava fotografar a tela.', path: 'Planilhas BPF → Controle de Dedetização / Higienização do Reservatório de Água' },
+  ]},
   { version: '1.9.259', date: '2026-10-03', items: [
     { text: 'Corrigido: um ASO com resultado "Inapto" contava como "Em dia" enquanto estivesse dentro da validade. Agora ele aparece como "Inapto", em vermelho, com contador próprio na tela de ASO, e deixa a Prontidão com pendência até um novo exame ser registrado. "Apto com restrição" continua contando como em dia.', path: 'Capacitação → Saúde (ASO)' },
     'Se algum colaborador da sua loja tem ASO Inapto registrado, a contagem de "Em dia" vai cair a partir desta versão. Não é registro novo: é a tela passando a ler o resultado que já estava lá.',

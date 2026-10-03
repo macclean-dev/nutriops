@@ -1167,29 +1167,44 @@ export async function syncTenantStaff(tenantId) {
 const PHOTO_BUCKET = 'form-photos';
 function sbStorageBase() { return `${getSupabaseConfig().url}/storage/v1`; }
 
-export function buildPhotoPath({ tenantId, formId, periodKey, fieldId }) {
+// `ext` existe desde a v1.9.260: comprovante que o rótulo promete "foto ou
+// PDF" (dedetização, laudo do reservatório) passou a aceitar PDF de verdade.
+export function buildPhotoPath({ tenantId, formId, periodKey, fieldId, ext = 'jpg' }) {
   const seguro = (s) => String(s ?? '').replace(/[^a-zA-Z0-9._-]/g, '_');
   const carimbo = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
-  return `${seguro(tenantId)}/${seguro(formId)}/${seguro(periodKey)}/${seguro(fieldId)}-${carimbo}.jpg`;
+  const extensao = ext === 'pdf' ? 'pdf' : 'jpg';
+  return `${seguro(tenantId)}/${seguro(formId)}/${seguro(periodKey)}/${seguro(fieldId)}-${carimbo}.${extensao}`;
 }
+
+// O bucket só aceita os tipos liberados em docs/form-photos-storage.sql; PDF
+// entrou lá na v1.9.260. Qualquer outro tipo vira foto (o blob de foto já
+// chega como JPEG, reduzido por reduzirFoto).
+export const PDF_MIME = 'application/pdf';
+export const LIMITE_ANEXO_BYTES = 5242880;   // mesmo file_size_limit do bucket
 
 // Envia o blob e devolve o caminho salvo. Lança em falha — quem chama mostra o
 // erro em vez de deixar o usuário achar que a foto foi anexada.
-export async function uploadFormPhoto(tenantId, blob, meta) {
+export async function uploadFormPhoto(tenantId, blob, meta, contentType = 'image/jpeg') {
   if (!isSupabaseEnabled()) throw new Error('Sem conexão com a nuvem — não dá pra anexar foto agora.');
   if (!navigator.onLine)   throw new Error('Sem internet — tire a foto de novo quando reconectar.');
-  const path = buildPhotoPath({ tenantId, ...meta });
+  const ehPdf = contentType === PDF_MIME;
+  const path = buildPhotoPath({ tenantId, ...meta, ext: ehPdf ? 'pdf' : 'jpg' });
   const { anonKey } = getSupabaseConfig();
   const { Authorization } = await sbHeaders(tenantId);   // member JWT ou device-token
   const res = await fetch(`${sbStorageBase()}/object/${PHOTO_BUCKET}/${path}`, {
     method: 'POST',
-    headers: { apikey: anonKey, Authorization, 'Content-Type': 'image/jpeg', 'x-upsert': 'false' },
+    headers: { apikey: anonKey, Authorization, 'Content-Type': ehPdf ? PDF_MIME : 'image/jpeg', 'x-upsert': 'false' },
     body: blob,
   });
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) markSupabaseAuthError(res.status, 'storage');
     let msg = ''; try { msg = await res.text(); } catch {}
-    throw new Error(`Falha ao enviar a foto (${res.status})${msg ? ' — ' + msg.slice(0, 120) : ''}`);
+    // PDF recusado pelo tipo = o SQL que libera PDF no bucket ainda não rodou
+    // (docs/form-photos-storage.sql). Diz isso em vez de um 4xx cru.
+    if (ehPdf && /mime|content.?type|not supported|invalid_mime/i.test(msg)) {
+      throw new Error('A nuvem ainda não aceita PDF neste campo. Envie uma foto do comprovante por enquanto e avise o suporte.');
+    }
+    throw new Error(`Falha ao enviar ${ehPdf ? 'o PDF' : 'a foto'} (${res.status})${msg ? ': ' + msg.slice(0, 120) : ''}`);
   }
   return path;
 }

@@ -137,7 +137,7 @@ describe('o resto da varredura — o que ficou limpo', () => {
   });
 
   it('as duas funções de foto repassam o tenantId pro storage', () => {
-    expect(repo).toContain('export async function uploadFormPhoto(tenantId, blob, meta) {');
+    expect(repo).toContain("export async function uploadFormPhoto(tenantId, blob, meta, contentType = 'image/jpeg') {");
     expect(repo).toContain('export async function signedPhotoUrl(tenantId, path, segundos = 3600) {');
     const usos = [...repo.matchAll(/const \{ Authorization \} = await sbHeaders\(tenantId\);/g)];
     expect(usos).toHaveLength(2);

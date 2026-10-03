@@ -18,7 +18,8 @@ import { readTurns } from './turns';
 import { canAccess } from './permissions';
 import { viewVisivelNaLoja } from './modulos-da-loja';
 import { computeTurnAlertsPure } from './turn-alerts';
-import { isSupabaseEnabled, getSyncStatus, getOfflineQueue, getTemperatureRepository } from './repository';
+import { isSupabaseEnabled, getSyncStatus, getOfflineQueue } from './repository';
+import { readTenantTemperatures } from './temperaturas-por-loja';
 import { useFiltroDeLoja } from './filtro-loja';
 import {
   computeReadiness, byWorstStatus, READINESS_DEFAULTS,
@@ -35,26 +36,8 @@ const readStaff     = (tenant) => readLocal(`nutriops.users.${tenant.id}`, null)
 // pesados que não vale puxar só por causa de uma leitura.
 const readCompliance = (id) => readLocal(`nutriops.compliance.${id}`, []);
 
-// Temperaturas DESTA loja. A prop `records` do App não serve sozinha: quando a
-// sessão não é de admin global — o caso da RT com 3 unidades, que é justamente
-// pra quem esta tela existe — `refreshRecords` só carrega a loja ATIVA
-// (pages.jsx), enquanto `visibleTenants` traz todas. Usar a prop crua fazia as
-// outras unidades serem avaliadas com zero leituras e nascerem "EM RISCO" sem
-// nenhuma evidência disso. Buscamos por loja, na mesma janela de 90 dias que o
-// App usa, e a prop vira só o fallback quando a busca falha (offline).
-async function readTenantTemperatures(tenant, records) {
-  const daProp = records.filter((r) => r.tenantId === tenant.id);
-  try {
-    const doRepo = await getTemperatureRepository().list({ tenantId: tenant.id, days: 90 });
-    // Une as duas fontes: o repositório Supabase devolve só o que veio da
-    // nuvem, e o que ainda está na fila offline vive só na prop.
-    const porId = new Map(doRepo.map((r) => [r.id, r]));
-    for (const r of daProp) if (!porId.has(r.id)) porId.set(r.id, r);
-    return [...porId.values()];
-  } catch {
-    return daProp;   // rede caiu: melhor o que o App já tinha do que nada
-  }
-}
+// Temperaturas por loja: ver temperaturas-por-loja.js (saiu daqui em 03/10
+// pra o Painel RT usar a mesma busca).
 
 async function loadTenantReadiness({ tenant, records, now }) {
   const [

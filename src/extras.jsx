@@ -14,6 +14,7 @@ import { resolveRecordTone } from './limits';
 import { employeeTrainingStatus } from './training-status';
 import { computeWeeklySummary, summaryToText } from './weekly-summary';
 import { useFiltroDeLoja } from './filtro-loja';
+import { readTenantTemperatures } from './temperaturas-por-loja';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -85,7 +86,24 @@ export function RTPanelView({ allTenants, records, session }) {
     return `mailto:?subject=${subject}&body=${body}`;
   };
 
+  // Temperaturas de CADA unidade, buscadas por loja (temperaturas-por-loja.js).
+  // A prop `records` só traz a loja ativa pra quem não é admin global, e as
+  // outras unidades da RT apareciam aqui sem desvio e sem conformidade.
+  // `null` enquanto busca: aí vale a prop, que já cobre a loja ativa.
+  // Dependência pelas IDS, não pelo array: `allTenants` pode chegar como array
+  // novo a cada render, e isso refaria a busca sem parar.
+  const [porLoja, setPorLoja] = useState(null);
+  const idsDasLojas = allTenants.map((t) => t.id).join('|');
+  useEffect(() => {
+    let vivo = true;
+    Promise.all(allTenants.map((t) => readTenantTemperatures(t, records).then((rs) => [t.id, rs])))
+      .then((pares) => { if (vivo) setPorLoja(new Map(pares)); });
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsDasLojas, records]);
+
   const data = useMemo(() => allTenants.map(tenant => {
+    const tenantRecords = porLoja?.get(tenant.id) ?? records.filter((r) => r.tenantId === tenant.id);
     const templates = readFormTemplates(tenant);
     const formRecs  = readFormRecords(tenant.id);
     const trainSess = readSessions(tenant.id);
@@ -105,11 +123,11 @@ export function RTPanelView({ allTenants, records, session }) {
     // Temperature out of range today — 'neutral' (min/max ausente ou
     // inválido) não é "fora da faixa", é "não dá pra saber"; preserva o
     // mesmo comportamento de antes de excluir esse caso.
-    const todayRecords = records.filter(r => r.tenantId === tenant.id && new Date(r.createdAt).toDateString() === new Date().toDateString());
+    const todayRecords = tenantRecords.filter(r => new Date(r.createdAt).toDateString() === new Date().toDateString());
     const outOfRange = todayRecords.filter(r => !['ok', 'neutral'].includes(resolveRecordTone(r)));
 
     // Compliance this month
-    const monthRecs = records.filter(r => r.tenantId === tenant.id && now - new Date(r.createdAt).getTime() <= 30 * 86400000);
+    const monthRecs = tenantRecords.filter(r => now - new Date(r.createdAt).getTime() <= 30 * 86400000);
     const ok = monthRecs.filter(r => resolveRecordTone(r) === 'ok').length;
     const compliance = monthRecs.length > 0 ? Math.round((ok / monthRecs.length) * 100) : null;
 
@@ -125,12 +143,12 @@ export function RTPanelView({ allTenants, records, session }) {
     };
     const actions = sl(sk('corrective_actions', tenant.id), []);
     const weekly = computeWeeklySummary({
-      tenant, records, receiving, controlsByType, templates, formRecords: formRecs,
+      tenant, records: tenantRecords, receiving, controlsByType, templates, formRecords: formRecs,
       actions, extractNonConformities, resolveTone: resolveRecordTone, now,
     });
 
     return { tenant, pendingForms, expiringTraining, outOfRange, compliance, monthRecs: monthRecs.length, weekly };
-  }), [allTenants, records, now]);
+  }), [allTenants, records, porLoja, now]);
 
   const totalPending = data.reduce((a, d) => a + d.pendingForms.length, 0);
   const totalExpiring = data.reduce((a, d) => a + d.expiringTraining.length, 0);

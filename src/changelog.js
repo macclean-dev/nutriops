@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.258', date: '2026-10-03', items: [
+    { text: 'Corrigido: no Painel da RT, quem responde por mais de uma unidade via as unidades que não estavam selecionadas sem desvios e sem conformidade, como se não tivessem nenhuma leitura. Era a tela que não buscava as temperaturas delas: os registros sempre estiveram lá. Agora cada unidade mostra os próprios números.', path: 'Gestão → Painel RT' },
+  ]},
   { version: '1.9.257', date: '2026-10-03', items: [
     { text: 'O Dossiê Fiscal ganhou uma primeira seção, "Documentos e Situação Legal", com o que a vigilância pede logo na entrada: alvará e validade, responsável técnico com CRN, Manual de Boas Práticas, último comprovante de dedetização e da higienização do reservatório. Cada linha diz se está em dia, perto de vencer, vencida ou sem registro.', path: 'Relatórios → Dossiê Fiscal' },
     { text: 'E uma seção "Controle de Saúde (ASO)" com uma linha por colaborador: validade do exame, resultado e situação, incluindo afastamentos. Quem está marcado como "Só opera aqui" fica de fora, como na tela de ASO.', path: 'Relatórios → Dossiê Fiscal' },

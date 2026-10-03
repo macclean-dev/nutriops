@@ -84,6 +84,7 @@ async function loadTenantReadiness({ tenant, records, now }) {
   return computeReadiness({
     tenant, now,
     pendingNc,
+    actions: readActions(tenant.id),
     products: readProducts(tenant.id),
     // `Pure` de propósito, não o wrapper: "dar ciência" num alerta (tela
     // Alertas) só diz "eu vi", não registra temperatura nenhuma. Com o

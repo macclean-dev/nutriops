@@ -35,6 +35,11 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.264', date: '2026-10-03', items: [
+    { text: 'Ações corretivas com prazo vencido agora aparecem: um selo vermelho "Prazo vencido há N dia(s)" na ação, um contador no topo da tela, um aviso na Prontidão e uma linha no Resumo da semana do Painel RT. Antes, uma ação aberta e esquecida contava como se estivesse em dia.', path: 'Gestão → Não conformidades' },
+    { text: 'Dá pra mudar o responsável e o prazo de uma ação já aberta, no botão "Editar prazo". E marcar uma ação como resolvida agora pede a descrição do que foi feito: é ela que vale como evidência.', path: 'Gestão → Não conformidades' },
+    'Corrigido: o prazo das ações aparecia um dia antes do escolhido. O prazo gravado sempre esteve certo; era só a exibição.',
+  ]},
   { version: '1.9.262', date: '2026-10-03', items: [
     { text: 'A busca rápida (Cmd+K) agora encontra o Painel RT, que não aparecia por um erro, e também a Prontidão, o Dossiê Fiscal e Equipamentos. Dá pra buscar pelo nome ou por palavras como "fiscalização", "documentos" ou "freezer".', path: 'Cmd+K' },
   ]},

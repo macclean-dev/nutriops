@@ -25,6 +25,7 @@
 import { conformityStats } from './limits';
 import { employeeTrainingStatus } from './training-status';
 import { teamAsoSummary, manualBpStatus, alvaraStatus, latestManualBp, COMPLIANCE_DEFAULTS } from './compliance';
+import { acoesVencidas, diasDeAtraso } from './acoes-prazo';
 
 // ─── Suposições e réguas ────────────────────────────────────────────────────
 // ⚠️ `dedetizacaoMeses` é SUPOSIÇÃO, não texto de norma (auditoria §4.1): a
@@ -224,6 +225,7 @@ export function computeReadiness(inputs = {}) {
     pops = [],
     companyProfile = {},
     complianceDocs = [],       // ASO + Manual de BP (Fatia 2b)
+    actions = [],              // ações corretivas (C4: prazo vencido)
     controlsByType = {},
     sync = {},
     localOnly = {},
@@ -485,6 +487,17 @@ export function computeReadiness(inputs = {}) {
         : `Há fritadeira no catálogo e nenhum teste de óleo nos últimos ${cfg.cicloDias} dias. A fita de acidez é o que a VISA pede pra provar troca de óleo.`,
       'medium', 'oil'));
   }
+
+  // C4 · Ação corretiva com prazo vencido (candidata 7 da pesquisa de 03/10).
+  // O A1 só enxerga NC SEM ação: a ação aberta e esquecida contava como
+  // resolvida. Aviso, não falha: a NC tem dono e plano, o que falta é cumprir.
+  const vencidas = acoesVencidas(actions, now);
+  c.push(chk('c4-acoes-vencidas', 'Ações corretivas dentro do prazo',
+    vencidas.length > 0 ? 'warn' : 'ok',
+    vencidas.length > 0
+      ? `${plural(vencidas.length, 'ação corretiva aberta', 'ações corretivas abertas')} com prazo vencido (${vencidas.slice(0, 3).map((x) => `${x.sourceLabel ?? 'ação'}, ${diasDeAtraso(x, now)} dia(s)`).join('; ')}${vencidas.length > 3 ? '…' : ''}). Conclua e registre o que foi feito, ou ajuste o prazo.`
+      : 'Nenhuma ação corretiva aberta com prazo vencido.',
+    'medium', 'actions'));
 
   // ── Grupo D — a evidência sobrevive? ──────────────────────────────────────
   const d = [];

@@ -14,6 +14,7 @@ import { notificarSyncAplicado, gravarMesclando, SYNC_EVENT } from './lista-loca
 // componente — são chunks pesados de UI que não devem entrar no bundle
 // principal só por causa desta tela.
 import { actionSourceKey, pendingTemperatureItems, pendingReceivingItems, pendingControlItems, pendingFormItems, excludeWithAction, CONTROL_TYPES } from './nonconformities';
+import { diasDeAtraso, formatarPrazo } from './acoes-prazo';
 import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
 import { viewVisivelNaLoja } from './modulos-da-loja';
 import { DateSigField } from './date-sig-field';
@@ -1140,6 +1141,12 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
   const [resolution, setResolution]   = useState('');
   const [verTodosPendentes, setVerTodosPendentes] = useState(false);
   const [resolvingId, setResolvingId] = useState(null);
+  // Edição de responsável e prazo de uma ação já aberta (candidata 7 da
+  // pesquisa de 03/10). `editingId` existia desde sempre sem UI nenhuma.
+  // Estado próprio, separado do formulário de criação, pra os dois nunca
+  // misturarem valores.
+  const [editResp, setEditResp]       = useState('');
+  const [editPrazo, setEditPrazo]     = useState('');
   // Recebimento é lido direto (mesmo arquivo); controles especiais e
   // planilhas vêm de chunks pesados (controls.jsx/extras.jsx/forms.jsx) — só
   // carregados sob demanda, pra não engordar o bundle principal.
@@ -1224,7 +1231,21 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
     setCreating(null);
   };
 
+  const startEdit = (a) => { setEditingId(a.id); setCreating(null); setEditResp(a.responsible ?? ''); setEditPrazo(String(a.deadline ?? '').slice(0, 10)); };
+  const saveEdit = (id) => {
+    const atual = actions.find((a) => a.id === id);
+    if (!atual) return;
+    const updated = { ...atual, responsible: editResp, deadline: editPrazo, updatedAt: new Date().toISOString() };
+    setActions((prev) => prev.map((a) => (a.id === id ? updated : a)));
+    pushCorrectiveAction(activeTenant.id, updated);
+    setEditingId(null);
+  };
+
   const advanceStatus = (id) => {
+    // Fechar exige dizer o que foi feito: ação "resolvida" sem resolução é
+    // exatamente o registro que não serve de evidência (pesquisa de 03/10).
+    const alvo = actions.find((a) => a.id === id);
+    if (alvo?.status === 'em_andamento' && !resolution.trim()) return;
     let toPush = null;
     setActions((prev) => prev.map((a) => {
       if (a.id !== id) return a;
@@ -1255,6 +1276,7 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
 
   const filtered = actions.filter((a) => statusFilter === 'all' || a.status === statusFilter);
   const open = actions.filter((a) => a.status !== 'resolvida').length;
+  const vencidas = actions.filter((a) => diasDeAtraso(a) !== null).length;
 
   const statusLabel = { aberta: 'Aberta', em_andamento: 'Em andamento', resolvida: 'Resolvida' };
   const statusTone  = { aberta: 'danger', em_andamento: 'warn', resolvida: 'ok' };
@@ -1269,6 +1291,7 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
             {allTenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
           {open > 0 && <span className="badge warn">{open} em aberto</span>}
+          {vencidas > 0 && <span className="badge danger">{vencidas} com prazo vencido</span>}
         </div>
       </div>
 
@@ -1365,6 +1388,7 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
           {filtered.length === 0 ? <p className="muted" style={{ padding: '20px' }}>Nenhuma ação encontrada.</p>
             : filtered.map((a) => {
               const disp = actionDisplay(a);
+              const atraso = diasDeAtraso(a);
               return (
               <div key={a.id} className="equipment-maintenance-row" style={{ flexDirection: 'column', gap: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, width: '100%' }}>
@@ -1373,12 +1397,13 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
                       <span className="badge neutral" style={{ fontSize: 10 }}>{disp.badge}</span>
                       <strong>{disp.label}</strong>
                       <span className={`badge ${statusTone[a.status]}`}>{statusLabel[a.status]}</span>
+                      {atraso !== null && <span className="badge danger">Prazo vencido há {atraso} dia(s)</span>}
                       {disp.detail && <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{disp.detail}</span>}
                     </div>
                     <p style={{ fontSize: 13, color: 'var(--text)', marginBottom: 4 }}>{a.description}</p>
                     <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
                       <span>Responsável: <strong>{a.responsible}</strong></span>
-                      <span>Prazo: <strong>{a.deadline ? new Date(a.deadline).toLocaleDateString('pt-BR') : '—'}</strong></span>
+                      <span>Prazo: <strong style={atraso !== null ? { color: 'var(--red)' } : undefined}>{formatarPrazo(a.deadline)}</strong></span>
                       <span>Aberta: {formatCompactDateTime(a.createdAt)}</span>
                       {a.closedAt && <span>Fechada: {formatCompactDateTime(a.closedAt)}</span>}
                     </div>
@@ -1390,14 +1415,33 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
                         {nextLabel[a.status]}
                       </button>
                     )}
+                    {a.status !== 'resolvida' && editingId !== a.id && (
+                      <button className="ghost-action" style={{ fontSize: 11 }} onClick={() => startEdit(a)}>Editar prazo</button>
+                    )}
                     <button className="ghost-action danger" style={{ fontSize: 11 }} onClick={() => removeAction(a.id)}>Remover</button>
                   </div>
                 </div>
+                {editingId === a.id && (
+                  <div className="grid-2" style={{ width: '100%', alignItems: 'flex-end' }}>
+                    <label>Responsável
+                      <select value={editResp} onChange={(e) => setEditResp(e.target.value)}>
+                        {/* O responsável atual pode não estar mais na equipe (saiu, mudou de loja): continua na lista pra não ser trocado em silêncio. */}
+                        {editResp && !users.some((u) => u.name === editResp) && <option value={editResp}>{editResp}</option>}
+                        {users.map((u) => <option key={u.name} value={u.name}>{u.name} ({u.role})</option>)}
+                      </select>
+                    </label>
+                    <label>Prazo<input type="date" value={editPrazo} onChange={(e) => setEditPrazo(e.target.value)} /></label>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button className="primary-action" onClick={() => saveEdit(a.id)} disabled={!editPrazo}>Salvar</button>
+                      <button className="secondary-action" onClick={() => setEditingId(null)}>Cancelar</button>
+                    </div>
+                  </div>
+                )}
                 {resolvingId === a.id && (
                   <div style={{ width: '100%', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
                     <label style={{ flex: 1 }}>Descreva a resolução<textarea value={resolution} onChange={(e) => setResolution(e.target.value)} placeholder="O que foi feito para corrigir…" style={{ minHeight: 54 }} /></label>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <button className="primary-action" onClick={() => advanceStatus(a.id)}>Confirmar</button>
+                      <button className="primary-action" onClick={() => advanceStatus(a.id)} disabled={!resolution.trim()}>Confirmar</button>
                       <button className="secondary-action" onClick={() => setResolvingId(null)}>Cancelar</button>
                     </div>
                   </div>

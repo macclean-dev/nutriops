@@ -9,6 +9,7 @@
 
 import { filterByPeriod } from './dossier';
 import { pendingTemperatureItems, pendingReceivingItems, pendingControlItems, pendingFormItems, CONTROL_TYPES } from './nonconformities';
+import { acoesVencidas } from './acoes-prazo';
 
 export function computeWeeklySummary({
   tenant, records, receiving = [], controlsByType = {}, templates = [], formRecords = [],
@@ -27,13 +28,14 @@ export function computeWeeklySummary({
   const actionsOpened = filterByPeriod(actions, periodStart, 'createdAt');
   const actionsResolved = actions.filter((a) => a.status === 'resolvida' && a.closedAt && new Date(a.closedAt).getTime() >= periodStart);
   const actionsStillOpen = actions.filter((a) => a.status !== 'resolvida');
+  const actionsOverdue = acoesVencidas(actions, now);
 
   const formsValidatedThisWeek = formRecords.filter((r) => r.validation?.at && new Date(r.validation.at).getTime() >= periodStart);
   const formsAwaitingValidation = formRecords.filter((r) => r.status === 'submitted' && !r.validation);
 
   return {
     tenantId: tenant.id, tenantName: tenant.name, periodStart, periodEnd: now,
-    newNonConformities, actionsOpened, actionsResolved, actionsStillOpen,
+    newNonConformities, actionsOpened, actionsResolved, actionsStillOpen, actionsOverdue,
     formsValidatedThisWeek, formsAwaitingValidation,
   };
 }
@@ -53,7 +55,8 @@ export function summaryToText(summary) {
     `${fmtDate(summary.periodStart)} a ${fmtDate(summary.periodEnd)}`,
     '',
     `• ${summary.newNonConformities.length} não conformidade(s) nova(s)`,
-    `• ${summary.actionsResolved.length} ação(ões) corretiva(s) resolvida(s) · ${summary.actionsStillOpen.length} ainda aberta(s)`,
+    `• ${summary.actionsResolved.length} ação(ões) corretiva(s) resolvida(s) · ${summary.actionsStillOpen.length} ainda aberta(s)`
+      + ((summary.actionsOverdue?.length ?? 0) > 0 ? ` · ${summary.actionsOverdue.length} com prazo vencido` : ''),
     `• ${summary.formsValidatedThisWeek.length} planilha(s) validada(s) · ${summary.formsAwaitingValidation.length} aguardando validação`,
   ].join('\n');
 }

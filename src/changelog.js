@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.255', date: '2026-10-03', items: [
+    { text: 'O "Validar período" da Auditoria segue a mesma regra da Validação RT: o tablet compartilhado da loja (conta de loja) não assina mais o período, mesmo quando foi criado como administrador. Nutricionista RT e administrador da loja continuam assinando normalmente.', path: 'Relatórios → Auditoria → Validar período' },
+  ]},
   { version: '1.9.254', date: '2026-10-03', items: [
     { text: 'A aba "Validação RT" agora aparece só para quem assina as planilhas: nutricionista RT e administrador da loja. Antes ela aparecia para toda a equipe, e qualquer pessoa podia validar uma planilha, inclusive a que ela mesma tinha preenchido. Para a nutricionista nada muda: a aba, a contagem de pendentes e o "Validar todas" continuam no mesmo lugar.', path: 'Planilhas BPF → Validação RT' },
     'O tablet compartilhado da loja (conta de loja) também não valida mais, mesmo quando foi criado como administrador: a validação é a assinatura de uma pessoa, e no tablet o nome que sai no carimbo é só quem foi escolhido em "Quem está registrando?".',

@@ -5,6 +5,7 @@ import { resolveLimits as resolveLimitsFromCatalog, resolveRecordTone as resolve
 import { employeeTrainingStatus } from './training-status';
 import CountUp from './count-up';
 import { useFiltroDeLoja } from './filtro-loja';
+import { podeValidarPlanilha } from './permissions';
 
 const EquipmentDetailModal = lazy(() => import('./equipment-detail').then(m => ({ default: m.EquipmentDetailModal })));
 
@@ -621,6 +622,11 @@ export function AuditView({ allTenants, records, session, onRecordSaved, activeT
   const effectiveRecords = extraRecords ?? records;
 
   const isRT = ['Nutricionista RT','Administrador','Super-admin'].includes(session?.user?.role);
+  // "Validar período" é ASSINATURA da RT, com nome, papel e hora: mesma regra
+  // da aba Validação RT de Planilhas (permissions.js, v1.9.254). `isRT` sozinho
+  // deixava passar a conta de loja criada como Administrador, que é tablet
+  // compartilhado, não uma pessoa. A correção de leitura segue em `isRT`.
+  const podeAssinarPeriodo = podeValidarPlanilha(session);
 
   const startCorrection = (r) => { setCorrectingId(r.id); setCorrectionValue(String(r.value)); setCorrectionReason(''); };
   const cancelCorrection = () => setCorrectingId(null);
@@ -663,6 +669,7 @@ export function AuditView({ allTenants, records, session, onRecordSaved, activeT
   };
 
   const saveValidation = (note) => {
+    if (!podeAssinarPeriodo) return; // não depende só do botão sumir
     // Fatia 3: uma assinatura POR LOJA coberta, não um blob "todas". É o que
     // permite subir cada linha pra nuvem com tenant_id (RLS) e apresentar ao
     // fiscal a trilha da loja DELE — a auditoria apontou exatamente isso
@@ -756,7 +763,7 @@ export function AuditView({ allTenants, records, session, onRecordSaved, activeT
       <div className="page-header">
         <div><span className="eyebrow">Conformidade · RDC 216/2004</span><h1>Auditoria</h1><p className="muted">Histórico completo com filtros. Exportação pronta para fiscalização.</p></div>
         <div className="page-actions">
-          {isRT && (
+          {podeAssinarPeriodo && (
             <button className="secondary-action" style={{ fontSize:12 }} onClick={() => setSigningPeriod(!signingPeriod)}>
               ✍️ {signingPeriod ? 'Cancelar' : 'Validar período'}
             </button>
@@ -766,7 +773,7 @@ export function AuditView({ allTenants, records, session, onRecordSaved, activeT
         </div>
       </div>
 
-      {signingPeriod && isRT && (
+      {signingPeriod && podeAssinarPeriodo && (
         <article className="management-card" style={{ borderColor:'var(--blue-border)', background:'var(--blue-light)', marginBottom:16 }}>
           <div className="card-head" style={{ background:'transparent', borderBottomColor:'var(--blue-border)' }}>
             <div><span className="eyebrow" style={{ color:'var(--blue)' }}>Assinatura RT</span><h2>Validar {filtered.length} registros do período selecionado</h2></div>

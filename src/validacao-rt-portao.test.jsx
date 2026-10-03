@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
 import { podeValidarPlanilha } from './permissions';
 import { FormsView } from './forms.jsx';
+import { AuditView } from './reports-views.jsx';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Achado da pesquisa de 03/10: a aba "Validação RT" de Planilhas BPF não tinha
@@ -94,5 +95,41 @@ describe('os gravadores recusam sozinhos, não só a aba', () => {
 
   it('o painel só monta com permissão, mesmo que o estado da aba diga "validation"', () => {
     expect(forms).toContain("{tab==='validation' && podeValidar && (");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mesma brecha no "Validar período" da Auditoria (v1.9.255). Ali o portão era
+// `isRT`, que já barrava Colaborador e Supervisor, mas deixava passar a conta
+// de loja criada como Administrador. A correção de leitura continua em `isRT`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Auditoria: "Validar período", renderizada de verdade', () => {
+  const tenant = { id: 'swiss', name: 'Swiss' };
+  const render = (session) => renderToStaticMarkup(
+    <AuditView allTenants={[tenant]} records={[]} session={session} onRecordSaved={() => {}} activeTenant={tenant} />
+  );
+
+  beforeEach(() => { localStorage.clear(); });
+
+  it('conta de loja com papel de Administrador não vê o botão', () => {
+    expect(render(sessao('Administrador', { isStoreAccount: true }))).not.toContain('Validar período');
+  });
+
+  it('Supervisor (que tem a Auditoria no menu) não vê o botão', () => {
+    expect(render(sessao('Supervisor'))).not.toContain('Validar período');
+  });
+
+  it('RT e Administrador da loja continuam vendo', () => {
+    expect(render(sessao('Nutricionista RT'))).toContain('Validar período');
+    expect(render(sessao('Administrador'))).toContain('Validar período');
+  });
+
+  it('saveValidation recusa sozinha, antes de empurrar qualquer assinatura', () => {
+    const fonte = readFileSync(`${process.cwd()}/src/reports-views.jsx`, 'utf8');
+    const ini = fonte.indexOf('const saveValidation = (note) => {');
+    const b = fonte.slice(ini, fonte.indexOf('\n  };', ini));
+    expect(b).toContain('if (!podeAssinarPeriodo) return;');
+    expect(b.indexOf('if (!podeAssinarPeriodo) return;')).toBeLessThan(b.indexOf('pushRtValidation('));
   });
 });

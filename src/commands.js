@@ -53,7 +53,15 @@ export function buildCommands(ctx, callbacks) {
     { view: 'maintenance', label: 'Ir pra Manutenção',           keywords: 'manutencao maintenance equipamento' },
     { view: 'alerts',      label: 'Ir pros Alertas',             keywords: 'alertas pendencias' },
     { view: 'actions',     label: 'Ir pras Ações corretivas',    keywords: 'acoes corretivas correcao' },
-    { view: 'rt',          label: 'Ir pro Painel RT',            keywords: 'rt nutricionista painel' },
+    // Era `view: 'rt'`, que não existe em ALL_VIEWS: canAccess dava false pra
+    // todo perfil e o item nunca aparecia (pesquisa de 03/10). A view é rtpanel.
+    { view: 'rtpanel',     label: 'Ir pro Painel RT',            keywords: 'rt nutricionista painel' },
+    // Telas do menu que a busca não achava (mesma pesquisa). Super Admin fica
+    // de fora de propósito: está no `nav` de todo Administrador em
+    // permissions.js e só o menu filtra por isGlobalAdmin.
+    { view: 'readiness',   label: 'Ir pra Prontidão',            keywords: 'prontidao fiscalizacao vigilancia fiscal pronta risco' },
+    { view: 'dossie',      label: 'Ir pro Dossiê Fiscal',        keywords: 'dossie fiscal fiscalizacao pdf vigilancia documentos' },
+    { view: 'equipment',   label: 'Ir pros Equipamentos',        keywords: 'equipamentos freezer geladeira camara faixa catalogo' },
     { view: 'dashboard',   label: 'Ir pra Conformidade',         keywords: 'conformidade dashboard relatorio' },
     { view: 'charts',      label: 'Ir pros Gráficos',            keywords: 'graficos charts visualizar' },
     { view: 'reports',     label: 'Ir pros Relatórios',          keywords: 'relatorios reports' },

@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.262', date: '2026-10-03', items: [
+    { text: 'A busca rápida (Cmd+K) agora encontra o Painel RT, que não aparecia por um erro, e também a Prontidão, o Dossiê Fiscal e Equipamentos. Dá pra buscar pelo nome ou por palavras como "fiscalização", "documentos" ou "freezer".', path: 'Cmd+K' },
+  ]},
   { version: '1.9.260', date: '2026-10-03', items: [
     { text: 'O comprovante de dedetização e o laudo do reservatório agora aceitam PDF de verdade, como o campo sempre prometeu: ao lado de "Anexar foto" apareceu "Anexar PDF" (até 5 MB). Antes o campo só abria a câmera, e quem tinha o laudo em PDF precisava fotografar a tela.', path: 'Planilhas BPF → Controle de Dedetização / Higienização do Reservatório de Água' },
   ]},

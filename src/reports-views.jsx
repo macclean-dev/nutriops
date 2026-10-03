@@ -621,12 +621,14 @@ export function AuditView({ allTenants, records, session, onRecordSaved, activeT
 
   const effectiveRecords = extraRecords ?? records;
 
-  const isRT = ['Nutricionista RT','Administrador','Super-admin'].includes(session?.user?.role);
-  // "Validar período" é ASSINATURA da RT, com nome, papel e hora: mesma regra
-  // da aba Validação RT de Planilhas (permissions.js, v1.9.254). `isRT` sozinho
-  // deixava passar a conta de loja criada como Administrador, que é tablet
-  // compartilhado, não uma pessoa. A correção de leitura segue em `isRT`.
-  const podeAssinarPeriodo = podeValidarPlanilha(session);
+  // As duas ações desta tela que gravam NOME de quem fez são assinatura:
+  // "Validar período" (rt_validations) e "Corrigir" leitura (corrected_by,
+  // ao lado do motivo e do valor original). Mesma regra da aba Validação RT
+  // de Planilhas (permissions.js, v1.9.254). O portão antigo era só o papel
+  // (RT, Administrador, Super-admin), que deixava passar a conta de loja
+  // criada como Administrador: tablet compartilhado, não uma pessoa, e o nome
+  // gravado seria o operador escolhido em "Quem está registrando?".
+  const podeAssinar = podeValidarPlanilha(session);
 
   const startCorrection = (r) => { setCorrectingId(r.id); setCorrectionValue(String(r.value)); setCorrectionReason(''); };
   const cancelCorrection = () => setCorrectingId(null);
@@ -639,6 +641,7 @@ export function AuditView({ allTenants, records, session, onRecordSaved, activeT
   // perguntar), parseTemperatura('') é NaN. Achado da auditoria (19/08).
   const correctionInvalid = isNaN(parseTemperatura(correctionValue));
   const submitCorrection = async (r) => {
+    if (!podeAssinar) return; // não depende só do botão sumir
     const val = parseTemperatura(correctionValue);
     if (isNaN(val) || !correctionReason.trim()) return;
     setCorrectionSaving(true);
@@ -669,7 +672,7 @@ export function AuditView({ allTenants, records, session, onRecordSaved, activeT
   };
 
   const saveValidation = (note) => {
-    if (!podeAssinarPeriodo) return; // não depende só do botão sumir
+    if (!podeAssinar) return; // não depende só do botão sumir
     // Fatia 3: uma assinatura POR LOJA coberta, não um blob "todas". É o que
     // permite subir cada linha pra nuvem com tenant_id (RLS) e apresentar ao
     // fiscal a trilha da loja DELE — a auditoria apontou exatamente isso
@@ -763,7 +766,7 @@ export function AuditView({ allTenants, records, session, onRecordSaved, activeT
       <div className="page-header">
         <div><span className="eyebrow">Conformidade · RDC 216/2004</span><h1>Auditoria</h1><p className="muted">Histórico completo com filtros. Exportação pronta para fiscalização.</p></div>
         <div className="page-actions">
-          {podeAssinarPeriodo && (
+          {podeAssinar && (
             <button className="secondary-action" style={{ fontSize:12 }} onClick={() => setSigningPeriod(!signingPeriod)}>
               ✍️ {signingPeriod ? 'Cancelar' : 'Validar período'}
             </button>
@@ -773,7 +776,7 @@ export function AuditView({ allTenants, records, session, onRecordSaved, activeT
         </div>
       </div>
 
-      {signingPeriod && podeAssinarPeriodo && (
+      {signingPeriod && podeAssinar && (
         <article className="management-card" style={{ borderColor:'var(--blue-border)', background:'var(--blue-light)', marginBottom:16 }}>
           <div className="card-head" style={{ background:'transparent', borderBottomColor:'var(--blue-border)' }}>
             <div><span className="eyebrow" style={{ color:'var(--blue)' }}>Assinatura RT</span><h2>Validar {filtered.length} registros do período selecionado</h2></div>
@@ -885,7 +888,7 @@ export function AuditView({ allTenants, records, session, onRecordSaved, activeT
                       Corrigido por {r.correctedBy} em {formatCompactDateTime(r.correctedAt)} · {r.correctionReason}
                     </small>
                   )}
-                  {isRT && correctingId === r.id && (
+                  {podeAssinar && correctingId === r.id && (
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
                       <input inputMode="decimal" value={correctionValue} onChange={(e) => setCorrectionValue(e.target.value)} style={{ width: 60 }} />
                       {/* Teclado decimal não tem tecla de menos (mesmo motivo do
@@ -902,7 +905,7 @@ export function AuditView({ allTenants, records, session, onRecordSaved, activeT
                       <button className="secondary-action" style={{ fontSize: 11, padding: '3px 8px' }} onClick={cancelCorrection}>Cancelar</button>
                     </div>
                   )}
-                  {isRT && correctingId !== r.id && (
+                  {podeAssinar && correctingId !== r.id && (
                     <button className="secondary-action" style={{ fontSize: 11, padding: '2px 8px', marginTop: 4 }} onClick={() => startCorrection(r)}>Corrigir</button>
                   )}
                 </td>

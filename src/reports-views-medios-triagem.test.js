@@ -55,15 +55,15 @@ describe('Família 1 — vírgula decimal na correção de leitura (achado 0)', 
 
   it('correctionInvalid é calculado com parseTemperatura, e entra no `disabled` do botão Salvar', () => {
     expect(fonte).toContain('const correctionInvalid = isNaN(parseTemperatura(correctionValue));');
-    const ini = fonte.indexOf('{isRT && correctingId === r.id && (');
-    const fim = fonte.indexOf('{isRT && correctingId !== r.id && (');
+    const ini = fonte.indexOf('{podeAssinar && correctingId === r.id && (');
+    const fim = fonte.indexOf('{podeAssinar && correctingId !== r.id && (');
     const bloco = fonte.slice(ini, fim);
     expect(bloco).toMatch(/disabled=\{correctionSaving \|\| !correctionReason\.trim\(\) \|\| correctionInvalid\}/);
   });
 
   it('tem botão de trocar sinal — sem ele, digitar negativo no teclado decimal (sem tecla de menos) é impossível', () => {
-    const ini = fonte.indexOf('{isRT && correctingId === r.id && (');
-    const fim = fonte.indexOf('{isRT && correctingId !== r.id && (');
+    const ini = fonte.indexOf('{podeAssinar && correctingId === r.id && (');
+    const fim = fonte.indexOf('{podeAssinar && correctingId !== r.id && (');
     const bloco = fonte.slice(ini, fim);
     expect(bloco).toContain('title="Trocar sinal (+/−)"');
     expect(bloco).toMatch(/setCorrectionValue\(\(v\) => v\.startsWith\('-'\)/);

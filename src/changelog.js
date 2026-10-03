@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.256', date: '2026-10-03', items: [
+    { text: 'O botão "Corrigir" leitura de temperatura também segue a regra da assinatura: o tablet compartilhado da loja (conta de loja) não corrige mais leituras, mesmo quando foi criado como administrador. A correção grava quem corrigiu e o motivo, e isso precisa ser uma pessoa. Nutricionista RT e administrador da loja continuam corrigindo normalmente, e as correções já feitas não mudam.', path: 'Relatórios → Auditoria → Corrigir' },
+  ]},
   { version: '1.9.255', date: '2026-10-03', items: [
     { text: 'O "Validar período" da Auditoria segue a mesma regra da Validação RT: o tablet compartilhado da loja (conta de loja) não assina mais o período, mesmo quando foi criado como administrador. Nutricionista RT e administrador da loja continuam assinando normalmente.', path: 'Relatórios → Auditoria → Validar período' },
   ]},

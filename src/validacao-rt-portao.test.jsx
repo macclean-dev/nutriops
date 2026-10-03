@@ -101,7 +101,8 @@ describe('os gravadores recusam sozinhos, não só a aba', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Mesma brecha no "Validar período" da Auditoria (v1.9.255). Ali o portão era
 // `isRT`, que já barrava Colaborador e Supervisor, mas deixava passar a conta
-// de loja criada como Administrador. A correção de leitura continua em `isRT`.
+// de loja criada como Administrador. O "Corrigir" leitura entrou na mesma
+// regra na v1.9.256 (casos no fim do arquivo).
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('Auditoria: "Validar período", renderizada de verdade', () => {
@@ -129,7 +130,50 @@ describe('Auditoria: "Validar período", renderizada de verdade', () => {
     const fonte = readFileSync(`${process.cwd()}/src/reports-views.jsx`, 'utf8');
     const ini = fonte.indexOf('const saveValidation = (note) => {');
     const b = fonte.slice(ini, fonte.indexOf('\n  };', ini));
-    expect(b).toContain('if (!podeAssinarPeriodo) return;');
-    expect(b.indexOf('if (!podeAssinarPeriodo) return;')).toBeLessThan(b.indexOf('pushRtValidation('));
+    expect(b).toContain('if (!podeAssinar) return;');
+    expect(b.indexOf('if (!podeAssinar) return;')).toBeLessThan(b.indexOf('pushRtValidation('));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// "Corrigir" leitura de temperatura (v1.9.256). A correção grava corrected_by
+// ao lado do motivo e do valor original: é assinatura, mesma regra.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Auditoria: "Corrigir" leitura, renderizada de verdade', () => {
+  const tenant = { id: 'swiss', name: 'Swiss' };
+  const leitura = {
+    id: 'r1', tenantId: 'swiss', tenantName: 'Swiss', equipment: 'Freezer', equipmentInput: 'Freezer',
+    value: 18, min: -22, max: -18, user: 'Maria', createdAt: new Date().toISOString(),
+  };
+  const render = (session) => renderToStaticMarkup(
+    <AuditView allTenants={[tenant]} records={[leitura]} session={session} onRecordSaved={() => {}} activeTenant={tenant} />
+  );
+
+  beforeEach(() => { localStorage.clear(); });
+
+  it('a leitura aparece na tabela (sem isto os casos abaixo não provariam nada)', () => {
+    expect(render(sessao('Supervisor'))).toContain('Freezer');
+  });
+
+  it('conta de loja com papel de Administrador não vê o botão Corrigir', () => {
+    expect(render(sessao('Administrador', { isStoreAccount: true }))).not.toContain('>Corrigir<');
+  });
+
+  it('Supervisor não vê o botão Corrigir', () => {
+    expect(render(sessao('Supervisor'))).not.toContain('>Corrigir<');
+  });
+
+  it('RT e Administrador da loja continuam vendo', () => {
+    expect(render(sessao('Nutricionista RT'))).toContain('>Corrigir<');
+    expect(render(sessao('Administrador'))).toContain('>Corrigir<');
+  });
+
+  it('submitCorrection recusa sozinha, antes de gravar', () => {
+    const fonte = readFileSync(`${process.cwd()}/src/reports-views.jsx`, 'utf8');
+    const ini = fonte.indexOf('const submitCorrection = async (r) => {');
+    const b = fonte.slice(ini, fonte.indexOf('\n  };', ini));
+    expect(b).toContain('if (!podeAssinar) return;');
+    expect(b.indexOf('if (!podeAssinar) return;')).toBeLessThan(b.indexOf('repository.update('));
   });
 });

@@ -35,6 +35,11 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.257', date: '2026-10-03', items: [
+    { text: 'O Dossiê Fiscal ganhou uma primeira seção, "Documentos e Situação Legal", com o que a vigilância pede logo na entrada: alvará e validade, responsável técnico com CRN, Manual de Boas Práticas, último comprovante de dedetização e da higienização do reservatório. Cada linha diz se está em dia, perto de vencer, vencida ou sem registro.', path: 'Relatórios → Dossiê Fiscal' },
+    { text: 'E uma seção "Controle de Saúde (ASO)" com uma linha por colaborador: validade do exame, resultado e situação, incluindo afastamentos. Quem está marcado como "Só opera aqui" fica de fora, como na tela de ASO.', path: 'Relatórios → Dossiê Fiscal' },
+    'Nada novo para preencher: tudo vem do que a loja já registra em Configurações, Capacitação → Saúde (ASO) e nas planilhas de dedetização e reservatório.',
+  ]},
   { version: '1.9.256', date: '2026-10-03', items: [
     { text: 'O botão "Corrigir" leitura de temperatura também segue a regra da assinatura: o tablet compartilhado da loja (conta de loja) não corrige mais leituras, mesmo quando foi criado como administrador. A correção grava quem corrigiu e o motivo, e isso precisa ser uma pessoa. Nutricionista RT e administrador da loja continuam corrigindo normalmente, e as correções já feitas não mudam.', path: 'Relatórios → Auditoria → Corrigir' },
   ]},

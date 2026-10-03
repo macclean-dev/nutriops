@@ -12,6 +12,11 @@ import { useFiltroDeLoja } from './filtro-loja';
 
 const readActions = (id) => { try { const r = localStorage.getItem(`nutriops.corrective_actions.${id}`); return r ? JSON.parse(r) : []; } catch { return []; } };
 const readReceiving = (id) => { try { const r = localStorage.getItem(`nutriops.receiving.${id}`); return r ? JSON.parse(r) : []; } catch { return []; } };
+// Equipe e documentos (ASO, Manual de BP): mesmas leituras da Prontidão
+// (readiness-view.jsx), sem reader exportado de propósito. As capturas vivem
+// em training.jsx e settings.jsx, chunks pesados que não vale puxar só pra ler.
+const readStaff = (tenant) => { try { const r = localStorage.getItem(`nutriops.users.${tenant.id}`); return r ? JSON.parse(r) : (tenant.usersList ?? []); } catch { return tenant.usersList ?? []; } };
+const readCompliance = (id) => { try { const r = localStorage.getItem(`nutriops.compliance.${id}`); return r ? JSON.parse(r) : []; } catch { return []; } };
 
 async function generateTenantDossier({ tenant, records, periodDays, periodLabel, session }) {
   const [
@@ -48,10 +53,17 @@ async function generateTenantDossier({ tenant, records, periodDays, periodLabel,
   const mergedEquipments = dossier.mergeEquipmentsWithCatalog(readEquipments(tenant.id), readCatalog(tenant));
   const periodControls = Object.fromEntries(Object.entries(controlsByType).map(([type, recs]) => [type, dossier.filterByPeriod(recs, periodStart)]));
 
+  const companyProfile = readCompanyProfile(tenant.id);
+  const complianceDocs = readCompliance(tenant.id);
+  const asoMeses = Number(companyProfile?.asoValidadeMeses) > 0 ? Number(companyProfile.asoValidadeMeses) : undefined;
+
   const sections = [
+    // Primeiro de propósito: na visita, documento vem antes de registro.
+    dossier.sectionDocuments({ companyProfile, complianceDocs, formTemplates: templates, formRecords }),
     { title: 'Controle de Temperatura', headers: ['Equipamento', 'Registros', 'Conformidade', 'Temp. Média', 'Conformes', 'Desvios', 'Críticos'], rowsHtml: renderTempRows(computeTempStats(records, tenant.id, periodDays)), emptyMessage: 'Sem registros no período' },
     { title: 'Planilhas de Controle BPF', headers: ['Planilha', 'Frequência', 'Período atual', 'Validação RT'], rowsHtml: renderBpfRows(computeBpfStats(tenant)), emptyMessage: 'Sem planilhas cadastradas' },
     { title: 'Capacitação de Colaboradores', headers: ['Colaborador', 'Perfil', 'Último treinamento', 'Situação'], rowsHtml: renderTrainRows(computeTrainingStats(tenant)), emptyMessage: 'Sem dados de capacitação' },
+    dossier.sectionAso({ staff: readStaff(tenant), complianceDocs, asoMeses }),
     dossier.sectionNonConformities(ncItems, actions, nc.actionSourceKey),
     dossier.sectionSpecialControls(periodControls, nc.CONTROL_TYPES),
     dossier.sectionReceiving(dossier.filterByPeriod(receiving, periodStart)),
@@ -60,7 +72,7 @@ async function generateTenantDossier({ tenant, records, periodDays, periodLabel,
     dossier.sectionPOPs(readPOPs(tenant.id)),
   ];
 
-  // As 8 seções acima (tudo menos Temperatura, que vem de `records` — esse
+  // As 10 seções acima (tudo menos Temperatura, que vem de `records` — esse
   // sim cruza o repository e cobre todas as lojas) leem SÓ o localStorage
   // DESTE aparelho, por tenant. O único jeito desse cache existir é o
   // auto-sync do boot, syncAllModules(session.tenantId) — um tenant só, e
@@ -77,7 +89,7 @@ async function generateTenantDossier({ tenant, records, periodDays, periodLabel,
   // sessão, que é exatamente quando o risco existe. Achado da auditoria
   // (19/08).
   const deviceMismatch = tenant.id !== session?.tenantId;
-  return dossier.buildDossierHtml({ tenantName: tenant.name, periodLabel, companyProfile: readCompanyProfile(tenant.id), sections, generatedAt: Date.now(), deviceMismatch });
+  return dossier.buildDossierHtml({ tenantName: tenant.name, periodLabel, companyProfile, sections, generatedAt: Date.now(), deviceMismatch });
 }
 
 // Resultado a mostrar pra tela dado quantas empresas foram PEDIDAS vs quantas
@@ -132,7 +144,7 @@ export function DossieView({ allTenants, records, session, activeTenant }) {
         <div>
           <span className="eyebrow">Fiscalização</span>
           <h1>Dossiê Completo</h1>
-          <p className="muted">Um PDF só com temperatura, BPF, capacitação, não conformidades, controles especiais, recebimento, validades, manutenção e POPs — pronto pra apresentar quando a vigilância chegar.</p>
+          <p className="muted">Um PDF só com documentos (alvará, RT, Manual de BP, dedetização, reservatório), temperatura, BPF, capacitação, ASO, não conformidades, controles especiais, recebimento, validades, manutenção e POPs, pronto pra apresentar quando a vigilância chegar.</p>
         </div>
         <div className="page-actions">
           <select value={tenantFilter} onChange={(e) => setTenantFilter(e.target.value)} style={{ width: 'auto' }}>
@@ -153,7 +165,7 @@ export function DossieView({ allTenants, records, session, activeTenant }) {
       <div className="management-card" style={{ padding: 20 }}>
         <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-secondary)', marginBottom: 10 }}>Seções incluídas</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {['Temperatura', 'Planilhas BPF', 'Capacitação', 'Não conformidades', 'Controles especiais', 'Recebimento', 'Validades', 'Manutenção', 'POPs'].map((s) => (
+          {['Documentos', 'Temperatura', 'Planilhas BPF', 'Capacitação', 'Saúde (ASO)', 'Não conformidades', 'Controles especiais', 'Recebimento', 'Validades', 'Manutenção', 'POPs'].map((s) => (
             <span key={s} className="badge neutral">{s}</span>
           ))}
         </div>

@@ -12,6 +12,9 @@
 // uma régua só).
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { alvaraStatus, latestManualBp, manualBpStatus, teamAsoSummary, descreverAfastamento, COMPLIANCE_DEFAULTS } from './compliance';
+import { ultimoComprovante, EH_DEDETIZACAO, EH_RESERVATORIO, READINESS_DEFAULTS } from './readiness';
+
 function esc(v) { return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function fmtDate(iso) { try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return '—'; } }
 function fmtDateTime(iso) { try { return new Date(iso).toLocaleString('pt-BR'); } catch { return '—'; } }
@@ -170,6 +173,138 @@ export function sectionPOPs(pops) {
     headers: ['POP', 'Categoria', 'Frequência', 'Responsável'],
     rowsHtml: rows,
     emptyMessage: 'Nenhum POP cadastrado ainda.',
+  };
+}
+
+// ─── Documentos e situação legal (candidata 3 da pesquisa de 03/10) ────────
+//
+// O fiscal pede documento ANTES de registro: alvará, responsável técnico,
+// Manual de Boas Práticas (RDC 216 4.11.1: "disponível à autoridade
+// sanitária, quando requerido"), comprovante de dedetização e do reservatório.
+// O app já sabia tudo isso (é o que a Prontidão lê nos checks A5, A6, B1, B2
+// e B4), mas o Dossiê não levava nada. Aqui é SÓ apresentação: as réguas são
+// as mesmas funções da Prontidão (compliance.js, readiness.js), pra os dois
+// nunca discordarem sobre o que está vencido.
+//
+// `unknown` é primeira classe, igual na Prontidão: "não registrado" é dito
+// com essas palavras, nunca vira linha em branco nem "ok".
+
+const TONE_COLOR = { ok: '#00a35c', warn: '#b26b00', fail: '#c0392b', unknown: '#5c6c7a' };
+
+function linhaDoc(documento, tone, situacao, detalhe) {
+  return `<tr>
+    <td>${esc(documento)}</td>
+    <td style="color:${TONE_COLOR[tone] ?? TONE_COLOR.unknown};font-weight:700">${esc(situacao)}</td>
+    <td>${esc(detalhe)}</td>
+  </tr>`;
+}
+
+const fmtDia = (iso) => {
+  const s = String(iso ?? '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  return new Date(`${s}T12:00`).toLocaleDateString('pt-BR');
+};
+const diasEntre = (iso, now) => Math.floor((now - new Date(iso).getTime()) / 86400000);
+
+// Mesma régua do checkComprovante (readiness.js): data = createdAt do
+// lançamento, prazo em meses de 30 dias, aviso nos últimos 30.
+function linhaComprovante(documento, formTemplates, formRecords, ehDoTipo, meses, now) {
+  const { temPlanilha, ultimo } = ultimoComprovante(formTemplates, formRecords, ehDoTipo);
+  if (!temPlanilha) return linhaDoc(documento, 'unknown', 'Sem planilha', 'Esta loja não tem a planilha deste controle cadastrada.');
+  if (!ultimo) return linhaDoc(documento, 'unknown', 'Nenhum comprovante', 'A planilha existe, mas nenhum comprovante foi entregue.');
+  const dias = diasEntre(ultimo.createdAt, now);
+  const restam = meses * 30 - dias;
+  const quando = `Último comprovante lançado em ${fmtDate(ultimo.createdAt)} (prazo de ${meses} meses).`;
+  if (restam < 0) return linhaDoc(documento, 'fail', 'Vencido', quando);
+  if (restam <= READINESS_DEFAULTS.dedetizacaoAvisoDias) return linhaDoc(documento, 'warn', `Vence em ${restam} dia(s)`, quando);
+  return linhaDoc(documento, 'ok', 'Em dia', quando);
+}
+
+export function sectionDocuments({ companyProfile, complianceDocs, formTemplates, formRecords, now = Date.now() }) {
+  const p = companyProfile ?? {};
+  const rows = [];
+
+  const alvara = alvaraStatus(p, now);
+  const validadeAlvara = fmtDia(p.alvaraValidade);
+  if (!alvara.numero) {
+    rows.push(linhaDoc('Alvará sanitário', 'fail', 'Não informado', 'Número e validade não preenchidos em Configurações.'));
+  } else {
+    const detalhe = `Nº ${alvara.numero}${validadeAlvara ? ` · válido até ${validadeAlvara}` : ''}`;
+    if (alvara.dias === null) rows.push(linhaDoc('Alvará sanitário', 'warn', 'Sem validade informada', detalhe));
+    else if (alvara.dias < 0) rows.push(linhaDoc('Alvará sanitário', 'fail', `Vencido há ${-alvara.dias} dia(s)`, detalhe));
+    else if (alvara.status === 'warn') rows.push(linhaDoc('Alvará sanitário', 'warn', `Vence em ${alvara.dias} dia(s)`, detalhe));
+    else rows.push(linhaDoc('Alvará sanitário', 'ok', 'Válido', detalhe));
+  }
+
+  const rtNome = String(p.rtNome ?? '').trim();
+  const rtCrn = String(p.rtCrn ?? '').trim();
+  rows.push(rtNome && rtCrn
+    ? linhaDoc('Responsável técnico', 'ok', 'Informado', `${rtNome} · CRN ${rtCrn}`)
+    : linhaDoc('Responsável técnico', 'fail', 'Incompleto', `${rtNome || 'Nome não informado'} · ${rtCrn ? `CRN ${rtCrn}` : 'CRN não informado'}`));
+
+  const manual = latestManualBp(complianceDocs);
+  const manualSt = manualBpStatus(manual, now);
+  if (manualSt.status === 'never') {
+    rows.push(linhaDoc('Manual de Boas Práticas', 'fail', 'Não registrado', 'Nenhuma versão do Manual registrada em Configurações.'));
+  } else {
+    const partes = [
+      manual.versao ? `Versão ${manual.versao}` : null,
+      fmtDia(manual.issuedAt) ? `de ${fmtDia(manual.issuedAt)}` : null,
+      manual.autor ? `elaborado por ${manual.autor}` : null,
+    ].filter(Boolean).join(', ');
+    rows.push(manualSt.status === 'warn'
+      ? linhaDoc('Manual de Boas Práticas', 'warn', `Revisão há ${manualSt.mesesDesde} meses`, partes)
+      : linhaDoc('Manual de Boas Práticas', 'ok', 'Registrado', partes));
+  }
+
+  const mesesDedetizacao = Number(p.dedetizacaoMeses) > 0 ? Number(p.dedetizacaoMeses) : READINESS_DEFAULTS.dedetizacaoMeses;
+  rows.push(linhaComprovante('Dedetização (empresa especializada)', formTemplates, formRecords, EH_DEDETIZACAO, mesesDedetizacao, now));
+  rows.push(linhaComprovante('Higienização do reservatório de água', formTemplates, formRecords, EH_RESERVATORIO, READINESS_DEFAULTS.reservatorioMeses, now));
+
+  return {
+    title: 'Documentos e Situação Legal',
+    headers: ['Documento', 'Situação', 'Detalhe'],
+    rowsHtml: rows.join(''),
+    emptyMessage: '',
+  };
+}
+
+// ─── Controle de saúde dos manipuladores (RDC 216 4.6.1) ──────────────────
+//
+// Uma linha por colaborador ativo: é assim que o fiscal confere ASO. Quem
+// tem "Só opera aqui" fica fora (o ASO é do empregador, ver teamAsoSummary).
+// O resultado do exame sai em coluna própria, separado da validade: um ASO
+// "Inapto" dentro do prazo aparece como tal, em vez de sumir atrás de "Em dia".
+
+const ASO_RESULTADO = { apto: 'Apto', apto_restricao: 'Apto com restrição', inapto: 'Inapto' };
+const ASO_SITUACAO = {
+  ok: ['ok', 'Em dia'], warn: ['warn', null], expired: ['fail', 'Vencido'], never: ['fail', 'Sem exame registrado'],
+};
+
+export function sectionAso({ staff, complianceDocs, asoMeses = COMPLIANCE_DEFAULTS.asoValidadeMeses, now = Date.now() }) {
+  const resumo = teamAsoSummary(staff, complianceDocs, asoMeses, now);
+  const rows = resumo.situacoes.map((s) => {
+    const afastamento = s.leaveType ? descreverAfastamento(s.leaveType, s.leaveStartedAt) : null;
+    const [tone, rotulo] = ASO_SITUACAO[s.status] ?? ['unknown', '-'];
+    const situacao = s.status === 'warn' ? `Vence em ${s.diasRestantes} dia(s)` : rotulo;
+    const resultado = s.doc ? (ASO_RESULTADO[s.doc.resultado] ?? '-') : '-';
+    return `<tr>
+      <td>${esc(s.name)}</td>
+      <td>${esc(s.role || '-')}</td>
+      <td>${s.doc ? esc(fmtDia(s.doc._validade) ?? '-') : '-'}</td>
+      <td style="${resultado === 'Inapto' ? 'color:#c0392b;font-weight:700' : ''}">${esc(resultado)}</td>
+      <td style="color:${TONE_COLOR[tone]};font-weight:700">${esc(situacao)}${afastamento ? `<br><span style="color:#5c6c7a;font-weight:400">${esc(afastamento)}</span>` : ''}</td>
+    </tr>`;
+  }).join('');
+
+  return {
+    // Afastados não entram em nenhuma contagem (teamAsoSummary), então saem
+    // também do total: "3 de 5" com 1 de licença leria como 2 irregulares.
+    title: `Controle de Saúde dos Manipuladores (ASO): ${resumo.ok} de ${resumo.total - resumo.leave} em dia`
+      + (resumo.leave > 0 ? `, ${resumo.leave} afastado(s)` : ''),
+    headers: ['Colaborador', 'Função', 'Válido até', 'Resultado', 'Situação'],
+    rowsHtml: rows,
+    emptyMessage: 'Nenhum colaborador ativo cadastrado nesta loja.',
   };
 }
 

@@ -26,6 +26,7 @@ import { conformityStats } from './limits';
 import { employeeTrainingStatus } from './training-status';
 import { teamAsoSummary, manualBpStatus, alvaraStatus, latestManualBp, COMPLIANCE_DEFAULTS } from './compliance';
 import { acoesVencidas, diasDeAtraso } from './acoes-prazo';
+import { calibracoesPorPlanilha, daysUntil } from './maintenance-due';
 
 // ─── Suposições e réguas ────────────────────────────────────────────────────
 // ⚠️ `dedetizacaoMeses` é SUPOSIÇÃO, não texto de norma (auditoria §4.1): a
@@ -226,6 +227,7 @@ export function computeReadiness(inputs = {}) {
     companyProfile = {},
     complianceDocs = [],       // ASO + Manual de BP (Fatia 2b)
     actions = [],              // ações corretivas (C4: prazo vencido)
+    maintenance = [],          // equipamentos com planos já calculados (B5), ver maintenance-due.js
     controlsByType = {},
     sync = {},
     localOnly = {},
@@ -443,6 +445,40 @@ export function computeReadiness(inputs = {}) {
         ? `Manual registrado, mas a versão é de ${manual.mesesDesde} meses atrás. Vale revisar — o fiscal costuma cobrar manual coerente com a operação atual.`
         : `Manual registrado${manualDoc?.versao ? ` (${manualDoc.versao})` : ''}, versão de ${manual.mesesDesde} meses atrás.`,
     'high', 'settings'));
+
+  // B5 · Manutenção programada e calibração (RDC 216 4.1.16: "calibração dos
+  // instrumentos ou equipamentos de medição, mantendo registro"). Candidata 2
+  // da pesquisa de 03/10: o app sabia tudo isso (planos da Manutenção e a
+  // planilha de calibração da CASA DOCE) e a Prontidão não perguntava; o D3
+  // era um "ok" fixo. Duas fontes de calibração: plano do tipo `calibracao`
+  // na Manutenção, e o campo "Data da próxima calibração" de planilha.
+  {
+    const planos = (maintenance ?? []).flatMap((eq) => (eq.plans ?? []).map((p) => ({ ...p, equipamento: eq.name })));
+    const calPlanos = planos.filter((p) => p.type === 'calibracao');
+    const calPlanilha = calibracoesPorPlanilha(formTemplates, formRecords);
+    const calVencidas = [
+      ...calPlanos.filter((p) => p.days !== null && p.days < 0).map((p) => p.equipamento),
+      ...calPlanilha.instrumentos.filter((i) => daysUntil(i.proxima, now) < 0).map((i) => i.nome),
+    ];
+    const outrosAtrasados = planos.filter((p) => p.type !== 'calibracao' && p.days !== null && p.days < 0);
+    const temCalibracao = calPlanos.length > 0 || calPlanilha.instrumentos.length > 0;
+
+    b.push(calVencidas.length > 0
+      ? chk('b5-manutencao', 'Calibração e manutenção programada', 'fail',
+          `Calibração vencida: ${calVencidas.slice(0, 3).join(', ')}${calVencidas.length > 3 ? '…' : ''}. A RDC 216 (4.1.16) exige calibração dos instrumentos de medição com registro: termômetro sem calibração põe em dúvida todas as leituras.`,
+          'high', 'maintenance')
+      : outrosAtrasados.length > 0
+        ? chk('b5-manutencao', 'Calibração e manutenção programada', 'warn',
+            `${plural(outrosAtrasados.length, 'manutenção programada atrasada', 'manutenções programadas atrasadas')} (${outrosAtrasados.slice(0, 3).map((p) => `${p.equipamento}: ${p.title || p.type}`).join('; ')}${outrosAtrasados.length > 3 ? '…' : ''}).`,
+            'high', 'maintenance')
+        : !temCalibracao
+          ? chk('b5-manutencao', 'Calibração e manutenção programada', 'unknown',
+              'Nenhuma calibração de instrumento registrada (nem plano de calibração na Manutenção, nem planilha de calibração preenchida). Sem registro, o app não sabe se os termômetros estão calibrados.',
+              'high', 'maintenance')
+          : chk('b5-manutencao', 'Calibração e manutenção programada', 'ok',
+              `Calibração em dia${outrosAtrasados.length === 0 && planos.length > calPlanos.length ? ' e manutenção programada sem atraso' : ''}.`,
+              'high', 'maintenance'));
+  }
 
   // ── Grupo C — registros vivos dos últimos 30 dias ─────────────────────────
   const c = [];

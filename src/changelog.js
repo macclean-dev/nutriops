@@ -35,6 +35,10 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.265', date: '2026-10-03', items: [
+    { text: 'A Prontidão ganhou o item "Calibração e manutenção programada". A RDC 216 exige calibrar os instrumentos de medição, como os termômetros, com registro. O app olha os planos de calibração cadastrados em Manutenção e a planilha "Calibração de Instrumentos de Medição": calibração vencida aparece como pendência, manutenção programada atrasada como aviso, e sem nenhum registro de calibração o item diz "sem dado".', path: 'Gestão → Prontidão' },
+    'A "Data da próxima calibração" que já era preenchida na planilha de calibração agora é lida e cobrada. Antes ela era guardada e nada olhava pra ela.',
+  ]},
   { version: '1.9.264', date: '2026-10-03', items: [
     { text: 'Ações corretivas com prazo vencido agora aparecem: um selo vermelho "Prazo vencido há N dia(s)" na ação, um contador no topo da tela, um aviso na Prontidão e uma linha no Resumo da semana do Painel RT. Antes, uma ação aberta e esquecida contava como se estivesse em dia.', path: 'Gestão → Não conformidades' },
     { text: 'Dá pra mudar o responsável e o prazo de uma ação já aberta, no botão "Editar prazo". E marcar uma ação como resolvida agora pede a descrição do que foi feito: é ela que vale como evidência.', path: 'Gestão → Não conformidades' },

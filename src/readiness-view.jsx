@@ -20,6 +20,7 @@ import { viewVisivelNaLoja } from './modulos-da-loja';
 import { computeTurnAlertsPure } from './turn-alerts';
 import { isSupabaseEnabled, getSyncStatus, getOfflineQueue } from './repository';
 import { readTenantTemperatures } from './temperaturas-por-loja';
+import { planosComVencimento } from './maintenance-due';
 import { useFiltroDeLoja } from './filtro-loja';
 import {
   computeReadiness, byWorstStatus, READINESS_DEFAULTS,
@@ -44,7 +45,7 @@ async function loadTenantReadiness({ tenant, records, now }) {
     { readFormTemplates, readFormRecords, pendingFormsForPeriod, extractNonConformities },
     { readOil, readThaw, readCool, readThermal, readPOPs },
     { readHandwash },
-    { readCatalog, readMaintenanceLogs },
+    { readCatalog, readMaintenanceLogs, readEquipments },
     { readProducts },
     { readCompanyProfile },
     { readSessions, readTrainConfig },
@@ -85,6 +86,7 @@ async function loadTenantReadiness({ tenant, records, now }) {
     tenant, now,
     pendingNc,
     actions: readActions(tenant.id),
+    maintenance: planosComVencimento(readEquipments(tenant.id), maintLogs),
     products: readProducts(tenant.id),
     // `Pure` de propósito, não o wrapper: "dar ciência" num alerta (tela
     // Alertas) só diz "eu vi", não registra temperatura nenhuma. Com o

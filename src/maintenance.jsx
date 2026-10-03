@@ -4,6 +4,7 @@ import { dedupeCatalog } from './limits';
 // Limpar o aparelho apagava o histórico que a RDC 216 §4.1 manda manter.
 import { pushEquipAsset, pushMaintLog, pushWorkOrder, deleteMaintenanceItem , lw as gravarLocal } from './repository';
 import { gravarMesclando, SYNC_EVENT } from './lista-local';
+import { addDays, dueTone, planosComVencimento } from './maintenance-due';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -47,24 +48,8 @@ function uid() { return crypto.randomUUID(); }
 function fmtDate(iso) { try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return '—'; } }
 function fmtDT(iso)   { try { return new Date(iso).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }); } catch { return '—'; } }
 
-function addDays(iso, days) {
-  const d = new Date(iso || new Date());
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-function daysUntil(dateStr) {
-  if (!dateStr) return null;
-  return Math.ceil((new Date(dateStr).getTime() - new Date().setHours(0,0,0,0)) / 86400000);
-}
-
-function dueTone(days) {
-  if (days === null) return 'neutral';
-  if (days < 0)  return 'expired';
-  if (days <= 7)  return 'danger';
-  if (days <= 30) return 'warn';
-  return 'ok';
-}
+// addDays/daysUntil/dueTone e o cálculo dos planos moram em maintenance-due.js
+// desde 03/10, pra Prontidão usar a mesma régua (RDC 216 4.1.16).
 
 function dueLabel(days) {
   if (days === null)  return '—';
@@ -272,21 +257,7 @@ export function MaintenanceView({ activeTenant, allTenants, onTenantChange, sess
   }, [equipments, catalog]);
 
   // Compute next due dates from maintenance plans
-  const equipmentsWithDue = useMemo(() => mergedEquipments.map(eq => {
-    const plans = (eq.maintenancePlans ?? []).map(plan => {
-      // Find last log for this plan
-      const lastLog = logs
-        .filter(l => l.equipmentId === eq.id && l.planId === plan.id)
-        .sort((a,b) => new Date(b.executedAt) - new Date(a.executedAt))[0];
-      const nextDue = lastLog
-        ? addDays(lastLog.executedAt, plan.frequencyDays)
-        : plan.nextDue ?? addDays(new Date().toISOString(), plan.frequencyDays);
-      const days = daysUntil(nextDue);
-      return { ...plan, nextDue, lastLog, days, tone: dueTone(days) };
-    });
-    const urgentPlan = plans.sort((a,b) => (a.days??999) - (b.days??999))[0];
-    return { ...eq, plans, urgentPlan };
-  }), [mergedEquipments, logs]);
+  const equipmentsWithDue = useMemo(() => planosComVencimento(mergedEquipments, logs), [mergedEquipments, logs]);
 
   // KPIs
   const overdue  = countPlansByTone(equipmentsWithDue, ['expired', 'danger']);

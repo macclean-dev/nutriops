@@ -45,6 +45,23 @@ export const PERMISSIONS = {
 export function getPermissions(role) { return PERMISSIONS[role] ?? PERMISSIONS['Colaborador']; }
 export function canAccess(role, view) { const p = getPermissions(role); return p.nav.includes(view); }
 
+// Validar planilha BPF é a ASSINATURA da RT: o carimbo grava nome, papel e
+// hora, e é isso que vale na fiscalização. Até a v1.9.253 a aba "Validação
+// RT" não tinha portão nenhum - qualquer perfil com acesso a Planilhas,
+// inclusive Colaborador, via a aba e validava a própria planilha (achado da
+// pesquisa de 03/10).
+//
+// Conta de loja fica de fora mesmo com papel de Administrador: é um tablet
+// compartilhado, não uma pessoa, e o nome no carimbo seria o do operador
+// escolhido na tela "Quem está registrando?", que é atribuição, não
+// autenticação. Papel desconhecido cai em Colaborador (getPermissions) e
+// também fica de fora: o portão falha FECHADO.
+export function podeValidarPlanilha(session) {
+  if (!session?.user) return false;
+  if (session.isStoreAccount === true) return false;
+  return getPermissions(session.user.role).canValidate === true;
+}
+
 // Admin GLOBAL da NutriOPS (não um admin de um tenant): loga via Supabase Auth
 // com tenantId nulo. Só ele vê a área "Super Admin" (plataforma). Um
 // Administrador amarrado a um tenant (tenantId setado) NÃO é global.

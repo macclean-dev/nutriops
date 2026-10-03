@@ -15,6 +15,7 @@ import { aplicarRenomeacoes } from './renomear-planilha';
 import { unidadePKS, unidadeTerraco } from './modulos-da-loja';
 import { prefsFromProfile, profileWithPrefs, catLabelFor, podeMoverPara, podeEditarTitulo, applyCategoryPrefs, enxugarPrefs, CATEGORIA_COM_COMPORTAMENTO, FREQUENCIAS } from './form-prefs';
 import { readCompanyProfile, saveCompanyProfile } from './settings';
+import { podeValidarPlanilha } from './permissions';
 
 // Read company profile from localStorage
 function getProfile(tenantId) {
@@ -2356,6 +2357,9 @@ export function saveFlashMessage(templateTitle, status) {
 
 export function FormsView({ activeTenant, allTenants, onTenantChange, session }) {
   const isRT = ['Nutricionista RT','Administrador','Super-admin'].includes(session?.user?.role);
+  // Portão da assinatura (permissions.js). Separado de `isRT` de propósito:
+  // `isRT` decide quem organiza e edita planilha, este decide quem ASSINA.
+  const podeValidar = podeValidarPlanilha(session);
 
   const [templates, setTemplates] = useState(() => readFormTemplates(activeTenant));
   const [records,   setRecords]   = useState(() => readFormRecords(activeTenant.id));
@@ -2553,13 +2557,16 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   // só empurrar. Registro calculado FORA do updater, push ANTES do
   // setRecords, mesma correção das "vias" de handleSave (28/08): o React
   // pode chamar o updater mais de uma vez, e push lá dentro duplicava POST.
+  // `podeValidar` aqui também, não só na aba: esconder a aba tira o caminho
+  // da tela, mas a assinatura não pode depender de ninguém achar outra porta.
   const handleValidate = useCallback((recordId, validation) => {
+    if (!podeValidar) return;
     const atual = records.find((r) => r.id === recordId);
     if (!atual) return;
     const updated = { ...atual, validation, updatedAt: new Date().toISOString() };
     pushFormRecord(activeTenant.id, updated);
     setRecords((prev) => prev.map((r) => (r.id === recordId ? updated : r)));
-  }, [records, activeTenant.id]);
+  }, [records, activeTenant.id, podeValidar]);
 
   // "Validar todas" (pedido 22/09, 275 planilhas pendentes de uma vez só):
   // sequencial e AGUARDADO por item, não um `for` disparando 275 POSTs em
@@ -2571,6 +2578,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   // revisões em instantes diferentes: fingir precisão de segundo por
   // registro seria mentir sobre o que aconteceu.
   const handleValidateAll = useCallback(async (onProgress) => {
+    if (!podeValidar) return;
     const pendentes = records.filter((r) => r.status === 'submitted' && !r.validation);
     if (pendentes.length === 0) return;
     const carimbo = {
@@ -2589,7 +2597,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
       const porId = new Map(ups.map((u) => [u.id, u]));
       return prev.map((r) => porId.get(r.id) ?? r);
     });
-  }, [records, session, activeTenant.id]);
+  }, [records, session, activeTenant.id, podeValidar]);
 
   const pendingValidation = records.filter((r) => r.status==='submitted' && !r.validation).length;
   // As preferências entram AQUI, sobre a lista já lida do seed/cache — não
@@ -2740,24 +2748,29 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
         </div>
       )}
 
-      {/* Tab bar */}
-      <div style={{ display:'flex', gap:6, marginBottom:20 }}>
-        {[['forms','Planilhas'],['validation','Validação RT']].map(([key,label]) => (
-          <button key={key} onClick={() => setTab(key)}
-            style={{ padding:'7px 16px', borderRadius:8, border:'1px solid var(--border)', background:tab===key?'var(--text)':'var(--surface)', color:tab===key?'white':'var(--text)', fontWeight:600, fontSize:13, cursor:'pointer', fontFamily:'var(--font)', display:'flex', alignItems:'center', gap:8 }}>
-            {label}
-            {key==='validation' && pendingValidation>0 && (
-              <span style={{ background:'var(--amber)', color:'white', borderRadius:10, fontSize:10, fontWeight:800, padding:'1px 6px' }}>{pendingValidation}</span>
-            )}
-          </button>
-        ))}
-      </div>
+      {/* Tab bar - só existe pra quem valida. Pros demais sobraria uma aba
+          única ("Planilhas"), que não é escolha nenhuma. */}
+      {podeValidar && (
+        <div style={{ display:'flex', gap:6, marginBottom:20 }}>
+          {[['forms','Planilhas'],['validation','Validação RT']].map(([key,label]) => (
+            <button key={key} onClick={() => setTab(key)}
+              style={{ padding:'7px 16px', borderRadius:8, border:'1px solid var(--border)', background:tab===key?'var(--text)':'var(--surface)', color:tab===key?'white':'var(--text)', fontWeight:600, fontSize:13, cursor:'pointer', fontFamily:'var(--font)', display:'flex', alignItems:'center', gap:8 }}>
+              {label}
+              {key==='validation' && pendingValidation>0 && (
+                <span style={{ background:'var(--amber)', color:'white', borderRadius:10, fontSize:10, fontWeight:800, padding:'1px 6px' }}>{pendingValidation}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {tab==='validation' && (
+      {tab==='validation' && podeValidar && (
         <RTValidationPanel records={records} templates={templates} onValidate={handleValidate} onValidateAll={handleValidateAll} session={session} />
       )}
 
-      {tab==='forms' && (
+      {/* `!podeValidar` cobre o estado 'validation' preso de uma sessão
+          anterior: sem isto a tela ficaria em branco, sem aba pra voltar. */}
+      {(tab==='forms' || !podeValidar) && (
         <>
           <div className="chip-row" style={{ marginBottom: sectors.length > 1 ? 10 : 16 }}>
             <button className={`quick-chip ${catFilter==='all'?'active':''}`} onClick={() => pickCategory('all')}>

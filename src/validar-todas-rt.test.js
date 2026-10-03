@@ -16,12 +16,12 @@ const corpoPanel = forms.slice(forms.indexOf('function RTValidationPanel('), for
 
 describe('handleValidate agora sincroniza (a causa raiz da queixa 2)', () => {
   const ini = forms.indexOf('const handleValidate = useCallback(');
-  const fim = forms.indexOf('}, [records, activeTenant.id]);', ini) + '}, [records, activeTenant.id]);'.length;
+  const fim = forms.indexOf('}, [records, activeTenant.id, podeValidar]);', ini) + '}, [records, activeTenant.id, podeValidar]);'.length;
   const bloco = forms.slice(ini, fim);
 
   it('existe e não está mais vazio de dependências ([]) - precisa de records/activeTenant pra achar e empurrar o registro', () => {
     expect(bloco.length).toBeGreaterThan(0);
-    expect(bloco).toContain('[records, activeTenant.id]');
+    expect(bloco).toContain('[records, activeTenant.id, podeValidar]');
   });
 
   it('chama pushFormRecord - é isto que fazia falta; sem ele a validação nunca saía do aparelho', () => {
@@ -38,7 +38,7 @@ describe('handleValidate agora sincroniza (a causa raiz da queixa 2)', () => {
 
 describe('handleValidateAll - "validar todas" pedido pela nutricionista', () => {
   const ini = forms.indexOf('const handleValidateAll = useCallback(');
-  const fim = forms.indexOf('}, [records, session, activeTenant.id]);', ini) + '}, [records, session, activeTenant.id]);'.length;
+  const fim = forms.indexOf('}, [records, session, activeTenant.id, podeValidar]);', ini) + '}, [records, session, activeTenant.id, podeValidar]);'.length;
   const bloco = forms.slice(ini, fim);
 
   it('existe', () => {

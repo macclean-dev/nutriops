@@ -371,7 +371,7 @@ describe('Família C — HealthView: healthTenants substitui tenantsBase nos 3 p
   });
 
   it('fonte: os 3 pontos (alertas, tendência 30d, grid de cards) usam healthTenants — o padrão de RENDERIZAR direto de tenantsBase não sobrevive em nenhum dos dois `.map` de JSX', () => {
-    expect(fonte).toContain('computeTenantAlerts(metricsByTenant, healthTenants, clients)');
+    expect(fonte).toContain('computeTenantAlerts(metricsByTenant, healthTenants, clients, { metricasOk: !loading && !error })');
     const ocorrenciasMap = fonte.split('{healthTenants.map(t => {').length - 1;
     expect(ocorrenciasMap).toBe(2);
     // tenantsBase.map( ainda existe DENTRO da definição de healthTenants (pra

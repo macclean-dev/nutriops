@@ -1013,7 +1013,17 @@ function findClientForTenant(tenant, clients) {
 
 // Pura — sem useState/useMemo. Recebe métricas (do Supabase) + clientes
 // (do localStorage) e devolve a lista de alertas a mostrar.
-export function computeTenantAlerts(metricsByTenant, tenants, clients) {
+// Carência de loja nova antes de acusar "sem nenhum registro". SUPOSIÇÃO:
+// a memória do projeto pedia essa decisão ao dono (auditoria de 19/08) e ela
+// ainda não veio; 14 dias cobre a implantação típica sem esconder uma loja
+// que parou de verdade. Ajustar aqui se o dono definir outro número.
+export const CARENCIA_LOJA_NOVA_DIAS = 14;
+
+// `metricasOk` precisa vir `true` EXPLICITAMENTE: com a busca das métricas
+// falhando, a lista chega vazia e toda loja pareceria parada. Sem a busca
+// confirmada, o alerta de "zero registros" fica calado (falha fechada contra
+// alarme falso em massa); os demais seguem como sempre.
+export function computeTenantAlerts(metricsByTenant, tenants, clients, { metricasOk = false, now = Date.now() } = {}) {
   const out = [];
   const seen = new Set();
 
@@ -1021,10 +1031,32 @@ export function computeTenantAlerts(metricsByTenant, tenants, clients) {
   for (const t of tenants) {
     const m = metricsByTenant[t.id] ?? null;
     const client = findClientForTenant(t, clients);
-    if (!m) continue;
+
+    // Loja SEM NENHUM registro nos 30 dias que a tela busca. Até 03/10 esta
+    // função pulava a loja sem métrica (`if (!m) continue`): justamente a
+    // pior situação, a loja que nunca registrou ou parou de vez, era a única
+    // sem alerta (a DBK, "única loja ainda zerada na nuvem", nunca acendeu
+    // nada). Achado da pesquisa de 03/10, candidata 8.
+    if (!m?.lastActivity) {
+      if (!metricasOk) continue;
+      if (client && client.active === false) continue;         // suspensa: não é "parada"
+      if (client?.implantacao === true) continue;              // em treino: zero é esperado
+      const criadaEm = client?.createdAt ? new Date(client.createdAt).getTime() : NaN;
+      if (Number.isFinite(criadaEm) && now - criadaEm < CARENCIA_LOJA_NOVA_DIAS * 86400000) continue;
+      out.push({
+        id: `inactive-${t.id}`,
+        kind: 'inactive', severity: 'danger',
+        tenant: t, client,
+        label: `${t.name} sem nenhum registro de temperatura nos últimos 30 dias`,
+        hint: 'Pode ser aparelho sem sincronizar ou loja que parou de usar. Confirme com a RT ou com o contato da loja.',
+        action: client?.email ? { kind: 'email', target: client.email } : null,
+      });
+      seen.add(t.id);
+      continue;
+    }
 
     if (m.lastActivity) {
-      const days = Math.floor((Date.now() - new Date(m.lastActivity).getTime()) / 86400000);
+      const days = Math.floor((now - new Date(m.lastActivity).getTime()) / 86400000);
       if (days >= 10) {
         out.push({
           id: `inactive-${t.id}`,
@@ -1588,8 +1620,8 @@ function HealthView({ clients, onAlertsChange, onEditClient }) {
 
   // Alertas operacionais — combina métricas do Supabase com config dos clientes
   const alerts = useMemo(
-    () => computeTenantAlerts(metricsByTenant, healthTenants, clients),
-    [metricsByTenant, healthTenants, clients],
+    () => computeTenantAlerts(metricsByTenant, healthTenants, clients, { metricasOk: !loading && !error }),
+    [metricsByTenant, healthTenants, clients, loading, error],
   );
 
   // Notifica parent (AdminPanel) pra mostrar badge no tab

@@ -64,6 +64,9 @@ export function mergeTenants(clients = [], seedTenants = []) {
       plan: normalizePlanId(c.plan), active: c.active !== false,
       createdAt: c.createdAt ?? null, accessToken: c.accessToken ?? null,
       trialEndsAt: c.trialEndsAt ?? null, billingStatus: c.billingStatus ?? null,
+      // Sem isto o botão "Ativar operação" (superadmin-view.jsx) nunca
+      // aparecia: a condição dele é `implantacao === true` (pesquisa de 03/10).
+      implantacao: c.implantacao === true, goLiveAt: c.goLiveAt ?? null,
       source: 'client',
     });
   }

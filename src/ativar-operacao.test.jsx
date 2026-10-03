@@ -136,3 +136,47 @@ describe('cliente novo não inventa mais equipamento', () => {
     expect(pages).toContain('isPlaceholderCatalog(naTela)');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pesquisa de 03/10: o botão existia, mas NUNCA aparecia. A condição dele é
+// `t.source==='client' && t.implantacao === true`, e o campo morria no caminho:
+// a RPC admin_list_tenants devolve a coluna, mas cloudRowToClient
+// (tenant-sync.js) e mergeTenants (superadmin.js) não a copiavam. Toda unidade
+// nova ficava em treino, com alertas desligados, sem saída pela tela. Estes
+// testes seguem o dado da linha da nuvem até a lista que o botão lê.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { mergeCloudTenants } from './tenant-sync';
+import { mergeTenants } from './superadmin';
+
+describe('implantacao chega da nuvem até o botão', () => {
+  const linha = { id: 'pks1', name: 'Fabrizzio PKS', access_token: 't', implantacao: true, go_live_at: null };
+
+  it('cliente que só existe na nuvem (aparelho novo)', () => {
+    const lista = mergeTenants(mergeCloudTenants([], [linha]), []);
+    const t = lista.find((x) => x.id === 'pks1');
+    expect(t.source).toBe('client');
+    expect(t.implantacao).toBe(true);   // é exatamente a condição do botão
+  });
+
+  it('cliente já salvo no aparelho: a nuvem manda', () => {
+    const local = [{ id: 'pks1', name: 'Fabrizzio PKS', implantacao: false }];
+    const t = mergeTenants(mergeCloudTenants(local, [linha]), []).find((x) => x.id === 'pks1');
+    expect(t.implantacao).toBe(true);
+  });
+
+  it('depois de ativada na nuvem, o botão some (implantacao=false manda sobre o local antigo)', () => {
+    const local = [{ id: 'pks1', name: 'Fabrizzio PKS', implantacao: true }];
+    const ativada = { ...linha, implantacao: false, go_live_at: '2026-10-03T12:00:00Z' };
+    const t = mergeTenants(mergeCloudTenants(local, [ativada]), []).find((x) => x.id === 'pks1');
+    expect(t.implantacao).toBe(false);
+    expect(t.goLiveAt).toBe('2026-10-03T12:00:00Z');
+  });
+
+  it('linha sem a coluna não apaga o que o aparelho sabia', () => {
+    const local = [{ id: 'pks1', name: 'Fabrizzio PKS', implantacao: true }];
+    const semColuna = { id: 'pks1', name: 'Fabrizzio PKS', access_token: 't' };
+    const t = mergeTenants(mergeCloudTenants(local, [semColuna]), []).find((x) => x.id === 'pks1');
+    expect(t.implantacao).toBe(true);
+  });
+});

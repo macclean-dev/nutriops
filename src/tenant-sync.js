@@ -497,6 +497,11 @@ function cloudRowToClient(row) {
     modules: row.modules ?? [],
     stores: row.stores ?? [],
     trialEndsAt: row.trial_ends_at ?? null,
+    // Modo implantação (treino, alertas suspensos). Sem estes dois campos o
+    // botão "Ativar operação" do Super Admin nunca aparecia: a RPC devolve a
+    // coluna, mas ela morria aqui (achado da pesquisa de 03/10).
+    implantacao: row.implantacao === true,
+    goLiveAt: row.go_live_at ?? null,
     createdAt: row.created_at ?? new Date().toISOString(),
     updatedAt: row.updated_at ?? null,
     _fromCloud: true,
@@ -527,6 +532,9 @@ export function mergeCloudTenants(localClients = [], cloudRows = []) {
         modules:          row.modules ?? existing.modules,
         stores:           row.stores ?? existing.stores,
         trialEndsAt:      row.trial_ends_at ?? existing.trialEndsAt,
+        // A nuvem manda: só cai no local se a linha não trouxer a coluna.
+        implantacao:      typeof row.implantacao === 'boolean' ? row.implantacao : existing.implantacao,
+        goLiveAt:         row.go_live_at ?? existing.goLiveAt ?? null,
         updatedAt:        row.updated_at ?? existing.updatedAt,
         // A nuvem confirmou que este id existe na tabela `tenants` — qualquer
         // pushFailed local (marcado por um ClientModal.handleSave anterior

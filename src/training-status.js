@@ -30,3 +30,16 @@ export function employeeTrainingStatus(employeeName, sessions, validityMonths = 
   if (daysAgo <= limitDays)        return { status: 'warn', daysAgo, session: last };
   return                                  { status: 'expired', daysAgo, session: last };
 }
+
+// Quem é cobrado de capacitação NESTA loja. Fica fora quem tem "Só opera
+// aqui" (`asoExterno`): é contratado por outra empresa do grupo e a
+// capacitação dele é controlada lá, junto com o ASO.
+//
+// Até a v1.9.267 a capacitação continuava cobrada aqui (decisão da v1.9.226).
+// A RT da CASA DOCE pediu o contrário em 06/10: quem é da CASA DOCE e opera
+// no Fabrizzio aparecia com capacitação pendente no Fabrizzio "mesmo já tendo
+// o treinamento no Casa Doce". O treinamento está comprovado, só que na outra
+// empresa; cobrar de novo aqui era pendência duplicada.
+export function cobraCapacitacaoAqui(u) {
+  return u?.asoExterno !== true;
+}

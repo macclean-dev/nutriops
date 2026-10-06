@@ -115,7 +115,11 @@ describe('a tela de Equipe grava e mostra a marca', () => {
     expect(team).toContain('{u.asoExterno && <span className="badge neutral"');
   });
 
-  it('o texto explica que a capacitação continua valendo', () => {
-    expect(team).toContain('capacitação continua sendo cobrada aqui');
+  // Até a v1.9.267 a capacitação continuava cobrada aqui. A RT pediu o
+  // contrário em 06/10 (pendência duplicada pra quem já é treinado na
+  // empresa de origem): o texto agora diz que as duas ficam lá.
+  it('o texto explica que ASO e capacitação ficam na empresa de origem', () => {
+    expect(team).toContain('fica fora do controle de ASO e de');
+    expect(team).not.toContain('capacitação continua sendo cobrada aqui');
   });
 });

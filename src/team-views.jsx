@@ -531,8 +531,9 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
               <span>
                 <strong style={{ display:'block' }}>Só opera aqui</strong>
                 <span className="muted" style={{ fontSize:12 }}>
-                  Aparece no registro de temperatura desta loja, mas fica fora do controle de ASO dela —
-                  para quem é contratado por outra empresa do grupo. A capacitação continua sendo cobrada aqui.
+                  Aparece no registro de temperatura desta loja, mas fica fora do controle de ASO e de
+                  capacitação dela: para quem é contratado por outra empresa do grupo, onde o exame e o
+                  treinamento já são controlados.
                 </span>
               </span>
             </label>
@@ -564,7 +565,7 @@ export function UsersView({ activeTenant, allTenants, onTenantChange, session })
                   <div>
                     <strong>{u.name}</strong>
                     <span>{u.role} · {u.location || 'Sem localização'}</span>
-                    {u.asoExterno && <span className="badge neutral" style={{ fontSize:10, marginTop:3, display:'inline-block' }}>Só opera aqui · ASO em outra empresa</span>}
+                    {u.asoExterno && <span className="badge neutral" style={{ fontSize:10, marginTop:3, display:'inline-block' }}>Só opera aqui · ASO e capacitação em outra empresa</span>}
                     {!emailModel && <span style={{ fontFamily:'var(--mono)', fontSize:11, color:'var(--text-secondary)', display:'block', marginTop:2 }}>{handle}</span>}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

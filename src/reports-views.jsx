@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useState, useMemo, useEffect } from 'react';
 import { Th, useOrdenacao } from './tabela-ordenavel';
 import { getTemperatureRepository, pushRtValidation, mergeByKey } from './repository';
 import { resolveLimits as resolveLimitsFromCatalog, resolveRecordTone as resolveTemperatureTone, conformityStats, byWorstConformity, parseTemperatura, recordBelongsTo } from './limits';
-import { employeeTrainingStatus } from './training-status';
+import { employeeTrainingStatus, cobraCapacitacaoAqui } from './training-status';
 import CountUp from './count-up';
 import { useFiltroDeLoja } from './filtro-loja';
 import { podeValidarPlanilha } from './permissions';
@@ -239,7 +239,7 @@ export function DashboardView({ allTenants, records, activeTenant, onTenantChang
       const sessions = JSON.parse(localStorage.getItem(`nutriops.training.sessions.${tenant.id}`) ?? '[]');
       const config   = JSON.parse(localStorage.getItem(`nutriops.training.config.${tenant.id}`) ?? '{"validityMonths":12}');
       const users    = JSON.parse(localStorage.getItem(`nutriops.users.${tenant.id}`) ?? 'null') ?? tenant.usersList ?? [];
-      trainingAlertCount = users.filter(u =>
+      trainingAlertCount = users.filter(cobraCapacitacaoAqui).filter(u =>
         employeeTrainingStatus(u.name, sessions, config.validityMonths ?? 12).status !== 'ok'
       ).length;
     } catch { /**/ }

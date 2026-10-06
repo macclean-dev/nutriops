@@ -3,7 +3,7 @@ import { Th, useOrdenacao } from './tabela-ordenavel';
 import { readFormRecords, readFormTemplates, catMeta, formatPeriodLabel, getPeriodKey, freqLabel } from './forms';
 import { readSessions } from './training';
 import { resolveRecordTone as resolveTemperatureTone } from './limits';
-import { employeeTrainingStatus } from './training-status';
+import { employeeTrainingStatus, cobraCapacitacaoAqui } from './training-status';
 import { useFiltroDeLoja } from './filtro-loja';
 
 function formatDate(iso) {
@@ -275,7 +275,7 @@ function TrainingReport({ allTenants, tenantFilter }) {
       const closedSessions = sessions.filter(s => s.status === 'closed');
       const users = JSON.parse(localStorage.getItem(`nutriops.users.${tenant.id}`) ?? 'null') ?? tenant.usersList ?? [];
       const config = JSON.parse(localStorage.getItem(`nutriops.training.config.${tenant.id}`) ?? '{"validityMonths":12}');
-      for (const user of users) {
+      for (const user of users.filter(cobraCapacitacaoAqui)) {
         const r = employeeTrainingStatus(user.name, sessions, config.validityMonths ?? 12);
         const totalSessions = closedSessions.filter(s => s.participants.some(p => p.name === user.name && p.confirmed)).length;
         rows.push({ tenant: tenant.name, name: user.name, role: user.role, lastDate: r.session?.date ?? null, lastTitle: r.session?.title ?? null, daysAgo: r.daysAgo, status: r.status, totalSessions });
@@ -388,7 +388,7 @@ export function computeTrainingStats(tenant) {
   const sessions = readSessions(tenant.id);
   const users = JSON.parse(localStorage.getItem(`nutriops.users.${tenant.id}`) ?? 'null') ?? tenant.usersList ?? [];
   const trainingConfig = JSON.parse(localStorage.getItem(`nutriops.training.config.${tenant.id}`) ?? '{"validityMonths":12}');
-  return users.map(user => {
+  return users.filter(cobraCapacitacaoAqui).map(user => {
     const r = employeeTrainingStatus(user.name, sessions, trainingConfig.validityMonths ?? 12);
     return { name: user.name, role: user.role, lastDate: r.session?.date ?? null, status: r.status };
   });

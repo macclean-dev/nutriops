@@ -11,7 +11,7 @@ import { fetchAccessLog } from './tenant-sync';
 import { pushSpecialControl, getTemperatureRepository , lw as gravarLocal, SPECIAL_CONTROLS_CAP } from './repository';
 import { gravarMesclando, SYNC_EVENT } from './lista-local';
 import { resolveRecordTone } from './limits';
-import { employeeTrainingStatus } from './training-status';
+import { employeeTrainingStatus, cobraCapacitacaoAqui } from './training-status';
 import { computeWeeklySummary, summaryToText } from './weekly-summary';
 import { useFiltroDeLoja } from './filtro-loja';
 import { readTenantTemperatures } from './temperaturas-por-loja';
@@ -116,7 +116,7 @@ export function RTPanelView({ allTenants, records, session }) {
     // Capacitação vencendo — item 7 da revisão de produto: esta conta era a
     // única sem tolerância nenhuma e reimplementava a fórmula na mão; agora é
     // a mesma canônica que toda outra tela usa.
-    const expiringTraining = users.filter(u =>
+    const expiringTraining = users.filter(cobraCapacitacaoAqui).filter(u =>
       employeeTrainingStatus(u.name, trainSess, config.validityMonths ?? 12).status !== 'ok'
     );
 

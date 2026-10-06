@@ -23,7 +23,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { conformityStats } from './limits';
-import { employeeTrainingStatus } from './training-status';
+import { employeeTrainingStatus, cobraCapacitacaoAqui } from './training-status';
 import { teamAsoSummary, manualBpStatus, alvaraStatus, latestManualBp, COMPLIANCE_DEFAULTS } from './compliance';
 import { acoesVencidas, diasDeAtraso } from './acoes-prazo';
 import { calibracoesPorPlanilha, daysUntil } from './maintenance-due';
@@ -333,7 +333,7 @@ export function computeReadiness(inputs = {}) {
       'Nenhum colaborador ativo cadastrado nesta loja — sem equipe cadastrada não há como verificar capacitação.',
       'critical', 'training'));
   } else {
-    const situacoes = ativos.map((u) => ({ name: u.name, ...employeeTrainingStatus(u.name, trainingSessions, trainingValidityMonths, now) }));
+    const situacoes = ativos.filter(cobraCapacitacaoAqui).map((u) => ({ name: u.name, ...employeeTrainingStatus(u.name, trainingSessions, trainingValidityMonths, now) }));
     const vencidos = situacoes.filter((s) => s.status === 'expired' || s.status === 'never');
     const renovar = situacoes.filter((s) => s.status === 'warn');
     a.push(chk('a4-capacitacao', 'Capacitação dos manipuladores',

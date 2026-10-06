@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { employeeTrainingStatus } from './training-status';
+import { employeeTrainingStatus, cobraCapacitacaoAqui } from './training-status';
 // Fatia 3 (15/08): sessões e config sobem pra nuvem — antes viviam só no
 // localStorage do device da RT, e um wipe apagava os comprovantes de
 // capacitação da rede inteira (auditoria RDC §3.5).
@@ -679,7 +679,7 @@ function AsoPanel({ tenant, allUsers }) {
 
 function EmployeeStatusPanel({ allUsers, sessions, config }) {
   const validity = config?.validityMonths ?? 12;
-  const statuses = allUsers.map((u) => {
+  const statuses = allUsers.filter(cobraCapacitacaoAqui).map((u) => {
     const r = employeeTrainingStatus(u.name, sessions, validity);
     return { ...u, status: r.status, daysAgo: r.daysAgo, lastDate: r.session?.date ?? null, label: STATUS_LABEL[r.status] };
   });

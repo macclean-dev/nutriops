@@ -4,7 +4,7 @@ import { readOnboardingTenants, writeOnboardingTenants } from './onboarding-stor
 import { readAdminAuth, writeAdminAuth, clearAdminAuth, readClients } from './admin-storage';
 import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
 import { trackUsage, ls, lw } from './repository';
-import { employeeTrainingStatus } from './training-status';
+import { employeeTrainingStatus, cobraCapacitacaoAqui } from './training-status';
 import { readTurns } from './turns';
 import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, getStorageFull, clearStorageFull, getQueueOverflow, clearQueueOverflow, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill, pushCorrectiveAction, syncCorrectiveActions, deleteCorrectiveAction } from './repository';
 import { notificarSyncAplicado, gravarMesclando, SYNC_EVENT } from './lista-local';
@@ -1028,6 +1028,7 @@ function OverviewView({ activeTenant, allTenants, onTenantChange, session, equip
       const users     = JSON.parse(localStorage.getItem(`nutriops.users.${activeTenant.id}`) ?? 'null') ?? activeTenant.usersList ?? [];
       return users
         .filter(u => u.status !== 'Inativo')
+        .filter(cobraCapacitacaoAqui)
         .map(u => {
           const r = employeeTrainingStatus(u.name, sessions, config.validityMonths ?? 12);
           return { name: u.name, role: u.role, status: r.status, daysAgo: r.daysAgo, lastTitle: r.session?.title };

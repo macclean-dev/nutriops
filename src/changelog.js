@@ -35,6 +35,10 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.268', date: '2026-10-06', items: [
+    { text: 'Quem está marcado como "Só opera aqui" agora fica fora da cobrança de capacitação desta loja, como já ficava fora do ASO. Uma pessoa da CASA DOCE que opera no Fabrizzio não aparece mais com treinamento pendente no Fabrizzio: a capacitação dela é controlada na empresa de origem. Pedido da nutricionista RT.', path: 'Equipe → Usuários → Editar → Só opera aqui' },
+    'Ela continua aparecendo no registro de temperatura e pode participar de treinamentos aqui normalmente. Só deixa de ser cobrada em duplicidade.',
+  ]},
   { version: '1.9.267', date: '2026-10-03', items: [
     { text: 'Os turnos agora valem para todos os aparelhos da loja. Antes cada tablet e computador guardava os seus, e um aparelho novo voltava aos turnos padrão: dois aparelhos podiam cobrar pendência de temperatura em horários diferentes. Ao adicionar, editar ou remover um turno, a mudança chega aos outros aparelhos sozinha.', path: 'Equipe → Turnos' },
     'Se este aparelho tinha turnos personalizados que nunca foram compartilhados, a tela de Turnos avisa e oferece "Usar estes turnos em todos os aparelhos". Nada muda sem alguém confirmar.',

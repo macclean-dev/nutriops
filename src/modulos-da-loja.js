@@ -45,3 +45,17 @@ export function viewVisivelNaLoja(view, tenant) {
   if (VIEWS_CONTROLES_ESPECIAIS.includes(view)) return lojaUsaControlesEspeciais(tenant);
   return true;
 }
+
+// Recebimento completo (fornecedor, NF e temperatura por tipo de produto): só
+// na CASA DOCE matriz. Pedido da RT (06/10): "aqui na matriz podemos manter o
+// fornecedor e o NF no formulário"; no PKS e no Terraço "todos os produtos
+// que eles recebem já são prontos/manipulados", a planilha só controla o que
+// chega da matriz, e fica como está. As outras lojas (Swiss, Bäckerei, DBK)
+// também ficam como estão: o pedido foi só da CASA DOCE.
+//
+// PKS e Terraço são testados ANTES, como no seedTemplates: o nome deles pode
+// conter "CASA DOCE".
+export function recebimentoCompleto(tenant) {
+  if (unidadePKS(tenant) || unidadeTerraco(tenant)) return false;
+  return String(tenant?.id ?? '').includes('bf245c3b') || texto(tenant?.name).includes('casa doce');
+}

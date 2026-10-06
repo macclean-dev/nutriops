@@ -88,8 +88,9 @@ export function sectionReceiving(receivingRecords) {
   const rows = (receivingRecords ?? []).map((r) => `<tr>
     <td>${esc(r.hora)}</td>
     <td>${esc(r.recebido?.sig)}</td>
-    <td>${esc(r.fornecedor)}</td>
+    <td>${esc([r.fornecedor, r.nf ? `NF ${r.nf}` : ''].filter(Boolean).join(' · '))}</td>
     <td style="white-space:pre-line">${esc(r.produto)}</td>
+    <td>${esc(r.temperaturas?.length ? r.temperatura : (r.temperatura ? `${r.temperatura} °C` : ''))}</td>
     <td>${fmtDateTime(r.createdAt)}</td>
     <td style="color:${r.resultado === 'aceito' ? '#00a35c' : r.resultado === 'rejeitado' ? '#c0392b' : '#8a4e00'};font-weight:700">${RECEIVING_RESULT_LABEL[r.resultado] ?? r.resultado ?? '—'}</td>
     <td>${esc(r.motivoRejeicao || '—')}</td>
@@ -97,7 +98,9 @@ export function sectionReceiving(receivingRecords) {
 
   return {
     title: 'Recebimento de Mercadorias',
-    headers: ['Hora', 'Recebido por', 'Fornecedor', 'Produto', 'Data', 'Resultado', 'Motivo / ressalva'],
+    // Temperatura entrou em 06/10 (RDC 216 4.7.3, conferida na recepção); NF
+    // junto do fornecedor desde que a matriz da CASA DOCE voltou a registrar.
+    headers: ['Hora', 'Recebido por', 'Fornecedor / NF', 'Produto', 'Temperatura', 'Data', 'Resultado', 'Motivo / ressalva'],
     rowsHtml: rows,
     emptyMessage: 'Sem recebimentos registrados no período.',
   };

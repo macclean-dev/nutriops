@@ -35,6 +35,11 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.269', date: '2026-10-06', items: [
+    { text: 'Na CASA DOCE matriz, o Recebimento de Mercadorias voltou a ter Fornecedor e Nº da nota fiscal, e ganhou temperatura por tipo de produto: 6 linhas (dá pra adicionar mais), cada uma com o tipo (Congelado, Pescado, Carne ou Refrigerado) e a temperatura. A faixa de referência de cada tipo aparece na tela, e a linha acima dela fica em vermelho. Pedido da nutricionista RT.', path: 'Recebimento' },
+    'Temperatura acima da referência sugere "Aceito parcial". Dá pra recusar tudo, ou aceitar com justificativa, por exemplo quando o fabricante recomenda outra faixa. Cada linha tem o botão ± para os congelados.',
+    'No PKS, no Terraço e nas demais lojas o Recebimento continua como estava.',
+  ]},
   { version: '1.9.268', date: '2026-10-06', items: [
     { text: 'Quem está marcado como "Só opera aqui" agora fica fora da cobrança de capacitação desta loja, como já ficava fora do ASO. Uma pessoa da CASA DOCE que opera no Fabrizzio não aparece mais com treinamento pendente no Fabrizzio: a capacitação dela é controlada na empresa de origem. Pedido da nutricionista RT.', path: 'Equipe → Usuários → Editar → Só opera aqui' },
     'Ela continua aparecendo no registro de temperatura e pode participar de treinamentos aqui normalmente. Só deixa de ser cobrada em duplicidade.',

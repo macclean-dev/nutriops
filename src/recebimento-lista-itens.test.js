@@ -56,7 +56,7 @@ describe('o resto do registro continua sendo UM por entrega (não por item)', ()
   });
 
   it('continua exigindo só produto (a lista inteira) e resultado pra habilitar o botão', () => {
-    expect(corpoRecebimento).toContain("disabled={!produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim()) || saving}");
+    expect(corpoRecebimento).toContain("disabled={!produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim()) || tempIncompleta || saving}");
   });
 });
 

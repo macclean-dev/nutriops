@@ -38,9 +38,15 @@ describe('RECEIVING_CHECKS — só as 3 checáveis na hora do recebimento', () =
 });
 
 describe('campos do formulário — o que sobrou e o que entrou', () => {
-  it('fornecedor, NF, quantidade e forma de conservação saíram da tela de captura', () => {
-    expect(corpoRecebimento).not.toContain('setFornecedor');
-    expect(corpoRecebimento).not.toContain('setNf(');
+  // Fornecedor e NF voltaram em 06/10, SÓ na CASA DOCE matriz (pedido da RT,
+  // `recebimentoCompleto`). Nas outras lojas a simplificação de 21/09 segue
+  // valendo: os dois campos só existem dentro do `completo &&`.
+  it('quantidade e forma de conservação saíram; fornecedor e NF só na matriz da CASA DOCE', () => {
+    const gate = corpoRecebimento.indexOf('{completo && (');
+    expect(gate).toBeGreaterThan(-1);
+    expect(corpoRecebimento.indexOf('<label>Fornecedor<input')).toBeGreaterThan(gate);
+    expect(corpoRecebimento.indexOf('<label>Nº da nota fiscal<input')).toBeGreaterThan(gate);
+    expect(corpoRecebimento).toContain('const completo = recebimentoCompleto(activeTenant);');
     expect(corpoRecebimento).not.toContain('setQuantidade');
     expect(corpoRecebimento).not.toContain('setConservacao');
     expect(corpoRecebimento).not.toContain('Forma de conservação');
@@ -60,8 +66,8 @@ describe('campos do formulário — o que sobrou e o que entrou', () => {
   });
 
   it('fornecedor não é mais obrigatório pra registrar — só produto e resultado', () => {
-    expect(corpoRecebimento).toContain("disabled={!produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim()) || saving}");
-    expect(corpoRecebimento).toContain("if (!produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim())) return;");
+    expect(corpoRecebimento).toContain("disabled={!produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim()) || tempIncompleta || saving}");
+    expect(corpoRecebimento).toContain("if (!produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim()) || tempIncompleta) return;");
   });
 
   it('o registro novo grava hora e não tenta mais gravar fornecedor/nf/quantidade/conservacao', () => {
@@ -69,8 +75,8 @@ describe('campos do formulário — o que sobrou e o que entrou', () => {
     const fim = corpoRecebimento.indexOf('};', ini);
     const bloco = corpoRecebimento.slice(ini, fim);
     expect(bloco).toContain('hora: hora.trim()');
-    expect(bloco).not.toContain('fornecedor:');
-    expect(bloco).not.toContain('nf:');
+    // Fornecedor/NF só entram no registro da matriz (06/10), nunca nos outros.
+    expect(bloco).toContain('...(completo ? { fornecedor: fornecedor.trim(), nf: nf.trim() } : {})');
     expect(bloco).not.toContain('quantidade:');
     expect(bloco).not.toContain('conservacao');
   });
@@ -138,8 +144,9 @@ describe('dossiê fiscal não fica com coluna eternamente vazia', () => {
     // continuam presentes, sem fixar a lista inteira de colunas.
     const s = sectionReceiving([{ hora: '08:40', fornecedor: 'Distribuidora ABC', produto: 'Queijo', resultado: 'aceito', createdAt: '2026-09-21T10:00:00Z' }]);
     expect(s.headers).toContain('Hora');
-    expect(s.headers).toContain('Fornecedor');
-    expect(s.headers.indexOf('Hora')).toBeLessThan(s.headers.indexOf('Fornecedor'));
+    // 'Fornecedor / NF' desde 06/10 (a matriz da CASA DOCE voltou a registrar NF).
+    expect(s.headers).toContain('Fornecedor / NF');
+    expect(s.headers.indexOf('Hora')).toBeLessThan(s.headers.indexOf('Fornecedor / NF'));
     expect(s.rowsHtml).toContain('08:40');
     expect(s.rowsHtml).toContain('Distribuidora ABC');
   });

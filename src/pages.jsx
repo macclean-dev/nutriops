@@ -16,7 +16,8 @@ import { notificarSyncAplicado, gravarMesclando, SYNC_EVENT } from './lista-loca
 import { actionSourceKey, pendingTemperatureItems, pendingReceivingItems, pendingControlItems, pendingFormItems, excludeWithAction, CONTROL_TYPES } from './nonconformities';
 import { diasDeAtraso, formatarPrazo } from './acoes-prazo';
 import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
-import { viewVisivelNaLoja } from './modulos-da-loja';
+import { viewVisivelNaLoja, recebimentoCompleto } from './modulos-da-loja';
+import { TIPOS_TEMPERATURA, LINHAS_INICIAIS, linhaVazia, avaliarLinha, faltouSinal, linhasPreenchidas, temIncompleta, temFora, resumoTemperaturas } from './recebimento-temperaturas';
 import { DateSigField } from './date-sig-field';
 import { useBrowserNotifications } from './notifications';
 import { APP_VERSION, NutriMark, BrandLockup } from './brand';
@@ -1897,7 +1898,7 @@ const RECEIVING_CHECKS = [
   { id: 'etiquetagem', label: 'Todos os produtos entregues devidamente etiquetados, com data de manipulação e validade' },
 ];
 
-function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) {
+export function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) {
   const [items, setItems]           = useState(() => recLoad(activeTenant.id));
   // Pedido da nutricionista (22/09), respondendo o Recebimento simplificado:
   // "na data de validade pode adicionar data e horário de recebimento? Da
@@ -1914,6 +1915,21 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
   // preenchesse com "agora", um registro feito com atraso mentiria a hora.
   const [hora, setHora]             = useState('');
   const [temperatura, setTemperatura] = useState('');
+  // Recebimento completo, só na CASA DOCE matriz (pedido da RT, 06/10):
+  // fornecedor, NF e temperatura por tipo de produto (recebimento-temperaturas.js).
+  const completo = recebimentoCompleto(activeTenant);
+  const [fornecedor, setFornecedor] = useState('');
+  const [nf, setNf]                 = useState('');
+  const novasLinhas = () => Array.from({ length: LINHAS_INICIAIS }, linhaVazia);
+  const [linhas, setLinhas]         = useState(novasLinhas);
+  const mudarLinha = (i, campo, valor) => setLinhas((prev) => prev.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)));
+  const trocarSinalLinha = (i) => setLinhas((prev) => prev.map((l, idx) => {
+    if (idx !== i) return l;
+    const v = String(l.valor ?? '').trim();
+    return { ...l, valor: v.startsWith('-') ? v.slice(1) : (v ? `-${v}` : v) };
+  }));
+  const tempFora = completo && temFora(linhas);
+  const tempIncompleta = completo && temIncompleta(linhas);
   const [checks, setChecks]         = useState({});
   const [resultado, setResultado]   = useState('');
   const [resultadoTouched, setResultadoTouched] = useState(false);
@@ -1937,8 +1953,12 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
   }, [activeTenant.id]);
   useEffect(() => { gravarMesclando(recLoad, recSave, activeTenant.id, items); }, [activeTenant.id, items]);
 
-  const sugestaoResultado = receivingSuggestedResult(checks, RECEIVING_CHECKS.map((c) => c.id));
-  const motivoObrigatorio = resultado === 'rejeitado' || resultado === 'aceito_parcial';
+  const sugestaoChecks = receivingSuggestedResult(checks, RECEIVING_CHECKS.map((c) => c.id));
+  // Temperatura acima da referência sugere "Aceito parcial" (recusar o item
+  // que chegou fora). A pessoa decide: pode recusar tudo, ou aceitar com
+  // justificativa ("ou conforme o fabricante", como a própria RT escreveu).
+  const sugestaoResultado = tempFora ? 'aceito_parcial' : sugestaoChecks;
+  const motivoObrigatorio = resultado === 'rejeitado' || resultado === 'aceito_parcial' || (tempFora && resultado === 'aceito');
 
   useEffect(() => {
     if (sugestaoResultado && !resultadoTouched) setResultado(sugestaoResultado);
@@ -1950,8 +1970,9 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
   };
 
   const handleSubmit = () => {
-    if (!produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim())) return;
+    if (!produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim()) || tempIncompleta) return;
     setSaving(true);
+    const temps = completo ? linhasPreenchidas(linhas) : [];
     const record = {
       id: crypto.randomUUID(),
       tenantId: activeTenant.id,
@@ -1960,7 +1981,13 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
       // { date, sig } do DateSigField, ou {} se ela não usou o carimbo: vazio
       // não é erro, é "não anotado", igual a hora e temperatura opcionais.
       recebido,
-      temperatura: temperatura.trim(),
+      // Na matriz o campo de texto antigo recebe o RESUMO das linhas: histórico,
+      // CSV, Dossiê e Central de NC continuam lendo `temperatura` sem mudança.
+      temperatura: completo ? resumoTemperaturas(linhas) : temperatura.trim(),
+      ...(completo ? { fornecedor: fornecedor.trim(), nf: nf.trim() } : {}),
+      // Só vai quando há linha: as outras lojas nunca mandam a coluna nova
+      // (docs/receiving-temperaturas.sql), então não dependem do SQL.
+      ...(temps.length > 0 ? { temperaturas: temps } : {}),
       checks,
       resultado,
       motivoRejeicao: motivoObrigatorio ? motivoRejeicao.trim() : '',
@@ -1973,6 +2000,7 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
     pushReceivingRecord(activeTenant.id, record);
     // Reset form
     setRecebido({}); setProduto(''); setHora(''); setTemperatura('');
+    setFornecedor(''); setNf(''); setLinhas(novasLinhas());
     setChecks({}); setResultado(''); setResultadoTouched(false);
     setMotivoRejeicao(''); setObs('');
     setSaving(false); setSaved(true);
@@ -2037,6 +2065,12 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
             </div>
             <label>Produtos<textarea value={produto} onChange={(e) => setProduto(e.target.value)}
               placeholder="Liste os itens recebidos, um por linha…" style={{ minHeight: 110 }} /></label>
+            {completo && (
+              <div className="grid-2">
+                <label>Fornecedor<input value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} placeholder="Nome do fornecedor" /></label>
+                <label>Nº da nota fiscal<input value={nf} onChange={(e) => setNf(e.target.value)} placeholder="Ex.: 12345" /></label>
+              </div>
+            )}
             {/* "Data de validade" saiu (22/09): com Produtos virando lista,
                 uma validade só pra vários itens com prazos diferentes não
                 fazia sentido - é exatamente o que o novo check de etiquetagem
@@ -2045,22 +2079,61 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
                 inteiro). Continua existindo no dado/CSV/histórico pra
                 registro antigo (mesmo tratamento de fornecedor/nf/quantidade
                 em 21/09) - só saiu do formulário de captura. */}
-            <div className="grid-2">
-              <label>Hora<input type="time" value={hora} onChange={(e) => setHora(e.target.value)} /></label>
-              <label>Temperatura na chegada
-                {/* Teclado numérico do celular (inputMode="decimal") não tem
-                    tecla de grau nem de "C" - pedido pra "aparecer o símbolo"
-                    não é sobre a tecla (essa não dá pra criar), é sobre a
-                    pessoa perder de vista a unidade quando o teclado cobre a
-                    tela e o rótulo do campo some. "°C" fixo dentro do input,
-                    visível mesmo com o teclado aberto. */}
-                <div style={{ position: 'relative' }}>
-                  <input value={temperatura} onChange={(e) => setTemperatura(e.target.value)} inputMode="decimal" placeholder="Se aplicável"
-                    style={{ paddingRight: 34, width: '100%' }} />
-                  <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', fontSize: 13, pointerEvents: 'none' }}>°C</span>
+            {completo ? (
+              <>
+                <label>Hora<input type="time" value={hora} onChange={(e) => setHora(e.target.value)} /></label>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text-secondary)', marginBottom: 6 }}>Temperatura na chegada, por tipo de produto</div>
+                  <p className="muted" style={{ fontSize: 11, marginBottom: 8 }}>
+                    {TIPOS_TEMPERATURA.map((t) => `${t.label}: ${t.referencia}`).join(' · ')}
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {linhas.map((l, i) => {
+                      const sit = avaliarLinha(l);
+                      return (
+                        <div key={i}>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+                            <select value={l.tipo} onChange={(e) => mudarLinha(i, 'tipo', e.target.value)} style={{ flex: 1, minWidth: 0 }} aria-label={`Tipo de produto, linha ${i + 1}`}>
+                              <option value="">Tipo…</option>
+                              {TIPOS_TEMPERATURA.map((t) => <option key={t.id} value={t.id}>{t.curto}</option>)}
+                            </select>
+                            <div style={{ position: 'relative', width: 96, flexShrink: 0 }}>
+                              <input value={l.valor} onChange={(e) => mudarLinha(i, 'valor', e.target.value)} inputMode="decimal" aria-label={`Temperatura, linha ${i + 1}`}
+                                style={{ paddingRight: 30, width: '100%', borderColor: sit === 'fora' ? 'var(--red)' : undefined }} />
+                              <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', fontSize: 13, pointerEvents: 'none' }}>°C</span>
+                            </div>
+                            {/* Teclado numérico do celular não tem tecla de menos (bug de 14/08). */}
+                            <button type="button" title="Trocar sinal (+/−)" onClick={() => trocarSinalLinha(i)}
+                              style={{ width: 44, borderRadius: 'var(--r)', border: '1px solid var(--border)', background: 'var(--surface-muted)', color: 'var(--text)', fontSize: 16, fontWeight: 700, fontFamily: 'var(--mono)', cursor: 'pointer', flexShrink: 0 }}>±</button>
+                          </div>
+                          {sit === 'fora' && <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 600 }}>Acima da referência ({TIPOS_TEMPERATURA.find((t) => t.id === l.tipo)?.referencia}).</span>}
+                          {sit === 'incompleta' && <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 600 }}>Falta {l.tipo ? 'a temperatura' : 'o tipo de produto'} nesta linha.</span>}
+                          {faltouSinal(l) && <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 600, display: 'block' }}>Congelado positivo? Se faltou o sinal de menos, toque em ±.</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <button type="button" className="ghost-action" style={{ fontSize: 12, marginTop: 6 }} onClick={() => setLinhas((prev) => [...prev, linhaVazia()])}>+ Adicionar temperatura</button>
                 </div>
-              </label>
-            </div>
+              </>
+            ) : (
+              <div className="grid-2">
+                <label>Hora<input type="time" value={hora} onChange={(e) => setHora(e.target.value)} /></label>
+                <label>Temperatura na chegada
+                  {/* Teclado numérico do celular (inputMode="decimal") não tem
+                      tecla de grau nem de "C" - pedido pra "aparecer o símbolo"
+                      não é sobre a tecla (essa não dá pra criar), é sobre a
+                      pessoa perder de vista a unidade quando o teclado cobre a
+                      tela e o rótulo do campo some. "°C" fixo dentro do input,
+                      visível mesmo com o teclado aberto. */}
+                  <div style={{ position: 'relative' }}>
+                    <input value={temperatura} onChange={(e) => setTemperatura(e.target.value)} inputMode="decimal" placeholder="Se aplicável"
+                      style={{ paddingRight: 34, width: '100%' }} />
+                    <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', fontSize: 13, pointerEvents: 'none' }}>°C</span>
+                  </div>
+                </label>
+              </div>
+            )}
 
             {/* Checks */}
             <div>
@@ -2114,13 +2187,13 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
             </div>
 
             {motivoObrigatorio && (
-              <label>Motivo da {resultado === 'rejeitado' ? 'rejeição' : 'aceitação parcial'} (obrigatório)<textarea value={motivoRejeicao} onChange={(e) => setMotivoRejeicao(e.target.value)} placeholder="Descreva o que não conformou…" style={{ minHeight: 60 }} /></label>
+              <label>{resultado === 'aceito' ? 'Justificativa: temperatura acima da referência (obrigatório)' : `Motivo da ${resultado === 'rejeitado' ? 'rejeição' : 'aceitação parcial'} (obrigatório)`}<textarea value={motivoRejeicao} onChange={(e) => setMotivoRejeicao(e.target.value)} placeholder="Descreva o que não conformou…" style={{ minHeight: 60 }} /></label>
             )}
             <label>Observações<textarea value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Observações adicionais…" style={{ minHeight: 54 }} /></label>
 
             <div className="actions-row">
               <button className={`primary-action${resultado ? ' attention' : ''}`} onClick={handleSubmit}
-                disabled={!produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim()) || saving}>
+                disabled={!produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim()) || tempIncompleta || saving}>
                 {saving ? 'Salvando…' : 'Registrar recebimento'}
               </button>
             </div>
@@ -2172,7 +2245,8 @@ function RecebimentoView({ activeTenant, allTenants, onTenantChange, session }) 
                         r.recebido?.sig || null,
                         r.hora, r.fornecedor, r.nf ? `NF ${r.nf}` : null, r.quantidade,
                         r.validade ? `Val. ${r.validade}` : null,
-                        r.temperatura ? `${r.temperatura}°C` : null,
+                        // Registro com temperatura por tipo (matriz, 06/10): o resumo já traz "°C".
+                        r.temperaturas?.length ? r.temperatura : (r.temperatura ? `${r.temperatura}°C` : null),
                         r.conservacao ? ({ resfriado: 'Resfriado', congelado: 'Congelado', ambiente: 'Ambiente' }[r.conservacao] ?? r.conservacao) : null,
                       ].filter(Boolean).join(' · ')}</span>
                       {r.motivoRejeicao && <span style={{ color: 'var(--red)', fontSize: 11 }}>{r.resultado === 'aceito_parcial' ? 'Ressalva' : 'Rejeição'}: {r.motivoRejeicao}</span>}

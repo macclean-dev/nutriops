@@ -48,7 +48,7 @@ describe('"Recebido em" no formulário - campo novo, diferente de Data de valida
   });
 
   it('é opcional - não entra na obrigatoriedade do botão', () => {
-    expect(corpoRecebimento).toContain("disabled={!produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim()) || saving}");
+    expect(corpoRecebimento).toContain("disabled={!produto.trim() || !resultado || (motivoObrigatorio && !motivoRejeicao.trim()) || tempIncompleta || saving}");
     expect(corpoRecebimento).not.toMatch(/disabled=\{[^}]*recebido/);
   });
 

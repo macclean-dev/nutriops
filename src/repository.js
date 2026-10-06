@@ -1295,6 +1295,11 @@ function recvToRow(r) {
     recebido: r.recebido && (r.recebido.date || r.recebido.sig) ? r.recebido : null,
     checks: r.checks, resultado: r.resultado, motivo_rejeicao: r.motivoRejeicao, obs: r.obs,
     user_name: r.user, role: r.role, created_at: r.createdAt,
+    // Temperatura por tipo de produto (CASA DOCE matriz, 06/10). Coluna nova
+    // (docs/receiving-temperaturas.sql) e SÓ vai quando o registro tem linha:
+    // um registro sem ela nunca manda a coluna, então as outras lojas não
+    // dependem do SQL e nada trava na fila se ele ainda não rodou.
+    ...(Array.isArray(r.temperaturas) && r.temperaturas.length > 0 ? { temperaturas: r.temperaturas } : {}),
   };
 }
 function recvFromRow(row) {
@@ -1304,6 +1309,7 @@ function recvFromRow(row) {
     conservacao: row.conservacao, recebido: row.recebido ?? {},
     checks: row.checks, resultado: row.resultado, motivoRejeicao: row.motivo_rejeicao, obs: row.obs,
     user: row.user_name, role: row.role, createdAt: row.created_at,
+    ...(Array.isArray(row.temperaturas) && row.temperaturas.length > 0 ? { temperaturas: row.temperaturas } : {}),
   };
 }
 
@@ -2300,11 +2306,13 @@ create index if not exists idx_staff_tenant on tenant_staff(tenant_id);
 create table if not exists receiving_records (
   id uuid primary key default gen_random_uuid(),
   tenant_id text not null, fornecedor text, nf text, produto text,
-  quantidade text, validade text, hora text, recebido jsonb, temperatura text, conservacao text,
+  quantidade text, validade text, hora text, recebido jsonb, temperatura text, temperaturas jsonb, conservacao text,
   checks jsonb, resultado text, motivo_rejeicao text, obs text,
   user_name text, role text, created_at timestamptz default now()
 );
 create index if not exists idx_recv_tenant on receiving_records(tenant_id);
+-- Temperatura por tipo de produto (v1.9.269): em base já criada, rodar
+-- docs/receiving-temperaturas.sql.
 
 -- 4. Produtos / Validades e Estoque
 create table if not exists products (

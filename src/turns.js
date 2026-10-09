@@ -61,3 +61,20 @@ export function turnosSoNesteAparelho(tenantId) {
   const locais = load(turnsKey(tenantId), null);
   return turnosValidos(locais) && JSON.stringify(locais) !== JSON.stringify(DEFAULT_TURNS);
 }
+
+// Turno em andamento agora, com o instante em que começou hoje. Mesma conta
+// de computeTurnAlertsPure (turn-alerts.js): minutos do dia, fim inclusivo.
+// null quando nenhum turno cobre este horário.
+export function turnoAtual(turns, now = new Date()) {
+  const agoraMin = now.getHours() * 60 + now.getMinutes();
+  for (const t of turns ?? []) {
+    if (!t?.start || !t?.end) continue;
+    const [sh, sm] = t.start.split(':').map(Number), [eh, em] = t.end.split(':').map(Number);
+    const ini = sh * 60 + sm, fim = eh * 60 + em;
+    if (agoraMin >= ini && agoraMin <= fim) {
+      const inicio = new Date(now); inicio.setHours(sh, sm, 0, 0);
+      return { ...t, inicioMs: inicio.getTime() };
+    }
+  }
+  return null;
+}

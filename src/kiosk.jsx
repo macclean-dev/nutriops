@@ -7,6 +7,7 @@ import { BrandLockup } from './brand';
 import { writeKioskConfig } from './kiosk-config';
 import { ordenarPorSetor, agruparPorSetor } from './setores';
 import { leiturasPendentes, equipamentoPendente, descreverPendencia } from './leituras-pendentes';
+import { readTurns, turnoAtual } from './turns';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -89,11 +90,24 @@ function Numpad({ value, onChange, onConfirm, onBlocked, label, hint, tone, conf
 }
 
 
+// Identifica o turno em andamento ("fora" entre turnos), pra perceber a virada.
+const chaveDoTurno = (tenantId) => turnoAtual(readTurns({ id: tenantId }))?.id ?? 'fora';
+
 // ─── Semear leituras do dia (evita duplicata no quiosque) ──────────────────
 // Puro e testável de propósito: sem isso, um equipamento medido de manhã por
 // outra pessoa/sessão aparecia como pendente à tarde, convidando duplicata.
-export function seedSavedValuesFromToday(records, nowMs = Date.now()) {
-  const todayMs = new Date(nowMs).setHours(0, 0, 0, 0);
+//
+// POR TURNO, não por dia (09/10). Relato da RT da CASA DOCE: "na Confeitaria,
+// quando entra às 16:20 para registrar a temperatura, os equipamentos ficam
+// com os dois vistos como se já estivessem preenchidos". Era a leitura da
+// MANHÃ marcando o card ✓✓ à tarde, e a equipe da tarde pulava o
+// equipamento: o alerta de turno (turn-alerts.js) cobrava, o quiosque dizia
+// que estava feito. Agora vale o mesmo recorte do alerta: só conta leitura
+// feita a partir do início do turno em andamento. Fora de qualquer turno,
+// continua contando o dia.
+export function seedSavedValuesFromToday(records, nowMs = Date.now(), turns = null) {
+  const turno = turns ? turnoAtual(turns, new Date(nowMs)) : null;
+  const todayMs = turno ? turno.inicioMs : new Date(nowMs).setHours(0, 0, 0, 0);
   const seeded = {}, seededAt = {};
   for (const r of records ?? []) {
     const ts = new Date(r.createdAt).getTime();
@@ -209,6 +223,12 @@ export function KioskApp({ config, onExit }) {
   const precisaEscolher = !operator && staffCount > 0;
   const autorAtual = operator ?? config.userName ?? 'Quiosque';
 
+  // Virou o turno com o tablet aberto: os ✓✓ do turno anterior saem e a
+  // semente relê só o turno novo (ver seedSavedValuesFromToday). Sem isto o
+  // reset só acontecia ao fechar e abrir o quiosque.
+  const [turnoChave, setTurnoChave] = useState(() => chaveDoTurno(config.tenantId));
+  useEffect(() => { setSavedValues({}); }, [turnoChave]);
+
   useEffect(() => {
     const t = setInterval(() => {
       setCurrentTime(fmtTime());
@@ -217,9 +237,11 @@ export function KioskApp({ config, onExit }) {
       // ou a virada do dia. readOperator já sabe dizer "expirou" (devolve
       // null); só faltava perguntar de novo de vez em quando.
       setOperator(readOperator(config.tenantId)?.name ?? null);
+      setTurnoChave(chaveDoTurno(config.tenantId));
     }, 10000);
     return () => clearInterval(t);
   }, [config.tenantId]);
+
 
   // Semeia com o que já foi registrado HOJE (por qualquer pessoa, em
   // qualquer sessão) — sem isso, um equipamento medido de manhã aparecia
@@ -250,7 +272,7 @@ export function KioskApp({ config, onExit }) {
     (async () => {
       try {
         const recs = await repository.list({ tenantId: config.tenantId, days: 1 });
-        const seeded = seedSavedValuesFromToday(recs);
+        const seeded = seedSavedValuesFromToday(recs, Date.now(), readTurns({ id: config.tenantId }));
         if (!vivo || !Object.keys(seeded).length) return;
         setSavedValues(prev => ({ ...seeded, ...prev }));
         // Abre direto no primeiro pendente em vez do card 0, que pode já
@@ -259,7 +281,7 @@ export function KioskApp({ config, onExit }) {
       } catch { /* sem isso o quiosque mostra tudo pendente — pior é travar */ }
     })();
     return () => { vivo = false; };
-  }, [config.tenantId, repository, catalog, semente]);
+  }, [config.tenantId, repository, catalog, semente, turnoChave]);
 
   const active = catalog[activeIdx];
   const limits = resolveTemperatureLimits(active?.label ?? '', active);

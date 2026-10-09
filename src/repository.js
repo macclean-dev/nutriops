@@ -459,6 +459,69 @@ export const localRepository = {
   },
 };
 
+let filaEmDescarga = null;
+
+// Mesmo alvo de conflito do pushFormRecord: form_records tem a chave única
+// (tenant_id, form_id, period_key) além do id. Sem apontá-la, uma planilha
+// que caiu na fila e foi preenchida no mesmo período por outro aparelho (id
+// diferente) tomava 409 a cada tentativa e nunca subia.
+export const ALVO_DE_CONFLITO_NA_FILA = { form_records: 'on_conflict=tenant_id,form_id,period_key' };
+
+async function descarregarFila() {
+  const queue = purgarFilaEnvenenada(getOfflineQueue());
+  if (!queue.length || !navigator.onLine) {
+    console.debug(`[repo] syncQueue skip — ${queue.length} pendentes, online=${navigator.onLine}`);
+    return { synced:0, failed:0, remaining:queue.length };
+  }
+  console.debug(`[repo] syncQueue start — ${queue.length} pendentes`);
+  let synced = 0, failed = 0;
+  const remaining = [];
+  for (const item of queue) {
+    try {
+      const { table, payload } = item;
+      // tenant_id vem do próprio payload (já é a row snake_case) — a fila é
+      // global, itens de tenants diferentes podem estar misturados nela.
+      const filter = ALVO_DE_CONFLITO_NA_FILA[table];
+      await sbFetch(table, { method:'POST', body:payload, ...(filter ? { filter } : {}), prefer:'resolution=merge-duplicates,return=minimal' }, payload?.tenant_id);
+      synced++;
+    } catch (e) {
+      // Sem isto o motivo de CADA falha morria aqui — diferente de todo
+      // outro caminho de push do arquivo (ver logFailAndEnqueue), que
+      // sempre loga antes de reenfileirar. Uma tabela sem SQL rodado (404)
+      // ou o servidor fora do ar caía aqui, e o retry manual
+      // ("Sincronizar") repetia pra sempre sem deixar rastro nenhum, nem
+      // no console. Achado da auditoria (19/08).
+      console.warn(`[repo] syncQueue: ${item.table} falhou (${e?.message ?? e}) — mantido na fila`);
+      failed++; remaining.push(item);
+    }
+  }
+  // O que entrou na fila DURANTE a descarga (uma leitura do quiosque que
+  // falhou enquanto o laço acima rodava) não estava em `queue`. Regravar só
+  // `remaining` apagava esse item. Com a descarga periódica (09/10) a janela
+  // deixou de ser rara.
+  lw(OFFLINE_Q_KEY, juntarFilaRestante(queue, remaining, getOfflineQueue()));
+  const pendentes = getOfflineQueue().length;
+  // Mesmo raciocínio do syncAllModules (achado da auditoria, 19/08): só
+  // carimba lastSync=agora quando ALGO realmente saiu. Fila com itens,
+  // todos recusados (tabela sem SQL, servidor fora do ar), não pode virar
+  // "sincronizado agora" — é o mesmo carimbo que Configurações e a
+  // Prontidão pra Fiscalização leem pra dizer que a evidência está na
+  // nuvem. `setSyncStatus` faz merge, então omitir a chave preserva o
+  // carimbo anterior.
+  setSyncStatus({ pending: pendentes, ...(synced > 0 ? { lastSync: new Date().toISOString() } : {}) });
+  console.debug(`[repo] syncQueue done — ${synced} ok, ${failed} falharam, ${pendentes} ainda na fila`);
+  return { synced, failed, remaining: pendentes };
+}
+
+// Fila depois de uma descarga: o que falhou e continua, mais o que chegou
+// enquanto ela rodava. Compara pelo conteúdo serializado porque a fila é
+// relida do localStorage (objetos novos a cada leitura).
+export function juntarFilaRestante(processados, falharam, filaAgora) {
+  const vistos = new Set((processados ?? []).map((i) => JSON.stringify(i)));
+  const chegaram = (filaAgora ?? []).filter((i) => !vistos.has(JSON.stringify(i)));
+  return [...(falharam ?? []), ...chegaram];
+}
+
 export const supabaseRepository = {
   async list({ tenantId, days = 90 } = {}) {
     if (days > 0) {
@@ -617,44 +680,15 @@ export const supabaseRepository = {
       return { ...applyLocal(patch), _pending: true };
     }
   },
+  // Uma descarga por vez. Desde 09/10 a fila também é descarregada pelo sync
+  // periódico (syncRecentes), além do boot e do botão "Sincronizar": duas
+  // descargas simultâneas mandariam o mesmo item duas vezes (inofensivo, é
+  // merge-duplicates) e a segunda a terminar regravaria a fila com a visão
+  // dela.
   async syncQueue() {
-    const queue = purgarFilaEnvenenada(getOfflineQueue());
-    if (!queue.length || !navigator.onLine) {
-      console.debug(`[repo] syncQueue skip — ${queue.length} pendentes, online=${navigator.onLine}`);
-      return { synced:0, failed:0, remaining:queue.length };
-    }
-    console.debug(`[repo] syncQueue start — ${queue.length} pendentes`);
-    let synced = 0, failed = 0;
-    const remaining = [];
-    for (const item of queue) {
-      try {
-        const { table, operation, payload } = item;
-        // tenant_id vem do próprio payload (já é a row snake_case) — a fila é
-        // global, itens de tenants diferentes podem estar misturados nela.
-        await sbFetch(table, { method:'POST', body:payload, prefer:'resolution=merge-duplicates,return=minimal' }, payload?.tenant_id);
-        synced++;
-      } catch (e) {
-        // Sem isto o motivo de CADA falha morria aqui — diferente de todo
-        // outro caminho de push do arquivo (ver logFailAndEnqueue), que
-        // sempre loga antes de reenfileirar. Uma tabela sem SQL rodado (404)
-        // ou o servidor fora do ar caía aqui, e o retry manual
-        // ("Sincronizar") repetia pra sempre sem deixar rastro nenhum, nem
-        // no console. Achado da auditoria (19/08).
-        console.warn(`[repo] syncQueue: ${item.table} falhou (${e?.message ?? e}) — mantido na fila`);
-        failed++; remaining.push(item);
-      }
-    }
-    lw(OFFLINE_Q_KEY, remaining);
-    // Mesmo raciocínio do syncAllModules (achado da auditoria, 19/08): só
-    // carimba lastSync=agora quando ALGO realmente saiu. Fila com itens,
-    // todos recusados (tabela sem SQL, servidor fora do ar), não pode virar
-    // "sincronizado agora" — é o mesmo carimbo que Configurações e a
-    // Prontidão pra Fiscalização leem pra dizer que a evidência está na
-    // nuvem. `setSyncStatus` faz merge, então omitir a chave preserva o
-    // carimbo anterior.
-    setSyncStatus({ pending: remaining.length, ...(synced > 0 ? { lastSync: new Date().toISOString() } : {}) });
-    console.debug(`[repo] syncQueue done — ${synced} ok, ${failed} falharam, ${remaining.length} ainda na fila`);
-    return { synced, failed, remaining: remaining.length };
+    if (filaEmDescarga) return filaEmDescarga;
+    filaEmDescarga = descarregarFila().finally(() => { filaEmDescarga = null; });
+    return filaEmDescarga;
   },
   async exportCsv(records = []) { return localRepository.exportCsv(records); },
   // `override` deixa testar url/anonKey CANDIDATOS sem gravar nada em
@@ -860,6 +894,29 @@ export async function pushFormRecord(tenantId, record) {
       prefer:'resolution=merge-duplicates,return=minimal',
     }, tenantId);
   } catch (e) { logFailAndEnqueue('form_records', 'upsert', formToRow(record), e); }
+}
+
+// A versão desta planilha neste período que está na nuvem AGORA, pra fundir
+// antes de salvar (planilha-fusao.js). Prazo curto: sem rede ou com a nuvem
+// lenta, quem salva não pode ficar preso; aí a fusão usa a cópia do aparelho.
+// Nunca lança.
+export async function buscarFormRecordNaNuvem(tenantId, formId, periodKey, { prazoMs = 5000 } = {}) {
+  if (!isSupabaseEnabled() || !navigator.onLine) return { ok:false, record:null };
+  const filter = [
+    `tenant_id=eq.${encodeURIComponent(tenantId)}`,
+    `form_id=eq.${encodeURIComponent(formId)}`,
+    `period_key=eq.${encodeURIComponent(periodKey)}`,
+    'limit=1',
+  ].join('&');
+  let timer;
+  try {
+    const prazo = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('prazo')), prazoMs); });
+    const rows = await Promise.race([sbFetch('form_records', { filter }, tenantId), prazo]);
+    return { ok:true, record: Array.isArray(rows) && rows[0] ? formFromRow(rows[0]) : null };
+  } catch (e) {
+    console.warn(`[repo] buscarFormRecordNaNuvem falhou (${e?.message ?? e}), fundindo com a cópia do aparelho`);
+    return { ok:false, record:null };
+  } finally { clearTimeout(timer); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2035,6 +2092,40 @@ export async function syncAllModules(tenantId) {
   setSyncStatus({ pending: getOfflineQueue().length, ...(ok > 0 ? { lastSync: new Date().toISOString() } : {}) });
   console.info(`[repo] syncAllModules done — ${ok}/${results.length} módulos ok em ${Date.now()-t0}ms`);
   return { ok: ok > 0, synced: ok, total: results.length };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SYNC LEVE PERIÓDICO (09/10)
+// ═══════════════════════════════════════════════════════════════════════════
+// Relato da RT da CASA DOCE (09/10): "o recebimento de mercadorias não está
+// sincronizando para os outros computadores, somente consta no computador que
+// está fazendo o registro", e planilha dada como feita aparecendo como não
+// feita. Causa: fora a temperatura (que relê a cada 2 min desde 17/08), o app
+// só buscava dados da nuvem no boot e no evento 'online'. Computador que fica
+// aberto o dia inteiro nunca via o recebimento feito no outro, e a fila de
+// envio deste aparelho só era descarregada no boot ou no botão "Sincronizar".
+//
+// Este sync é o mínimo pra fechar isso sem custo: descarrega a fila e traz só
+// o que mudou nas últimas `horas` de recebimento e planilhas (dezenas de
+// linhas, não as 1000 do sync do boot). Chamado a cada 2 min com a aba
+// visível e ao voltar o foco (pages.jsx).
+const assinaturaDaLista = (chave) => ls(chave, []).map((r) => `${r.id}|${r.updatedAt ?? r.createdAt ?? ''}`).sort().join(',');
+
+export async function syncRecentes(tenantId, { horas = 48, agora = Date.now() } = {}) {
+  if (!tenantId || !isSupabaseEnabled() || !navigator.onLine) return { ok:false, mudou:false, reason:'offline_or_disabled' };
+  await supabaseRepository.syncQueue();
+  const desde = new Date(agora - horas * 3600000).toISOString();
+  const chaves = [`nutriops.receiving.${tenantId}`, `nutriops.forms.records.${tenantId}`];
+  const antes = chaves.map(assinaturaDaLista);
+  const results = await Promise.allSettled([
+    syncModule({ table:'receiving_records', localKey:chaves[0], tenantId, toRow:recvToRow, fromRow:recvFromRow, filter:`created_at=gte.${desde}` }),
+    // updated_at, não created_at: a planilha semanal/mensal nasce no começo
+    // do período e é ATUALIZADA a cada item marcado.
+    syncModule({ table:'form_records', localKey:chaves[1], tenantId, toRow:formToRow, fromRow:formFromRow, filter:`updated_at=gte.${desde}` }),
+  ]);
+  const ok = results.some((r) => r.status === 'fulfilled' && r.value?.ok);
+  const mudou = chaves.some((k, i) => assinaturaDaLista(k) !== antes[i]);
+  return { ok, mudou };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

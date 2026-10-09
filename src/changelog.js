@@ -35,6 +35,12 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.270', date: '2026-10-09', items: [
+    { text: 'No modo tablet da temperatura, o equipamento só fica marcado como feito (✓✓) quando foi medido no turno atual. Antes a leitura da manhã deixava o card marcado à tarde, e a equipe da tarde podia pular o equipamento achando que já estava registrado. Quando o turno vira com o tablet aberto, as marcas zeram sozinhas. Relato da nutricionista RT.', path: 'Temperaturas → Modo tablet' },
+    { text: 'O Recebimento de Mercadorias e as planilhas BPF agora chegam nos outros computadores e tablets da loja em até 2 minutos, sem precisar fechar e abrir o app. Antes só apareciam no aparelho que registrou até ele ser reaberto.', path: 'Recebimento' },
+    { text: 'Planilha preenchida em dois aparelhos ao mesmo tempo não perde mais itens. Antes, quem salvava num computador aberto desde cedo apagava, sem saber, o que outra pessoa tinha marcado no tablet, e a planilha aparecia depois com itens "não feitos". Agora cada um salva só o que mudou, e um rascunho não desfaz mais uma planilha já confirmada.', path: 'Planilhas BPF' },
+    'Registro que não conseguiu subir na hora (internet oscilando) agora é reenviado sozinho a cada 2 minutos, e não só quando o app é reaberto.',
+  ]},
   { version: '1.9.269', date: '2026-10-06', items: [
     { text: 'Na CASA DOCE matriz, o Recebimento de Mercadorias voltou a ter Fornecedor e Nº da nota fiscal, e ganhou temperatura por tipo de produto: 6 linhas (dá pra adicionar mais), cada uma com o tipo (Congelado, Pescado, Carne ou Refrigerado) e a temperatura. A faixa de referência de cada tipo aparece na tela, e a linha acima dela fica em vermelho. Pedido da nutricionista RT.', path: 'Recebimento' },
     'Temperatura acima da referência sugere "Aceito parcial". Dá pra recusar tudo, ou aceitar com justificativa, por exemplo quando o fabricante recomenda outra faixa. Cada linha tem o botão ± para os congelados.',

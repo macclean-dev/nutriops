@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FormKioskApp } from './kiosk';
-import { pushFormRecord, lw as gravarLocal } from './repository';
+import { pushFormRecord, buscarFormRecordNaNuvem, lw as gravarLocal } from './repository';
+import { fundirRespostas, fundirStatus, maisRecente, umPorPeriodo } from './planilha-fusao';
 import { ImportTemplateModal } from './import-template-modal';
 import { isFieldDue, dueFields } from './field-frequency';
 import { gravarMesclando, SYNC_EVENT } from './lista-local';
@@ -128,8 +129,11 @@ export const readFormTemplates = (tenant) => {
   return merged;
 };
 export const writeFormTemplates = (id, v)  => fs(tplKey(id), v);
-export const readFormRecords    = (id)     => fl(recKey(id), []);
-export const writeFormRecords   = (id, v)  => fs(recKey(id), v);
+// Um registro por (planilha, período) na leitura e na escrita: ver
+// umPorPeriodo (planilha-fusao.js). Na escrita o aparelho converge sozinho e
+// a cópia velha deixa de existir.
+export const readFormRecords    = (id)     => umPorPeriodo(fl(recKey(id), []));
+export const writeFormRecords   = (id, v)  => fs(recKey(id), umPorPeriodo(v));
 
 // ─── Period helpers ────────────────────────────────────────────────────────
 
@@ -2514,7 +2518,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   const today = new Date();
   const getRecord = (tpl, pk) => records.find((r) => r.formId===tpl.id && r.periodKey===pk) ?? null;
 
-  const handleSave = useCallback(({ responses, status, escoposExtras = [] }) => {
+  const handleSave = useCallback(async ({ responses, status, escoposExtras = [] }) => {
     if (!filling) return;
     const { template, periodKey } = filling;
     // O periodKey é capturado quando a planilha ABRE e nunca recalculado. Quem
@@ -2560,22 +2564,38 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
     // Aqui os ids são cunhados uma vez, o push acontece uma vez, e o
     // atualizador vira uma fusão pura por id — chamar duas vezes dá o mesmo
     // resultado.
-    const ups = vias.map((via) => {
-      const ex = records.find((r) => r.formId===template.id && r.periodKey===via.periodKey);
-      return {
-        id: ex?.id ?? uid(),
+    //
+    // Fusão com a versão mais nova (09/10, planilha-fusao.js): a pessoa salva
+    // só o que ELA mudou desde que abriu; o resto fica como está na nuvem,
+    // que pode ter sido preenchido em outro aparelho nesse meio tempo. A base
+    // é o que ela viu ao abrir, e só vale pra via principal no período em que
+    // abriu; vias extras e período trocado partem de base vazia.
+    const ups = [];
+    for (const via of vias) {
+      const doAparelho = records.find((r) => r.formId===template.id && r.periodKey===via.periodKey) ?? null;
+      // eslint-disable-next-line no-await-in-loop
+      const { record: daNuvem } = await buscarFormRecordNaNuvem(activeTenant.id, template.id, via.periodKey);
+      const outra = maisRecente(daNuvem, doAparelho);
+      const mesmaFolha = via.periodKey === periodKey;
+      const base = mesmaFolha ? (filling.record?.responses ?? {}) : {};
+      const baseStatus = mesmaFolha ? filling.record?.status : undefined;
+      ups.push({
+        // id da nuvem primeiro: trocar o id faria o upsert reescrever a chave
+        // da linha, e o outro aparelho ficaria com uma cópia órfã.
+        id: daNuvem?.id ?? doAparelho?.id ?? uid(),
         tenantId: activeTenant.id, formId: template.id, formTitle: template.title,
         category: template.category, frequency: template.frequency, periodKey: via.periodKey,
-        responses: via.responses, status,
+        responses: outra ? fundirRespostas(base, via.responses, outra.responses) : via.responses,
+        status: fundirStatus(baseStatus, status, outra?.status),
         user: session?.user?.name ?? 'Usuário', role: session?.user?.role ?? '',
-        createdAt: ex?.createdAt ?? agora.toISOString(), updatedAt: agora.toISOString(),
-      };
-    });
+        createdAt: outra?.createdAt ?? agora.toISOString(), updatedAt: agora.toISOString(),
+      });
+    }
     for (const up of ups) pushFormRecord(activeTenant.id, up);
     setRecords((prev) => {
       const porId = new Map(prev.map((r) => [r.id, r]));
       for (const up of ups) porId.set(up.id, up);
-      return [...porId.values()];
+      return umPorPeriodo([...porId.values()]);
     });
     setFilling(null);
     // "Salvar rascunho"/"Confirmar preenchimento" chegam na MESMA grade que
@@ -2703,13 +2723,19 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
         onExit={() => setKioskForm(null)}
         onSave={async (responses, status = 'submitted') => {
           const existing = records.find(r => r.formId === template.id && r.periodKey === periodKey);
+          // Mesma fusão do preenchimento normal (handleSave, planilha-fusao.js):
+          // o tablet fica aberto o turno inteiro e é justamente onde a cópia
+          // envelhece enquanto outro aparelho marca itens.
+          const { record: daNuvem } = await buscarFormRecordNaNuvem(activeTenant.id, template.id, periodKey);
+          const outra = maisRecente(daNuvem, existing);
           const updated = {
-            id: existing?.id ?? crypto.randomUUID(),
+            id: daNuvem?.id ?? existing?.id ?? crypto.randomUUID(),
             tenantId: activeTenant.id, formId: template.id, formTitle: template.title,
             category: template.category, frequency: template.frequency, periodKey,
-            responses, status,
+            responses: outra ? fundirRespostas(record?.responses ?? {}, responses, outra.responses) : responses,
+            status: fundirStatus(record?.status, status, outra?.status),
             user: session?.user?.name ?? '—', role: session?.user?.role ?? '',
-            createdAt: existing?.createdAt ?? new Date().toISOString(),
+            createdAt: outra?.createdAt ?? new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           };
           // Sobe pro Supabase (enfileira se offline) — o handleSave normal já
@@ -2717,7 +2743,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
           // quiosque ficava SÓ no localStorage e sumia ao limpar o device:
           // perda silenciosa de registro de conformidade RDC 216.
           pushFormRecord(activeTenant.id, updated);
-          setRecords(prev => existing ? prev.map(r => r.id === existing.id ? updated : r) : [...prev, updated]);
+          setRecords(prev => umPorPeriodo(prev.some(r => r.id === updated.id) ? prev.map(r => r.id === updated.id ? updated : r) : [...prev, updated]));
           // Mesmo aviso do preenchimento normal — "Continuar depois" do
           // quiosque chama isto e depois onExit(); sem o flash, o retorno pra
           // grade era idêntico a sair sem salvar (achado da auditoria, 18/08).

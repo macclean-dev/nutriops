@@ -6,7 +6,7 @@ import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
 import { trackUsage, ls, lw } from './repository';
 import { employeeTrainingStatus, cobraCapacitacaoAqui } from './training-status';
 import { readTurns } from './turns';
-import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, getStorageFull, clearStorageFull, getQueueOverflow, clearQueueOverflow, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill, pushCorrectiveAction, syncCorrectiveActions, deleteCorrectiveAction } from './repository';
+import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, getStorageFull, clearStorageFull, getQueueOverflow, clearQueueOverflow, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill, pushCorrectiveAction, syncCorrectiveActions, deleteCorrectiveAction, syncRecentes } from './repository';
 import { notificarSyncAplicado, gravarMesclando, SYNC_EVENT } from './lista-local';
 // Central de Não-Conformidades (item 2 da revisão, 09/08) — puro, sem React;
 // `extractNonConformities` (forms.jsx) e os readers de controles especiais
@@ -3483,6 +3483,38 @@ export function App() {
       window.removeEventListener('focus', atualizar);
     };
   }, [refreshRecords]);
+
+  // ─── O mesmo, pra recebimento e planilhas (09/10) ─────────────────────────
+  // Relato da RT da CASA DOCE: o recebimento "somente consta no computador que
+  // está fazendo o registro", e planilha feita aparecendo como não feita. O
+  // efeito acima só cobria temperatura; o resto só vinha no boot. syncRecentes
+  // (repository.js) descarrega a fila deste aparelho e traz o que mudou nas
+  // últimas 48h. Os mesmos gatilhos de cima, com um intervalo mínimo entre
+  // duas buscas: foco e visibilidade disparam juntos ao voltar pra janela.
+  const tenantDoSyncLeve = session ? (session.tenantId ?? activeTenant?.id ?? null) : null;
+  useEffect(() => {
+    if (!tenantDoSyncLeve) return undefined;
+    let ultimo = 0, emCurso = false;
+    const atualizar = async () => {
+      if (document.visibilityState !== 'visible' || emCurso) return;
+      if (Date.now() - ultimo < 30000) return;
+      emCurso = true; ultimo = Date.now();
+      try {
+        const r = await syncRecentes(tenantDoSyncLeve);
+        if (r.mudou) notificarSyncAplicado({ tenantId: tenantDoSyncLeve, trigger: 'periodico' });
+      } catch (e) {
+        console.warn('[NutriOPS] sync periódico falhou:', e?.message ?? e);
+      } finally { emCurso = false; }
+    };
+    const t = setInterval(atualizar, 120000);
+    document.addEventListener('visibilitychange', atualizar);
+    window.addEventListener('focus', atualizar);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', atualizar);
+      window.removeEventListener('focus', atualizar);
+    };
+  }, [tenantDoSyncLeve]);
 
   const turns       = readTurns(activeTenant);
   const [alertsTick, setAlertsTick] = useState(0); // bump ao dar ciência → recomputa badge/lista

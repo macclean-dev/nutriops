@@ -134,7 +134,7 @@ describe('a tela liga as duas pontas', () => {
     // setRecords, o React chamava o atualizador duas vezes e cada chamada
     // cunhava ids novos. Com uma via só passava batido (a 2ª sobrescrevia a
     // 1ª); com três virou seis registros, todos empurrados pra nuvem.
-    const ini = fonte.indexOf('const ups = vias.map((via) =>');
+    const ini = fonte.indexOf('const ups = [];\n    for (const via of vias) {');
     const fim = fonte.indexOf('setRecords((prev) =>', ini);
     expect(ini).toBeGreaterThan(-1);
     const antesDoSetRecords = fonte.slice(ini, fim);

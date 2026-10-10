@@ -35,6 +35,10 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.271', date: '2026-10-09', items: [
+    'Quando há registro que ainda não foi enviado, fechar a janela do NutriOPS pede confirmação. O registro fica guardado só no aparelho até ser enviado, e em janela anônima ou navegador que apaga os dados ao fechar ele se perderia.',
+    'O aviso de registros pendentes, no canto da tela e no modo tablet da temperatura, agora também diz para não fechar a janela até eles serem enviados.',
+  ]},
   { version: '1.9.270', date: '2026-10-09', items: [
     { text: 'No modo tablet da temperatura, o equipamento só fica marcado como feito (✓✓) quando foi medido no turno atual. Antes a leitura da manhã deixava o card marcado à tarde, e a equipe da tarde podia pular o equipamento achando que já estava registrado. Quando o turno vira com o tablet aberto, as marcas zeram sozinhas. Relato da nutricionista RT.', path: 'Temperaturas → Modo tablet' },
     { text: 'O Recebimento de Mercadorias e as planilhas BPF agora chegam nos outros computadores e tablets da loja em até 2 minutos, sem precisar fechar e abrir o app. Antes só apareciam no aparelho que registrou até ele ser reaberto.', path: 'Recebimento' },

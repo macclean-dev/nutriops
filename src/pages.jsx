@@ -6,6 +6,7 @@ import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
 import { trackUsage, ls, lw } from './repository';
 import { employeeTrainingStatus, cobraCapacitacaoAqui } from './training-status';
 import { readTurns } from './turns';
+import { instalarAvisoAoFechar } from './aviso-ao-fechar';
 import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, getStorageFull, clearStorageFull, getQueueOverflow, clearQueueOverflow, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill, pushCorrectiveAction, syncCorrectiveActions, deleteCorrectiveAction, syncRecentes } from './repository';
 import { notificarSyncAplicado, gravarMesclando, SYNC_EVENT } from './lista-local';
 // Central de Não-Conformidades (item 2 da revisão, 09/08) — puro, sem React;
@@ -2610,8 +2611,17 @@ function OfflineIndicator() {
       boxShadow: 'var(--shadow-lg)',
       fontSize: 13, fontFamily: 'var(--font)',
     }}>
-      <span style={{ fontWeight: 600, color: online ? 'var(--amber)' : 'var(--red)' }}>
-        {online ? `${queueCount} registro${queueCount > 1 ? 's' : ''} para sincronizar` : 'Sem conexão'}
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span style={{ fontWeight: 600, color: online ? 'var(--amber)' : 'var(--red)' }}>
+          {online ? `${queueCount} registro${queueCount > 1 ? 's' : ''} para sincronizar` : 'Sem conexão'}
+        </span>
+        {/* Os registros estão só neste aparelho. Em janela anônima ou navegador
+            que limpa os dados ao fechar, fechar agora os perde (09/10). */}
+        {queueCount > 0 && (
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+            Não feche esta janela até eles serem enviados.
+          </span>
+        )}
       </span>
       {online && queueCount > 0 && isSupabaseEnabled() && (
         <button onClick={handleSync} disabled={syncing}
@@ -3515,6 +3525,11 @@ export function App() {
       window.removeEventListener('focus', atualizar);
     };
   }, [tenantDoSyncLeve]);
+
+  // Fechar a janela com registro na fila pede confirmação (aviso-ao-fechar.js).
+  // Aqui no App, antes do retorno antecipado do Modo Quiosque, pra valer nele
+  // também.
+  useEffect(() => instalarAvisoAoFechar(getOfflineQueue), []);
 
   const turns       = readTurns(activeTenant);
   const [alertsTick, setAlertsTick] = useState(0); // bump ao dar ciência → recomputa badge/lista

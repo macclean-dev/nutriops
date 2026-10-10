@@ -74,7 +74,9 @@ export function equipamentoPendente(pendentes, label) {
 export function descreverPendencia(pendentes) {
   const n = pendentes?.total ?? 0;
   if (n <= 0) return null;
+  // "Não feche": em janela anônima ou navegador que limpa os dados ao fechar,
+  // fechar agora perde a leitura (relato da RT da CASA DOCE, 09/10).
   return n === 1
-    ? '1 leitura ainda não foi enviada — ela está salva só neste aparelho.'
-    : `${n} leituras ainda não foram enviadas — elas estão salvas só neste aparelho.`;
+    ? '1 leitura ainda não foi enviada — ela está salva só neste aparelho. Não feche esta janela até ela ser enviada.'
+    : `${n} leituras ainda não foram enviadas — elas estão salvas só neste aparelho. Não feche esta janela até elas serem enviadas.`;
 }

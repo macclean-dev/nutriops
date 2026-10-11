@@ -8,6 +8,7 @@ import {
   getOfflineQueue, getSyncStatus, pushCompanyProfile, pushComplianceDoc, lw,
 } from './repository';
 import { DOC_TYPES, latestManualBp } from './compliance';
+import { recarregarSemAviso } from './aviso-ao-fechar';
 
 const COMPANY_PROFILE_KEY = (tenantId) => `nutriops.company.profile.${tenantId}`;
 
@@ -420,7 +421,7 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
     // source:'manual' protege essa config de ser sobrescrita pelo auto-config
     // do tenant no login (handleLogin em pages.jsx) — caso de projeto dedicado.
     saveSupabaseConfig({ url: url.trim(), anonKey: anonKey.trim(), enabled, source: 'manual' });
-    window.location.reload();
+    recarregarSemAviso();
   };
 
   const handleTest = async () => {
@@ -579,7 +580,7 @@ export function SettingsView({ session, activeTenant, activeTenants, tenants }) 
         } else {
           alert('✓ Backup restaurado! A página será recarregada.');
         }
-        window.location.reload();
+        recarregarSemAviso();
       } catch { alert('Erro ao ler o arquivo de backup.'); }
     };
     reader.readAsText(file);

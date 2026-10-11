@@ -1,4 +1,5 @@
 import React from 'react';
+import { recarregarSemAviso } from './aviso-ao-fechar';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "fiz o logoff e a tela ficou branca. Nenhuma msg, nada." (dono, 23/08).
@@ -65,7 +66,7 @@ export class AppErrorBoundary extends React.Component {
   componentDidCatch(error) {
     if (pareceChunkSumido(error) && podeRecarregarSozinho()) {
       marcarRecarregado();
-      window.location.reload();
+      recarregarSemAviso();
       return;
     }
     console.error('[NutriOPS] erro não tratado na árvore de UI:', error);
@@ -104,7 +105,7 @@ export class AppErrorBoundary extends React.Component {
             A tela travou por um erro inesperado. Nenhum registro se perde — o que
             não subiu continua salvo neste aparelho. Recarregar costuma resolver.
           </p>
-          <button onClick={() => window.location.reload()}
+          <button onClick={() => recarregarSemAviso()}
             style={{ padding:'12px 28px', background:'#00684a', color:'white', border:'none', borderRadius:12, fontSize:15, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
             Recarregar
           </button>

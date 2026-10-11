@@ -3,6 +3,7 @@ import { BrandLockup, APP_VERSION } from './brand';
 import { verifyPin, hashPin } from './crypto';
 import { isWeakPin, writePinOverride } from './pin';
 import { writeOnboardingTenants , readOnboardingTenants } from './onboarding-storage';
+import { navegarSemAviso } from './aviso-ao-fechar';
 import {
   fetchTenantByToken,
   bumpSetupAttempts,
@@ -95,7 +96,7 @@ export function SetupPinScreen({ tenant, onComplete }) {
           localStorage.removeItem('nutriops.access.token');
           localStorage.removeItem('nutriops.access.clientId');
           localStorage.removeItem('nutriops.access.clientName');
-          window.location.href = '/';
+          navegarSemAviso('/');
         }}
       />
     );
@@ -341,7 +342,7 @@ export function SetupPinScreen({ tenant, onComplete }) {
               <button type="button" onClick={() => {
                 ['nutriops.access.token', 'nutriops.access.clientId', 'nutriops.access.clientName', 'nutriops.onboarding.tenants']
                   .forEach(k => { try { localStorage.removeItem(k); } catch {} });
-                window.location.href = '/';
+                navegarSemAviso('/');
               }} style={{ background: 'none', border: 'none', color: 'var(--text-secondary, #5c6c7a)', fontSize: 12, textDecoration: 'underline', cursor: 'pointer', fontFamily: 'inherit' }}>
                 Não é você? Entrar com outra conta
               </button>

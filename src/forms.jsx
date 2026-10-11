@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FormKioskApp } from './kiosk';
 import { pushFormRecord, buscarFormRecordNaNuvem, lw as gravarLocal } from './repository';
-import { fundirRespostas, fundirStatus, maisRecente, umPorPeriodo } from './planilha-fusao';
+import { fundirRespostas, fundirStatus, maisRecente, umPorPeriodo, validacaoQueSobrevive } from './planilha-fusao';
 import { ImportTemplateModal } from './import-template-modal';
 import { isFieldDue, dueFields } from './field-frequency';
 import { gravarMesclando, SYNC_EVENT } from './lista-local';
@@ -2132,7 +2132,10 @@ function FormFill({ template, record, onSave, onBack, session, tenant, rotuloCat
   return (
     <div className="form-fill-view">
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20 }}>
-        <button className="ghost-action" onClick={voltar} style={{ padding:'6px 10px' }}>← Voltar</button>
+        {/* Travado durante o salvamento: voltar e confirmar "Sair sem salvar?"
+            com o save em voo descartava nada, a planilha era salva mesmo
+            assim (revisão adversarial, 10/10). */}
+        <button className="ghost-action" onClick={voltar} disabled={saving} style={{ padding:'6px 10px' }}>← Voltar</button>
         <div style={{ flex:1 }}>
           <span className="eyebrow">{freqLabel(template.frequency)} · {rotuloCategoria ?? catMeta(template.category).label}</span>
           <h2 style={{ fontSize:18, fontWeight:800, letterSpacing:'-.03em', marginTop:2 }}>{template.title}</h2>
@@ -2391,7 +2394,11 @@ function RTValidationPanel({ records, templates, onValidate, onValidateAll, sess
 // certo, que exige achar o card entre os 36 depois de a página voltar pro
 // topo. Achado da auditoria (18/08) — vale pro preenchimento normal e pro
 // modo quiosque (kiosk.jsx "Continuar depois" chama onSave e depois onExit).
-export function saveFlashMessage(templateTitle, status) {
+// `pedido` é o botão apertado; `status`, o que ficou gravado. Diferem quando
+// "Salvar rascunho" cai numa folha já confirmada, que continua confirmada
+// (fundirStatus, planilha-fusao.js).
+export function saveFlashMessage(templateTitle, status, pedido = status) {
+  if (status === 'submitted' && pedido === 'draft') return `Alterações em "${templateTitle}" salvas. A planilha continua confirmada.`;
   return status === 'submitted'
     ? `✓ "${templateTitle}" confirmada.`
     : `Rascunho de "${templateTitle}" salvo — continue quando quiser.`;
@@ -2407,6 +2414,9 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
 
   const [templates, setTemplates] = useState(() => readFormTemplates(activeTenant));
   const [records,   setRecords]   = useState(() => readFormRecords(activeTenant.id));
+  // Loja na tela agora, lida depois dos `await` do salvamento (handleSave).
+  const lojaNaTela = useRef(activeTenant.id);
+  lojaNaTela.current = activeTenant.id;
   const [filling,   setFilling]   = useState(null);
   const [kioskForm, setKioskForm] = useState(null); // tablet mode for a specific form
   const [catFilter, setCatFilter] = useState('all');
@@ -2570,28 +2580,38 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
     // que pode ter sido preenchido em outro aparelho nesse meio tempo. A base
     // é o que ela viu ao abrir, e só vale pra via principal no período em que
     // abriu; vias extras e período trocado partem de base vazia.
+    // As buscas na nuvem saem em PARALELO (uma por via): em sequência, três
+    // vias extras somavam até 20 s de "Salvando…" com a nuvem lenta.
+    const lojaDoSave = activeTenant.id;
+    const daNuvemPorVia = await Promise.all(vias.map((via) =>
+      buscarFormRecordNaNuvem(lojaDoSave, template.id, via.periodKey).then((r) => r.record)));
     const ups = [];
-    for (const via of vias) {
+    for (const [i, via] of vias.entries()) {
       const doAparelho = records.find((r) => r.formId===template.id && r.periodKey===via.periodKey) ?? null;
-      // eslint-disable-next-line no-await-in-loop
-      const { record: daNuvem } = await buscarFormRecordNaNuvem(activeTenant.id, template.id, via.periodKey);
+      const daNuvem = daNuvemPorVia[i];
       const outra = maisRecente(daNuvem, doAparelho);
       const mesmaFolha = via.periodKey === periodKey;
       const base = mesmaFolha ? (filling.record?.responses ?? {}) : {};
       const baseStatus = mesmaFolha ? filling.record?.status : undefined;
+      const respostas = outra ? fundirRespostas(base, via.responses, outra.responses) : via.responses;
       ups.push({
         // id da nuvem primeiro: trocar o id faria o upsert reescrever a chave
         // da linha, e o outro aparelho ficaria com uma cópia órfã.
         id: daNuvem?.id ?? doAparelho?.id ?? uid(),
-        tenantId: activeTenant.id, formId: template.id, formTitle: template.title,
+        tenantId: lojaDoSave, formId: template.id, formTitle: template.title,
         category: template.category, frequency: template.frequency, periodKey: via.periodKey,
-        responses: outra ? fundirRespostas(base, via.responses, outra.responses) : via.responses,
+        responses: respostas,
         status: fundirStatus(baseStatus, status, outra?.status),
+        // Assinatura da RT fica se o conteúdo validado não mudou (10/10).
+        validation: validacaoQueSobrevive(respostas, outra),
         user: session?.user?.name ?? 'Usuário', role: session?.user?.role ?? '',
         createdAt: outra?.createdAt ?? agora.toISOString(), updatedAt: agora.toISOString(),
       });
     }
-    for (const up of ups) pushFormRecord(activeTenant.id, up);
+    for (const up of ups) pushFormRecord(lojaDoSave, up);
+    // Trocou de loja durante a busca: o registro já foi pra loja certa (push
+    // e storage dela), mas a lista na tela agora é de OUTRA loja. Não mexer.
+    if (lojaNaTela.current !== lojaDoSave) return;
     setRecords((prev) => {
       const porId = new Map(prev.map((r) => [r.id, r]));
       for (const up of ups) porId.set(up.id, up);
@@ -2601,7 +2621,10 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
     // "Salvar rascunho"/"Confirmar preenchimento" chegam na MESMA grade que
     // "← Voltar" descartando chegaria — sem isto, salvar e perder eram
     // visualmente idênticos. Ver saveFlashMessage.
-    setFlash({ text: saveFlashMessage(template.title, status), at: Date.now() });
+    // Status GRAVADO, não o do botão: uma folha já confirmada continua
+    // confirmada mesmo com "Salvar rascunho" (fundirStatus), e a tela não pode
+    // dizer o contrário (revisão adversarial, 10/10).
+    setFlash({ text: saveFlashMessage(template.title, ups[0]?.status ?? status, status), at: Date.now() });
     // `records` entrou nas deps porque o `ex` (registro existente daquela via)
     // agora é procurado aqui fora, não dentro do atualizador: sem isso a busca
     // leria uma lista velha e criaria registro novo por cima de um que já
@@ -2728,12 +2751,14 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
           // envelhece enquanto outro aparelho marca itens.
           const { record: daNuvem } = await buscarFormRecordNaNuvem(activeTenant.id, template.id, periodKey);
           const outra = maisRecente(daNuvem, existing);
+          const respostas = outra ? fundirRespostas(record?.responses ?? {}, responses, outra.responses) : responses;
           const updated = {
             id: daNuvem?.id ?? existing?.id ?? crypto.randomUUID(),
             tenantId: activeTenant.id, formId: template.id, formTitle: template.title,
             category: template.category, frequency: template.frequency, periodKey,
-            responses: outra ? fundirRespostas(record?.responses ?? {}, responses, outra.responses) : responses,
+            responses: respostas,
             status: fundirStatus(record?.status, status, outra?.status),
+            validation: validacaoQueSobrevive(respostas, outra),
             user: session?.user?.name ?? '—', role: session?.user?.role ?? '',
             createdAt: outra?.createdAt ?? new Date().toISOString(),
             updatedAt: new Date().toISOString(),
@@ -2747,7 +2772,7 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
           // Mesmo aviso do preenchimento normal — "Continuar depois" do
           // quiosque chama isto e depois onExit(); sem o flash, o retorno pra
           // grade era idêntico a sair sem salvar (achado da auditoria, 18/08).
-          setFlash({ text: saveFlashMessage(template.title, status), at: Date.now() });
+          setFlash({ text: saveFlashMessage(template.title, updated.status, status), at: Date.now() });
         }}
       />
     );

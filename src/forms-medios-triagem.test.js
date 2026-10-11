@@ -62,7 +62,7 @@ describe('Família 1 — "Salvar rascunho"/"Confirmar preenchimento" avisam que 
     const fim = fonte.indexOf('const handleValidate = useCallback');
     const corpo = fonte.slice(ini, fim);
     expect(corpo).toContain('setFilling(null);');
-    expect(corpo).toContain('setFlash({ text: saveFlashMessage(template.title, status), at: Date.now() });');
+    expect(corpo).toContain('setFlash({ text: saveFlashMessage(template.title, ups[0]?.status ?? status, status), at: Date.now() });');
     // o flash é setado DEPOIS de fechar — não impede o fechamento, só avisa
     expect(corpo.indexOf('setFilling(null);')).toBeLessThan(corpo.indexOf('setFlash({ text: saveFlashMessage'));
   });
@@ -73,11 +73,12 @@ describe('Família 1 — "Salvar rascunho"/"Confirmar preenchimento" avisam que 
     expect(ini).toBeGreaterThan(-1);
     expect(fim).toBeGreaterThan(ini);
     const corpo = fonte.slice(ini, fim);
-    expect(corpo).toContain('setFlash({ text: saveFlashMessage(template.title, status), at: Date.now() });');
+    expect(corpo).toContain('setFlash({ text: saveFlashMessage(template.title, updated.status, status), at: Date.now() });');
   });
 
   it('as duas chamadas de setFlash usam saveFlashMessage (normal + quiosque) — não duas mensagens divergentes', () => {
-    const ocorrencias = fonte.match(/setFlash\(\{ text: saveFlashMessage\(template\.title, status\), at: Date\.now\(\) \}\);/g) ?? [];
+    // Desde 10/10 as duas passam o status GRAVADO e o pedido (botão apertado).
+    const ocorrencias = fonte.match(/setFlash\(\{ text: saveFlashMessage\(template\.title, [^)]*, status\), at: Date\.now\(\) \}\);/g) ?? [];
     expect(ocorrencias.length).toBe(2);
   });
 

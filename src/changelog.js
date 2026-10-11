@@ -35,6 +35,14 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.272', date: '2026-10-10', items: [
+    { text: 'Quem acompanha várias lojas (como a nutricionista RT) agora recebe as atualizações de recebimento e planilhas da loja que está olhando no seletor. Antes o aparelho continuava buscando só a loja principal da conta.', path: 'Seletor de loja' },
+    { text: 'Planilha já confirmada continua confirmada ao tocar "Salvar rascunho": as alterações são salvas e a folha não volta a "não feita". A mensagem na tela diz o que ficou gravado.', path: 'Planilhas BPF' },
+    'Reabrir e salvar uma planilha validada pela RT sem mudar o conteúdo mantém a validação. Se o conteúdo mudar, a planilha volta para a fila de validação, porque a RT assinou o que viu.',
+    'Planilha salva sem internet não apaga mais, ao reconectar, o que outro aparelho preencheu nem a validação da RT: as duas versões são juntadas antes de enviar.',
+    'A atualização automática de versão não mostra mais o aviso "Sair do site?". O aviso ao fechar só considera registros das lojas da sua conta.',
+    'No modo tablet da temperatura, turnos que passam da meia-noite (por exemplo 22:00 às 05:59) são reconhecidos.',
+  ]},
   { version: '1.9.271', date: '2026-10-09', items: [
     'Quando há registro que ainda não foi enviado, fechar a janela do NutriOPS pede confirmação. O registro fica guardado só no aparelho até ser enviado, e em janela anônima ou navegador que apaga os dados ao fechar ele se perderia.',
     'O aviso de registros pendentes, no canto da tela e no modo tablet da temperatura, agora também diz para não fechar a janela até eles serem enviados.',

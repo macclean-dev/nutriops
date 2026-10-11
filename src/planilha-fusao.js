@@ -21,10 +21,19 @@
 
 // Vazio pra efeito de comparação: campo nunca tocado (undefined), apagado
 // (''), checkbox desmarcado (false), lista ou carimbo sem nada dentro.
+//
+// Exceção: o campo de presença (pragas etc.) guarda `{ detected: false }`
+// para "✓ Sem ocorrência". Isso é RESPOSTA, não vazio (mesma regra de
+// isPresenceAnswered, forms.jsx). Sem a exceção, a fusão tratava "Sem
+// ocorrência" como campo em branco e o descartava em conflito (revisão
+// adversarial, 10/10).
 export function respostaVazia(v) {
   if (v === undefined || v === null || v === '' || v === false) return true;
   if (Array.isArray(v)) return v.every(respostaVazia);
-  if (typeof v === 'object') return Object.values(v).every(respostaVazia);
+  if (typeof v === 'object') {
+    if (typeof v.detected === 'boolean') return false;
+    return Object.values(v).every(respostaVazia);
+  }
   return false;
 }
 
@@ -42,18 +51,63 @@ export function fundirRespostas(base, minhas, outra) {
   return resultado;
 }
 
-// Mesma regra pro status. Sem base (a pessoa abriu a folha em branco ou está
-// gravando uma via extra), "confirmada" vence "rascunho": um rascunho nunca
-// rebaixa uma folha que outro aparelho já confirmou.
+// Status: "confirmada" é definitiva. Salvar rascunho em cima de uma folha
+// que já foi confirmada (por quem salva, quando abriu, ou por outro aparelho
+// nesse meio tempo) guarda as mudanças e a mantém confirmada. Decisão do dono
+// (10/10), depois da revisão adversarial: a RT abre uma folha confirmada no
+// computador pra acrescentar uma observação, toca "Salvar rascunho" por
+// hábito, e a folha voltava a "não feita" em todos os aparelhos e na
+// Prontidão. Era um dos caminhos do relato do Terraço.
 export function fundirStatus(baseStatus, meu, outro) {
-  if (!outro) return meu;
-  if (baseStatus === undefined || baseStatus === null) {
-    return meu === 'submitted' || outro === 'submitted' ? 'submitted' : meu;
+  return meu === 'submitted' || outro === 'submitted' || baseStatus === 'submitted' ? 'submitted' : meu;
+}
+
+// A assinatura da RT (`validation`) sobrevive a um salvamento que não mudou
+// o conteúdo validado: abrir e salvar de novo, ou salvar só o que outro
+// aparelho já tinha. Se o conteúdo mudou, ela cai e a folha volta pra fila de
+// validação: a RT assinou o que viu, não o que veio depois (revisão
+// adversarial, 10/10; antes qualquer salvamento apagava a assinatura).
+export function validacaoQueSobrevive(respostasFinais, outra) {
+  if (!outra?.validation) return null;
+  return mesmasRespostas(respostasFinais, outra.responses) ? outra.validation : null;
+}
+
+function mesmasRespostas(a, b) {
+  const x = a ?? {}, y = b ?? {};
+  for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) {
+    if (!mesmaResposta(x[k], y[k])) return false;
   }
-  return meu !== baseStatus ? meu : outro;
+  return true;
 }
 
 const quando = (r) => new Date(r?.updatedAt ?? r?.createdAt ?? 0).getTime() || 0;
+
+// ─── Reenvio da fila (revisão adversarial, 10/10) ───────────────────────────
+// A fusão acima só acontecia no salvamento ONLINE. A planilha salva sem rede
+// ia pra fila como o retrato do aparelho naquela hora e, ao reconectar,
+// subia por cima de tudo: o que outro aparelho preencheu depois e a
+// assinatura da RT sumiam da nuvem. Aqui a linha da fila (formato do banco,
+// snake_case) é fundida com a linha que está na nuvem antes de subir.
+//
+// Sem base conhecida, então base vazia: o que a fila tem preenchido vale,
+// o que está em branco nela fica com a nuvem. `updated_at` vira agora, pra
+// os outros aparelhos enxergarem a mudança no sync de 2 min (que olha as
+// últimas 48h); o id é o da nuvem, pra não reescrever a chave da linha.
+export function fundirLinhaDaFila(daFila, daNuvem, agoraIso = new Date().toISOString()) {
+  if (!daNuvem) return daFila;
+  const responses = fundirRespostas({}, daFila.responses, daNuvem.responses);
+  const validation = daFila.validation
+    ?? validacaoQueSobrevive(responses, { responses: daNuvem.responses, validation: daNuvem.validation });
+  return {
+    ...daFila,
+    id: daNuvem.id ?? daFila.id,
+    responses,
+    status: fundirStatus(undefined, daFila.status, daNuvem.status),
+    validation: validation ?? null,
+    created_at: daNuvem.created_at ?? daFila.created_at,
+    updated_at: agoraIso,
+  };
+}
 
 // A versão mais nova entre as candidatas (nuvem e aparelho).
 export function maisRecente(...registros) {

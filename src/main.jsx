@@ -9,6 +9,7 @@ const AdminLogin = lazy(() => import('./admin').then(m => ({ default: m.AdminLog
 import { readAdminAuth, clearAdminAuth, readClients } from './admin-storage';
 import { readOnboardingTenants, writeOnboardingTenants } from './onboarding-storage';
 import './styles.css';
+import { recarregarSemAviso } from './aviso-ao-fechar';
 
 // Register service worker
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
@@ -36,7 +37,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
           document.body.appendChild(t);
           document.getElementById('nutriops-sw-reload').onclick = () => {
             reg.waiting?.postMessage('SKIP_WAITING');
-            window.location.reload();
+            recarregarSemAviso();
           };
           document.getElementById('nutriops-sw-later').onclick = () => t.remove();
         };
@@ -60,7 +61,9 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
           // Sem controller anterior = primeiro install (claim). Não recarrega.
           if (!hadController) return;
           reloaded = true;
-          setTimeout(() => window.location.reload(), 100);
+          // Sem aviso de "Sair do site?": a atualização forçada não pode
+          // ficar parada esperando alguém tocar (aviso-ao-fechar.js).
+          setTimeout(() => recarregarSemAviso(), 100);
         });
       })
       .catch(err => console.warn('[NutriOPS] SW failed:', err));

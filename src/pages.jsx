@@ -6,7 +6,8 @@ import { checkTrialStatus, TrialBanner, TrialExpiredScreen } from './trial';
 import { trackUsage, ls, lw } from './repository';
 import { employeeTrainingStatus, cobraCapacitacaoAqui } from './training-status';
 import { readTurns } from './turns';
-import { instalarAvisoAoFechar } from './aviso-ao-fechar';
+import { instalarAvisoAoFechar, filaDasLojas, navegarSemAviso } from './aviso-ao-fechar';
+import { lojaDoSync } from './loja-do-sync';
 import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, getStorageFull, clearStorageFull, getQueueOverflow, clearQueueOverflow, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill, pushCorrectiveAction, syncCorrectiveActions, deleteCorrectiveAction, syncRecentes } from './repository';
 import { notificarSyncAplicado, gravarMesclando, SYNC_EVENT } from './lista-local';
 // Central de Não-Conformidades (item 2 da revisão, 09/08) — puro, sem React;
@@ -3501,7 +3502,8 @@ export function App() {
   // (repository.js) descarrega a fila deste aparelho e traz o que mudou nas
   // últimas 48h. Os mesmos gatilhos de cima, com um intervalo mínimo entre
   // duas buscas: foco e visibilidade disparam juntos ao voltar pra janela.
-  const tenantDoSyncLeve = session ? (session.tenantId ?? activeTenant?.id ?? null) : null;
+  // A loja que a pessoa está olhando, não a principal da sessão (loja-do-sync.js).
+  const tenantDoSyncLeve = lojaDoSync({ session, activeTenant, visibleTenants });
   useEffect(() => {
     if (!tenantDoSyncLeve) return undefined;
     let ultimo = 0, emCurso = false;
@@ -3528,8 +3530,12 @@ export function App() {
 
   // Fechar a janela com registro na fila pede confirmação (aviso-ao-fechar.js).
   // Aqui no App, antes do retorno antecipado do Modo Quiosque, pra valer nele
-  // também.
-  useEffect(() => instalarAvisoAoFechar(getOfflineQueue), []);
+  // também. Só conta item das lojas que esta sessão alcança: o de outra loja
+  // nunca sobe com este login e faria o aviso aparecer para sempre. Ref, pra
+  // ler a lista atual na hora de fechar sem reinstalar o ouvinte.
+  const lojasDoAviso = useRef([]);
+  lojasDoAviso.current = session ? visibleTenants.map((t) => t.id) : [];
+  useEffect(() => instalarAvisoAoFechar(() => filaDasLojas(getOfflineQueue(), lojasDoAviso.current)), []);
 
   const turns       = readTurns(activeTenant);
   const [alertsTick, setAlertsTick] = useState(0); // bump ao dar ciência → recomputa badge/lista
@@ -3644,7 +3650,9 @@ export function App() {
     // finalmente deixou aparecer estava certo: a credencial não chegava mesmo.
     // A loja que o admin está OLHANDO é o alvo que faz sentido sincronizar.
     // Achado em produção (20/08) a partir do próprio banner.
-    const tenantAlvo = session.tenantId ?? activeTenant?.id ?? null;
+    // 10/10: e, pra RT com várias lojas, a que ela está olhando, não a
+    // principal da sessão (loja-do-sync.js).
+    const tenantAlvo = tenantDoSyncLeve;
     if (!tenantAlvo) {
       console.info('[NutriOPS] auto-sync skip — sessão sem loja alvo');
       return;
@@ -3795,11 +3803,10 @@ export function App() {
     const onlineHandler = () => doSync('online-event');
     window.addEventListener('online', onlineHandler);
     return () => window.removeEventListener('online', onlineHandler);
-    // activeTenant?.id entra nas deps por causa do `tenantAlvo` acima: pro
-    // admin global (tenantId null) é ele que decide QUAL loja sincronizar,
-    // então trocar de loja no seletor precisa disparar o sync da loja nova.
-    // Pra quem tem tenantId próprio nada muda — o `??` nem chega no activeTenant.
-  }, [session?.tenantId, activeTenant?.id]);
+    // `tenantDoSyncLeve` (loja-do-sync.js) muda quando o admin global ou a RT
+    // com várias lojas troca de loja no seletor: o sync da loja nova dispara.
+    // Conta de loja única: nunca muda, igual a antes.
+  }, [session?.tenantId, tenantDoSyncLeve]);
   useEffect(() => {
     const handler = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setShowSearch(true); }
@@ -3853,7 +3860,7 @@ export function App() {
     <Suspense fallback={<ViewLoading />}>
       <OnboardingWizard onComplete={handleOnboardingComplete} onHaveAccount={() => {
         localStorage.removeItem('nutriops.access.token');
-        window.location.href = '/';
+        navegarSemAviso('/');
       }} />
     </Suspense>
   );

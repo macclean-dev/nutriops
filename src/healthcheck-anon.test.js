@@ -179,8 +179,10 @@ describe('o chamador (pages.jsx) passa a loja', () => {
     // Sem isso o admin (session.tenantId null por design) mandaria null e
     // cairia no mesmo anon. O fix de 20/08 já resolve o alvo; aqui só
     // garantimos que a sonda usa o MESMO alvo, e não outra coisa.
-    expect(fonte).toContain('const tenantAlvo = session.tenantId ?? activeTenant?.id ?? null;');
-    const ini = fonte.indexOf('const tenantAlvo = session.tenantId ?? activeTenant?.id ?? null;');
+    // Desde 10/10 o alvo vem de lojaDoSync (loja-do-sync.js), que cai na loja
+    // ativa quando a sessão não tem tenantId (admin-global-sync.test.js).
+    expect(fonte).toContain('const tenantAlvo = tenantDoSyncLeve;');
+    const ini = fonte.indexOf('const tenantAlvo = tenantDoSyncLeve;');
     const posProbe = fonte.indexOf('supabaseRepository.testWrite(tenantAlvo)', ini);
     expect(posProbe).toBeGreaterThan(ini);
   });

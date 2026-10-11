@@ -62,19 +62,27 @@ export function turnosSoNesteAparelho(tenantId) {
   return turnosValidos(locais) && JSON.stringify(locais) !== JSON.stringify(DEFAULT_TURNS);
 }
 
-// Turno em andamento agora, com o instante em que começou hoje. Mesma conta
-// de computeTurnAlertsPure (turn-alerts.js): minutos do dia, fim inclusivo.
-// null quando nenhum turno cobre este horário.
+// Turno em andamento agora, com o instante em que começou. Minutos do dia,
+// fim inclusivo, como computeTurnAlertsPure (turn-alerts.js). null quando
+// nenhum turno cobre este horário.
+//
+// Turno que cruza a meia-noite (início depois do fim, ex.: 22:00-05:59, a
+// DBK é unidade de produção e vira a noite) vale das 22:00 até 05:59 do dia
+// seguinte; de madrugada ele começou ONTEM. Sem isto, à 00:30 nenhum turno
+// era reconhecido e a leitura das 23:30 sumia do card do quiosque, no meio do
+// mesmo turno (revisão adversarial, 10/10).
 export function turnoAtual(turns, now = new Date()) {
   const agoraMin = now.getHours() * 60 + now.getMinutes();
   for (const t of turns ?? []) {
     if (!t?.start || !t?.end) continue;
     const [sh, sm] = t.start.split(':').map(Number), [eh, em] = t.end.split(':').map(Number);
     const ini = sh * 60 + sm, fim = eh * 60 + em;
-    if (agoraMin >= ini && agoraMin <= fim) {
-      const inicio = new Date(now); inicio.setHours(sh, sm, 0, 0);
-      return { ...t, inicioMs: inicio.getTime() };
-    }
+    const cruza = ini > fim;
+    const dentro = cruza ? (agoraMin >= ini || agoraMin <= fim) : (agoraMin >= ini && agoraMin <= fim);
+    if (!dentro) continue;
+    const inicio = new Date(now); inicio.setHours(sh, sm, 0, 0);
+    if (cruza && agoraMin <= fim) inicio.setDate(inicio.getDate() - 1);
+    return { ...t, inicioMs: inicio.getTime() };
   }
   return null;
 }

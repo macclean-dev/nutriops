@@ -4,6 +4,7 @@
 
 import { writeOpenRules, readRulesUpdatedAt } from './validity-rules';
 import { podarCacheTemperaturas, idsPendentes } from './cache-temperaturas';
+import { fundirLinhaDaFila } from './planilha-fusao';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -264,7 +265,10 @@ export function clearQueueOverflow() {
 
 function enqueue(table, operation, payload) {
   const q = getOfflineQueue();
-  const next = [...q, { table, operation, payload, _at: new Date().toISOString() }];
+  // `_id`: identidade do item na fila (10/10). juntarFilaRestante comparava
+  // pelo conteúdo, e dois itens idênticos no mesmo milissegundo viravam um.
+  const _id = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const next = [...q, { table, operation, payload, _at: new Date().toISOString(), _id }];
   if (next.length > OFFLINE_Q_CAP) {
     const descartados = next.length - OFFLINE_Q_CAP;
     console.warn(`[repo] offline queue atingiu ${OFFLINE_Q_CAP} items — descartando os ${descartados} mais antigos`);
@@ -478,9 +482,12 @@ async function descarregarFila() {
   const remaining = [];
   for (const item of queue) {
     try {
-      const { table, payload } = item;
+      const { table } = item;
       // tenant_id vem do próprio payload (já é a row snake_case) — a fila é
       // global, itens de tenants diferentes podem estar misturados nela.
+      // Planilha: funde com a nuvem antes de subir (fundirLinhaDaFila). Se a
+      // leitura da nuvem falhar, o item FICA na fila em vez de subir às cegas.
+      const payload = table === 'form_records' ? await planilhaDaFilaFundida(item.payload) : item.payload;
       const filter = ALVO_DE_CONFLITO_NA_FILA[table];
       await sbFetch(table, { method:'POST', body:payload, ...(filter ? { filter } : {}), prefer:'resolution=merge-duplicates,return=minimal' }, payload?.tenant_id);
       synced++;
@@ -513,12 +520,27 @@ async function descarregarFila() {
   return { synced, failed, remaining: pendentes };
 }
 
+// Linha da planilha que está na nuvem agora, no formato do banco. Lança se a
+// leitura falhar (o chamador mantém o item na fila).
+async function planilhaDaFilaFundida(linha) {
+  const filter = [
+    `tenant_id=eq.${encodeURIComponent(linha.tenant_id)}`,
+    `form_id=eq.${encodeURIComponent(linha.form_id)}`,
+    `period_key=eq.${encodeURIComponent(linha.period_key)}`,
+    'limit=1',
+  ].join('&');
+  const rows = await sbFetch('form_records', { filter }, linha.tenant_id);
+  return fundirLinhaDaFila(linha, Array.isArray(rows) ? rows[0] ?? null : null);
+}
+
 // Fila depois de uma descarga: o que falhou e continua, mais o que chegou
 // enquanto ela rodava. Compara pelo conteúdo serializado porque a fila é
 // relida do localStorage (objetos novos a cada leitura).
+const identidadeNaFila = (i) => i?._id ?? JSON.stringify(i);   // item antigo, sem _id: pelo conteúdo
+
 export function juntarFilaRestante(processados, falharam, filaAgora) {
-  const vistos = new Set((processados ?? []).map((i) => JSON.stringify(i)));
-  const chegaram = (filaAgora ?? []).filter((i) => !vistos.has(JSON.stringify(i)));
+  const vistos = new Set((processados ?? []).map(identidadeNaFila));
+  const chegaram = (filaAgora ?? []).filter((i) => !vistos.has(identidadeNaFila(i)));
   return [...(falharam ?? []), ...chegaram];
 }
 
@@ -685,9 +707,15 @@ export const supabaseRepository = {
   // descargas simultâneas mandariam o mesmo item duas vezes (inofensivo, é
   // merge-duplicates) e a segunda a terminar regravaria a fila com a visão
   // dela.
+  //
+  // Entre ABAS do mesmo navegador o `filaEmDescarga` não alcança (cada aba tem
+  // o seu); o Web Locks API serializa as descargas de todas as abas (10/10).
+  // Navegador sem ele: fica só a trava da aba, como antes.
   async syncQueue() {
     if (filaEmDescarga) return filaEmDescarga;
-    filaEmDescarga = descarregarFila().finally(() => { filaEmDescarga = null; });
+    const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+    const rodar = locks?.request ? () => locks.request('nutriops-fila-de-envio', () => descarregarFila()) : descarregarFila;
+    filaEmDescarga = rodar().finally(() => { filaEmDescarga = null; });
     return filaEmDescarga;
   },
   async exportCsv(records = []) { return localRepository.exportCsv(records); },

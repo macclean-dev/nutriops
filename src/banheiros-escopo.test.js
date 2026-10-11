@@ -134,12 +134,12 @@ describe('a tela liga as duas pontas', () => {
     // setRecords, o React chamava o atualizador duas vezes e cada chamada
     // cunhava ids novos. Com uma via só passava batido (a 2ª sobrescrevia a
     // 1ª); com três virou seis registros, todos empurrados pra nuvem.
-    const ini = fonte.indexOf('const ups = [];\n    for (const via of vias) {');
+    const ini = fonte.indexOf('const ups = [];\n    for (const [i, via] of vias.entries()) {');
     const fim = fonte.indexOf('setRecords((prev) =>', ini);
     expect(ini).toBeGreaterThan(-1);
     const antesDoSetRecords = fonte.slice(ini, fim);
     expect(antesDoSetRecords).toContain('uid()');
-    expect(antesDoSetRecords).toContain('pushFormRecord(activeTenant.id, up)');
+    expect(antesDoSetRecords).toContain('pushFormRecord(lojaDoSave, up)');
 
     // e o atualizador vira fusão pura por id — rodar duas vezes dá o mesmo
     const upd = fonte.slice(fim, fonte.indexOf('}, [filling, activeTenant.id, session, records])'));
@@ -153,6 +153,6 @@ describe('a tela liga as duas pontas', () => {
   });
 
   it('cada via é empurrada pra nuvem, não só a principal', () => {
-    expect(fonte).toContain('for (const up of ups) pushFormRecord(activeTenant.id, up);');
+    expect(fonte).toContain('for (const up of ups) pushFormRecord(lojaDoSave, up);');
   });
 });

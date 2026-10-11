@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { lojaDoSync } from './loja-do-sync';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Achado em PRODUÇÃO (20/08), a partir do banner vermelho que a v1.9.176 tinha
@@ -51,11 +52,16 @@ describe('o mecanismo que causou o bug — trava pra não regredir', () => {
 describe('auto-sync do boot — não manda mais null adiante', () => {
   const efeito = (() => {
     const ini = fonte.indexOf('  // Auto-sync on login and when coming online');
-    return fonte.slice(ini, fonte.indexOf('}, [session?.tenantId, activeTenant?.id]);', ini));
+    return fonte.slice(ini, fonte.indexOf('}, [session?.tenantId, tenantDoSyncLeve]);', ini));
   })();
 
   it('resolve a loja alvo com fallback pro activeTenant', () => {
-    expect(efeito).toContain('const tenantAlvo = session.tenantId ?? activeTenant?.id ?? null;');
+    // Desde 10/10 a regra mora em lojaDoSync (loja-do-sync.js), testada aqui
+    // pelo comportamento: admin global (tenantId null) cai na loja ativa.
+    expect(efeito).toContain('const tenantAlvo = tenantDoSyncLeve;');
+    const lojas = [{ id: 'swiss' }, { id: 'cd' }];
+    expect(lojaDoSync({ session: { tenantId: null }, activeTenant: { id: 'cd' }, visibleTenants: lojas })).toBe('cd');
+    expect(lojaDoSync({ session: { tenantId: null }, activeTenant: null, visibleTenants: lojas })).toBeNull();
   });
 
   it('desiste explicitamente se não houver loja alguma, em vez de sincronizar null', () => {
@@ -65,14 +71,11 @@ describe('auto-sync do boot — não manda mais null adiante', () => {
     expect(efeito).toContain('auto-sync skip — sessão sem loja alvo');
   });
 
-  it('session.tenantId aparece SÓ na linha do fallback — era o vazamento por todo o resto', () => {
-    // A própria resolução do alvo lê session.tenantId, e deve mesmo. O que não
-    // pode voltar é algum outro ponto do efeito lendo direto e furando o
-    // fallback — foi assim que os 22 módulos saíram com null.
-    const usos = [...efeito.matchAll(/session\??\.tenantId/g)];
-    expect(usos).toHaveLength(1);
-    const linhaDoUso = efeito.split('\n').find((l) => /session\??\.tenantId/.test(l));
-    expect(linhaDoUso).toContain('const tenantAlvo =');
+  it('o efeito não lê session.tenantId direto: era o vazamento por todo o resto', () => {
+    // O que não pode voltar é algum ponto do efeito lendo direto e furando o
+    // fallback (foi assim que os 22 módulos saíram com null). Desde 10/10 a
+    // resolução inteira mora em lojaDoSync, então nenhum uso sobra aqui.
+    expect([...efeito.matchAll(/session\??\.tenantId/g)]).toHaveLength(0);
   });
 
   it('os 4 consumidores do alvo recebem tenantAlvo', () => {

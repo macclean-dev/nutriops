@@ -4,10 +4,11 @@ import {
   lw, ls, saveSupabaseConfig, clearOfflineQueue, getOfflineQueue,
   syncRecentes, juntarFilaRestante, ALVO_DE_CONFLITO_NA_FILA, supabaseRepository,
 } from './repository';
-import { fundirRespostas, fundirStatus, maisRecente, umPorPeriodo, respostaVazia } from './planilha-fusao';
-import { readFormRecords, writeFormRecords } from './forms';
+import { fundirRespostas, fundirStatus, maisRecente, umPorPeriodo, respostaVazia, validacaoQueSobrevive, fundirLinhaDaFila } from './planilha-fusao';
+import { readFormRecords, writeFormRecords, saveFlashMessage } from './forms';
 import { seedSavedValuesFromToday } from './kiosk';
 import { turnoAtual } from './turns';
+import { lojaDoSync } from './loja-do-sync';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Relato da RT da CASA DOCE (09/10), quatro sintomas, uma família:
@@ -69,6 +70,21 @@ describe('quiosque: o ✓✓ vale para o turno, não para o dia', () => {
     expect(turnoAtual(TURNOS, as(23, 0))).toBeNull();
   });
 
+  it('turno que cruza a meia-noite (22:00-05:59): à 00:30 vale a leitura das 23:30 de ontem', () => {
+    const NOITE = [{ id: 'noite', name: 'Noite', start: '22:00', end: '05:59' }];
+    const meiaNoiteEMeia = as(0, 30);
+    const ontem2330 = new Date(meiaNoiteEMeia); ontem2330.setDate(ontem2330.getDate() - 1); ontem2330.setHours(23, 30, 0, 0);
+    const t = turnoAtual(NOITE, meiaNoiteEMeia);
+    expect(t?.id).toBe('noite');
+    const inicio = new Date(meiaNoiteEMeia); inicio.setDate(inicio.getDate() - 1); inicio.setHours(22, 0, 0, 0);
+    expect(t.inicioMs).toBe(inicio.getTime());
+    expect(seedSavedValuesFromToday([{ equipment: 'Câmara', value: 2, createdAt: ontem2330.toISOString() }], meiaNoiteEMeia.getTime(), NOITE)).toEqual({ Câmara: 2 });
+    // às 23:00 o mesmo turno começou HOJE às 22:00
+    expect(turnoAtual(NOITE, as(23, 0)).inicioMs).toBe(as(22, 0).getTime());
+    // fora dele (12:00), nenhum turno
+    expect(turnoAtual(NOITE, as(12, 0))).toBeNull();
+  });
+
   it('a tela zera os ✓✓ quando o turno vira com o tablet aberto', () => {
     const k = readFileSync(`${process.cwd()}/src/kiosk.jsx`, 'utf8');
     expect(k).toContain('useEffect(() => { setSavedValues({}); }, [turnoChave]);');
@@ -114,8 +130,34 @@ describe('planilha preenchida em dois aparelhos', () => {
     expect(fundirStatus(undefined, 'draft', 'submitted')).toBe('submitted');
   });
 
-  it('quem viu "confirmada" e voltou pra rascunho de propósito: vale o rascunho', () => {
-    expect(fundirStatus('submitted', 'draft', 'submitted')).toBe('draft');
+  it('"confirmada" é definitiva: "Salvar rascunho" numa folha confirmada mantém confirmada (decisão do dono, 10/10)', () => {
+    // a RT abre a folha confirmada pra acrescentar uma observação e toca
+    // "Salvar rascunho" por hábito: antes a folha voltava a "não feita"
+    expect(fundirStatus('submitted', 'draft', 'submitted')).toBe('submitted');
+    expect(fundirStatus('submitted', 'draft', undefined)).toBe('submitted');
+    // e outro aparelho não consegue mais rebaixar quem confirma
+    expect(fundirStatus('submitted', 'submitted', 'draft')).toBe('submitted');
+  });
+
+  it('a mensagem diz o que ficou gravado, não o botão apertado', () => {
+    expect(saveFlashMessage('Limpeza', 'submitted', 'draft')).toBe('Alterações em "Limpeza" salvas. A planilha continua confirmada.');
+    expect(saveFlashMessage('Limpeza', 'draft', 'draft')).toContain('Rascunho de "Limpeza" salvo');
+    expect(saveFlashMessage('Limpeza', 'submitted', 'submitted')).toBe('✓ "Limpeza" confirmada.');
+  });
+
+  it('"✓ Sem ocorrência" é resposta, não campo em branco', () => {
+    expect(respostaVazia({ detected: false })).toBe(false);
+    // conflito: quem salva por último vence, como nos outros campos
+    expect(fundirRespostas({}, { pragas: { detected: false } }, { pragas: { detected: true, where: 'cozinha' } }))
+      .toEqual({ pragas: { detected: false } });
+  });
+
+  it('assinatura da RT: fica se o conteúdo validado não mudou, cai se mudou', () => {
+    const validada = { responses: { piso: true, obs: 'ok' }, validation: { by: 'RT', at: '2026-10-09T12:00:00Z' } };
+    expect(validacaoQueSobrevive({ piso: true, obs: 'ok' }, validada)).toEqual(validada.validation);
+    expect(validacaoQueSobrevive({ piso: true, obs: 'ok', extra: '' }, validada)).toEqual(validada.validation);
+    expect(validacaoQueSobrevive({ piso: true, obs: 'trocado' }, validada)).toBeNull();
+    expect(validacaoQueSobrevive({ piso: true }, { responses: { piso: true } })).toBeNull();
   });
 
   it('folha nova (nada na nuvem): fica o status de quem salva', () => {
@@ -153,20 +195,30 @@ describe('um registro por planilha e período no aparelho', () => {
 
 describe('o salvar da planilha usa a fusão', () => {
   const f = readFileSync(`${process.cwd()}/src/forms.jsx`, 'utf8');
-
-  it('preenchimento normal: busca a nuvem e funde antes de enviar', () => {
+  // A regra (fusão, status, assinatura) está testada pelo comportamento acima.
+  // Aqui só se trava que as duas telas de salvar passam por ela.
+  it('preenchimento normal: busca a nuvem ANTES de enviar e grava status e assinatura fundidos', () => {
     const corpo = f.slice(f.indexOf('const handleSave = useCallback(async'), f.indexOf('const handleValidate = useCallback'));
-    expect(corpo).toContain('await buscarFormRecordNaNuvem(activeTenant.id, template.id, via.periodKey)');
+    expect(corpo).toContain('buscarFormRecordNaNuvem(lojaDoSave, template.id, via.periodKey)');
     expect(corpo).toContain('fundirRespostas(base, via.responses, outra.responses)');
-    expect(corpo).toContain('fundirStatus(baseStatus, status, outra?.status)');
+    expect(corpo).toContain('status: fundirStatus(baseStatus, status, outra?.status)');
+    expect(corpo).toContain('validation: validacaoQueSobrevive(respostas, outra)');
     expect(corpo).toContain('id: daNuvem?.id ?? doAparelho?.id ?? uid()');
-    expect(corpo.indexOf('buscarFormRecordNaNuvem')).toBeLessThan(corpo.indexOf('pushFormRecord(activeTenant.id, up)'));
+    expect(corpo.indexOf('buscarFormRecordNaNuvem')).toBeLessThan(corpo.indexOf('pushFormRecord(lojaDoSave, up)'));
+    // trocou de loja durante a busca: não mexe na lista da loja nova
+    expect(corpo.indexOf('if (lojaNaTela.current !== lojaDoSave) return;')).toBeLessThan(corpo.indexOf('setRecords((prev) =>'));
   });
 
   it('modo tablet: mesma fusão', () => {
-    const corpo = f.slice(f.indexOf('onSave={async (responses, status = \'submitted\') => {'), f.indexOf('onSave={async (responses, status = \'submitted\') => {') + 2500);
+    const ini = f.indexOf("onSave={async (responses, status = 'submitted') => {");
+    const corpo = f.slice(ini, f.indexOf('}}\n      />', ini));
     expect(corpo).toContain('await buscarFormRecordNaNuvem(activeTenant.id, template.id, periodKey)');
     expect(corpo).toContain('fundirRespostas(record?.responses ?? {}, responses, outra.responses)');
+    expect(corpo).toContain('validation: validacaoQueSobrevive(respostas, outra)');
+  });
+
+  it('"← Voltar" fica travado enquanto salva', () => {
+    expect(f).toContain('<button className="ghost-action" onClick={voltar} disabled={saving}');
   });
 });
 
@@ -186,13 +238,63 @@ describe('fila de envio deste aparelho', () => {
   });
 
   it('a descarga manda o alvo de conflito no POST da planilha', async () => {
-    const spy = vi.fn(() => resposta(null));
+    const spy = vi.fn((url, opts) => resposta(opts?.method === 'POST' ? null : []));
     vi.stubGlobal('fetch', spy);
     lw('nutriops.offline.queue', [{ table: 'form_records', operation: 'upsert', payload: { id: 'p1', tenant_id: LOJA, form_id: 'f1', period_key: '2026-10-09' }, _at: 't' }]);
     expect(getOfflineQueue()).toHaveLength(1);
     await supabaseRepository.syncQueue();
-    expect(spy.mock.calls[0][0]).toContain('on_conflict=tenant_id,form_id,period_key');
+    const post = spy.mock.calls.find(([, o]) => o?.method === 'POST');
+    expect(post[0]).toContain('on_conflict=tenant_id,form_id,period_key');
     expect(getOfflineQueue()).toEqual([]);
+  });
+
+  // Achado 1 da revisão adversarial (10/10): o tablet salva sem rede; depois o
+  // computador completa a folha e a RT valida; o tablet reconecta.
+  const daFila = {
+    id: 'id-do-tablet', tenant_id: LOJA, form_id: 'f1', period_key: '2026-10-09',
+    responses: { limpezaPiso: true }, status: 'draft', validation: null,
+    created_at: '2026-10-09T10:00:00Z', updated_at: '2026-10-09T10:00:00Z',
+  };
+  const naNuvem = {
+    id: 'id-do-computador', tenant_id: LOJA, form_id: 'f1', period_key: '2026-10-09',
+    responses: { limpezaPiso: true, limpezaCoifa: true, ncdesc: 'ralo entupido' }, status: 'submitted',
+    validation: { by: 'RT', at: '2026-10-09T12:00:00Z' },
+    created_at: '2026-10-09T09:00:00Z', updated_at: '2026-10-09T12:00:00Z',
+  };
+
+  it('planilha da fila é fundida com a nuvem: nada do computador nem a assinatura da RT se perdem', async () => {
+    const spy = vi.fn((url, opts) => resposta(opts?.method === 'POST' ? null : [naNuvem]));
+    vi.stubGlobal('fetch', spy);
+    lw('nutriops.offline.queue', [{ table: 'form_records', operation: 'upsert', payload: daFila, _at: 't' }]);
+    await supabaseRepository.syncQueue();
+    const body = JSON.parse(spy.mock.calls.find(([, o]) => o?.method === 'POST')[1].body);
+    expect(body.responses).toEqual({ limpezaPiso: true, limpezaCoifa: true, ncdesc: 'ralo entupido' });
+    expect(body.status).toBe('submitted');
+    expect(body.validation).toEqual(naNuvem.validation);
+    expect(body.id).toBe('id-do-computador');          // não reescreve a chave da linha
+    expect(body.updated_at > naNuvem.updated_at).toBe(true);   // os outros aparelhos enxergam
+  });
+
+  it('o que o tablet mudou de verdade vence, e aí a assinatura cai (conteúdo validado mudou)', () => {
+    const r = fundirLinhaDaFila({ ...daFila, responses: { limpezaPiso: true, ncdesc: 'ralo ok' } }, naNuvem, '2026-10-09T14:00:00Z');
+    expect(r.responses.ncdesc).toBe('ralo ok');
+    expect(r.responses.limpezaCoifa).toBe(true);
+    expect(r.validation).toBeNull();
+  });
+
+  it('nuvem fora do ar na hora de ler: a planilha FICA na fila em vez de subir às cegas', async () => {
+    const spy = vi.fn(() => Promise.resolve({ ok: false, status: 503, text: () => Promise.resolve('fora') }));
+    vi.stubGlobal('fetch', spy);
+    lw('nutriops.offline.queue', [{ table: 'form_records', operation: 'upsert', payload: daFila, _at: 't' }]);
+    await supabaseRepository.syncQueue();
+    expect(spy.mock.calls.some(([, o]) => o?.method === 'POST')).toBe(false);
+    expect(getOfflineQueue()).toHaveLength(1);
+  });
+
+  it('itens idênticos no mesmo instante: cada um tem identidade própria', () => {
+    const a = { table: 't', payload: {}, _at: 'x', _id: '1' };
+    const gemeo = { table: 't', payload: {}, _at: 'x', _id: '2' };
+    expect(juntarFilaRestante([a], [], [a, gemeo])).toEqual([gemeo]);
   });
 
   it('duas descargas ao mesmo tempo viram uma só', async () => {
@@ -238,6 +340,17 @@ describe('recebimento e planilhas chegam nos outros aparelhos sem reabrir o app'
     vi.stubGlobal('fetch', spy);
     expect((await syncRecentes(LOJA)).ok).toBe(false);
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('a RT com várias lojas sincroniza a loja que está OLHANDO, não a principal (achado 2)', () => {
+    const rt = { tenantId: 'matriz', memberTenants: [{ id: 'matriz' }, { id: 'terraco' }] };
+    const lojas = [{ id: 'matriz' }, { id: 'terraco' }];
+    expect(lojaDoSync({ session: rt, activeTenant: { id: 'terraco' }, visibleTenants: lojas })).toBe('terraco');
+    // loja fora do alcance da sessão: não vira alvo
+    expect(lojaDoSync({ session: rt, activeTenant: { id: 'swiss' }, visibleTenants: lojas })).toBe('matriz');
+    // conta de loja única: igual a antes
+    expect(lojaDoSync({ session: { tenantId: 'pks' }, activeTenant: { id: 'pks' }, visibleTenants: [{ id: 'pks' }] })).toBe('pks');
+    expect(lojaDoSync({ session: null, activeTenant: { id: 'pks' }, visibleTenants: [] })).toBeNull();
   });
 
   it('o App chama a cada 2 min, ao voltar o foco, e avisa as telas só quando mudou', () => {

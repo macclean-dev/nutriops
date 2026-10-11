@@ -13,12 +13,12 @@
 -- fica preso na fila do aparelho que registrou. É exatamente o sintoma.
 --
 -- O QUE FAZ:
---   1. Anota quais dessas colunas existem AGORA (antes de mexer).
---   2. Cria as que faltarem. `add column if not exists`: a que já existe não
---      é tocada. Não apaga nada, não altera nenhum registro, não mexe em
---      regra de acesso (RLS).
---   3. Mostra, coluna a coluna, se ela já existia ou foi criada agora, e
---      quantos recebimentos a nuvem tem.
+--   1. Cria as colunas que faltarem. `add column if not exists`: a que já
+--      existe não é tocada. Não apaga nada, não altera nenhum registro, não
+--      mexe em regra de acesso (RLS) e não cria tabela.
+--   2. Mostra as quatro colunas, quantos recebimentos a nuvem tem e a data do
+--      último. Rodado ANTES de os aparelhos reenviarem, essa data diz quando
+--      o recebimento parou de chegar (se for 21/09, a causa está confirmada).
 -- Depois disso, os recebimentos presos nos aparelhos sobem sozinhos em até
 -- 2 minutos (com o app aberto e com internet).
 --
@@ -32,23 +32,18 @@
 select current_database() as banco,
        (select count(*) from public.receiving_records) as recebimentos_na_nuvem;
 
--- PASSO 1: o retrato de antes.
-create temp table colunas_antes as
-  select column_name from information_schema.columns
-   where table_schema = 'public' and table_name = 'receiving_records'
-     and column_name in ('conservacao', 'hora', 'recebido', 'temperaturas');
-
--- PASSO 2: cria só o que falta.
+-- PASSO 1: cria só o que falta.
 alter table public.receiving_records add column if not exists conservacao text;
 alter table public.receiving_records add column if not exists hora text;
 alter table public.receiving_records add column if not exists recebido jsonb;
 alter table public.receiving_records add column if not exists temperaturas jsonb;
 
--- PASSO 3: o resultado. Copie e me mande esta tabela.
+-- PASSO 2: o resultado. Copie e me mande esta tabela.
 select c.coluna,
-       case when a.column_name is not null then 'já existia' else 'CRIADA AGORA' end as situacao,
+       exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'receiving_records'
+                  and column_name = c.coluna) as existe_agora,
        (select count(*) from public.receiving_records) as recebimentos_na_nuvem,
        (select max(created_at)::date from public.receiving_records) as ultimo_recebimento_na_nuvem
   from (values ('conservacao'), ('hora'), ('recebido'), ('temperaturas')) as c(coluna)
-  left join colunas_antes a on a.column_name = c.coluna
  order by c.coluna;

@@ -17,6 +17,8 @@ import { notificarSyncAplicado, gravarMesclando, SYNC_EVENT } from './lista-loca
 // principal só por causa desta tela.
 import { actionSourceKey, pendingTemperatureItems, pendingReceivingItems, pendingControlItems, pendingFormItems, excludeWithAction, CONTROL_TYPES } from './nonconformities';
 import { agruparPendencias, filtrarPendencias, resumoDoGrupo, acoesDoLote } from './nc-grupos';
+import { equipamentosParaCopiar } from './implantacao';
+import { CopiarDeOutraLojaModal } from './implantacao-modals';
 import { diasDeAtraso, formatarPrazo } from './acoes-prazo';
 import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
 import { viewVisivelNaLoja, recebimentoCompleto } from './modulos-da-loja';
@@ -1593,6 +1595,12 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
   // Guardar em state (não em ref) é essencial: o valor lido pelo efeito precisa
   // ser o do render, senão a checagem passa e o bug volta.
   const [catalogTenant, setCatalogTenant] = useState(activeTenant.id);
+  // Copiar equipamentos de outra loja (implantacao.js, 10/10): unidade nova
+  // deixa de precisar de SQL para ganhar o cadastro.
+  const [copiarEquip, setCopiarEquip] = useState(false);
+  const [avisoCopia, setAvisoCopia] = useState(null);
+  const origemEquip = useRef([]);
+  const outrasLojas = (allTenants ?? []).filter((t) => t.id !== activeTenant.id);
   const resetForm = () => { setEditingIndex(null); setLabelInput(''); setAliasInput(''); setLocationInput(''); setMinInput(''); setMaxInput(''); setIntermitente(false); };
   useEffect(() => {
     setCatalog(readEquipmentCatalog(activeTenant));
@@ -1787,6 +1795,25 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
     return `${h.min}° a ${h.max}° (auto)`;
   };
 
+  const carregarEquipamentosDe = async (loja) => {
+    await syncEquipmentCatalog(loja.id);
+    const origem = dedupeCatalog(readEquipmentCatalog(loja));
+    origemEquip.current = origem;
+    const { repetidos } = equipamentosParaCopiar(origem, catalog);
+    const ja = new Set(repetidos.map((e) => e.label));
+    return { itens: origem.map((e) => ({ id: e.label, titulo: e.label, detalhe: `${e.location || 'Sem setor'} · ${fmtRange(e)}`, repetido: ja.has(e.label) })) };
+  };
+
+  const copiarEquipamentosDe = async (loja, labels) => {
+    const { novos } = equipamentosParaCopiar(origemEquip.current.filter((e) => labels.includes(e.label)), catalog);
+    if (novos.length) {
+      setCatalog((prev) => [...prev, ...novos]);
+      for (const n of novos) pushEquipmentItem(activeTenant.id, n).catch(() => {});
+    }
+    setCopiarEquip(false);
+    setAvisoCopia(`✓ ${novos.length} equipamento${novos.length === 1 ? '' : 's'} copiado${novos.length === 1 ? '' : 's'} de ${loja.name}. Confira as faixas: cada unidade pode ter equipamentos diferentes.`);
+  };
+
   return (
     <section className="management-page">
       <div className="page-header">
@@ -1795,8 +1822,16 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
           <h1>Equipamentos</h1>
           <p className="muted">Equipamentos monitorados, suas faixas permitidas e onde ficam.</p>
         </div>
-        <div className="page-actions"><span className="badge subtle">{activeTenant.name}</span></div>
+        <div className="page-actions">
+          <span className="badge subtle">{activeTenant.name}</span>
+          {outrasLojas.length > 0 && <button className="secondary-action" style={{ fontSize: 12 }} onClick={() => { setAvisoCopia(null); setCopiarEquip(true); }}>Copiar de outra loja</button>}
+        </div>
       </div>
+      {copiarEquip && (
+        <CopiarDeOutraLojaModal titulo="Copiar equipamentos de outra loja" lojas={outrasLojas} rotuloItem="equipamento"
+          carregar={carregarEquipamentosDe} onCopiar={copiarEquipamentosDe} onClose={() => setCopiarEquip(false)} />
+      )}
+      {avisoCopia && <div role="status" className="submission ok" style={{ marginBottom: 16, fontSize: 13 }}>{avisoCopia}</div>}
       <div className="management-grid">
         <article className="management-card">
           <div className="card-head">

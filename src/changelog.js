@@ -35,6 +35,11 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.275', date: '2026-10-10', items: [
+    { text: 'A nutricionista RT e o administrador podem criar uma planilha nova sozinhos: nome, aba, frequência e as tarefas, cada uma com a sua periodicidade. A planilha já sai com o bloco de não conformidade, que alimenta a Central de NC. Na Higienização, é só escolher o setor.', path: 'Planilhas BPF → Nova planilha' },
+    { text: 'Quem acompanha mais de uma loja pode copiar planilhas de uma loja para outra. As que já existem na loja de destino são puladas.', path: 'Planilhas BPF → Copiar de outra loja' },
+    { text: 'O cadastro de equipamentos também pode ser copiado de outra loja: nome, setor, faixa de temperatura, apelidos e "uso intermitente". Vale conferir as faixas depois, porque cada unidade tem os seus equipamentos.', path: 'Equipamentos → Copiar de outra loja' },
+  ]},
   { version: '1.9.274', date: '2026-10-10', items: [
     { text: 'Não conformidades agora aparecem agrupadas por equipamento ou planilha, com o grupo mais antigo primeiro: por exemplo "Bancada congelada F.2: 7 ocorrências, de 12/08 a 14/08". Antes a lista mostrava só as 15 mais recentes e as antigas ficavam escondidas em "Ver os outros". Relato da nutricionista RT.', path: 'Qualidade → Não conformidades' },
     'Dá para abrir uma ação corretiva para o grupo inteiro: o app registra uma ação para cada ocorrência, com o mesmo texto, responsável e prazo. "Ver uma a uma" continua abrindo ação individual.',

@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FormKioskApp } from './kiosk';
 import { pushFormRecord, buscarFormRecordNaNuvem, lw as gravarLocal } from './repository';
 import { fundirRespostas, fundirStatus, maisRecente, umPorPeriodo, validacaoQueSobrevive } from './planilha-fusao';
+import { novaPlanilha, copiarPlanilhas, juntarPrefs } from './implantacao';
+import { NovaPlanilhaModal, CopiarDeOutraLojaModal } from './implantacao-modals';
 import { ImportTemplateModal } from './import-template-modal';
 import { isFieldDue, dueFields } from './field-frequency';
 import { gravarMesclando, SYNC_EVENT } from './lista-local';
@@ -2449,6 +2451,10 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
   }, [activeTenant.id]);
 
   const [importOpen, setImportOpen] = useState(false);
+  // Implantação sem desenvolvedor (implantacao.js, 10/10).
+  const [novaOpen, setNovaOpen] = useState(false);
+  const [copiarOpen, setCopiarOpen] = useState(false);
+  const origemDaCopia = useRef([]);
   // Planilha nova (não edição) — pushFormTemplate já trata insert vs update
   // pelo id não existir ainda em `existing` (repository.js).
   const criarTemplate = useCallback((novo) => {
@@ -2723,6 +2729,62 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
     setOrganizando(false);
     if (catFilter !== 'all' && !categories.includes(catFilter)) pickCategory('all');
   };
+
+  // Preferências das planilhas novas ou copiadas que vão para Higienização
+  // (setor escolhido). Mesmo blob e mesmo caminho de salvarOrganizacao.
+  const gravarPrefsDaImplantacao = (patches) => {
+    const uteis = (patches ?? []).filter(Boolean);
+    if (!uteis.length) return true;
+    const novas = juntarPrefs(prefs, uteis);
+    const perfil = profileWithPrefs(readCompanyProfile(activeTenant.id), novas);
+    if (!saveCompanyProfile(activeTenant.id, perfil)) {
+      window.alert('A planilha foi criada, mas não consegui guardar o setor dela (armazenamento do aparelho cheio). Ela vai aparecer em Faxina: use "Organizar" para mandá-la para o setor certo.');
+      return false;
+    }
+    setPrefs(novas);
+    import('./repository').then((m) => m.pushCompanyProfile(activeTenant.id, perfil)).catch(() => {});
+    return true;
+  };
+
+  const abasParaNova = [...new Set([...categories, 'faxina', 'higienizacao', 'custom'])].map((c) => [c, rotuloCat(c)]);
+  const setoresDaLoja = [...new Set(templatesOrganizados.map(templateSector).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity:'base' }));
+
+  const criarPlanilhaNova = (dados) => {
+    const { template, prefs: patch } = novaPlanilha({ ...dados, id: crypto.randomUUID() });
+    criarTemplate(template);
+    gravarPrefsDaImplantacao([patch]);
+    if (patch) pickCategory('higienizacao');
+    setNovaOpen(false);
+    setFlash({ text: `✓ Planilha "${template.title}" criada.`, at: Date.now() });
+  };
+
+  // Lojas que esta pessoa acompanha, menos a atual: de onde dá para copiar.
+  const outrasLojas = allTenants.filter((t) => t.id !== activeTenant.id);
+
+  const carregarPlanilhasDe = async (loja) => {
+    const repo = await import('./repository');
+    await Promise.allSettled([repo.syncFormTemplates(loja.id), repo.syncCompanyProfile(loja.id)]);
+    const origem = applyCategoryPrefs(readFormTemplates(loja), prefsFromProfile(readCompanyProfile(loja.id)));
+    origemDaCopia.current = origem;
+    const { repetidas } = copiarPlanilhas(origem, templatesOrganizados);
+    const repetidasIds = new Set(repetidas.map((t) => t.id));
+    return { itens: origem.map((t) => ({
+      id: t.id, titulo: t.title, repetido: repetidasIds.has(t.id),
+      detalhe: `${rotuloCat(t.category)} · ${FREQUENCIAS.find(([id]) => id === t.frequency)?.[1] ?? t.frequency}`,
+    })) };
+  };
+
+  const copiarPlanilhasDe = async (loja, ids) => {
+    const { copias } = copiarPlanilhas(origemDaCopia.current, templatesOrganizados, { ids, setorDe: templateSector });
+    if (!copias.length) { setCopiarOpen(false); return; }
+    setTemplates((prev) => [...copias.map((c) => c.template), ...prev]);
+    const repo = await import('./repository');
+    for (const c of copias) repo.pushFormTemplate(activeTenant.id, c.template).catch(() => {});
+    gravarPrefsDaImplantacao(copias.map((c) => c.prefs));
+    pickCategory('all');
+    setCopiarOpen(false);
+    setFlash({ text: `✓ ${copias.length} planilha${copias.length === 1 ? '' : 's'} copiada${copias.length === 1 ? '' : 's'} de ${loja.name}.`, at: Date.now() });
+  };
   // Setores da categoria em foco (só Higienização tem). Ordena em pt-BR pra
   // "Área de Lavagem" e "Câmaras" não caírem depois de "Vestiário" por acento.
   const sectors = [...new Set(byCategory.map(templateSector).filter(Boolean))]
@@ -2802,6 +2864,13 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
       {importOpen && (
         <ImportTemplateModal onSave={criarTemplate} onClose={() => setImportOpen(false)} />
       )}
+      {novaOpen && (
+        <NovaPlanilhaModal abas={abasParaNova} setores={setoresDaLoja} onCriar={criarPlanilhaNova} onClose={() => setNovaOpen(false)} />
+      )}
+      {copiarOpen && (
+        <CopiarDeOutraLojaModal titulo="Copiar planilhas de outra loja" lojas={outrasLojas} rotuloItem="planilha"
+          carregar={carregarPlanilhasDe} onCopiar={copiarPlanilhasDe} onClose={() => setCopiarOpen(false)} />
+      )}
       {organizando && (
         <OrganizarPlanilhasModal
           templates={templatesOrganizados}
@@ -2821,6 +2890,8 @@ export function FormsView({ activeTenant, allTenants, onTenantChange, session })
             {allTenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
           {isRT && <button className="secondary-action" style={{ fontSize:12 }} onClick={() => { setOrganizarError(null); setOrganizando(true); }}>Organizar</button>}
+          {isRT && <button className="secondary-action" style={{ fontSize:12 }} onClick={() => setNovaOpen(true)}>Nova planilha</button>}
+          {isRT && outrasLojas.length > 0 && <button className="secondary-action" style={{ fontSize:12 }} onClick={() => setCopiarOpen(true)}>Copiar de outra loja</button>}
           {isRT && <button className="secondary-action" style={{ fontSize:12 }} onClick={() => setImportOpen(true)}>Importar por IA</button>}
         </div>
       </div>

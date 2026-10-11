@@ -9,6 +9,7 @@ import { pushTrainingSession, pushTrainingConfig, pushComplianceDoc, deleteCompl
 // pergunta ("este manipulador está apto?").
 import { DOC_TYPES, COMPLIANCE_DEFAULTS, ASO_STATUS_LABEL, LEAVE_TYPE_LABEL, teamAsoSummary, currentLeave, validadeEfetiva, hojeISO, descreverAfastamento } from './compliance';
 import { consumeTrainingPendingTab } from './nav';
+import { podeEditarCapacitacao, podeVerSaudeAso } from './permissions';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -311,7 +312,9 @@ export function confirmParticipantAt(participants, index, confirmedAt = new Date
   return participants.map((p, i) => i === index ? { ...p, confirmed: true, confirmedAt } : p);
 }
 
-function SessionDetail({ session, onBack, onUpdate, session: _s, tenant, config, sessionIndex }) {
+// `somenteLeitura`: Supervisor consultando na visita (10/10, permissions.js).
+// Vê tudo e imprime certificado; não confirma presença nem assina.
+function SessionDetail({ session, onBack, onUpdate, session: _s, tenant, config, sessionIndex, somenteLeitura = false }) {
   const [rtNote, setRtNote]         = useState('');
   const [signingRT, setSigningRT]   = useState(false);
   const [confirmingIndex, setConfirmingIndex] = useState(null);
@@ -398,6 +401,8 @@ function SessionDetail({ session, onBack, onUpdate, session: _s, tenant, config,
                 {!isClosed && (
                   p.confirmed
                     ? <span className="badge ok">✓ Presente</span>
+                    : somenteLeitura
+                      ? <span className="badge neutral">Presença não confirmada</span>
                     : confirmingIndex === i
                       ? (
                         <div style={{ display: 'flex', gap: 6 }}>
@@ -420,7 +425,10 @@ function SessionDetail({ session, onBack, onUpdate, session: _s, tenant, config,
       </article>
 
       {/* RT Signature */}
-      {!isClosed && (
+      {!isClosed && somenteLeitura && (
+        <p className="muted" style={{ fontSize: 12 }}>Sessão ainda aberta. A confirmação de presença e a assinatura são feitas pela nutricionista RT.</p>
+      )}
+      {!isClosed && !somenteLeitura && (
         <article className="management-card" style={{ borderColor: 'var(--blue-border)' }}>
           <div className="card-head" style={{ background: 'var(--blue-light)', borderBottomColor: 'var(--blue-border)' }}>
             <div><span className="eyebrow" style={{ color: 'var(--blue)' }}>Assinatura RT</span><h2>Encerrar e assinar sessão</h2></div>
@@ -737,28 +745,37 @@ export function TrainingView({ activeTenant, allTenants, onTenantChange, session
     consumeTrainingPendingTab(typeof localStorage !== 'undefined' ? localStorage : null) ?? 'sessions'); // sessions | status | aso | settings
 
   const allUsers = readUsers(activeTenant);
+  // Supervisor consulta (pasta da loja na visita, 10/10): sem criar sessão,
+  // sem configurações e sem a aba Saúde (ASO), que é dado de saúde (LGPD).
+  const podeEditar = podeEditarCapacitacao(session);
+  const podeVerAso = podeVerSaudeAso(session);
+  const abas = [['sessions','Sessões de treinamento'],['status','Situação da equipe'],['aso','Saúde (ASO)'],['settings','Configurações']]
+    .filter(([key]) => (key !== 'aso' || podeVerAso) && (key !== 'settings' || podeEditar));
+  const abaVisivel = abas.some(([key]) => key === tab) ? tab : 'sessions';
 
   useEffect(() => { setSessions(readSessions(activeTenant.id)); setConfig(readTrainConfig(activeTenant.id)); setView('list'); setDetailSession(null); }, [activeTenant.id]);
   useEffect(() => { writeSessions(activeTenant.id, sessions); }, [activeTenant.id, sessions]);
   useEffect(() => { writeTrainConfig(activeTenant.id, config); }, [activeTenant.id, config]);
 
   const handleCreate = useCallback((data) => {
+    if (!podeEditar) return;
     const newSession = { id:uid(), tenantId:activeTenant.id, status:'open', participants:data.participants, rtSignature:null, createdAt:new Date().toISOString(), updatedAt:new Date().toISOString(), ...data };
     setSessions((prev) => [newSession, ...prev]);
     pushTrainingSession(activeTenant.id, newSession); // nuvem (ou fila offline)
     setDetailSession(newSession);
     setView('detail');
-  }, [activeTenant.id]);
+  }, [activeTenant.id, podeEditar]);
 
   const handleUpdate = useCallback((updated) => {
+    if (!podeEditar) return;
     setSessions((prev) => prev.map((s) => s.id === updated.id ? updated : s));
     // Toda mutação (presença confirmada, encerramento, assinatura RT) passa
     // por aqui — um push cobre tudo. Upsert por id, pode repetir à vontade.
     pushTrainingSession(updated.tenantId ?? activeTenant.id, updated);
     setDetailSession(updated);
-  }, [activeTenant.id]);
+  }, [activeTenant.id, podeEditar]);
 
-  if (view === 'new') {
+  if (view === 'new' && podeEditar) {
     return (
       <section className="management-page">
         <SessionForm allUsers={allUsers} onSave={handleCreate} onCancel={() => setView('list')} tenant={activeTenant} />
@@ -770,7 +787,7 @@ export function TrainingView({ activeTenant, allTenants, onTenantChange, session
     const live = sessions.find((s) => s.id === detailSession.id) ?? detailSession;
     return (
       <section className="management-page">
-        <SessionDetail session={live} onBack={() => setView('list')} onUpdate={handleUpdate} tenant={activeTenant} config={config} />
+        <SessionDetail session={live} onBack={() => setView('list')} onUpdate={handleUpdate} tenant={activeTenant} config={config} somenteLeitura={!podeEditar} />
       </section>
     );
   }
@@ -787,25 +804,29 @@ export function TrainingView({ activeTenant, allTenants, onTenantChange, session
           <select value={activeTenant.id} onChange={(e) => onTenantChange(e.target.value)} style={{ width:'auto' }}>
             {allTenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
-          {tab === 'sessions' && <button className="primary-action" onClick={() => setView('new')}>+ Nova sessão</button>}
+          {abaVisivel === 'sessions' && podeEditar && <button className="primary-action" onClick={() => setView('new')}>+ Nova sessão</button>}
         </div>
       </div>
 
       {/* Tabs */}
       <div style={{ display:'flex', gap:6, marginBottom:20 }}>
-        {[['sessions','Sessões de treinamento'],['status','Situação da equipe'],['aso','Saúde (ASO)'],['settings','Configurações']].map(([key,label]) => (
+        {abas.map(([key,label]) => (
           <button key={key} onClick={() => setTab(key)}
-            style={{ padding:'7px 16px', borderRadius:8, border:'1px solid var(--border)', background:tab===key?'var(--text)':'var(--surface)', color:tab===key?'white':'var(--text)', fontWeight:600, fontSize:13, cursor:'pointer', fontFamily:'var(--font)' }}>
+            style={{ padding:'7px 16px', borderRadius:8, border:'1px solid var(--border)', background:abaVisivel===key?'var(--text)':'var(--surface)', color:abaVisivel===key?'white':'var(--text)', fontWeight:600, fontSize:13, cursor:'pointer', fontFamily:'var(--font)' }}>
             {label}
           </button>
         ))}
       </div>
 
-      {tab === 'status' && <EmployeeStatusPanel allUsers={allUsers} sessions={sessions} config={config} />}
+      {!podeEditar && (
+        <div className="submission" style={{ fontSize: 12, marginBottom: 16 }}>Modo consulta: você pode ver e imprimir os treinamentos e certificados. Para registrar um treinamento, fale com a nutricionista RT.</div>
+      )}
 
-      {tab === 'aso' && <AsoPanel tenant={activeTenant} allUsers={allUsers} />}
+      {abaVisivel === 'status' && <EmployeeStatusPanel allUsers={allUsers} sessions={sessions} config={config} />}
 
-      {tab === 'settings' && (
+      {abaVisivel === 'aso' && podeVerAso && <AsoPanel tenant={activeTenant} allUsers={allUsers} />}
+
+      {abaVisivel === 'settings' && podeEditar && (
         <article className="management-card">
           <div className="card-head"><div><span className="eyebrow">Parâmetros</span><h2>Configurações de capacitação</h2></div></div>
           <div className="capture-fields" style={{ maxWidth: 400 }}>
@@ -823,13 +844,13 @@ export function TrainingView({ activeTenant, allTenants, onTenantChange, session
         </article>
       )}
 
-      {tab === 'sessions' && (
+      {abaVisivel === 'sessions' && (
         <>
           {sessions.length === 0 ? (
             <article className="management-card">
               <div style={{ padding: '40px 20px', textAlign: 'center' }}>
                 <p className="muted" style={{ marginBottom: 16 }}>Nenhuma sessão de treinamento registrada ainda.</p>
-                <button className="primary-action" onClick={() => setView('new')}>+ Criar primeira sessão</button>
+                {podeEditar && <button className="primary-action" onClick={() => setView('new')}>+ Criar primeira sessão</button>}
               </div>
             </article>
           ) : (

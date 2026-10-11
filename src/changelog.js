@@ -35,6 +35,10 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.273', date: '2026-10-10', items: [
+    { text: 'Pasta da loja para a visita da vigilância: o Supervisor agora abre POPs, Capacitação e o Dossiê Fiscal, para mostrar e imprimir documentos e certificados quando a nutricionista RT não estiver. A colaboradora abre os POPs, que a RDC 216 pede que estejam acessíveis a quem executa. Pedido da nutricionista RT.', path: 'Qualidade → POPs · Capacitação · Relatórios → Dossiê Fiscal' },
+    'Para o Supervisor a Capacitação abre em modo consulta: registrar treinamento, confirmar presença e assinar continuam com a RT e o administrador. A aba Saúde (ASO) não aparece para o Supervisor, porque é dado de saúde do colaborador.',
+  ]},
   { version: '1.9.272', date: '2026-10-10', items: [
     { text: 'Quem acompanha várias lojas (como a nutricionista RT) agora recebe as atualizações de recebimento e planilhas da loja que está olhando no seletor. Antes o aparelho continuava buscando só a loja principal da conta.', path: 'Seletor de loja' },
     { text: 'Planilha já confirmada continua confirmada ao tocar "Salvar rascunho": as alterações são salvas e a folha não volta a "não feita". A mensagem na tela diz o que ficou gravado.', path: 'Planilhas BPF' },

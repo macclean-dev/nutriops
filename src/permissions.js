@@ -19,11 +19,11 @@ const ALL_VIEWS = [
 
 export const PERMISSIONS = {
   'Colaborador': {
-    nav: ['overview','overview-v2','forms','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','profile'],
+    nav: ['overview','overview-v2','forms','pops','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','profile'],
     multiTenant: false, canSwitchTenant: false, canExport: false, canValidate: false, canManageUsers: false, canManageConfig: false, canSeeReports: false,
   },
   'Supervisor': {
-    nav: ['overview','overview-v2','forms','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','alerts','readiness','reportsHub','audit','equipment','maintenance','profile'],
+    nav: ['overview','overview-v2','forms','pops','training','receiving','validity','controls','handwash','oil','thaw','cooling','thermal','alerts','readiness','reportsHub','audit','dossie','equipment','maintenance','profile'],
     // multiTenant=false: vê só a própria empresa nos relatórios. canSwitchTenant=true:
     // pode TROCAR de empresa via relogin (PIN da empresa-alvo). São coisas distintas.
     multiTenant: false, canSwitchTenant: true, canExport: true, canValidate: false, canManageUsers: false, canManageConfig: false, canSeeReports: true,
@@ -56,6 +56,31 @@ export function canAccess(role, view) { const p = getPermissions(role); return p
 // escolhido na tela "Quem está registrando?", que é atribuição, não
 // autenticação. Papel desconhecido cai em Colaborador (getPermissions) e
 // também fica de fora: o portão falha FECHADO.
+// ─── Pasta da loja para a visita da vigilância (10/10) ──────────────────────
+// Pedido da RT da CASA DOCE (06/10): a vigilância cobra treinamento e
+// documentos na visita, e quem está na loja quando ela não está precisa
+// achar. RDC 216 4.11.1: POPs "acessíveis aos responsáveis pela execução das
+// operações e às autoridades sanitárias". Por isso:
+//   · Colaborador: POPs (leitura e impressão).
+//   · Supervisor: POPs, Capacitação e Dossiê Fiscal (leitura e impressão).
+// Criar, editar, aprovar, confirmar presença e assinar continuam com a RT e o
+// administrador (podeEditarCapacitacao; POPs já escondem edição em
+// controls.jsx).
+//
+// Saúde (ASO) fica de fora para o Supervisor: é dado de saúde do
+// colaborador (LGPD) e a RT ainda não decidiu se o gerente pode ver.
+// O Dossiê leva só a situação de cada pessoa (em dia, vencido, inapto), que é
+// o que o fiscal pede pelo 4.6.1.
+const EDITA_CAPACITACAO = ['Nutricionista RT', 'Administrador', 'Super-admin'];
+
+export function podeEditarCapacitacao(session) {
+  return EDITA_CAPACITACAO.includes(session?.user?.role);
+}
+
+export function podeVerSaudeAso(session) {
+  return EDITA_CAPACITACAO.includes(session?.user?.role);
+}
+
 export function podeValidarPlanilha(session) {
   if (!session?.user) return false;
   if (session.isStoreAccount === true) return false;

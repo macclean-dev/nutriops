@@ -13,6 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { dedupeCatalog, recordBelongsTo } from './limits';
+import { cobradoNoTurno } from './turnos-do-equipamento';
 
 // Map { alertId: 'dow mon dd yyyy' }. Um alerta fica dispensado só HOJE — no
 // dia seguinte, se ainda estiver pendente, reaparece. Poda entradas antigas.
@@ -63,6 +64,9 @@ export function computeTurnAlertsPure(turns, records, equipCatalog, tenantId, em
       // Continua no catálogo, continua aceitando leitura quando ligado, e
       // continua aparecendo nos relatórios. Só deixa de ser COBRADO.
       if (eq?.usoIntermitente === true) continue;
+      // Equipamento cobrado só em alguns turnos (turnos-do-equipamento.js,
+      // 10/10): a Bancada F.2 liga de manhã e desliga à tarde.
+      if (!cobradoNoTurno(eq, turn, turns)) continue;
       const hasRecord = records.some((r) => {
         if (r.tenantId !== tenantId) return false;
         // recordBelongsTo, não comparação de nome: um equipamento renomeado

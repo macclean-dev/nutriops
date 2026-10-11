@@ -1059,6 +1059,12 @@ function eqToRow(eq, tenantId) {
     // viajar pra nuvem, senão a marca vale só no aparelho onde foi feita e o
     // equipamento volta a cobrar leitura no device seguinte.
     uso_intermitente: eq.usoIntermitente === true,
+    // Turnos em que é cobrado (turnos-do-equipamento.js, 10/10). Coluna nova
+    // (docs/equipamento-turnos-cobrados.sql): só vai quando a tela mandou a
+    // lista. Equipamento que nunca usou isso não manda a coluna, então nada
+    // trava na fila enquanto o SQL não roda. Lista vazia = "voltou a cobrar
+    // em todos": vai como null pra apagar a escolha antiga na nuvem.
+    ...(Array.isArray(eq.turnosCobrados) ? { turnos_cobrados: eq.turnosCobrados.length ? eq.turnosCobrados : null } : {}),
     updated_at: new Date().toISOString(),
   };
 }
@@ -1073,6 +1079,7 @@ function eqFromRow(row) {
     // com null, e null tem que virar "cobra leitura normalmente" — o padrão de
     // sempre. Nenhum equipamento sai da cobrança por omissão.
     usoIntermitente: row.uso_intermitente ?? false,
+    ...(Array.isArray(row.turnos_cobrados) && row.turnos_cobrados.length ? { turnosCobrados: row.turnos_cobrados } : {}),
   };
 }
 
@@ -2401,9 +2408,11 @@ create table if not exists equipment_catalog (
   min_temp numeric,
   max_temp numeric,
   uso_intermitente boolean not null default false,
+  turnos_cobrados jsonb,
   updated_at timestamptz default now(),
   primary key (tenant_id, label)
 );
+-- Base criada antes de 10/10: docs/equipamento-turnos-cobrados.sql.
 create index if not exists idx_eq_tenant on equipment_catalog(tenant_id);
 
 -- 2d. Equipe da loja — lista de NOMES, sem credencial. É quem pode ser

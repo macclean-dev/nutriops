@@ -21,6 +21,7 @@ import { EquipmentDetailModal, EquipmentChart, toneColor, toneBg } from './equip
 import { getTemperatureRepository } from './repository';
 import { readOperator } from './operator';
 import CountUp from './count-up';
+import { leiturasEsperadasNoDia } from './turnos-do-equipamento';
 
 // Mesmo idioma de reports-views.jsx/team-views.jsx/maintenance.jsx: o
 // catálogo VIVO mora em `nutriops.equipment.catalog.{id}` (o que
@@ -832,8 +833,10 @@ function SupervisorDashboard({ session, activeTenant, equipmentCatalog, records,
   // KPI soubesse. É cobertura de registro, não conformidade térmica — os dois
   // eram confundidos pelo mesmo nome (ver `alertCount` logo abaixo, que é
   // quem de fato mede leitura fora da faixa).
-  const turnsCount = Math.max(1, readTurns(activeTenant).length);
-  const expected = (equipmentCatalog?.length || 0) * turnsCount;
+  // 10/10: soma os turnos em que CADA equipamento é cobrado
+  // (turnos-do-equipamento.js). Antes contava todos × todos, e equipamento
+  // de uso intermitente ou de um turno só puxava a cobertura pra baixo.
+  const expected = leiturasEsperadasNoDia(equipmentCatalog, readTurns(activeTenant));
   const coverageToday = expected > 0
     ? Math.min(100, Math.round((todayRecords.length / expected) * 100))
     : null;

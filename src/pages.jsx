@@ -18,6 +18,7 @@ import { notificarSyncAplicado, gravarMesclando, SYNC_EVENT } from './lista-loca
 import { actionSourceKey, pendingTemperatureItems, pendingReceivingItems, pendingControlItems, pendingFormItems, excludeWithAction, CONTROL_TYPES } from './nonconformities';
 import { agruparPendencias, filtrarPendencias, resumoDoGrupo, acoesDoLote } from './nc-grupos';
 import { equipamentosParaCopiar } from './implantacao';
+import { rotuloDosTurnos } from './turnos-do-equipamento';
 import { CopiarDeOutraLojaModal } from './implantacao-modals';
 import { diasDeAtraso, formatarPrazo } from './acoes-prazo';
 import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
@@ -1582,7 +1583,13 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
   // "Só liga quando em uso" — ver turn-alerts.js. Equipamento assim deixa de
   // ser COBRADO (turno e "fora da rotina"), mas continua no cadastro e aceita
   // leitura normalmente quando está ligado.
-  const [intermitenteInput, setIntermitente] = useState(false);
+  //
+  // 10/10: três modos de cobrança (turnos-do-equipamento.js). 'todos' (o de
+  // sempre), 'alguns' (só nos turnos marcados, o caso da Bancada F.2 que
+  // liga de manhã e desliga à tarde) e 'uso' (o "só liga quando em uso").
+  const [cobranca, setCobranca] = useState('todos');
+  const [turnosEscolhidos, setTurnosEscolhidos] = useState([]);
+  const turnosDaLoja = readTurns(activeTenant);
   const [editingIndex, setEditingIndex]     = useState(null);
   const [search, setSearch]                 = useState('');
   const [locationFilter, setLocationFilter] = useState('');
@@ -1601,7 +1608,7 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
   const [avisoCopia, setAvisoCopia] = useState(null);
   const origemEquip = useRef([]);
   const outrasLojas = (allTenants ?? []).filter((t) => t.id !== activeTenant.id);
-  const resetForm = () => { setEditingIndex(null); setLabelInput(''); setAliasInput(''); setLocationInput(''); setMinInput(''); setMaxInput(''); setIntermitente(false); };
+  const resetForm = () => { setEditingIndex(null); setLabelInput(''); setAliasInput(''); setLocationInput(''); setMinInput(''); setMaxInput(''); setCobranca('todos'); setTurnosEscolhidos([]); };
   useEffect(() => {
     setCatalog(readEquipmentCatalog(activeTenant));
     setCatalogTenant(activeTenant.id);
@@ -1678,7 +1685,9 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
     setLocationInput(item.location ?? '');
     setMinInput(item.minTemp != null ? String(item.minTemp) : '');
     setMaxInput(item.maxTemp != null ? String(item.maxTemp) : '');
-    setIntermitente(item.usoIntermitente === true);
+    const escolhidos = Array.isArray(item.turnosCobrados) ? item.turnosCobrados : [];
+    setCobranca(item.usoIntermitente === true ? 'uso' : escolhidos.length ? 'alguns' : 'todos');
+    setTurnosEscolhidos(escolhidos);
   };
   const cancelEdit = () => resetForm();
 
@@ -1727,7 +1736,17 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
       && !aliases.some((a) => norm(a) === norm(anterior.label))
       ? [...aliases, anterior.label]
       : aliases;
-    const next = { label, aliases: aliasesFinais, location, minTemp: minN, maxTemp: maxN, usoIntermitente: intermitenteInput };
+    if (cobranca === 'alguns' && turnosEscolhidos.length === 0) {
+      window.alert('Marque em quais turnos este equipamento é cobrado, ou escolha "Em todos os turnos".');
+      return;
+    }
+    // Lista vazia (e não ausente) quando o equipamento TINHA turnos escolhidos
+    // e voltou a ser cobrado em todos: é o que apaga a escolha antiga na
+    // nuvem (eqToRow manda null). Sem escolha antes, nem manda a coluna.
+    const turnosCobrados = cobranca === 'alguns'
+      ? turnosEscolhidos
+      : (anterior?.turnosCobrados?.length ? [] : undefined);
+    const next = { label, aliases: aliasesFinais, location, minTemp: minN, maxTemp: maxN, usoIntermitente: cobranca === 'uso', ...(turnosCobrados ? { turnosCobrados } : {}) };
     setCatalog((prev) => editingIndex === null
       ? [...prev, next]
       : prev.map((item, i) => i === editingIndex ? { ...item, ...next } : item));
@@ -1898,19 +1917,44 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
                 em dia de encomenda. Sem isto, a única saída de quem cansava da
                 pendência era registrar 0 °C com o aparelho desligado (desvio
                 gravíssimo falso) ou apagar o equipamento do cadastro. */}
-            <label style={{ display:'flex', alignItems:'flex-start', gap:8, cursor:'pointer' }}>
-              <input type="checkbox" checked={intermitenteInput}
-                onChange={(e) => setIntermitente(e.target.checked)}
-                style={{ marginTop:3, accentColor:'var(--primary)' }} />
-              <span>
-                <strong style={{ display:'block' }}>Só liga quando está em uso</strong>
-                <span className="muted" style={{ fontSize:12 }}>
-                  Para de cobrar leitura por turno e para de aparecer em "Equipamentos fora da rotina".
-                  Continua no cadastro, nos relatórios, e aceita leitura normalmente quando estiver ligado —
-                  não registre temperatura com ele desligado.
+            <fieldset style={{ border:'1px solid var(--border-subtle)', borderRadius:'var(--r)', padding:'10px 12px', display:'flex', flexDirection:'column', gap:8 }}>
+              <legend style={{ fontSize:12, fontWeight:600, padding:'0 4px' }}>Cobrar leitura</legend>
+              <label style={{ display:'flex', alignItems:'flex-start', gap:8, cursor:'pointer' }}>
+                <input type="radio" name="cobranca" checked={cobranca === 'todos'} onChange={() => setCobranca('todos')} style={{ marginTop:3, accentColor:'var(--primary)' }} />
+                <span><strong style={{ display:'block' }}>Em todos os turnos</strong><span className="muted" style={{ fontSize:12 }}>O padrão: equipamento que fica sempre ligado.</span></span>
+              </label>
+              <label style={{ display:'flex', alignItems:'flex-start', gap:8, cursor:'pointer' }}>
+                <input type="radio" name="cobranca" checked={cobranca === 'alguns'} onChange={() => setCobranca('alguns')} style={{ marginTop:3, accentColor:'var(--primary)' }} />
+                <span><strong style={{ display:'block' }}>Só em alguns turnos</strong><span className="muted" style={{ fontSize:12 }}>Para o equipamento que liga numa parte do dia. Nos outros turnos ele não é cobrado, mas aceita leitura se estiver ligado.</span></span>
+              </label>
+              {cobranca === 'alguns' && (
+                <div style={{ display:'flex', gap:12, flexWrap:'wrap', paddingLeft:24 }}>
+                  {turnosDaLoja.map((t) => (
+                    <label key={t.id} style={{ display:'flex', gap:6, alignItems:'center', fontSize:13, cursor:'pointer' }}>
+                      <input type="checkbox" checked={turnosEscolhidos.includes(t.id)}
+                        onChange={(e) => setTurnosEscolhidos((prev) => e.target.checked ? [...prev, t.id] : prev.filter((x) => x !== t.id))}
+                        style={{ accentColor:'var(--primary)' }} />
+                      {t.name} <span className="muted">({t.start} às {t.end})</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              {/* Ultracongelador que só liga quando tem produção, forno que roda
+                  em dia de encomenda. Sem isto, a única saída de quem cansava da
+                  pendência era registrar 0 °C com o aparelho desligado (desvio
+                  gravíssimo falso) ou apagar o equipamento do cadastro. */}
+              <label style={{ display:'flex', alignItems:'flex-start', gap:8, cursor:'pointer' }}>
+                <input type="radio" name="cobranca" checked={cobranca === 'uso'} onChange={() => setCobranca('uso')} style={{ marginTop:3, accentColor:'var(--primary)' }} />
+                <span>
+                  <strong style={{ display:'block' }}>Só liga quando está em uso</strong>
+                  <span className="muted" style={{ fontSize:12 }}>
+                    Para de cobrar leitura por turno e para de aparecer em "Equipamentos fora da rotina".
+                    Continua no cadastro, nos relatórios, e aceita leitura normalmente quando estiver ligado.
+                    Não registre temperatura com ele desligado.
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+            </fieldset>
             <div className="actions-row">
               {editingIndex !== null && <button className="secondary-action" onClick={cancelEdit}>Cancelar</button>}
               <button className="primary-action" onClick={saveItem}>
@@ -1952,6 +1996,7 @@ function EquipmentView({ activeTenant, allTenants, onTenantChange }) {
                         <span>{item.aliases?.length ? item.aliases.join(' · ') : 'Sem apelidos'}</span>
                         <span>{item.location ?? 'Sem localização'} · <strong style={{ color:'var(--green)' }}>{fmtRange(item)}</strong></span>
                         {item.usoIntermitente && <span className="badge neutral" style={{ fontSize:10, marginTop:3, display:'inline-block' }}>Só liga quando em uso · não cobra leitura</span>}
+                        {!item.usoIntermitente && rotuloDosTurnos(item, turnosDaLoja) && <span className="badge neutral" style={{ fontSize:10, marginTop:3, display:'inline-block' }}>{rotuloDosTurnos(item, turnosDaLoja)}</span>}
                       </div>
                       <div className="equipment-row-actions">
                         <button className="ghost-action" onClick={() => startEdit(ri)}>Editar</button>

@@ -35,6 +35,10 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.276', date: '2026-10-10', items: [
+    { text: 'Equipamento que funciona só numa parte do dia agora pode ser cobrado só nos turnos em que está ligado. No cadastro, em "Cobrar leitura", escolha "Só em alguns turnos" e marque os turnos. Nos outros ele não gera pendência, mas aceita leitura se estiver ligado. Feito para a Bancada F.2, que liga de manhã e desliga à tarde.', path: 'Equipamentos → Editar → Cobrar leitura' },
+    'A cobertura de registro do dia passou a contar só os turnos em que cada equipamento é cobrado. Antes, equipamento de uso intermitente puxava a porcentagem para baixo.',
+  ]},
   { version: '1.9.275', date: '2026-10-10', items: [
     { text: 'A nutricionista RT e o administrador podem criar uma planilha nova sozinhos: nome, aba, frequência e as tarefas, cada uma com a sua periodicidade. A planilha já sai com o bloco de não conformidade, que alimenta a Central de NC. Na Higienização, é só escolher o setor.', path: 'Planilhas BPF → Nova planilha' },
     { text: 'Quem acompanha mais de uma loja pode copiar planilhas de uma loja para outra. As que já existem na loja de destino são puladas.', path: 'Planilhas BPF → Copiar de outra loja' },

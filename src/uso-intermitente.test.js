@@ -100,17 +100,19 @@ describe('a marca viaja pra nuvem', () => {
 describe('a tela de Equipamentos grava e mostra a marca', () => {
   const pages = readFileSync(`${process.cwd()}/src/pages.jsx`, 'utf8');
 
-  it('o checkbox existe', () => {
+  // Desde 10/10 a marca é uma das três opções de "Cobrar leitura"
+  // (turnos-do-equipamento.js); a regra travada aqui continua a mesma.
+  it('a opção existe', () => {
     expect(pages).toContain('Só liga quando está em uso');
-    expect(pages).toContain('checked={intermitenteInput}');
+    expect(pages).toContain("checked={cobranca === 'uso'}");
   });
 
   it('o valor entra no objeto salvo', () => {
-    expect(pages).toContain('usoIntermitente: intermitenteInput');
+    expect(pages).toContain("usoIntermitente: cobranca === 'uso'");
   });
 
-  it('editar carrega a marca — senão salvar a desmarcaria sem querer', () => {
-    expect(pages).toContain('setIntermitente(item.usoIntermitente === true)');
+  it('editar carrega a marca, senão salvar a desmarcaria sem querer', () => {
+    expect(pages).toContain("setCobranca(item.usoIntermitente === true ? 'uso' : escolhidos.length ? 'alguns' : 'todos');");
   });
 
   it('a lista mostra quem está marcado', () => {
@@ -118,7 +120,7 @@ describe('a tela de Equipamentos grava e mostra a marca', () => {
   });
 
   it('o texto avisa pra NÃO registrar com o aparelho desligado — é a origem do problema', () => {
-    expect(pages).toContain('não registre temperatura com ele desligado');
+    expect(pages).toContain('Não registre temperatura com ele desligado.');
   });
 });
 

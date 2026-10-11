@@ -35,6 +35,11 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.274', date: '2026-10-10', items: [
+    { text: 'Não conformidades agora aparecem agrupadas por equipamento ou planilha, com o grupo mais antigo primeiro: por exemplo "Bancada congelada F.2: 7 ocorrências, de 12/08 a 14/08". Antes a lista mostrava só as 15 mais recentes e as antigas ficavam escondidas em "Ver os outros". Relato da nutricionista RT.', path: 'Qualidade → Não conformidades' },
+    'Dá para abrir uma ação corretiva para o grupo inteiro: o app registra uma ação para cada ocorrência, com o mesmo texto, responsável e prazo. "Ver uma a uma" continua abrindo ação individual.',
+    'Filtros por origem (temperatura, recebimento, controle, planilha), por período e por nome do equipamento ou da planilha.',
+  ]},
   { version: '1.9.273', date: '2026-10-10', items: [
     { text: 'Pasta da loja para a visita da vigilância: o Supervisor agora abre POPs, Capacitação e o Dossiê Fiscal, para mostrar e imprimir documentos e certificados quando a nutricionista RT não estiver. A colaboradora abre os POPs, que a RDC 216 pede que estejam acessíveis a quem executa. Pedido da nutricionista RT.', path: 'Qualidade → POPs · Capacitação · Relatórios → Dossiê Fiscal' },
     'Para o Supervisor a Capacitação abre em modo consulta: registrar treinamento, confirmar presença e assinar continuam com a RT e o administrador. A aba Saúde (ASO) não aparece para o Supervisor, porque é dado de saúde do colaborador.',

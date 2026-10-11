@@ -84,9 +84,14 @@ describe('badge de Validades no menu — cálculo e atualização', () => {
 });
 
 describe('Central de NC — lista não esconde item sem avisar', () => {
-  it('o corte de 15 vira toggle explícito, não descarte silencioso', () => {
-    expect(fonte).toContain('(verTodosPendentes ? pending : pending.slice(0, 15))');
-    expect(fonte).toContain('Ver os outros {pending.length - 15}');
+  it('sem corte escondido: todo grupo aparece, e filtro diz quantos ficaram de fora', () => {
+    // Até 10/10 a regra era "o corte de 15 vira toggle explícito". A RT ainda
+    // assim não achava os desvios de agosto atrás do "Ver os outros", e a
+    // lista passou a ser agrupada sem corte (nc-grupos.js). O que não pode
+    // voltar é item sumir sem aviso.
+    expect(fonte).not.toContain('pending.slice(0, 15)');
+    expect(fonte).toContain('{grupos.map((g) => {');
+    expect(fonte).toContain('Mostrando {pendingFiltrado.length} de {pending.length}.');
   });
 });
 

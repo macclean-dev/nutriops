@@ -16,6 +16,7 @@ import { notificarSyncAplicado, gravarMesclando, SYNC_EVENT } from './lista-loca
 // componente — são chunks pesados de UI que não devem entrar no bundle
 // principal só por causa desta tela.
 import { actionSourceKey, pendingTemperatureItems, pendingReceivingItems, pendingControlItems, pendingFormItems, excludeWithAction, CONTROL_TYPES } from './nonconformities';
+import { agruparPendencias, filtrarPendencias, resumoDoGrupo, acoesDoLote } from './nc-grupos';
 import { diasDeAtraso, formatarPrazo } from './acoes-prazo';
 import { getPermissions, canAccess, isGlobalAdmin } from './permissions';
 import { viewVisivelNaLoja, recebimentoCompleto } from './modulos-da-loja';
@@ -1134,7 +1135,7 @@ function actionDisplay(a) {
   return { badge: 'Temperatura', label: a.equipment, detail: a.temperature != null ? `${a.temperature}°C` : '' };
 }
 
-function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, records }) {
+export function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, records }) {
   const [actions, setActions]         = useState(() => readActions(activeTenant.id));
   const [statusFilter, setStatusFilter] = useState('all');
   const [creating, setCreating]       = useState(null); // item pendente normalizado (ver nonconformities.js)
@@ -1143,7 +1144,12 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
   const [responsible, setResponsible] = useState('');
   const [deadline, setDeadline]       = useState('');
   const [resolution, setResolution]   = useState('');
-  const [verTodosPendentes, setVerTodosPendentes] = useState(false);
+  // Agrupamento e filtros da lista de pendências (nc-grupos.js, 10/10).
+  const [filtroOrigem, setFiltroOrigem] = useState('all');
+  const [filtroDias, setFiltroDias]     = useState('');
+  const [filtroBusca, setFiltroBusca]   = useState('');
+  const [gruposAbertos, setGruposAbertos] = useState(() => new Set());
+  const alternarGrupo = (chave) => setGruposAbertos((prev) => { const n = new Set(prev); if (n.has(chave)) n.delete(chave); else n.add(chave); return n; });
   const [resolvingId, setResolvingId] = useState(null);
   // Edição de responsável e prazo de uma ação já aberta (candidata 7 da
   // pesquisa de 03/10). `editingId` existia desde sempre sem UI nenhuma.
@@ -1214,6 +1220,22 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
     actions,
   ).sort((a, b) => new Date(b.at ?? 0) - new Date(a.at ?? 0));
 
+  const pendingFiltrado = filtrarPendencias(pending, { origem: filtroOrigem, dias: filtroDias ? Number(filtroDias) : null, busca: filtroBusca });
+  const grupos = agruparPendencias(pendingFiltrado);
+  const filtrando = filtroOrigem !== 'all' || Boolean(filtroDias) || Boolean(filtroBusca.trim());
+
+  // Uma ação para o grupo inteiro: `lote` leva as ocorrências. A descrição
+  // começa vazia de propósito: o texto padrão de UMA ocorrência não descreve
+  // sete, e ação corretiva sem o que foi feito não serve de evidência.
+  const openCreateLote = (grupo) => {
+    if (grupo.itens.length === 1) { openCreate(grupo.itens[0]); return; }
+    setCreating({ ...grupo.itens[0], sourceLabel: grupo.sourceLabel, lote: grupo.itens, resumo: resumoDoGrupo(grupo) });
+    setEditingId(null);
+    setDescription(''); setResponsible(users[0]?.name ?? '');
+    setDeadline(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
+    setResolution('');
+  };
+
   const openCreate = (item) => {
     setCreating(item); setEditingId(null);
     setDescription(defaultDescriptionFor(item)); setResponsible(users[0]?.name ?? '');
@@ -1223,6 +1245,13 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
 
   const saveAction = () => {
     if (!description.trim() || !creating) return;
+    if (creating.lote) {
+      const novas = acoesDoLote(creating.lote, { tenantId: activeTenant.id, description: description.trim(), responsible, deadline });
+      setActions((prev) => [...novas, ...prev]);
+      for (const a of novas) pushCorrectiveAction(activeTenant.id, a);
+      setCreating(null);
+      return;
+    }
     const action = {
       id: crypto.randomUUID(), tenantId: activeTenant.id,
       source: creating.source, sourceId: creating.sourceId,
@@ -1311,37 +1340,67 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
         </div>
       )}
 
-      {/* Itens sem ação corretiva ainda, de qualquer uma das 4 origens */}
+      {/* Itens sem ação corretiva ainda, de qualquer uma das 4 origens.
+          Agrupados por origem + equipamento/planilha, o grupo mais antigo
+          primeiro, sem corte (nc-grupos.js, 10/10). Antes a lista cortava em
+          15 e os desvios de agosto ficavam escondidos atrás de "Ver os
+          outros". */}
       {pending.length > 0 && (
         <article className="management-card" style={{ marginBottom: 16 }}>
           <div className="card-head"><div><span className="eyebrow">Aguardando ação</span><h2>Não conformidades sem ação corretiva</h2></div><span className="badge danger">{pending.length}</span></div>
-          <div className="equipment-maintenance-list">
-            {/* O badge acima mostra pending.length, mas a lista cortava em 15
-                sem dizer isso — numa central de não-conformidades, esconder
-                item sem avisar significa esconder o que ainda precisa de ação
-                corretiva pela RDC 216. Achado da auditoria (18/08). */}
-            {(verTodosPendentes ? pending : pending.slice(0, 15)).map((item) => (
-              <div key={`${item.source}::${item.sourceId}`} className="equipment-maintenance-row">
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span className="badge neutral" style={{ fontSize: 10 }}>{SOURCE_BADGE[item.source]}</span>
-                    <strong>{item.sourceLabel}</strong>
-                  </div>
-                  {item.at && <span>{formatCompactDateTime(item.at)}</span>}
-                  {/* pre-line: sourceDetail de um recebimento sem motivo cai
-                      pra lista de produtos (pendingReceivingItems), pode ter
-                      várias linhas desde que Produto virou textarea (22/09). */}
-                  {item.sourceDetail && <span style={{ fontSize: 13, color: 'var(--text-secondary)', whiteSpace: 'pre-line' }}>{item.sourceDetail}</span>}
-                </div>
-                <button className="primary-action" style={{ fontSize: 12, padding: '6px 12px' }} onClick={() => openCreate(item)}>Abrir ação</button>
-              </div>
-            ))}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '12px 16px 0' }}>
+            <select aria-label="Origem" value={filtroOrigem} onChange={(e) => setFiltroOrigem(e.target.value)} style={{ width: 'auto' }}>
+              <option value="all">Todas as origens</option>
+              {Object.entries(SOURCE_BADGE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <select aria-label="Período" value={filtroDias} onChange={(e) => setFiltroDias(e.target.value)} style={{ width: 'auto' }}>
+              <option value="">Todo o período</option>
+              <option value="7">Últimos 7 dias</option>
+              <option value="30">Últimos 30 dias</option>
+              <option value="90">Últimos 90 dias</option>
+            </select>
+            <input aria-label="Buscar equipamento ou planilha" value={filtroBusca} onChange={(e) => setFiltroBusca(e.target.value)} placeholder="Buscar equipamento ou planilha" style={{ flex: '1 1 180px', minWidth: 0 }} />
           </div>
-          {!verTodosPendentes && pending.length > 15 && (
-            <button className="ghost-action" style={{ margin: '8px 16px', fontSize: 12 }} onClick={() => setVerTodosPendentes(true)}>
-              Ver os outros {pending.length - 15}
-            </button>
-          )}
+          {filtrando && <p className="muted" style={{ fontSize: 12, padding: '8px 16px 0' }}>Mostrando {pendingFiltrado.length} de {pending.length}.</p>}
+          <div className="equipment-maintenance-list">
+            {grupos.length === 0 && <p className="muted" style={{ padding: '16px 20px' }}>Nenhuma não conformidade com estes filtros.</p>}
+            {grupos.map((g) => {
+              const aberto = gruposAbertos.has(g.chave);
+              const varios = g.itens.length > 1;
+              return (
+                <div key={g.chave} className="equipment-maintenance-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="badge neutral" style={{ fontSize: 10 }}>{SOURCE_BADGE[g.source]}</span>
+                        <strong>{g.sourceLabel}</strong>
+                      </div>
+                      <span>{resumoDoGrupo(g)}</span>
+                      {/* pre-line: sourceDetail de um recebimento sem motivo cai
+                          pra lista de produtos (pendingReceivingItems), pode ter
+                          várias linhas desde que Produto virou textarea (22/09). */}
+                      {!varios && g.itens[0].sourceDetail && <span style={{ fontSize: 13, color: 'var(--text-secondary)', whiteSpace: 'pre-line' }}>{g.itens[0].sourceDetail}</span>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {varios && <button className="ghost-action" style={{ fontSize: 12 }} onClick={() => alternarGrupo(g.chave)}>{aberto ? 'Esconder' : 'Ver uma a uma'}</button>}
+                      <button className="primary-action" style={{ fontSize: 12, padding: '6px 12px' }} onClick={() => openCreateLote(g)}>
+                        {varios ? `Abrir ação para as ${g.itens.length}` : 'Abrir ação'}
+                      </button>
+                    </div>
+                  </div>
+                  {varios && aberto && g.itens.map((item) => (
+                    <div key={`${item.source}::${item.sourceId}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, paddingLeft: 12, borderLeft: '2px solid var(--border)' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        {item.at && <span style={{ fontSize: 12 }}>{formatCompactDateTime(item.at)}</span>}
+                        {item.sourceDetail && <span style={{ fontSize: 13, color: 'var(--text-secondary)', whiteSpace: 'pre-line' }}>{item.sourceDetail}</span>}
+                      </div>
+                      <button className="secondary-action" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => openCreate(item)}>Abrir ação</button>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
         </article>
       )}
 
@@ -1349,7 +1408,7 @@ function CorrectiveActionsView({ activeTenant, allTenants, onTenantChange, recor
       {creating && (
         <article className="management-card" style={{ marginBottom: 16, borderColor: 'var(--blue-border)', background: 'var(--blue-light)' }}>
           <div className="card-head" style={{ background: 'transparent', borderBottomColor: 'var(--blue-border)' }}>
-            <div><span className="eyebrow">Nova ação · {SOURCE_BADGE[creating.source]}</span><h2>{creating.sourceLabel}</h2></div>
+            <div><span className="eyebrow">Nova ação · {SOURCE_BADGE[creating.source]}</span><h2>{creating.sourceLabel}</h2>{creating.lote && <span className="muted" style={{ fontSize: 12 }}>Vale para {creating.resumo}: uma ação para cada ocorrência, com o mesmo texto, responsável e prazo.</span>}</div>
             <button className="ghost-action" onClick={() => setCreating(null)}>✕ Cancelar</button>
           </div>
           <div className="capture-fields">

@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.282', date: '2026-10-14', items: [
+    { text: 'POPs também podem ser copiados de outra loja: cadastre na matriz e copie para as filiais. A cópia leva o texto inteiro e chega aguardando aprovação, porque a RDC 216 pede o POP aprovado pelo responsável de cada estabelecimento. Abra cada POP na filial e toque em "Aprovar". Pedido da nutricionista RT.', path: 'Qualidade → POPs → Copiar de outra loja' },
+  ]},
   { version: '1.9.276', date: '2026-10-10', items: [
     { text: 'Equipamento que funciona só numa parte do dia agora pode ser cobrado só nos turnos em que está ligado. No cadastro, em "Cobrar leitura", escolha "Só em alguns turnos" e marque os turnos. Nos outros ele não gera pendência, mas aceita leitura se estiver ligado. Feito para a Bancada F.2, que liga de manhã e desliga à tarde.', path: 'Equipamentos → Editar → Cobrar leitura' },
     'A cobertura de registro do dia passou a contar só os turnos em que cada equipamento é cobrado. Antes, equipamento de uso intermitente puxava a porcentagem para baixo.',

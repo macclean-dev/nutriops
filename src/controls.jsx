@@ -1,10 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { pushSpecialControl, pushPOP, deletePOPCloud, lw as gravarLocal, SPECIAL_CONTROLS_CAP } from './repository';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { pushSpecialControl, pushPOP, deletePOPCloud, syncPOPs, lw as gravarLocal, SPECIAL_CONTROLS_CAP } from './repository';
 import { resolveRecordTone, normalizeEquipmentName } from './limits';
 import { autoVerdict, verdictConflicts, thawCompliant, oilResultForAcidLevel, suggestionConflicts } from './verdict';
 import { readCatalog } from './maintenance';
 import { gravarMesclando, SYNC_EVENT } from './lista-local';
 import { podeAprovarPop, popAprovado, aprovarPop, editarPop, descreverAprovacao, versaoDoPop } from './pop-aprovacao';
+import { copiarPops } from './implantacao';
+import { CopiarDeOutraLojaModal } from './implantacao-modals';
 
 // ─── Storage ───────────────────────────────────────────────────────────────
 
@@ -73,6 +75,33 @@ export function POPsView({ activeTenant, allTenants, onTenantChange, session }) 
 
   const isRT = ['Nutricionista RT','Administrador','Super-admin'].includes(session?.user?.role);
   const podeAprovar = podeAprovarPop(session);
+
+  // Copiar POPs de outra loja (implantacao.js, pedido da RT em 14/10). Chegam
+  // como versão 1, aguardando aprovação NESTA loja.
+  const [copiarOpen, setCopiarOpen] = useState(false);
+  const [avisoCopia, setAvisoCopia] = useState(null);
+  const origemDaCopia = useRef([]);
+  const outrasLojas = (allTenants ?? []).filter((t) => t.id !== activeTenant.id);
+  const carregarPopsDe = async (loja) => {
+    await syncPOPs(loja.id);
+    const origem = readPOPs(loja.id);
+    origemDaCopia.current = origem;
+    const { repetidos } = copiarPops(origem, pops);
+    const ja = new Set(repetidos.map((p) => p.id));
+    return { itens: origem.map((p) => ({
+      id: p.id, titulo: p.title, repetido: ja.has(p.id),
+      detalhe: `${POP_CATEGORIES.find((c) => c.id === p.category)?.label ?? 'Sem categoria'} · ${descreverAprovacao(p)}`,
+    })) };
+  };
+  const copiarPopsDe = async (loja, ids) => {
+    const { copias } = copiarPops(origemDaCopia.current, pops, { ids, lojaOrigem: loja.name, quem: session?.user?.name ?? null });
+    if (copias.length) {
+      setPOPs((prev) => [...copias, ...prev]);
+      for (const p of copias) pushPOP(activeTenant.id, p);
+    }
+    setCopiarOpen(false);
+    setAvisoCopia(`✓ ${copias.length} POP${copias.length === 1 ? '' : 's'} copiado${copias.length === 1 ? '' : 's'} de ${loja.name}. Eles chegam aguardando aprovação: abra cada um e toque em "Aprovar" para valer nesta loja.`);
+  };
 
   const resetForm = () => { setTitle(''); setCategory('higiene'); setObjective(''); setSteps(['']); setMaterials(''); setFrequency('Diário'); setResponsible(''); setEditando(null); };
 
@@ -275,9 +304,15 @@ export function POPsView({ activeTenant, allTenants, onTenantChange, session }) 
           <select value={activeTenant.id} onChange={e=>onTenantChange(e.target.value)} style={{ width:'auto' }}>
             {allTenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
+          {isRT && outrasLojas.length > 0 && <button className="secondary-action" onClick={() => { setAvisoCopia(null); setCopiarOpen(true); }}>Copiar de outra loja</button>}
           {isRT && <button className="primary-action" onClick={() => setView('new')}>+ Novo POP</button>}
         </div>
       </div>
+      {copiarOpen && (
+        <CopiarDeOutraLojaModal titulo="Copiar POPs de outra loja" lojas={outrasLojas} rotuloItem="POP"
+          carregar={carregarPopsDe} onCopiar={copiarPopsDe} onClose={() => setCopiarOpen(false)} />
+      )}
+      {avisoCopia && <div role="status" className="submission ok" style={{ marginBottom: 16, fontSize: 13 }}>{avisoCopia}</div>}
       <div className="audit-filters" style={{ marginBottom:16 }}>
         <label>Categoria
           <select value={catFilter} onChange={e=>setCatFilter(e.target.value)}>

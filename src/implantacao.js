@@ -151,3 +151,35 @@ export function equipamentosParaCopiar(origem, destino) {
   }
   return { novos, repetidos };
 }
+
+// POPs de outra loja (pedido da RT da CASA DOCE, 14/10: "consigo cadastrar
+// todos os POPs na Casa Doce e somente passar para as outras filiais?").
+//
+// A cópia chega como versão 1 e AGUARDANDO APROVAÇÃO, mesmo que o POP de
+// origem esteja aprovado. RDC 216 4.11.2: o POP é aprovado, datado e assinado
+// pelo responsável DAQUELE estabelecimento; a assinatura da matriz não vale
+// pelo PKS. A RT aprova em cada loja com um toque, e a Prontidão (B3) só conta
+// POP aprovado. O histórico de versões fica na origem; a cópia guarda de onde
+// veio (`copiadoDe`) para a trilha. POP com o mesmo título aqui é pulado.
+export function copiarPops(origem, destino, { ids, lojaOrigem = '', quem = null, novoId = () => crypto.randomUUID(), hojeIso = new Date().toISOString() } = {}) {
+  const chave = (p) => norm(p?.title);
+  const jaTem = new Set((destino ?? []).map(chave));
+  const escolhidos = (origem ?? []).filter((p) => !ids || ids.includes(p.id));
+  const copias = [], repetidos = [];
+  for (const p of escolhidos) {
+    if (jaTem.has(chave(p))) { repetidos.push(p); continue; }
+    jaTem.add(chave(p));
+    const { history, approval, updatedBy, ...texto } = JSON.parse(JSON.stringify(p));
+    copias.push({
+      ...texto,
+      id: novoId(),
+      version: 1,
+      approval: null,
+      createdBy: quem,
+      createdAt: hojeIso,
+      updatedAt: hojeIso,
+      copiadoDe: { loja: lojaOrigem, popId: p.id, versao: Number(p.version) > 0 ? Number(p.version) : 1, em: hojeIso },
+    });
+  }
+  return { copias, repetidos };
+}

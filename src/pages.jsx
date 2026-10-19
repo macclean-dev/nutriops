@@ -8,6 +8,7 @@ import { employeeTrainingStatus, cobraCapacitacaoAqui } from './training-status'
 import { readTurns } from './turns';
 import { instalarAvisoAoFechar, filaDasLojas, navegarSemAviso } from './aviso-ao-fechar';
 import { lojaDoSync } from './loja-do-sync';
+import { mostrarAvisoCatalogo } from './aviso-catalogo';
 import { getTemperatureRepository, getSupabaseConfig, saveSupabaseConfig, isSupabaseEnabled, supabaseRepository, SUPABASE_SQL, getOfflineQueue, syncAllModules, migrateAllToSupabase, pushReceivingRecord, getSyncStatus, pushEquipmentItem, deleteEquipmentItem, syncEquipmentCatalog, getSupabaseAuthError, clearSupabaseAuthError, getStorageFull, clearStorageFull, getQueueOverflow, clearQueueOverflow, shouldAutoConfigSupabase, countAllLocalRecords, shouldAutoBackfill, pushCorrectiveAction, syncCorrectiveActions, deleteCorrectiveAction, syncRecentes } from './repository';
 import { notificarSyncAplicado, gravarMesclando, SYNC_EVENT } from './lista-local';
 // Central de Não-Conformidades (item 2 da revisão, 09/08) — puro, sem React;
@@ -3381,7 +3382,9 @@ export function App() {
   }, []);
   // Catálogo preso no provisório de fábrica + nuvem inacessível — ver a
   // auto-cura no doSync e o CatalogStaleBanner.
-  const [catalogStale, setCatalogStale] = useState(false);
+  // Guarda DE QUAL loja (aviso-catalogo.js, 19/10): a marca única deixava o
+  // aviso por cima da lista certa depois de trocar de loja.
+  const [catalogStaleDe, setCatalogStaleDe] = useState(null);
   const [catalogRetrying, setCatalogRetrying] = useState(false);
 
   // Equipment catalog — store-specific if multi-store
@@ -3446,14 +3449,16 @@ export function App() {
     // tenantId null, então este `return` fazia o botão "Tentar de novo" do
     // banner não fazer NADA pra ele — sem erro, sem sinal. Cai na loja que
     // ele está olhando, que é a que o banner está reclamando.
-    const alvo = session?.tenantId ?? activeTenant?.id ?? null;
+    // 19/10: a loja que está na tela, não a principal da sessão (lojaDoSync):
+    // para quem acompanha várias lojas, "Tentar de novo" tentava a loja errada.
+    const alvo = lojaDoSync({ session, activeTenant, visibleTenants });
     if (!alvo) return;
     setCatalogRetrying(true);
     try {
       const eq = await syncEquipmentCatalog(alvo);
       if (eq.ok && eq.count > 0) {
         setCatalogVersion((v) => v + 1);
-        setCatalogStale(false);
+        setCatalogStaleDe(null);
         // Sem isto, só quem lê `catalogVersion` por prop (a captura de
         // temperatura, via App) se atualizava. A tela de Equipamentos guarda
         // o PRÓPRIO state, lido só no mount/troca de empresa — o banner
@@ -3467,7 +3472,7 @@ export function App() {
       console.warn('[NutriOPS] retry do catálogo falhou:', e?.message ?? e);
     }
     setCatalogRetrying(false);
-  }, [session?.tenantId, activeTenant?.id]);
+  }, [session, activeTenant, visibleTenants]);
 
   // ─── Operador (conta de loja) ────────────────────────────────────────────
   // O nome escolhido entra em session.user.name — é assim que os 14 pontos que
@@ -3863,7 +3868,7 @@ export function App() {
           const eq = await syncEquipmentCatalog(tenantAlvo);
           if (eq.ok && eq.count > 0) {
             setCatalogVersion((v) => v + 1);
-            setCatalogStale(false);
+            setCatalogStaleDe(null);
             // Segundo aviso: o de cima (notificarSyncAplicado logo após
             // syncAllModules) já disparou ANTES deste syncEquipmentCatalog
             // terminar, então quem releu no primeiro aviso pegou o catálogo
@@ -3882,7 +3887,7 @@ export function App() {
             // pessoa vê equipamento que não existe na unidade dela — e pode
             // registrar temperatura em cima. Alertar é o certo.
             console.warn(`[NutriOPS] catálogo preso no provisório — ok=${eq.ok} count=${eq.count ?? 0} ${eq.reason ?? ''}`);
-            setCatalogStale(true);
+            setCatalogStaleDe(tenantAlvo);
           }
           // Tela vazia + nuvem vazia → "nenhum equipamento" já diz a verdade
           // sozinho. Não alarma (é a loja nova que ainda não cadastrou nada).
@@ -4124,7 +4129,7 @@ export function App() {
         <StorageFullBanner />
         <QueueOverflowBanner />
         <SupabaseAuthErrorBanner session={session} setActiveView={setActiveView} />
-        {catalogStale && <CatalogStaleBanner onRetry={retryCatalogSync} retrying={catalogRetrying} />}
+        {mostrarAvisoCatalogo({ marcadoPara: catalogStaleDe, lojaNaTela: activeTenant.id, catalogoNaTela: equipmentCatalog }) && <CatalogStaleBanner onRetry={retryCatalogSync} retrying={catalogRetrying} />}
         {activeTenant.implantacao === true && (
           <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap', padding:'10px 16px', marginBottom:12, borderRadius:'var(--r-lg)', background:'rgba(0,104,74,.08)', border:'1px solid rgba(0,104,74,.25)', fontSize:13, color:'var(--text)' }}>
             <span style={{ fontWeight:700, color:'var(--primary)', letterSpacing:'.04em' }}>EM IMPLANTAÇÃO</span>

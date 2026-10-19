@@ -88,7 +88,9 @@ describe('auto-sync do boot — não manda mais null adiante', () => {
   it('trocar de loja redispara o sync (activeTenant nas deps)', () => {
     // Sem isso, o admin trocaria de loja no seletor e o sync continuaria
     // apontado pra loja anterior — o fallback só é lido quando o efeito roda.
-    expect(fonte).toContain('}, [session?.tenantId, activeTenant?.id]);');
+    // Desde 10/10 o alvo é tenantDoSyncLeve (lojaDoSync), que muda quando
+    // a loja do seletor muda.
+    expect(fonte).toContain('}, [session?.tenantId, tenantDoSyncLeve]);');
   });
 });
 
@@ -99,7 +101,9 @@ describe('botão "Tentar de novo" do banner de catálogo — não é mais no-op 
   })();
 
   it('usa o mesmo fallback, em vez de desistir quando tenantId é null', () => {
-    expect(retry).toContain('const alvo = session?.tenantId ?? activeTenant?.id ?? null;');
+    // 19/10: mesma regra do sync (lojaDoSync): admin global cai na loja ativa,
+    // e quem acompanha várias lojas tenta a que está na tela.
+    expect(retry).toContain('const alvo = lojaDoSync({ session, activeTenant, visibleTenants });');
     expect(retry).toContain('if (!alvo) return;');
     // a guarda antiga fazia o botão não responder pro admin global
     expect(retry).not.toContain('if (!session?.tenantId) return;');

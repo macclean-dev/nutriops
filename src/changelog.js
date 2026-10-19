@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.283', date: '2026-10-19', items: [
+    'O aviso "Esta não é a lista de equipamentos da sua unidade" não aparece mais por cima da lista certa. Quem acompanha várias lojas via o aviso de uma loja continuar na tela depois de trocar para outra. Agora ele só aparece na loja certa e só quando a tela mostra mesmo a lista de exemplo. O "Tentar de novo" também passou a tentar a loja que está na tela.',
+  ]},
   { version: '1.9.282', date: '2026-10-14', items: [
     { text: 'POPs também podem ser copiados de outra loja: cadastre na matriz e copie para as filiais. A cópia leva o texto inteiro e chega aguardando aprovação, porque a RDC 216 pede o POP aprovado pelo responsável de cada estabelecimento. Abra cada POP na filial e toque em "Aprovar". Pedido da nutricionista RT.', path: 'Qualidade → POPs → Copiar de outra loja' },
   ]},

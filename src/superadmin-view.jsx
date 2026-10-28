@@ -249,7 +249,7 @@ export function SuperAdminGate({ session, onExit, children }) {
 // Ativar operação — pede o NOME DA EMPRESA digitado antes de liberar.
 //
 // Não é cerimônia: a ativação muda a régua de uma loja inteira (alertas de
-// pendência passam a valer, registros deixam de ser treino) e o painel lista
+// pendência passam a valer) e o painel lista
 // várias empresas em linhas quase idênticas. Digitar o nome obriga a LER qual
 // está sendo ativada — é a diferença entre confirmar e reconhecer.
 //
@@ -273,7 +273,7 @@ export function AtivarOperacaoModal({ estado, onConfirmar, onFechar }) {
         <div className="capture-fields">
           <p className="muted" style={{ fontSize:13, lineHeight:1.5 }}>
             <strong>{tenant.name}</strong> está em fase de treino: os alertas de pendência ficam
-            suspensos e os registros são marcados como treino. Ativando, ela passa a ser cobrada
+            suspensos. Os registros já feitos valem normalmente e não mudam. Ativando, ela passa a ser cobrada
             como operação de verdade — equipamento sem leitura no turno vira alerta.
           </p>
           <p className="muted" style={{ fontSize:12, lineHeight:1.5, margin:0 }}>

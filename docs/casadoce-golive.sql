@@ -1,6 +1,6 @@
 -- MODO IMPLANTAÇÃO / GO-LIVE por loja.
--- implantacao=true → loja em treinamento: alertas de pendência suspensos, registros
--- marcados como treino. Nova loja nasce assim. Go-live = virar false + gravar a data.
+-- implantacao=true → loja em treinamento: alertas de pendência suspensos (os
+-- registros valem normalmente, nada os marca como treino). Nova loja nasce assim. Go-live = virar false + gravar a data.
 -- Seeds (Swiss/Bäckerei) não estão nesta tabela → não afetados (seguem operacionais).
 
 alter table public.tenants add column if not exists implantacao boolean default true;

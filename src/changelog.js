@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.284', date: '2026-10-28', items: [
+    'A faixa "EM IMPLANTAÇÃO" dizia que os registros ficavam "marcados como treino". Não ficam: tudo o que a equipe registra durante a implantação vale normalmente, no histórico e no Dossiê. O modo só suspende a cobrança das temperaturas que faltaram em cada turno. O texto foi corrigido.',
+  ]},
   { version: '1.9.283', date: '2026-10-19', items: [
     'O aviso "Esta não é a lista de equipamentos da sua unidade" não aparece mais por cima da lista certa. Quem acompanha várias lojas via o aviso de uma loja continuar na tela depois de trocar para outra. Agora ele só aparece na loja certa e só quando a tela mostra mesmo a lista de exemplo. O "Tentar de novo" também passou a tentar a loja que está na tela.',
   ]},

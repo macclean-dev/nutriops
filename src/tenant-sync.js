@@ -401,7 +401,8 @@ export async function deleteTenantCloud(tenantId) {
 
 // Liga/desliga o modo implantação (docs/ativar-operacao.sql). Sair da
 // implantação é o "go-live": a partir dele os alertas de pendência voltam a
-// contar e os registros deixam de ser marcados como treino.
+// contar. (Registro nunca foi marcado como treino: o modo só suspende a
+// cobrança. O texto antigo da tela dizia o contrário; corrigido em 28/10.)
 //
 // Até 21/08 isso só existia como UPDATE comentado num .sql — e a CASA DOCE
 // ficou em implantação de 12/07 a 21/08 sem ninguém perceber, com os alertas

@@ -12,8 +12,8 @@
 -- Modo de treino que não tem botão de sair vira modo permanente.
 --
 -- A ativação é decisão de negócio, não de suporte: a partir dela a loja passa
--- a ser cobrada por pendência e os registros deixam de ser marcados como
--- treino. Por isso é admin da plataforma, e a tela exige digitar o nome da
+-- a ser cobrada por pendência. (Registro nunca é marcado como treino: o modo
+-- só suspende a cobrança; correção de 28/10.) Por isso é admin da plataforma, e a tela exige digitar o nome da
 -- empresa antes de confirmar.
 --
 -- COMO RODAR: Supabase → SQL Editor → New query → colar TUDO → Run.

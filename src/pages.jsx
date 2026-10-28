@@ -4133,7 +4133,7 @@ export function App() {
         {activeTenant.implantacao === true && (
           <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap', padding:'10px 16px', marginBottom:12, borderRadius:'var(--r-lg)', background:'rgba(0,104,74,.08)', border:'1px solid rgba(0,104,74,.25)', fontSize:13, color:'var(--text)' }}>
             <span style={{ fontWeight:700, color:'var(--primary)', letterSpacing:'.04em' }}>EM IMPLANTAÇÃO</span>
-            <span style={{ color:'var(--text-secondary)' }}>Fase de treinamento — os registros ficam marcados como treino e os alertas de pendência estão suspensos até o início oficial da operação.</span>
+            <span style={{ color:'var(--text-secondary)' }}>Fase de treinamento: os alertas de pendência de turno estão suspensos até o início oficial da operação. Os registros valem normalmente.</span>
           </div>
         )}
         <Suspense fallback={<ViewLoading />}>

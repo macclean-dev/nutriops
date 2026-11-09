@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FormKioskApp } from './kiosk';
-import { pushFormRecord, buscarFormRecordNaNuvem, lw as gravarLocal } from './repository';
+import { pushFormRecord, buscarFormRecordNaNuvem, registrarPlanilhasMovidas, lw as gravarLocal } from './repository';
+import { unificarCopias } from './planilha-canonica';
 import { fundirRespostas, fundirStatus, maisRecente, umPorPeriodo, validacaoQueSobrevive } from './planilha-fusao';
 import { novaPlanilha, copiarPlanilhas, juntarPrefs } from './implantacao';
 import { NovaPlanilhaModal, CopiarDeOutraLojaModal } from './implantacao-modals';
@@ -67,6 +68,30 @@ const fs = (k, v) => gravarLocal(k, v);
 // preenchido), e isso é conversa à parte.
 const chaveTitulo = (t) => `${t?.category ?? ''}::${String(t?.title ?? '').trim().toLowerCase()}`;
 
+// Grava os registros movidos (o aparelho primeiro, depois a nuvem pela
+// próxima sincronização). As planilhas, quem grava é readFormTemplates.
+function unificarNoAparelho(tenantId, templates, seed) {
+  const fixos = idsPorLoja(tenantId);
+  const canonicas = seed.filter((s) => fixos.has(s.id));
+  // Só lê os registros se houver o que unificar: esta leitura roda em muitas
+  // telas, e na loja já unificada a lista tem só a fixa (ou a editada).
+  const precisa = canonicas.some((s) => {
+    const mesmas = templates.filter((t) => chaveTitulo(t) === chaveTitulo(s));
+    return mesmas.length > 1 || (mesmas.length === 1 && mesmas[0].id !== s.id && mesmas[0].custom !== true);
+  });
+  if (!precisa) return { lista: templates, mudou: false };
+  const r = unificarCopias({ templates, records: fl(recKey(tenantId), []), canonicas });
+  if (!r.mudou) return { lista: templates, mudou: false };
+  if (r.movidos.length) {
+    writeFormRecords(tenantId, r.records);
+    const ids = new Set(r.movidos.map((m) => m.id));
+    registrarPlanilhasMovidas(tenantId, r.records.filter((x) => ids.has(x.id)));
+    console.info(`[forms] ${r.movidos.length} registro(s) levado(s) pra planilha de código fixo da loja ${tenantId}`);
+  }
+  if (r.ficaram.length) console.warn(`[forms] ${r.ficaram.length} registro(s) ficaram na cópia antiga: o período já estava preenchido na planilha fixa`, r.ficaram);
+  return { lista: r.templates, mudou: true };
+}
+
 export const readFormTemplates = (tenant) => {
   const cacheBruto = fl(tplKey(tenant.id), null);
   const seed  = seedTemplates(tenant);
@@ -77,7 +102,13 @@ export const readFormTemplates = (tenant) => {
   // bate — e o id NÃO bate nas planilhas que nascem com `uid()`. Sem esta
   // linha, corrigir um título no seed faria a loja ganhar uma SEGUNDA cópia em
   // vez de corrigir a que ela já tem.
-  const { lista: cache, mudou: renomeou } = aplicarRenomeacoes(cacheBruto);
+  const { lista: renomeada, mudou: renomeou } = aplicarRenomeacoes(cacheBruto);
+
+  // Cópias sorteadas por aparelho das planilhas de código fixo (Higiene
+  // Pessoal, Vetores, Dedetização) viram a planilha fixa, com os registros
+  // junto. ANTES do merge do seed: senão o casamento por título abaixo
+  // acharia a cópia sorteada e manteria o código dela.
+  const { lista: cache, mudou: unificou } = unificarNoAparelho(tenant.id, renomeada, seed);
 
   const porId = new Map(cache.map((t) => [t.id, t]));
   // 1ª ocorrência vence: é a cópia mais antiga, aquela pra onde os registros
@@ -85,7 +116,7 @@ export const readFormTemplates = (tenant) => {
   const porTitulo = new Map();
   for (const t of cache) if (!porTitulo.has(chaveTitulo(t))) porTitulo.set(chaveTitulo(t), t);
 
-  let mudou = renomeou;
+  let mudou = renomeou || unificou;
   for (const s of seed) {
     const atual = porId.get(s.id) ?? porTitulo.get(chaveTitulo(s));
     if (!atual) { porId.set(s.id, s); porTitulo.set(chaveTitulo(s), s); mudou = true; continue; }
@@ -848,42 +879,62 @@ export function generateFormPDF(template, record, tenant, rotuloCategoria) {
 // A troca do título ("Colaboradors" → "Colaboradores") só é segura por causa
 // de `aplicarRenomeacoes` em readFormTemplates: sem ela, o casamento por título
 // falharia e cada loja ganharia uma segunda cópia.
-const TPL_HIGIENE_PESSOAL = () => ({
-  id:'a7ce5e0d-4b2e-4b16-9d51-2b3a6a0f9c74', category:'higiene_pessoal', frequency:'daily', v:2,
+//
+// Código POR LOJA, de planilha e de campo (09/11). O id fixo de 05/09 era o
+// mesmo em todas as lojas (colidia na nuvem, onde form_templates é chaveada
+// só por id) e os campos continuavam com `uid()`: cada aparelho sorteava os
+// seus, e a resposta gravada no computador da loja chegava em branco no login
+// da RT. Agora tudo sai igual em qualquer aparelho da mesma loja. As cópias
+// sorteadas que já existem são unificadas por planilha-canonica.js.
+//
+// ⚠️ Não trocar os ids dos campos: as respostas são gravadas por eles.
+const campoFixo = (id, label, type = 'cnc', hint = null) => ({ id, label, type, hint, frequency: null });
+
+// Bases das planilhas de código fixo por loja. readFormTemplates unifica as
+// cópias sorteadas destas (e só destas) na versão fixa.
+const BASES_POR_LOJA = {
+  higiene:     'a7ce5e0d-4b2e-4b16-9d51-2b3a6a0f9c74',
+  vetores:     '208337d8-32fb-46f7-9104-98e52a5fc414',
+  dedetizacao: '28edba4b-e92a-4c9a-a702-c1731b48b3ed',
+};
+export const idsPorLoja = (tenantId) => new Set(Object.values(BASES_POR_LOJA).map((b) => idSeedPorTenant(b, tenantId)));
+
+const TPL_HIGIENE_PESSOAL = (tenantId) => ({
+  id: idSeedPorTenant(BASES_POR_LOJA.higiene, tenantId), category:'higiene_pessoal', frequency:'daily', v:2,
   title:'Higiene Pessoal dos Colaboradores',
   description:'Verificação diária de higiene, uniforme, comportamento e EPI. C=conforme / NC=não conforme.',
-  sections:[{ id:uid(), title:'Verificação',
+  sections:[{ id:'hp-ver', title:'Verificação',
     fields:[
-      f('Uniforme'),
-      f('Sapato'),
-      f('Cabelo'),
-      f('Barba'),
-      f('Unha'),
-      f('Adorno','cnc','Remover brincos, anéis, pulseiras, colares'),
-      f('Comportamento','cnc','Atitudes higiênicas, não manipular objetos fora da atividade'),
-      f('Avental'),
-      f('Perfume','cnc','Ausência de perfume forte'),
-      f('Ferimento','cnc','Ferimentos devidamente cobertos'),
-      f('Lavar Mãos','cnc','Ao iniciar, usar banheiro, trocar atividade, colocar luvas'),
-      f('Observações','text'),
+      campoFixo('hp-uniforme', 'Uniforme'),
+      campoFixo('hp-sapato', 'Sapato'),
+      campoFixo('hp-cabelo', 'Cabelo'),
+      campoFixo('hp-barba', 'Barba'),
+      campoFixo('hp-unha', 'Unha'),
+      campoFixo('hp-adorno', 'Adorno', 'cnc', 'Remover brincos, anéis, pulseiras, colares'),
+      campoFixo('hp-comport', 'Comportamento', 'cnc', 'Atitudes higiênicas, não manipular objetos fora da atividade'),
+      campoFixo('hp-avental', 'Avental'),
+      campoFixo('hp-perfume', 'Perfume', 'cnc', 'Ausência de perfume forte'),
+      campoFixo('hp-ferim', 'Ferimento', 'cnc', 'Ferimentos devidamente cobertos'),
+      campoFixo('hp-maos', 'Lavar Mãos', 'cnc', 'Ao iniciar, usar banheiro, trocar atividade, colocar luvas'),
+      campoFixo('hp-obs', 'Observações', 'text'),
     ],
   }],
 });
 
-const TPL_VETORES = (areas='D=Distribuição S=Salão E=Externa') => ({
-  id:uid(), category:'vetores_pragas', frequency:'daily',
+const TPL_VETORES = (tenantId, areas='D=Distribuição S=Salão E=Externa') => ({
+  id: idSeedPorTenant(BASES_POR_LOJA.vetores, tenantId), category:'vetores_pragas', frequency:'daily',
   title:'Controle Integrado de Vetores e Pragas',
   description:'Verificação diária. Registrar tipo de praga e local. Anexar comprovante de dedetização.',
-  sections:[{ id:uid(), title:'Ocorrências do dia',
+  sections:[{ id:'vet-ocorr', title:'Ocorrências do dia',
     fields:[
-      f('Abelha (A)',           'presence', areas),
-      f('Barata (B)',           'presence', areas),
-      f('Formiga (F)',          'presence', areas),
-      f('Mosca / Mosquito (M)', 'presence', areas),
-      f('Pombo (P)',            'presence', areas),
-      f('Roedor (R)',           'presence', areas),
-      f('Ação tomada', 'text'),
-      f('Observações',  'text'),
+      campoFixo('vet-abelha',  'Abelha (A)',           'presence', areas),
+      campoFixo('vet-barata',  'Barata (B)',           'presence', areas),
+      campoFixo('vet-formiga', 'Formiga (F)',          'presence', areas),
+      campoFixo('vet-mosca',   'Mosca / Mosquito (M)', 'presence', areas),
+      campoFixo('vet-pombo',   'Pombo (P)',            'presence', areas),
+      campoFixo('vet-roedor',  'Roedor (R)',           'presence', areas),
+      campoFixo('vet-acao',    'Ação tomada', 'text'),
+      campoFixo('vet-obs',     'Observações', 'text'),
     ],
   }],
 });
@@ -893,19 +944,20 @@ const TPL_VETORES = (areas='D=Distribuição S=Salão E=Externa') => ({
 // campo de texto; o laudo em si nunca era anexado. O v-bump é o que faz o
 // campo novo alcançar quem já roda (readFormTemplates), preservando o id da
 // planilha existente e, com ele, todo o histórico já preenchido.
-const TPL_DEDETIZACAO = () => ({
-  id:uid(), category:'dedetizacao', frequency:'monthly', v:2,
+// Código por loja desde 09/11 (ver TPL_HIGIENE_PESSOAL).
+const TPL_DEDETIZACAO = (tenantId) => ({
+  id: idSeedPorTenant(BASES_POR_LOJA.dedetizacao, tenantId), category:'dedetizacao', frequency:'monthly', v:2,
   title:'Controle de Dedetização',
   description:'Registrar empresa, data, serviço e produto. Anexar comprovante.',
-  sections:[{ id:uid(), title:'Registro do serviço',
+  sections:[{ id:'ded-reg', title:'Registro do serviço',
     fields:[
-      f('Empresa executora','text'),
-      f('Data do serviço','text'),
-      f('Serviço executado','text'),
-      f('Produto utilizado','text'),
-      f('Número do certificado','text'),
-      f('Comprovante de dedetização (foto ou PDF)','photo'),
-      { ...f('Observações','text'), optional:true },
+      campoFixo('ded-emp',  'Empresa executora', 'text'),
+      campoFixo('ded-data', 'Data do serviço', 'text'),
+      campoFixo('ded-serv', 'Serviço executado', 'text'),
+      campoFixo('ded-prod', 'Produto utilizado', 'text'),
+      campoFixo('ded-cert', 'Número do certificado', 'text'),
+      campoFixo('ded-foto', 'Comprovante de dedetização (foto ou PDF)', 'photo'),
+      { ...campoFixo('ded-obs', 'Observações', 'text'), optional:true },
     ],
   }],
 });
@@ -1984,21 +2036,21 @@ function seedTemplates(tenant) {
   // TPL_RESERVATORIO vai pra TODAS as lojas: a exigência da RDC 216 §4.4 não
   // depende do segmento — quem tem reservatório de água precisa comprovar a
   // higienização semestral, e isso é toda cozinha industrial.
-  if (id.includes('swiss'))                          return [TPL_HIGIENE_PESSOAL(), TPL_VETORES('C=Cozinha D=Distribuição S=Salão E=Externa'), TPL_DEDETIZACAO(), TPL_FAXINA_SWISS(), TPL_RESERVATORIO(tenant.id)];
-  if (id.includes('backerei')||id.includes('bäck')) return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_FAXINA_BACKEREI(), TPL_POTABILIDADE(), TPL_RESERVATORIO(tenant.id)];
-  if (id.includes('dbk'))                            return [TPL_FAXINA_DBK(), TPL_MANUTENCAO_DBK(), TPL_VETORES(), TPL_RESERVATORIO(tenant.id)];
+  if (id.includes('swiss'))                          return [TPL_HIGIENE_PESSOAL(tenant.id), TPL_VETORES(tenant.id, 'C=Cozinha D=Distribuição S=Salão E=Externa'), TPL_DEDETIZACAO(tenant.id), TPL_FAXINA_SWISS(), TPL_RESERVATORIO(tenant.id)];
+  if (id.includes('backerei')||id.includes('bäck')) return [TPL_HIGIENE_PESSOAL(tenant.id), TPL_VETORES(tenant.id), TPL_DEDETIZACAO(tenant.id), TPL_FAXINA_BACKEREI(), TPL_POTABILIDADE(), TPL_RESERVATORIO(tenant.id)];
+  if (id.includes('dbk'))                            return [TPL_FAXINA_DBK(), TPL_MANUTENCAO_DBK(), TPL_VETORES(tenant.id), TPL_RESERVATORIO(tenant.id)];
   // ⚠️ A ORDEM IMPORTA: PKS e Terraço vêm ANTES da CASA DOCE. Os dois se
   // chamam "FABRIZZIO ..." hoje, mas se algum dia forem renomeados pra
   // "CASA DOCE — ParkShopping" (era o nome planejado), o `name.includes('casa
   // doce')` abaixo os capturaria e eles herdariam as 21 folhas da matriz.
   if (unidadePKS(tenant)) return [
-    TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_RESERVATORIO(tenant.id),
+    TPL_HIGIENE_PESSOAL(tenant.id), TPL_VETORES(tenant.id), TPL_DEDETIZACAO(tenant.id), TPL_RESERVATORIO(tenant.id),
     TPL_CD_HORTIFRUTI(['Produção quente']), TPL_EXPOSICAO_ALIMENTOS(),
     ...TPL_PKS_HIG.map((mk) => mk()),
     ...TPL_OCORRENCIAS(PKS_SETORES),
   ];
   if (unidadeTerraco(tenant)) return [
-    TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_RESERVATORIO(tenant.id),
+    TPL_HIGIENE_PESSOAL(tenant.id), TPL_VETORES(tenant.id), TPL_DEDETIZACAO(tenant.id), TPL_RESERVATORIO(tenant.id),
     TPL_CD_HORTIFRUTI(['Área de produção']), TPL_EXPOSICAO_ALIMENTOS(),
     ...TPL_TERRACO_HIG.map((mk) => mk()),
     ...TPL_OCORRENCIAS(TERRACO_SETORES),
@@ -2010,7 +2062,7 @@ function seedTemplates(tenant) {
     ...TPL_CD_HIG.map((mk) => mk()),
     ...TPL_OCORRENCIAS(CD_SETORES_EQUIPE),
   ];
-  return [TPL_HIGIENE_PESSOAL(), TPL_VETORES(), TPL_DEDETIZACAO(), TPL_RESERVATORIO(tenant.id)];
+  return [TPL_HIGIENE_PESSOAL(tenant.id), TPL_VETORES(tenant.id), TPL_DEDETIZACAO(tenant.id), TPL_RESERVATORIO(tenant.id)];
 }
 
 // ─── Field components ──────────────────────────────────────────────────────

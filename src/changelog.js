@@ -35,6 +35,9 @@ export function normalizeItem(item) {
 // Mais recente primeiro. `items` na linguagem de quem usa o app, não jargão
 // técnico — isso aqui é o que a pessoa lê, não um changelog de commit.
 export const CHANGELOG = [
+  { version: '1.9.285', date: '2026-11-09', items: [
+    { text: 'Higiene Pessoal, Controle de Vetores e Pragas e Dedetização agora são a mesma planilha em todos os computadores da loja. Antes, o que era preenchido num computador não aparecia em outro login, e o histórico ficava como "sem registros". O que já foi preenchido é levado automaticamente quando o computador da loja abre esta versão.', path: 'Planilhas' },
+  ]},
   { version: '1.9.284', date: '2026-10-28', items: [
     'A faixa "EM IMPLANTAÇÃO" dizia que os registros ficavam "marcados como treino". Não ficam: tudo o que a equipe registra durante a implantação vale normalmente, no histórico e no Dossiê. O modo só suspende a cobrança das temperaturas que faltaram em cada turno. O texto foi corrigido.',
   ]},

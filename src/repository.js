@@ -924,6 +924,59 @@ export async function pushFormRecord(tenantId, record) {
   } catch (e) { logFailAndEnqueue('form_records', 'upsert', formToRow(record), e); }
 }
 
+// ─── Registros levados pra planilha de código fixo (09/11) ──────────────────
+// planilha-canonica.js troca o código da planilha (e das respostas) de
+// registros já preenchidos. No aparelho isso acontece na hora; aqui fica a
+// lista do que falta levar pra nuvem, refeita a cada sincronização até subir.
+const chaveMovidos = (tenantId) => `nutriops.forms.movidos.${tenantId}`;
+
+export function registrarPlanilhasMovidas(tenantId, movidos) {
+  if (!tenantId || !movidos?.length) return;
+  const porId = new Map(movidos.map((r) => [r.id, r]));
+  // Item na fila com a versão antiga: sobe a nova no lugar. Senão ele subiria
+  // depois com o código velho e recriaria a linha órfã.
+  const fila = getOfflineQueue();
+  let trocou = false;
+  const nova = fila.map((i) => {
+    if (i?.table !== 'form_records' || !porId.has(i.payload?.id)) return i;
+    trocou = true;
+    return { ...i, payload: formToRow(porId.get(i.payload.id)) };
+  });
+  if (trocou) lw(OFFLINE_Q_KEY, nova);
+  lw(chaveMovidos(tenantId), [...new Set([...ls(chaveMovidos(tenantId), []), ...porId.keys()])]);
+}
+
+export async function enviarPlanilhasMovidas(tenantId) {
+  const ids = ls(chaveMovidos(tenantId), []);
+  if (!ids.length || !isSupabaseEnabled() || !navigator.onLine) return { enviados: 0, pendentes: ids.length };
+  const locais = new Map(ls(`nutriops.forms.records.${tenantId}`, []).map((r) => [r.id, r]));
+  const ficam = [];
+  let enviados = 0;
+  for (const id of ids) {
+    const r = locais.get(id);
+    if (!r) continue;
+    try {
+      // SEM on_conflict de propósito: resolve pela chave primária (id), então
+      // a linha que já está na nuvem é ATUALIZADA no lugar, com o código novo.
+      // Se ela ainda não tinha subido, entra agora.
+      await sbFetch('form_records', { method:'POST', body:formToRow(r), prefer:'resolution=merge-duplicates,return=minimal' }, tenantId);
+      enviados++;
+    } catch (e) {
+      if (!String(e?.message ?? '').includes('23505')) { ficam.push(id); continue; }
+      // Outro aparelho já tem esta planilha neste período na nuvem. A fila
+      // funde os dois (fundirLinhaDaFila) e a linha velha sai; senão ela
+      // apareceria duas vezes em "Planilhas para validar". Se o DELETE
+      // falhar, a linha velha fica sem planilha: some da tela, não do banco.
+      enqueue('form_records', 'upsert', formToRow(r));
+      try { await sbFetch('form_records', { method:'DELETE', filter:`id=eq.${encodeURIComponent(id)}&tenant_id=eq.${encodeURIComponent(tenantId)}` }, tenantId); } catch { /* ver acima */ }
+      enviados++;
+    }
+  }
+  lw(chaveMovidos(tenantId), ficam);
+  if (enviados) console.info(`[repo] ${enviados} registro(s) de planilha levado(s) pro código fixo na nuvem (loja ${tenantId})`);
+  return { enviados, pendentes: ficam.length };
+}
+
 // A versão desta planilha neste período que está na nuvem AGORA, pra fundir
 // antes de salvar (planilha-fusao.js). Prazo curto: sem rede ou com a nuvem
 // lenta, quem salva não pode ficar preso; aí a fusão usa a cópia do aparelho.
@@ -2088,6 +2141,9 @@ export async function syncAllModules(tenantId) {
   }
   console.info(`[repo] syncAllModules start — tenant=${tenantId}`);
   const t0 = Date.now();
+  // Antes da fila: ela sobe planilha pela chave (loja, planilha, período) e
+  // tomaria conflito de id com a linha que ainda está no código velho.
+  await enviarPlanilhasMovidas(tenantId).catch(() => {});
   const results = await Promise.allSettled([
     syncFormRecords(tenantId),
     syncFormTemplates(tenantId),
@@ -2148,6 +2204,7 @@ const assinaturaDaLista = (chave) => ls(chave, []).map((r) => `${r.id}|${r.updat
 
 export async function syncRecentes(tenantId, { horas = 48, agora = Date.now() } = {}) {
   if (!tenantId || !isSupabaseEnabled() || !navigator.onLine) return { ok:false, mudou:false, reason:'offline_or_disabled' };
+  await enviarPlanilhasMovidas(tenantId).catch(() => {});   // antes da fila: ver syncAllModules
   await supabaseRepository.syncQueue();
   const desde = new Date(agora - horas * 3600000).toISOString();
   const chaves = [`nutriops.receiving.${tenantId}`, `nutriops.forms.records.${tenantId}`];

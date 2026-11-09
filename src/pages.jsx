@@ -3841,6 +3841,11 @@ export function App() {
       }
       console.info(`[NutriOPS] auto-sync start (${trigger}) tenant=${tenantAlvo}`);
       try {
+        // Ler as planilhas da loja leva os registros das cópias sorteadas por
+        // aparelho pra planilha de código fixo (planilha-canonica.js). Aqui
+        // pra valer também no computador que só usa o quiosque de temperatura.
+        const lojaAlvo = activeTenants.find((t) => t.id === tenantAlvo);
+        if (lojaAlvo) await import('./forms').then((m) => m.readFormTemplates(lojaAlvo)).catch(() => {});
         const result = await syncAllModules(tenantAlvo);
         console.info(`[NutriOPS] auto-sync done (${trigger}) — ${result.synced}/${result.total} módulos`);
         // O sync gravou catálogo/equipe direto no localStorage. Sem este bump a

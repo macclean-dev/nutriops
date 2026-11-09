@@ -106,7 +106,7 @@ describe('o mapa só carrega o que é erro de digitação de verdade', () => {
 // É o cenário que importa. Swiss, Bäckerei e DBK têm a cópia gravada com
 // "Colaboradors" e um id sorteado lá atrás. O que não pode acontecer de jeito
 // nenhum é elas ganharem uma segunda planilha.
-import { readFormTemplates } from './forms';
+import { readFormTemplates, readFormRecords } from './forms';
 import { chaveGrupoDoRegistro, chaveGrupo } from './forms-dedupe';
 
 describe('loja com a planilha antiga: corrige, não duplica', () => {
@@ -134,10 +134,19 @@ describe('loja com a planilha antiga: corrige, não duplica', () => {
     expect(t.title).toBe('Higiene Pessoal dos Colaboradores');
   });
 
-  it('preservando o id antigo — é pra ele que os registros já preenchidos apontam', () => {
+  // Até 09/11 o teste exigia manter o id sorteado, porque os registros
+  // apontavam pra ele. Desde então a planilha ganha o código fixo da loja
+  // (planilha-canonica.js) e os registros vão junto: o que importa continua
+  // sendo que nenhum preenchimento fique sem planilha.
+  it('registro preenchido na cópia antiga vai junto pra planilha de código fixo', () => {
     localStorage.clear(); comoEstaHoje();
+    localStorage.setItem('nutriops.forms.records.swiss', JSON.stringify([{
+      id: 'r1', formId: 'id-sorteado-la-atras', periodKey: '2026-11-05', category: 'higiene_pessoal',
+      formTitle: 'Higiene Pessoal dos Colaboradors', responses: {}, status: 'submitted', updatedAt: '2026-11-05T12:00:00Z',
+    }]));
     const t = readFormTemplates(SWISS).find((x) => x.category === 'higiene_pessoal');
-    expect(t.id).toBe('id-sorteado-la-atras');
+    expect(t.id).not.toBe('id-sorteado-la-atras');
+    expect(readFormRecords('swiss').find((r) => r.id === 'r1').formId).toBe(t.id);
   });
 
   it('a correção fica GRAVADA — não é só o retorno da função', () => {
